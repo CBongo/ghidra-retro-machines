@@ -7,21 +7,21 @@ REALROM placement NONE
 REALROM block PRG_RAM 6000-7fff overlay=false
 REALROM block RAM 0000-07ff overlay=false
 REALROM block W8000 8000-9fff overlay=false
-REALROM block W8000_M0_B1 8000-9fff overlay=true
-REALROM block W8000_M0_B10 8000-9fff overlay=true
-REALROM block W8000_M0_B11 8000-9fff overlay=true
-REALROM block W8000_M0_B12 8000-9fff overlay=true
-REALROM block W8000_M0_B13 8000-9fff overlay=true
-REALROM block W8000_M0_B14 8000-9fff overlay=true
-REALROM block W8000_M0_B15 8000-9fff overlay=true
-REALROM block W8000_M0_B2 8000-9fff overlay=true
-REALROM block W8000_M0_B3 8000-9fff overlay=true
-REALROM block W8000_M0_B4 8000-9fff overlay=true
-REALROM block W8000_M0_B5 8000-9fff overlay=true
-REALROM block W8000_M0_B6 8000-9fff overlay=true
-REALROM block W8000_M0_B7 8000-9fff overlay=true
-REALROM block W8000_M0_B8 8000-9fff overlay=true
-REALROM block W8000_M0_B9 8000-9fff overlay=true
+REALROM block W8000_B1 8000-9fff overlay=true
+REALROM block W8000_B10 8000-9fff overlay=true
+REALROM block W8000_B11 8000-9fff overlay=true
+REALROM block W8000_B12 8000-9fff overlay=true
+REALROM block W8000_B13 8000-9fff overlay=true
+REALROM block W8000_B14 8000-9fff overlay=true
+REALROM block W8000_B15 8000-9fff overlay=true
+REALROM block W8000_B2 8000-9fff overlay=true
+REALROM block W8000_B3 8000-9fff overlay=true
+REALROM block W8000_B4 8000-9fff overlay=true
+REALROM block W8000_B5 8000-9fff overlay=true
+REALROM block W8000_B6 8000-9fff overlay=true
+REALROM block W8000_B7 8000-9fff overlay=true
+REALROM block W8000_B8 8000-9fff overlay=true
+REALROM block W8000_B9 8000-9fff overlay=true
 REALROM block WA000 a000-bfff overlay=false
 REALROM block WA000_B0 a000-bfff overlay=true
 REALROM block WA000_B10 a000-bfff overlay=true
@@ -131,31 +131,31 @@ REALROM sample.bankcomment ff31 bank -> select=6,prg_mode=0,r6=0,r7=1? [known: s
 REALROM sample.bankcomment ff36 bank -> select=6,prg_mode=0,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=1,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment ff3d bank -> select=7,prg_mode=0,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment ff42 bank -> select=7,prg_mode=0,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
-REALROM sample.ref 8000 -> W8000_M0_B10::8020 UNCONDITIONAL_JUMP primary=true
-REALROM sample.ref 8000 -> W8000_M0_B2::9c00 UNCONDITIONAL_JUMP primary=true
-REALROM sample.ref 8000 -> W8000_M0_B4::8018 UNCONDITIONAL_JUMP primary=true
-REALROM sample.ref 8000 -> W8000_M0_B8::8018 UNCONDITIONAL_JUMP primary=true
-REALROM sample.ref 8003 -> W8000_M0_B10::8146 UNCONDITIONAL_JUMP primary=true
-REALROM sample.ref 8003 -> W8000_M0_B2::9c24 UNCONDITIONAL_JUMP primary=true
-REALROM sample.ref 8003 -> W8000_M0_B4::8bb0 UNCONDITIONAL_JUMP primary=true
-REALROM sample.ref 8006 -> W8000_M0_B2::9e9d UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8000 -> W8000_B10::8020 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8000 -> W8000_B2::9c00 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8000 -> W8000_B4::8018 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8000 -> W8000_B8::8018 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8003 -> W8000_B10::8146 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8003 -> W8000_B2::9c24 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8003 -> W8000_B4::8bb0 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8006 -> W8000_B2::9e9d UNCONDITIONAL_JUMP primary=true
 REALROM sample.ref 8006 -> WA000_B11::b800 UNCONDITIONAL_JUMP primary=true
-REALROM sample.ref 8009 -> W8000_M0_B8::9240 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8009 -> W8000_B8::9240 UNCONDITIONAL_JUMP primary=true
 REALROM sample.ref 8009 -> WA000_B11::b833 UNCONDITIONAL_JUMP primary=true
 REALROM sample.ref 8009 -> WA000_B3::a31d UNCONDITIONAL_JUMP primary=true
 REALROM sample.ref 800c -> WA000_B11::baaf UNCONDITIONAL_JUMP primary=true
 REALROM sample.ref 800c -> WA000_B3::bd82 UNCONDITIONAL_JUMP primary=true
 REALROM sample.ref 800c -> WA000_B5::bb5a UNCONDITIONAL_JUMP primary=true
-REALROM sample.ref 800d -> W8000_M0_B12::8026 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 800d -> W8000_B12::8026 CONDITIONAL_JUMP primary=true
 REALROM sample.ref 800f -> WA000_B11::b88d UNCONDITIONAL_JUMP primary=true
-REALROM sample.ref 8011 -> W8000_M0_B12::8019 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8012 -> W8000_M0_B4::9b53 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8011 -> W8000_B12::8019 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8012 -> W8000_B4::9b53 UNCONDITIONAL_JUMP primary=true
 REALROM sample.ref 8012 -> WA000_B11::b8d2 UNCONDITIONAL_JUMP primary=true
 REALROM sample.ref 8012 -> WA000_B3::ae3f UNCONDITIONAL_JUMP primary=true
-REALROM sample.ref 8013 -> W8000_M0_B12::802f UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8013 -> W8000_B12::802f UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8015 -> WA000_B3::abd0 UNCONDITIONAL_JUMP primary=true
-REALROM sample.ref 8016 -> W8000_M0_B12::8026 UNCONDITIONAL_JUMP primary=true
-REALROM sample.ref 801a -> W8000_M0_B8::91e4 DATA primary=true
+REALROM sample.ref 8016 -> W8000_B12::8026 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 801a -> W8000_B8::91e4 DATA primary=true
 REALROM sample.ref.truncated 25 of 2496
 REALROM sample.warn c2ac [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fed1 whose bank argument could not be recovered at this call site
 REALROM sample.warn c418 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fed1 whose bank argument could not be recovered at this call site

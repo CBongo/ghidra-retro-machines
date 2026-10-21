@@ -137,7 +137,7 @@ final class BankContext {
 			return null;
 		}
 		BoardModel board = BoardModel.parse(map, log, analyzer.getName(), mapPath,
-			DescriptorHints.readResolvedInitialState(program));
+			DescriptorHints.readResolvedInitialState(program), DescriptorHints.readLayoutMode(program));
 		if (board == null) {
 			return null;
 		}

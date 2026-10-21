@@ -114,13 +114,18 @@ final class WindowPlanner {
 	 * overlays EXCLUSIVELY, so suppressing on that default would delete the very blocks their
 	 * references point into.
 	 * <p>
-	 * <b>Invariance is still decided against ALL layouts, deliberately.</b> A window identical
-	 * across every mode is hoisted to {@code invariant} (unqualified name) exactly as before, and
-	 * only the surviving mode's VARYING instances are emitted. So this increment moves block
-	 * COUNTS while leaving every block NAME alone -- MMC3's {@code WA000_B<n>} stays unqualified
-	 * and {@code W8000_M1_B<n>} keeps its qualifier. Collapsing a single surviving instance to an
-	 * unqualified name is the natural next step and is deliberately NOT done here, so that the
-	 * count change and the name change land as separate, separately reviewable diffs.
+	 * <b>The surviving mode's instances are COLLAPSED into {@code invariant}</b> (increment 2).
+	 * With the mode known only one layout can occur, so every surviving window is
+	 * mode-invariant for this image, and the existing naming rule -- "qualify by mode only when
+	 * more than one layout can occur for this window" -- applied to that fact drops the
+	 * qualifier: {@code W8000_M1_B<n>} becomes {@code W8000_B<n>}, realized and modelled exactly
+	 * like a top-level window. {@code varying} is then empty; {@code modeField} is still
+	 * reported, because the field itself is still part of the banking state.
+	 * <p>
+	 * The loader and the analyzer must plan with the SAME {@code liveMode}, or the analyzer would
+	 * look for overlay spaces under names the loader never created. The loader publishes it in
+	 * {@link DescriptorHints#LAYOUT_MODE_PROPERTY} for that reason; a program imported before
+	 * that property existed has none, plans with null, and keeps its mode-qualified names.
 	 * <p>
 	 * A {@code liveMode} matching no layout's {@code when:} suppresses nothing: the mode is
 	 * outside what the descriptor models, which is a descriptor/image mismatch rather than a
@@ -168,6 +173,7 @@ final class WindowPlanner {
 			layoutObjs.add(layout);
 		}
 
+		boolean knownMode = liveMode != null && seenValues.contains(liveMode);
 		Map<String, List<JsonObject>> byName = new LinkedHashMap<>();
 		for (JsonObject layout : layoutObjs) {
 			for (JsonElement lwe : layout.getAsJsonArray("windows")) {
@@ -183,10 +189,18 @@ final class WindowPlanner {
 			}
 			for (JsonObject layout : layoutObjs) {
 				int modeValue = layout.getAsJsonObject("when").get(modeField).getAsInt();
-				// grm-ic5: a KNOWN mode suppresses the others' instances. Note this filters the
-				// EMIT and not the invariance test above, which is what keeps hoisted windows
-				// unqualified -- see this method's javadoc.
-				if (liveMode != null && modeValue != liveMode && seenValues.contains(liveMode)) {
+				// grm-ic5: a KNOWN mode suppresses the others' instances and collapses its own
+				// into invariant -- see this method's javadoc.
+				if (knownMode) {
+					if (modeValue != liveMode) {
+						continue;
+					}
+					for (JsonElement lwe : layout.getAsJsonArray("windows")) {
+						JsonObject w = lwe.getAsJsonObject();
+						if (w.get("name").getAsString().equals(entry.getKey())) {
+							invariant.add(toPlannedWindow(w, null));
+						}
+					}
 					continue;
 				}
 				for (JsonElement lwe : layout.getAsJsonArray("windows")) {

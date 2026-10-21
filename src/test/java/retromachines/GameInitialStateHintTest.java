@@ -223,9 +223,28 @@ public class GameInitialStateHintTest {
 			gameDoc("{ \"prg_mode\": 0 }"));
 		WindowPlanner.LayoutPlan plan =
 			WindowPlanner.planWindows(map, new MessageLog(), "test.map", mode);
-		assertEquals(1, plan.varying().size());
-		assertEquals(Integer.valueOf(0), plan.varying().get(0).modeValue());
-		assertEquals(4, WindowPlanner.planWindows(map, new MessageLog(), "test.map", null)
-				.varying().size());
+		// grm-ic5 increment 2: the one surviving instance is collapsed to a mode-invariant
+		// window (unqualified overlay names), and the mode field is still reported.
+		assertEquals(0, plan.varying().size());
+		assertEquals(1, plan.invariant().size());
+		assertEquals("W8000", plan.invariant().get(0).name());
+		assertEquals("0", plan.invariant().get(0).expr()); // the mode-0 layout's own instance
+		assertEquals(65535, plan.invariant().get(0).end());
+		assertNull(plan.invariant().get(0).modeValue());
+		assertEquals("prg_mode", plan.modeField());
+		WindowPlanner.LayoutPlan unknown =
+			WindowPlanner.planWindows(map, new MessageLog(), "test.map", null);
+		assertEquals(4, unknown.varying().size());
+		assertEquals(0, unknown.invariant().size());
+	}
+
+	@Test
+	public void modeOutsideTheLayoutsCollapsesNothing() {
+		// A liveMode no layout's when: names is a descriptor/image mismatch, not a licence to
+		// delete or rename anything: every mode's instances stay varying.
+		WindowPlanner.LayoutPlan plan =
+			WindowPlanner.planWindows(json(MMC1_SHAPE), new MessageLog(), "test.map", 9);
+		assertEquals(4, plan.varying().size());
+		assertEquals(0, plan.invariant().size());
 	}
 }

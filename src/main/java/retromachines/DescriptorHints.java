@@ -81,6 +81,20 @@ final class DescriptorHints {
 	static final String INITIAL_STATE_PROPERTY = "Retro Machines.Initial State";
 
 	/**
+	 * Program-info property carrying the layout mode the loader KNEW for this image (bead
+	 * {@code grm-ic5}): resolved from the image, or stated by a curated per-game descriptor --
+	 * never the power-on default. Absent when the mode was indeterminate.
+	 * <p>
+	 * <b>Why a property.</b> A known mode makes the loader suppress the other modes' windows and
+	 * drop the surviving windows' mode qualifier ({@code W8000_M1_B5} becomes {@code W8000_B5};
+	 * see {@code WindowPlanner.planWindows}). The analyzer resolves overlay spaces BY NAME, so it
+	 * must plan with the same mode; it cannot re-derive it (the image scan needs the raw PRG, and
+	 * the curated hint needs the game-descriptor lookup). An old program with no key plans with
+	 * no mode and keeps its qualified names, which is what its blocks are called.
+	 */
+	static final String LAYOUT_MODE_PROPERTY = "Retro Machines.Layout Mode";
+
+	/**
 	 * Program-info property carrying this program's per-game identity, computed at import from
 	 * the image bytes: {@code prg:<64 hex> file:<64 hex>} -- SHA-256 over the cartridge's
 	 * program-ROM content only (the primary key; header and trainer excluded, so header rot
@@ -453,8 +467,20 @@ final class DescriptorHints {
 	 * descriptor's own literal, which is always available).
 	 */
 	static Integer readResolvedInitialState(Program program) {
-		String value = program.getOptions(Program.PROGRAM_INFO)
-				.getString(INITIAL_STATE_PROPERTY, null);
+		return readIntProperty(program, INITIAL_STATE_PROPERTY);
+	}
+
+	/**
+	 * The layout mode a loader published in {@link #LAYOUT_MODE_PROPERTY}, or null when absent,
+	 * blank, or not a number (null plans every mode, matching a program imported before the
+	 * property existed).
+	 */
+	static Integer readLayoutMode(Program program) {
+		return readIntProperty(program, LAYOUT_MODE_PROPERTY);
+	}
+
+	private static Integer readIntProperty(Program program, String name) {
+		String value = program.getOptions(Program.PROGRAM_INFO).getString(name, null);
 		if (value == null || value.isBlank()) {
 			return null;
 		}

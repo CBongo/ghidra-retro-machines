@@ -919,6 +919,12 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 					"; it licenses suppressing the other modes' overlay blocks");
 			}
 		}
+		if (liveMode != null) {
+			// The analyzer plans windows with the same mode, so it finds the collapsed,
+			// unqualified overlay names (grm-ic5 increment 2; see LAYOUT_MODE_PROPERTY).
+			program.getOptions(Program.PROGRAM_INFO).setString(
+				DescriptorHints.LAYOUT_MODE_PROPERTY, Integer.toString(liveMode));
+		}
 		if (initialState != null &&
 			!initialState.equals(BoardStateFields.initialState(map))) {
 			program.getOptions(Program.PROGRAM_INFO).setString(

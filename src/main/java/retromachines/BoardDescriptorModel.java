@@ -292,6 +292,18 @@ final class BoardDescriptorModel {
 		 */
 		static BoardModel parse(JsonObject map, MessageLog log, String source, String mapPath,
 				Integer resolved) {
+			return parse(map, log, source, mapPath, resolved, null);
+		}
+
+		/**
+		 * {@link #parse(JsonObject, MessageLog, String, String, Integer)} with the layout mode
+		 * the loader KNEW for this image ({@link DescriptorHints#LAYOUT_MODE_PROPERTY}, bead
+		 * {@code grm-ic5}). It must be the loader's own value: it decides which windows exist and
+		 * whether their overlays carry a mode qualifier, and this model finds those overlay
+		 * spaces by name. Null plans every mode.
+		 */
+		static BoardModel parse(JsonObject map, MessageLog log, String source, String mapPath,
+				Integer resolved, Integer liveMode) {
 			JsonObject banking = map.getAsJsonObject("banking");
 			if (banking == null || !banking.has("mechanisms")) {
 				log.appendMsg(source, "banking.mechanisms missing from " + mapPath +
@@ -360,7 +372,7 @@ final class BoardDescriptorModel {
 				windowsByName.put(name, new WindowModel(name, start, end, occupants));
 			}
 
-			WindowPlanner.LayoutPlan plan = WindowPlanner.planWindows(map, log, mapPath);
+			WindowPlanner.LayoutPlan plan = WindowPlanner.planWindows(map, log, mapPath, liveMode);
 
 			Map<String, ComputedWindowModel> computedByName = new LinkedHashMap<>();
 			for (WindowPlanner.PlannedWindow pw : plan.invariant()) {
