@@ -22,7 +22,11 @@ import ghidra.program.model.listing.BookmarkType;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryBlock;
 
-public abstract class VerifyDescriptorCriteria extends VerifyCbmCriteria {
+public class VerifyDescriptorCriteria extends VerifyBase {
+
+	VerifyDescriptorCriteria(GhidraScript script, Verdict verdict) {
+		super(script, verdict);
+	}
 
 	// ------------------------------------------------------------------
 	// descoverlaytest / descoverlayctltest criteria (user-directory overlay, bead grm-hb6.15)

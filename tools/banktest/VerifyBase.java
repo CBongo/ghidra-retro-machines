@@ -13,12 +13,15 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-// Shared state, constants and helpers for the banktest verification script. Split out of
-// VerifyBankTest.java (bead grm-rx1i.17): VerifyBankTest -> VerifyNesCriteria ->
-// VerifyDescriptorCriteria -> VerifyCbmCriteria -> VerifyBase -> GhidraScript. The criteria
-// bodies are verbatim; only their access modifiers changed (private -> protected, because the
-// layers are separate classes). Compiled with the rest of the script dir as one bundle, the
-// same arrangement as RealRomDumpSupport.java.
+// Shared base, constants and helpers for the banktest criteria families. Split out of
+// VerifyBankTest.java (bead grm-rx1i.17) and recomposed by grm-rx1i.21: VerifyBankTest (the
+// GhidraScript: Check registry, run(), dispatch) constructs the sibling families
+// VerifyDumpCriteria, VerifyCbmCriteria, VerifyDescriptorCriteria and VerifyNesCriteria, each
+// of which extends this class. This class is NOT a GhidraScript; it exposes the few script
+// members the criteria use under their original names (currentProgram, println) so the moved
+// bodies stay verbatim, and forwards output to the owning script so text and order are
+// unchanged. Compiled with the rest of the script dir as one bundle, the same arrangement as
+// RealRomDumpSupport.java.
 
 import java.util.Map;
 import ghidra.app.script.GhidraScript;
@@ -33,9 +36,34 @@ import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.mem.MemoryBlockSourceInfo;
 import ghidra.program.model.symbol.Reference;
 import ghidra.program.model.symbol.Symbol;
+import ghidra.util.task.TaskMonitor;
 import retromachines.C64BankingAnalyzer;
 
-public abstract class VerifyBase extends GhidraScript {
+public abstract class VerifyBase {
+
+	/** Run-wide verdict shared by every family (the old single {@code allPassed} field). */
+	static final class Verdict {
+		boolean allPassed = true;
+	}
+
+	/** The owning script: the single writer/output path for every family. */
+	private final GhidraScript script;
+	/** The script's current program; fixed for the duration of one run() (families are built in run()). */
+	protected final Program currentProgram;
+	/** The script's task monitor (set before run() builds the families). */
+	protected final TaskMonitor monitor;
+	private final Verdict verdict;
+
+	protected VerifyBase(GhidraScript script, Verdict verdict) {
+		this.script = script;
+		this.currentProgram = script.getCurrentProgram();
+		this.monitor = script.getMonitor();
+		this.verdict = verdict;
+	}
+
+	protected void println(String message) {
+		script.println(message);
+	}
 
 	// Each BoardBankAnalyzer subclass bookmarks under its own class-name category
 	// (BoardBankAnalyzer.getBookmarkCategory() default); the C64 and NES fixtures never
@@ -55,8 +83,6 @@ public abstract class VerifyBase extends GhidraScript {
 	// the 6502 NMI/IRQ vector targets (DescriptorHints.ASYNC_ENTRY_POINTS_PROPERTY, bead
 	// grm-913). Re-declared as a literal for the reason above.
 	protected static final String ASYNC_ENTRY_POINTS_PROPERTY = "Retro Machines.Async Entry Points";
-
-	protected boolean allPassed = true;
 
 	protected boolean hasSymbol(long offset, String name) {
 		for (Symbol s : currentProgram.getSymbolTable().getSymbols(addr(offset))) {
@@ -179,7 +205,7 @@ public abstract class VerifyBase extends GhidraScript {
 
 	protected void criterion(String id, boolean passed, String detail) {
 		if (!passed) {
-			allPassed = false;
+			verdict.allPassed = false;
 		}
 		println("CRITERION " + id + " " + (passed ? "PASS" : "FAIL") + " " + detail);
 	}

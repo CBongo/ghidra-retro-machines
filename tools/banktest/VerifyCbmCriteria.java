@@ -47,7 +47,11 @@ import retromachines.RecoveryResult;
 import retromachines.StopConditions;
 import retromachines.StopReason;
 
-public abstract class VerifyCbmCriteria extends VerifyBase {
+public class VerifyCbmCriteria extends VerifyBase {
+
+	VerifyCbmCriteria(GhidraScript script, Verdict verdict) {
+		super(script, verdict);
+	}
 
 	// ------------------------------------------------------------------
 	// EmulationRecovery harness check (bead grm-edg)

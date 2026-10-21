@@ -28,7 +28,11 @@ import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.symbol.Reference;
 import ghidra.program.model.symbol.Symbol;
 
-public abstract class VerifyNesCriteria extends VerifyDescriptorCriteria {
+public class VerifyNesCriteria extends VerifyBase {
+
+	VerifyNesCriteria(GhidraScript script, Verdict verdict) {
+		super(script, verdict);
+	}
 
 	// ------------------------------------------------------------------
 	// nesbanktest.nes criteria (NesRomLoader + NesBankingAnalyzer, bead grm-5tl.17)
