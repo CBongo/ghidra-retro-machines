@@ -541,7 +541,7 @@ final class LoopIdioms {
 
 		// n: R's value on entry to L along its fall-through predecessor.
 		Instruction p = listing.getInstructionBefore(head);
-		if (p == null || !head.equals(p.getFallThrough()) || p.getFlowType().isCall()) {
+		if (p == null || !FlowEdges.fallsInto(p, head) || p.getFlowType().isCall()) {
 			return null;
 		}
 		Integer n;

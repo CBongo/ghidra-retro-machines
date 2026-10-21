@@ -187,7 +187,7 @@ final class BankContext {
 				break;
 			}
 			Instruction prev = listing.getInstructionBefore(cur.getMinAddress());
-			if (prev == null || !cur.getMinAddress().equals(prev.getFallThrough()) ||
+			if (prev == null || !FlowEdges.fallsInto(prev, cur) ||
 				prev.getFlowType().isCall()) {
 				break;
 			}

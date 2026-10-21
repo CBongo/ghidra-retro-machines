@@ -2270,7 +2270,7 @@ final class BankDataflowEngine {
 		}
 		Listing listing = program.getListing();
 		Instruction before = listing.getInstructionBefore(entry);
-		if (before != null && entry.equals(before.getFallThrough())) {
+		if (before != null && FlowEdges.fallsInto(before, entry)) {
 			return false;
 		}
 		FunctionManager fm = program.getFunctionManager();
@@ -2597,7 +2597,7 @@ final class BankDataflowEngine {
 			}
 		}
 		Instruction before = listing.getInstructionBefore(entry);
-		return before != null && entry.equals(before.getFallThrough());
+		return before != null && FlowEdges.fallsInto(before, entry);
 	}
 
 

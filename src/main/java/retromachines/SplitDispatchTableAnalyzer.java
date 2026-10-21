@@ -381,12 +381,7 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 		if (instr == null) {
 			return null;
 		}
-		Instruction prev = listing.getInstructionBefore(instr.getMinAddress());
-		if (prev == null || prev.getFallThrough() == null ||
-			!prev.getFallThrough().equals(instr.getMinAddress())) {
-			return null;
-		}
-		return prev;
+		return FlowEdges.fallThroughPredecessor(listing, instr);
 	}
 
 	private static int opcode(Instruction instr) {

@@ -380,8 +380,7 @@ final class IndirectJumpConstantPointer {
 			if (prev == null) {
 				break;
 			}
-			Address fallThrough = prev.getFallThrough();
-			if (fallThrough == null || !fallThrough.equals(head)) {
+			if (!FlowEdges.fallsInto(prev, head)) {
 				break; // prev does not plainly fall through into head
 			}
 			FlowType prevFlow = prev.getFlowType();

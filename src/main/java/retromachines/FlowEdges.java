@@ -37,8 +37,25 @@ final class FlowEdges {
 	 * test every straight-line walk uses. False when {@code prev} has no fall-through at all.
 	 */
 	static boolean fallsInto(Instruction prev, Instruction cur) {
+		return fallsInto(prev, cur.getMinAddress());
+	}
+
+	/**
+	 * {@link #fallsInto(Instruction, Instruction)} for a {@code target} address that has no
+	 * {@link Instruction} in hand (an entry or loop head being walked backwards).
+	 */
+	static boolean fallsInto(Instruction prev, Address target) {
 		Address fallThrough = prev.getFallThrough();
-		return fallThrough != null && fallThrough.equals(cur.getMinAddress());
+		return fallThrough != null && fallThrough.equals(target);
+	}
+
+	/**
+	 * The instruction immediately before {@code cur} in the listing when it falls straight into
+	 * {@code cur}, or {@code null} (no instruction before, or it does not fall into {@code cur}).
+	 */
+	static Instruction fallThroughPredecessor(Listing listing, Instruction cur) {
+		Instruction prev = listing.getInstructionBefore(cur.getMinAddress());
+		return prev != null && fallsInto(prev, cur) ? prev : null;
 	}
 
 	/** The instruction at {@code from}'s fall-through address, or {@code null}. */

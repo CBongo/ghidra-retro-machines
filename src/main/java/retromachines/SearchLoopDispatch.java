@@ -111,7 +111,7 @@ final class SearchLoopDispatch {
 			if (hasIncomingFlow(program, join)) {
 				break;
 			}
-			Instruction prev = fallsInto(listing, join);
+			Instruction prev = FlowEdges.fallThroughPredecessor(listing, join);
 			if (prev == null) {
 				return null;
 			}
@@ -138,7 +138,7 @@ final class SearchLoopDispatch {
 
 		// J's predecessors: one search branch, and optionally an LDY #imm falling into it.
 		Set<Integer> values = new LinkedHashSet<>();
-		Instruction fallback = fallsInto(listing, join);
+		Instruction fallback = FlowEdges.fallThroughPredecessor(listing, join);
 		if (fallback != null) {
 			Integer imm = ldyImmediate(fallback);
 			if (imm == null) {
@@ -232,7 +232,7 @@ final class SearchLoopDispatch {
 		// Before L: a straight-line run up from an LDY #n, entered from nowhere else.
 		Instruction before = head;
 		for (int i = 0; i < MAX_RUN; i++) {
-			Instruction prev = fallsInto(listing, before);
+			Instruction prev = FlowEdges.fallThroughPredecessor(listing, before);
 			if (prev == null) {
 				return null;
 			}
@@ -246,12 +246,6 @@ final class SearchLoopDispatch {
 			before = prev;
 		}
 		return null;
-	}
-
-	/** The instruction that falls through into {@code instr}, or null. */
-	private static Instruction fallsInto(Listing listing, Instruction instr) {
-		Instruction prev = listing.getInstructionBefore(instr.getMinAddress());
-		return prev != null && instr.getMinAddress().equals(prev.getFallThrough()) ? prev : null;
 	}
 
 	private static List<Reference> incomingFlow(Program program, Instruction instr) {

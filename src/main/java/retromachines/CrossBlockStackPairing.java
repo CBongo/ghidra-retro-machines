@@ -279,7 +279,7 @@ final class CrossBlockStackPairing {
 		Function scope = fm.getFunctionContaining(headAddr);
 		List<Address> preds = new ArrayList<>();
 		Instruction physical = listing.getInstructionBefore(headAddr);
-		if (physical != null && headAddr.equals(physical.getFallThrough())) {
+		if (physical != null && FlowEdges.fallsInto(physical, headAddr)) {
 			preds.add(physical.getMinAddress());
 		}
 		for (Reference ref : program.getReferenceManager().getReferencesTo(headAddr)) {

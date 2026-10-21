@@ -513,8 +513,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 			if (prev == null) {
 				return true; // nothing before this can have bypassed the shadow
 			}
-			Address fallThrough = prev.getFallThrough();
-			if (fallThrough == null || !fallThrough.equals(cur.getMinAddress()) ||
+			if (!FlowEdges.fallsInto(prev, cur) ||
 				FlowEdges.isControlFlowJoin(program, cur, prev)) {
 				return false; // another path could arrive here having bypassed the shadow
 			}

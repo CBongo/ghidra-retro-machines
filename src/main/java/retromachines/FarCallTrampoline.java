@@ -363,7 +363,7 @@ final class FarCallTrampoline {
 		while (!queue.isEmpty()) {
 			Address m = queue.poll();
 			Instruction prev = listing.getInstructionBefore(m);
-			if (prev != null && m.equals(prev.getFallThrough()) &&
+			if (prev != null && FlowEdges.fallsInto(prev, m) &&
 				members.size() < MAX_CHAIN_MEMBERS && members.add(prev.getMinAddress())) {
 				queue.add(prev.getMinAddress());
 			}
