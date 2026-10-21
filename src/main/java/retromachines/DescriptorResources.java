@@ -18,13 +18,17 @@ package retromachines;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
 import generic.jar.ResourceFile;
+import ghidra.app.util.opinion.LoadSpec;
+import ghidra.app.util.opinion.Loader;
 import ghidra.framework.Application;
 import ghidra.program.model.data.FileDataTypeManager;
+import ghidra.program.model.lang.LanguageCompilerSpecPair;
 import ghidra.program.model.lang.LanguageID;
 import ghidra.program.model.lang.LanguageNotFoundException;
 import ghidra.program.util.DefaultLanguageService;
@@ -101,6 +105,39 @@ final class DescriptorResources {
 			return null;
 		}
 		return sibling;
+	}
+
+	/**
+	 * Appends the {@link LoadSpec}s a descriptor-driven loader offers: first the PREFERRED spec
+	 * for the descriptor's declared language (via {@link #resolveLanguageId}; {@code
+	 * safetyFallbackId} only if that language is unavailable, or the descriptor is unreadable
+	 * here, in which case {@code load()} reports the real error), then, when {@code offerUndoc}
+	 * and this build ships one, the undocumented-opcode variant (bead grm-azg) as a second,
+	 * NON-preferred spec. The variant is offered so it appears in the import dialog's language
+	 * list rather than being something the user must know exists, but is never the default:
+	 * decoding all 256 opcode bytes makes speculative disassembly run through data tables
+	 * (graphics and music on NES, tables on C64) instead of stopping, which costs more than it
+	 * gains on code that does not use them.
+	 */
+	static void addLoadSpecs(Loader loader, String mapPath, String safetyFallbackId,
+			String compilerSpecId, boolean offerUndoc, List<LoadSpec> out) {
+		String languageId = safetyFallbackId;
+		try {
+			languageId = resolveLanguageId(loadMap(mapPath), safetyFallbackId);
+		}
+		catch (IOException e) {
+			// descriptor unreadable here -> keep the safety fallback; load() will report it
+		}
+		out.add(new LoadSpec(loader, 0, new LanguageCompilerSpecPair(languageId, compilerSpecId),
+			true));
+		if (!offerUndoc) {
+			return;
+		}
+		String undocId = undocVariantOf(languageId);
+		if (undocId != null) {
+			out.add(new LoadSpec(loader, 0, new LanguageCompilerSpecPair(undocId, compilerSpecId),
+				false));
+		}
 	}
 
 	private static boolean languageAvailable(String id) {

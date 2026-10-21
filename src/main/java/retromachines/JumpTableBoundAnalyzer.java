@@ -173,11 +173,7 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		// >=32-bit target the decompiler's own sanityCheck bound (a fraction of the address
 		// space) is never dead code the way it is here. Gate on pcode support plus address width
 		// rather than a specific processor, since every language we ship is one of these.
-		if (!program.getLanguage().supportsPcode()) {
-			return false;
-		}
-		AddressSpace defaultSpace = program.getAddressFactory().getDefaultAddressSpace();
-		return defaultSpace != null && defaultSpace.getSize() <= 16;
+		return AnalyzerGates.is8BitPcode(program);
 	}
 
 	@Override

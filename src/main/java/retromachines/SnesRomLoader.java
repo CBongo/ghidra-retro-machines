@@ -126,16 +126,8 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 		if (header == null || header.mapType() == MapType.UNKNOWN) {
 			return loadSpecs;
 		}
-		String languageId = LANGUAGE_ID;
-		try {
-			languageId = DescriptorResources.resolveLanguageId(
-				DescriptorResources.loadMap(MAP_PATH), LANGUAGE_ID);
-		}
-		catch (IOException e) {
-			// Descriptor unreadable here -> keep the fallback; load() reports it properly.
-		}
-		loadSpecs.add(new LoadSpec(this,
-			0, new LanguageCompilerSpecPair(languageId, COMPILER_SPEC_ID), true));
+		DescriptorResources.addLoadSpecs(this, MAP_PATH, LANGUAGE_ID, COMPILER_SPEC_ID, false,
+			loadSpecs);
 		return loadSpecs;
 	}
 

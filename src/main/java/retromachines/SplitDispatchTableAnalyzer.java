@@ -141,11 +141,7 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 
 	@Override
 	public boolean canAnalyze(Program program) {
-		if (!program.getLanguage().supportsPcode()) {
-			return false;
-		}
-		AddressSpace defaultSpace = program.getAddressFactory().getDefaultAddressSpace();
-		return defaultSpace != null && defaultSpace.getSize() <= 16;
+		return AnalyzerGates.is8BitPcode(program);
 	}
 
 	/** One recognized call site: the call, the stub's {@code JMP (P)}, and the table's low byte

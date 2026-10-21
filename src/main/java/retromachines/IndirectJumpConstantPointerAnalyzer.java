@@ -116,11 +116,7 @@ public class IndirectJumpConstantPointerAnalyzer extends AbstractAnalyzer {
 
 	@Override
 	public boolean canAnalyze(Program program) {
-		if (!program.getLanguage().supportsPcode()) {
-			return false;
-		}
-		AddressSpace defaultSpace = program.getAddressFactory().getDefaultAddressSpace();
-		return defaultSpace != null && defaultSpace.getSize() <= 16;
+		return AnalyzerGates.is8BitPcode(program);
 	}
 
 	@Override

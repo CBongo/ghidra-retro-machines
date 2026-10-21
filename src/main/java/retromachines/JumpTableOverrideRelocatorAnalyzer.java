@@ -23,7 +23,6 @@ import ghidra.app.services.AnalysisPriority;
 import ghidra.app.services.AnalyzerType;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.program.model.address.AddressSetView;
-import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.FunctionIterator;
 import ghidra.program.model.listing.Instruction;
@@ -71,11 +70,7 @@ public class JumpTableOverrideRelocatorAnalyzer extends AbstractAnalyzer {
 
 	@Override
 	public boolean canAnalyze(Program program) {
-		if (!program.getLanguage().supportsPcode()) {
-			return false;
-		}
-		AddressSpace defaultSpace = program.getAddressFactory().getDefaultAddressSpace();
-		return defaultSpace != null && defaultSpace.getSize() <= 16;
+		return AnalyzerGates.is8BitPcode(program);
 	}
 
 	@Override

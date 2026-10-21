@@ -31,7 +31,6 @@ import ghidra.app.util.importer.MessageLog;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.address.AddressSetView;
-import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.data.DataUtilities;
 import ghidra.program.model.data.DataUtilities.ClearDataMode;
 import ghidra.program.model.data.PointerDataType;
@@ -121,11 +120,7 @@ public class InlineJumpTableDispatchAnalyzer extends AbstractAnalyzer {
 
 	@Override
 	public boolean canAnalyze(Program program) {
-		if (!program.getLanguage().supportsPcode()) {
-			return false;
-		}
-		AddressSpace defaultSpace = program.getAddressFactory().getDefaultAddressSpace();
-		return defaultSpace != null && defaultSpace.getSize() <= 16;
+		return AnalyzerGates.is8BitPcode(program);
 	}
 
 	@Override
