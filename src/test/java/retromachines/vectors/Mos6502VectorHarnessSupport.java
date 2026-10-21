@@ -18,8 +18,6 @@ package retromachines.vectors;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -150,7 +148,7 @@ final class Mos6502VectorHarnessSupport {
 	/** Resolves the 6502 undocumented-opcode language via a {@link ProgramBuilder}, throwing if
 	 *  unavailable. */
 	static Language resolveLanguage() throws Exception {
-		return new ProgramBuilder("Test", LANGUAGE_ID).getProgram().getLanguage();
+		return VectorHarnessCommon.resolveLanguage(LANGUAGE_ID);
 	}
 
 	/** Builds the vector-field -> {@link Register} map for {@link #LANGUAGE_ID}. */
@@ -199,13 +197,7 @@ final class Mos6502VectorHarnessSupport {
 	 * rationale.
 	 */
 	static void assertDecodeBoundaryCapNotExceeded(List<OpcodeBaseline> rows) {
-		int total = rows.stream().mapToInt(OpcodeBaseline::decodeBoundaryCount).sum();
-		if (total > DECODE_BOUNDARY_CAP) {
-			throw new AssertionError("decode-boundary case count (" + total + ") exceeds the " +
-				"ESTIMATED cap (" + DECODE_BOUNDARY_CAP + ", see that constant's doc) -- " +
-				"investigate what started throwing DecodePcodeExecutionException before raising " +
-				"this cap");
-		}
+		VectorHarnessCommon.assertEstimatedDecodeBoundaryCapNotExceeded(rows, DECODE_BOUNDARY_CAP);
 	}
 
 	/**
@@ -278,7 +270,7 @@ final class Mos6502VectorHarnessSupport {
 			}
 			else {
 				for (String mismatch : result.mismatches()) {
-					mismatchedFields.add(fieldNameOf(mismatch));
+					mismatchedFields.add(VectorHarnessCommon.fieldNameOf(mismatch));
 				}
 			}
 		}
@@ -366,7 +358,7 @@ final class Mos6502VectorHarnessSupport {
 				return "-"; // ran out of scratch space; should not happen for 256 opcodes
 			}
 			String addrStr = "0x" + Long.toHexString(addr);
-			mnemonicBuilder.setBytes(addrStr, toHexString(bytes), true);
+			mnemonicBuilder.setBytes(addrStr, VectorHarnessCommon.toHexString(bytes), true);
 			Instruction instr =
 				mnemonicProgram.getListing().getInstructionAt(mnemonicBuilder.addr(addrStr));
 			return instr != null ? instr.toString() : "-";
@@ -386,45 +378,12 @@ final class Mos6502VectorHarnessSupport {
 		if (pc == null) {
 			return new byte[0];
 		}
-		Map<Integer, Integer> byAddress = new HashMap<>();
-		for (VectorCase.RamByte rb : c.initialRam()) {
-			byAddress.put(rb.address(), rb.value());
-		}
-		List<Byte> out = new ArrayList<>();
-		int addr = pc;
-		int maxInstructionLength = 8; // generously above any real 6502 encoding (max 3 bytes)
-		while (out.size() < maxInstructionLength && byAddress.containsKey(addr)) {
-			out.add((byte) (int) byAddress.get(addr));
-			addr++;
-		}
-		byte[] result = new byte[out.size()];
-		for (int i = 0; i < result.length; i++) {
-			result[i] = out.get(i);
-		}
-		return result;
+		// 8: generously above any real 6502 encoding (max 3 bytes)
+		return VectorHarnessCommon.contiguousBytes(c, pc, 8);
 	}
 
-	private static String toHexString(byte[] bytes) {
-		StringBuilder sb = new StringBuilder();
-		for (byte b : bytes) {
-			if (sb.length() > 0) {
-				sb.append(' ');
-			}
-			sb.append(String.format("%02x", b));
-		}
-		return sb.toString();
-	}
-
-	/** Same convention as {@code Spc700VectorHarnessSupport#fieldNameOf}. */
-	private static String fieldNameOf(String mismatch) {
-		String head = mismatch.split(" ", 2)[0];
-		int dot = head.indexOf('.');
-		return dot < 0 ? head : head.substring(0, dot);
-	}
-
-	/** Every {@code <hex>.json} file directly under {@code dir}, sorted by name. Reuses
-	 *  {@code Spc700VectorHarnessSupport}'s identical implementation. */
+	/** Every {@code <hex>.json} file directly under {@code dir}, sorted by name. */
 	static List<File> opcodeFilesIn(File dir) {
-		return Spc700VectorHarnessSupport.opcodeFilesIn(dir);
+		return VectorHarnessCommon.opcodeFilesIn(dir);
 	}
 }
