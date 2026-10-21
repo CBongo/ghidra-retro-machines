@@ -106,8 +106,8 @@ public class BankGapCommentProgramTest extends AbstractProgramTest {
 		int tx = program.startTransaction("annotate");
 		try {
 			return BankAnnotationAdapter.annotateOrWarn(analyzer, program, program.getListing(),
-				at, state, board, universe, via, "the caller's warning", stop, null,
-				warnDespiteKnowledge, null, "");
+				at, state, board, universe, new BankAnnotationAdapter.Annotation(via,
+					"the caller's warning", stop, null, warnDespiteKnowledge, null, ""));
 		}
 		finally {
 			program.endTransaction(tx, true);
@@ -234,9 +234,9 @@ public class BankGapCommentProgramTest extends AbstractProgramTest {
 		Marked marked;
 		try {
 			marked = BankAnnotationAdapter.annotateOrWarn(analyzer, program, program.getListing(),
-				at, BankState.fullyKnown(board.mask(), 0), board, universe, "FUN_c170",
-				"the caller's warning", ValueStop.RESTORED_BANK, null, true,
-				"Bank value is RESTORED here", "");
+				at, BankState.fullyKnown(board.mask(), 0), board, universe,
+				new BankAnnotationAdapter.Annotation("FUN_c170", "the caller's warning",
+					ValueStop.RESTORED_BANK, null, true, "Bank value is RESTORED here", ""));
 		}
 		finally {
 			program.endTransaction(tx, true);

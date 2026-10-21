@@ -233,6 +233,37 @@ final class BoardDescriptorModel {
 		}
 
 		/**
+		 * One banked window as the bank-field loops see it: its name, its
+		 * {@link BankAnnotationAdapter#modeBankKey bankUniverse key}, and the field that selects
+		 * its bank. {@code mode} is the mode-varying instance, null for a mode-invariant
+		 * computed window.
+		 */
+		record BankedWindow(String name, String universeKey, FieldSpec field,
+				ModeWindowModel mode) {}
+
+		/**
+		 * Every window that maps by a bank field: the computed windows first, then the
+		 * mode-varying instances that declare a bank field, each group in descriptor order.
+		 * Windows with no field (a fixed mode instance) are left out. Built per call; the
+		 * inputs are record components, so the view cannot go stale.
+		 */
+		List<BankedWindow> bankedWindows() {
+			List<BankedWindow> banked = new ArrayList<>();
+			for (ComputedWindowModel w : computedWindows.values()) {
+				if (w.field() != null) {
+					banked.add(new BankedWindow(w.name(), w.name(), w.field(), null));
+				}
+			}
+			for (ModeWindowModel w : modeWindows) {
+				if (w.bankField() != null) {
+					banked.add(new BankedWindow(w.name(),
+						BankAnnotationAdapter.modeBankKey(w.name(), w.modeValue()), w.bankField(), w));
+				}
+			}
+			return banked;
+		}
+
+		/**
 		 * Parses the {@code banking} and {@code windows} sections of a board descriptor into
 		 * a {@link BoardModel}. Returns {@code null} when a required section is missing or
 		 * inconsistent, in which case the caller should skip bank-state analysis (but this is

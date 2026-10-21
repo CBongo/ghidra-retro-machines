@@ -67,6 +67,7 @@ import retromachines.BankDataflowEngine.DataflowResult;
 import retromachines.BankDataflowEngine.SwitchResult;
 import retromachines.BoardDescriptorModel.BankWrap;
 import retromachines.BoardDescriptorModel.BoardModel;
+import retromachines.BoardDescriptorModel.BoardModel.BankedWindow;
 import retromachines.BoardDescriptorModel.Bounded;
 import retromachines.BoardDescriptorModel.ComputedWindowModel;
 import retromachines.BoardDescriptorModel.FieldSpec;
@@ -145,6 +146,15 @@ final class BankAnnotationAdapter {
 	}
 
 	/**
+	 * What a caller says about one switch site to {@link #annotateOrWarn}; each component is
+	 * documented there. {@code viaHelper} null for a direct switch, {@code honestDetail} null to
+	 * keep the generic honest-gap text, {@code commentSuffix} empty for none.
+	 */
+	record Annotation(String viaHelper, String warning, BankSwitchStrategy.ValueStop stop,
+			BankCommentProvenance provenance, boolean warnDespiteKnowledge, String honestDetail,
+			String commentSuffix) {}
+
+	/**
 	 * Records one recovered switch site: an EOL annotation when at least one tracked bank
 	 * bit is known, or a bookmark otherwise -- the impossible-bank diagnostic when recovery
 	 * pinned down a bank the image has no slice for ({@link #impossibleBank}), else the
@@ -208,9 +218,14 @@ final class BankAnnotationAdapter {
 	 */
 	static Marked annotateOrWarn(BoardBankAnalyzer analyzer, Program program, Listing listing,
 			Address addr, BankState state, BoardModel board,
-			Map<String, Set<Integer>> bankUniverse, String viaHelper, String warning,
-			BankSwitchStrategy.ValueStop stop, BankCommentProvenance provenance,
-			boolean warnDespiteKnowledge, String honestDetail, String commentSuffix) {
+			Map<String, Set<Integer>> bankUniverse, Annotation annotation) {
+		String viaHelper = annotation.viaHelper();
+		String warning = annotation.warning();
+		BankSwitchStrategy.ValueStop stop = annotation.stop();
+		BankCommentProvenance provenance = annotation.provenance();
+		boolean warnDespiteKnowledge = annotation.warnDespiteKnowledge();
+		String honestDetail = annotation.honestDetail();
+		String commentSuffix = annotation.commentSuffix();
 		// Before every other test, including the knownMask ones: a site that deposits nothing
 		// by design is not describable by this method's vocabulary at all. Its state is the
 		// state that flowed IN, so "is anything known" answers a question about the PREVIOUS
@@ -742,13 +757,13 @@ final class BankAnnotationAdapter {
 			}
 			int candidates = 0;
 			boolean impossibleEverywhere = true;
-			for (ModeWindowModel w : board.modeWindows()) {
-				if (w.bankField() == null || !w.bankField().name().equals(bankField.name()) ||
-					(w.modeValue() & knownModeBits) != knownMode) {
+			for (BankedWindow w : board.bankedWindows()) {
+				if (w.mode() == null || !w.field().name().equals(bankField.name()) ||
+					(w.mode().modeValue() & knownModeBits) != knownMode) {
 					continue;
 				}
 				candidates++;
-				Set<Integer> realized = bankUniverse.get(modeBankKey(w.name(), w.modeValue()));
+				Set<Integer> realized = bankUniverse.get(w.universeKey());
 				if (realized == null || realized.isEmpty() ||
 					realized.contains(canonicalBank(board.bankWrap(), realized, raw))) {
 					impossibleEverywhere = false;
@@ -770,11 +785,11 @@ final class BankAnnotationAdapter {
 	 */
 	private static boolean satisfiedByModeInvariantWindow(BoardModel board,
 			Map<String, Set<Integer>> bankUniverse, FieldSpec field, int raw) {
-		for (ComputedWindowModel w : board.computedWindows().values()) {
-			if (!w.field().name().equals(field.name())) {
+		for (BankedWindow w : board.bankedWindows()) {
+			if (w.mode() != null || !w.field().name().equals(field.name())) {
 				continue;
 			}
-			Set<Integer> realized = bankUniverse.get(w.name());
+			Set<Integer> realized = bankUniverse.get(w.universeKey());
 			if (realized != null && !realized.isEmpty() &&
 				realized.contains(canonicalBank(board.bankWrap(), realized, raw))) {
 				return true;
@@ -792,9 +807,9 @@ final class BankAnnotationAdapter {
 	 */
 	private static Iterable<FieldSpec> distinctBankFields(BoardModel board) {
 		Map<String, FieldSpec> fields = new LinkedHashMap<>();
-		for (ModeWindowModel w : board.modeWindows()) {
-			if (w.bankField() != null) {
-				fields.putIfAbsent(w.bankField().name(), w.bankField());
+		for (BankedWindow w : board.bankedWindows()) {
+			if (w.mode() != null) {
+				fields.putIfAbsent(w.field().name(), w.field());
 			}
 		}
 		return fields.values();
@@ -1163,24 +1178,11 @@ final class BankAnnotationAdapter {
 			FieldSpec field, int effective) {
 		int raw = field.valueIn(effective);
 		Integer wrapped = null;
-		for (ComputedWindowModel w : board.computedWindows().values()) {
+		for (BankedWindow w : board.bankedWindows()) {
 			if (!w.field().name().equals(field.name())) {
 				continue;
 			}
-			int c = canonicalBank(board.bankWrap(), bankUniverse.get(w.name()), raw);
-			if (c != raw) {
-				if (wrapped != null && wrapped != c) {
-					return null;
-				}
-				wrapped = c;
-			}
-		}
-		for (ModeWindowModel w : board.modeWindows()) {
-			if (w.bankField() == null || !w.bankField().name().equals(field.name())) {
-				continue;
-			}
-			int c = canonicalBank(board.bankWrap(),
-				bankUniverse.get(modeBankKey(w.name(), w.modeValue())), raw);
+			int c = canonicalBank(board.bankWrap(), bankUniverse.get(w.universeKey()), raw);
 			if (c != raw) {
 				if (wrapped != null && wrapped != c) {
 					return null;
@@ -2009,15 +2011,15 @@ final class BankAnnotationAdapter {
 	}
 
 	/**
-	 * One COMPUTED window's bank under one state: the bank the hardware would actually select
-	 * (canonicalized per {@code banking.bank_wrap}, with a placement override applied when
-	 * dataflow left the field unknown), whether that is the field's HOME value (base space is
+	 * One banked window's bank under one state (a COMPUTED window or a mode-varying INSTANCE):
+	 * the bank the hardware would actually select (canonicalized per {@code banking.bank_wrap},
+	 * with a placement override applied when dataflow left the field unknown), whether that is the field's HOME value (base space is
 	 * already correct), whether the selecting field was fully known, and whether an override was
 	 * applied (the caller needs this last one only to decide placement-override provenance).
 	 */
-	private record ComputedResolution(int bank, boolean home, boolean fullyKnown, boolean overridden) {}
+	private record WindowBank(int bank, boolean home, boolean fullyKnown, boolean overridden) {}
 
-	private static ComputedResolution resolveComputedBank(BoardModel board,
+	private static WindowBank resolveComputedBank(BoardModel board,
 			Map<String, Set<Integer>> bankUniverse, BankState state, int effective,
 			Map<String, Integer> placementOverride, ComputedWindowModel computed) {
 		FieldSpec field = computed.field();
@@ -2033,19 +2035,17 @@ final class BankAnnotationAdapter {
 			bankValue = computed.canonical(overrideBank);
 		}
 		boolean home = bankValue == computed.canonical(field.valueIn(board.initialState()));
-		return new ComputedResolution(bankValue, home, bankKnown, overridden);
+		return new WindowBank(bankValue, home, bankKnown, overridden);
 	}
 
 	/**
-	 * One memory.layouts[] mode-varying window INSTANCE's bank under one state, for an instance
-	 * that itself declares a {@code bankField} (a fixed instance has nothing to resolve here --
+	 * {@link #resolveComputedBank} for one memory.layouts[] mode-varying window INSTANCE, for an
+	 * instance that itself declares a {@code bankField} (a fixed instance has nothing to resolve here --
 	 * its only question, home mode or not, is answered by the caller directly). {@code home} is
 	 * true only when the instance's MODE is also the board's home mode: a non-home mode's "same
 	 * bank number as home" is not actually home, since a different mode is live.
 	 */
-	private record ModeBankResolution(int bank, boolean home, boolean fullyKnown, boolean overridden) {}
-
-	private static ModeBankResolution resolveModeBank(BoardModel board,
+	private static WindowBank resolveModeBank(BoardModel board,
 			Map<String, Set<Integer>> bankUniverse, BankState state, int effective, int modeValue,
 			Map<String, Integer> placementOverride, ModeWindowModel instance) {
 		int bank = instance.canonical(canonicalBank(board.bankWrap(),
@@ -2059,7 +2059,7 @@ final class BankAnnotationAdapter {
 		}
 		boolean home = modeValue == board.homeModeValue() &&
 			bank == instance.canonical(instance.bankField().valueIn(board.initialState()));
-		return new ModeBankResolution(bank, home, bankKnown, overridden);
+		return new WindowBank(bank, home, bankKnown, overridden);
 	}
 
 	private static int retargetForState(BoardBankAnalyzer analyzer, Program program,
@@ -2152,7 +2152,7 @@ final class BankAnnotationAdapter {
 					// WA000:5` on MMC3 -- whose r7 window is mode-invariant and therefore
 					// hoisted here rather than into memory.layouts[] -- was accepted by the
 					// loader, logged as active by the analyzer, and silently did nothing.
-					ComputedResolution cr = resolveComputedBank(board, bankUniverse, inState,
+					WindowBank cr = resolveComputedBank(board, bankUniverse, inState,
 						effective, placementOverride, computed);
 					if (cr.home()) {
 						// the home bank lives in base space at this offset -- default is right.
@@ -2212,7 +2212,7 @@ final class BankAnnotationAdapter {
 						// switchable bank at this site, a user placement override for this window
 						// instance takes over (flow always wins when it knows) -- see grm-hsv.3,
 						// and grm-v6o for why knowledge is all-or-nothing per field.
-						ModeBankResolution mr = resolveModeBank(board, bankUniverse, inState,
+						WindowBank mr = resolveModeBank(board, bankUniverse, inState,
 							effective, modeValue, placementOverride, instance);
 						if (mr.home()) {
 							// home mode's home bank lives in base space -- default is right.
@@ -2273,7 +2273,7 @@ final class BankAnnotationAdapter {
 		}
 		ComputedWindowModel computed = findWindow(board.computedWindows(), offset);
 		if (computed != null) {
-			ComputedResolution cr = resolveComputedBank(board, bankUniverse, state, effective,
+			WindowBank cr = resolveComputedBank(board, bankUniverse, state, effective,
 				placementOverride, computed);
 			return new OffsetResolution(
 				OverlayNaming.bankBlockName(computed.name(), cr.bank()),
@@ -2291,7 +2291,7 @@ final class BankAnnotationAdapter {
 					OverlayNaming.modeBlockName(instance.name(), modeValue),
 					modeKnown, modeValue == board.homeModeValue());
 			}
-			ModeBankResolution mr = resolveModeBank(board, bankUniverse, state, effective,
+			WindowBank mr = resolveModeBank(board, bankUniverse, state, effective,
 				modeValue, placementOverride, instance);
 			return new OffsetResolution(OverlayNaming.modeBankBlockName(
 				instance.name(), modeValue, mr.bank()),

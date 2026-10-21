@@ -671,16 +671,16 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 							board, bankUniverse, null, provenance)
 						: BankAnnotationAdapter.annotateOrWarn(this, program, listing, addr,
 							directShownState(switchResult, inState, board),
-							board, bankUniverse, null,
-							switchResult.stop() == BankSwitchStrategy.ValueStop.MULTI_VALUED_AT_MERGE
-									? multiValuedWarning(board, switchResult.arms())
-									: "Bank state becomes unknown here: mechanism write with a " +
-										"genuinely undeterminable value (value recovery could not " +
-										"pin down even one tracked bank bit -- e.g. a load of an " +
-										"unrelated address followed directly by the store, with no " +
-										"AND/ORA immediate to constrain it)",
-							directStop, provenance, false, honestDetail,
-							hintSuffix(flow, addr));
+							board, bankUniverse, new BankAnnotationAdapter.Annotation(null,
+								switchResult.stop() == BankSwitchStrategy.ValueStop.MULTI_VALUED_AT_MERGE
+										? multiValuedWarning(board, switchResult.arms())
+										: "Bank state becomes unknown here: mechanism write with a " +
+											"genuinely undeterminable value (value recovery could not " +
+											"pin down even one tracked bank bit -- e.g. a load of an " +
+											"unrelated address followed directly by the store, with no " +
+											"AND/ORA immediate to constrain it)",
+								directStop, provenance, false, honestDetail,
+								hintSuffix(flow, addr)));
 				warnings += tally(marked, addr, alreadyWarned);
 			}
 
@@ -711,8 +711,10 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 						finalMirrors, asyncEntries));
 				BankAnnotationAdapter.Marked marked = BankAnnotationAdapter.annotateOrWarn(this,
 					program, listing, addr, annotState, board, bankUniverse,
-					callSwitch.helperName(), verdict.warningText(), verdict.stop(), provenance,
-					!callSwitch.argumentResolved(), verdict.honestDetail(), hintSuffix(flow, addr));
+					new BankAnnotationAdapter.Annotation(callSwitch.helperName(),
+						verdict.warningText(), verdict.stop(), provenance,
+						!callSwitch.argumentResolved(), verdict.honestDetail(),
+						hintSuffix(flow, addr)));
 				warnings += tally(marked, addr, alreadyWarned);
 			}
 

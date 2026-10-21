@@ -445,11 +445,12 @@ public class SwitchSiteHintsProgramTest extends AbstractProgramTest {
 		NesBankingAnalyzer analyzer = new NesBankingAnalyzer();
 		inTx(program, "annotate", () -> {
 			BankAnnotationAdapter.annotateOrWarn(analyzer, program, program.getListing(),
-				addr(0xc102), state, b, Map.of(), null, "w", BankSwitchStrategy.ValueStop.RESOLVED,
-				null, false, null, SwitchSiteHints.HINT_COMMENT_SUFFIX);
+				addr(0xc102), state, b, Map.of(), new BankAnnotationAdapter.Annotation(null, "w",
+					BankSwitchStrategy.ValueStop.RESOLVED, null, false, null,
+					SwitchSiteHints.HINT_COMMENT_SUFFIX));
 			BankAnnotationAdapter.annotateOrWarn(analyzer, program, program.getListing(),
-				addr(0xc105), state, b, Map.of(), null, "w", BankSwitchStrategy.ValueStop.RESOLVED,
-				null, false, null, "");
+				addr(0xc105), state, b, Map.of(), new BankAnnotationAdapter.Annotation(null, "w",
+					BankSwitchStrategy.ValueStop.RESOLVED, null, false, null, ""));
 		});
 		String hinted = program.getListing().getComment(
 			ghidra.program.model.listing.CommentType.EOL, addr(0xc102));

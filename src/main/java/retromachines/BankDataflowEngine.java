@@ -55,6 +55,7 @@ import static retromachines.HelperDiscovery.helperLabel;
 
 import retromachines.BankStrategyRegistry.ConfiguredMechanism;
 import retromachines.BoardDescriptorModel.BoardModel;
+import retromachines.BoardDescriptorModel.BoardModel.BankedWindow;
 import retromachines.BoardDescriptorModel.ComputedWindowModel;
 import retromachines.BoardDescriptorModel.FieldSpec;
 import retromachines.BoardDescriptorModel.ModeWindowModel;
@@ -1514,24 +1515,13 @@ final class BankDataflowEngine {
 	 * field passes, exactly as before.
 	 */
 	private static boolean isBankField(BoardModel board, FieldSpec field) {
-		boolean anyBanked = false;
-		for (ComputedWindowModel w : board.computedWindows().values()) {
-			if (w.field() != null) {
-				anyBanked = true;
-				if (w.field().name().equals(field.name())) {
-					return true;
-				}
+		List<BankedWindow> banked = board.bankedWindows();
+		for (BankedWindow w : banked) {
+			if (w.field().name().equals(field.name())) {
+				return true;
 			}
 		}
-		for (ModeWindowModel w : board.modeWindows()) {
-			if (w.bankField() != null) {
-				anyBanked = true;
-				if (w.bankField().name().equals(field.name())) {
-					return true;
-				}
-			}
-		}
-		return !anyBanked;
+		return banked.isEmpty();
 	}
 
 	/** A recovered field value for a hint diagnostic: the bank number, or what little is known. */
