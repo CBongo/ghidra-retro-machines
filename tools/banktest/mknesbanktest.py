@@ -1970,6 +1970,64 @@ def make_prg_mmc3():
     return bytes(prg)
 
 
+def make_prg_mmc3_mode(steps):
+    """The known-layout-mode fixtures (bead grm-70ih): nesmmc3modetest / nesmmc3splittest.
+
+    Each step is (select_byte, data_byte, jsr_target): `LDA #select / STA $8000` is a literal
+    bank-select write -- exactly the site shape NesRomLoader.scanImageMode counts, with bit 6
+    of select_byte the vote -- then `LDA #data / STA $8001` latches the bank (data_byte None
+    skips it, for a CHR select), then an optional JSR (jsr_target None skips it). Everything
+    runs inside the fixed WE000 window like make_prg_mmc3, and every JSR'd bank has an RTS at
+    its offset 0, so each target is a real routine in the overlay the loader names for it.
+    """
+    prg = bytearray([0x00] * MMC3_PRG_SIZE)
+    _bank_markers(prg, MMC3_BANKS, MMC3_BANK_SIZE)
+    bank7_base = 7 * MMC3_BANK_SIZE
+    assert bank7_base == 0xE000
+
+    def put(cpu_addr, data):
+        off = bank7_base + (cpu_addr - 0xE000)
+        prg[off:off + len(data)] = bytes(data)
+    asm = _Asm(prg, 0xE000, bank7_base)
+    asm.org(0xE000)
+    for select, data, target in steps:
+        asm.lda_imm(select)
+        asm.sta_abs(0x8000)  # the voting site: bit 6 of `select`
+        if data is not None:
+            asm.lda_imm(data)
+            asm.sta_abs(0x8001)
+            if select & 7 in (6, 7):  # a PRG register (R6/R7); CHR data is not a bank
+                prg[data * MMC3_BANK_SIZE] = 0x60  # RTS at offset 0 of the bank
+        if target is not None:
+            asm.jsr(target)
+    idle = asm.label()
+    asm.jmp(idle)
+    handler = asm.label()
+    asm.rti()
+    _put_vectors(put, nmi=handler, reset=0xE000, irq=handler)
+    return bytes(prg), handler
+
+
+# Unanimous: five literal select writes, every one with bit 6 SET -> mode resolves to 1.
+MMC3_MODE_STEPS = [
+    (0x46, 2, 0xC000),   # r6=2, mode 1: WC000 is the switchable window -> WC000_B2
+    (0x47, 3, 0xA000),   # r7=3: WA000 is mode-invariant -> WA000_B3
+    (0x40, 0xAA, None),  # select 0 (CHR) data write, untracked
+    (0x46, 4, 0xC000),   # r6=4 -> WC000_B4
+    (0x46, 5, 0xC000),   # r6=5 -> WC000_B5
+]
+
+# Split vote: five literal select writes, FOUR with bit 6 clear and ONE set. A majority rule
+# would pick mode 0; the loader must instead decline (not unanimous) and keep every mode.
+MMC3_SPLIT_STEPS = [
+    (0x06, 2, 0x8000),   # r6=2, mode 0 -> W8000_M0_B2
+    (0x07, 3, 0xA000),   # r7=3 -> WA000_B3 (invariant, no qualifier either way)
+    (0x06, 4, 0x8000),   # r6=4 -> W8000_M0_B4
+    (0x00, 0xAA, None),  # select 0 (CHR) data write, untracked
+    (0x46, 5, 0xC000),   # the lone mode-1 vote: r6=5 -> WC000_M1_B5
+]
+
+
 def make_prg_mmc3_2():
     """The requires-on-entry / function-summary fixture (bead grm-6a7.2, design D, M3
     scope) for SelectDataBankSwitchStrategy, extended by bead grm-snu to exercise the
@@ -5005,6 +5063,36 @@ def main():
     _assert_vectors(prgm3b, "nesmmc3test2", handler=0xE021, reset=0xE000)
 
     _write_rom(outdir, "nesmmc3test2.nes", prgm3b, mapper=MAPPER_MMC3)
+
+    for fname, steps in (("nesmmc3modetest", MMC3_MODE_STEPS),
+                         ("nesmmc3splittest", MMC3_SPLIT_STEPS)):
+        prgmm, handler = make_prg_mmc3_mode(steps)
+        # Byte-level self-check (grm-70ih): re-derive every instruction from `steps`.
+        assert len(prgmm) == MMC3_PRG_SIZE
+        pc = 0xE000
+        for select, data, target in steps:
+            assert prgmm[pc] == 0xA9 and prgmm[pc + 1] == select
+            assert prgmm[pc + 2] == 0x8D
+            assert (prgmm[pc + 3] | (prgmm[pc + 4] << 8)) == 0x8000
+            pc += 5
+            if data is not None:
+                assert prgmm[pc] == 0xA9 and prgmm[pc + 1] == data
+                assert prgmm[pc + 2] == 0x8D
+                assert (prgmm[pc + 3] | (prgmm[pc + 4] << 8)) == 0x8001
+                assert (select & 7 not in (6, 7)) or prgmm[data * MMC3_BANK_SIZE] == 0x60
+                pc += 5
+            if target is not None:
+                assert prgmm[pc] == 0x20
+                assert (prgmm[pc + 1] | (prgmm[pc + 2] << 8)) == target
+                pc += 3
+        assert prgmm[pc] == 0x4C and (prgmm[pc + 1] | (prgmm[pc + 2] << 8)) == pc
+        assert handler == pc + 3 and prgmm[handler] == 0x40
+        votes = [(sel >> 6) & 1 for sel, _, _ in steps]
+        assert len(votes) >= 4  # NesRomLoader.MIN_MODE_EVIDENCE_SITES
+        assert (set(votes) == {1}) == (fname == "nesmmc3modetest")
+        assert (len(set(votes)) == 2) == (fname == "nesmmc3splittest")
+        _assert_vectors(prgmm, fname, handler=handler, reset=0xE000)
+        _write_rom(outdir, fname + ".nes", prgmm, mapper=MAPPER_MMC3)
 
     prgs, labels = make_prg_serial()
 

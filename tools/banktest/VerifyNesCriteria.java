@@ -1504,6 +1504,158 @@ public class VerifyNesCriteria extends VerifyBase {
 	}
 
 	// ------------------------------------------------------------------
+	// nesmmc3modetest / nesmmc3splittest criteria (known-layout-mode suppression, grm-70ih)
+	// ------------------------------------------------------------------
+
+	private static final String LAYOUT_MODE_PROPERTY = "Retro Machines.Layout Mode";
+
+	/** Names of every memory block, sorted. */
+	private java.util.List<String> blockNameList() {
+		java.util.List<String> out = new java.util.ArrayList<>();
+		for (MemoryBlock b : currentProgram.getMemory().getBlocks()) {
+			out.add(b.getName());
+		}
+		java.util.Collections.sort(out);
+		return out;
+	}
+
+	/** Names of every address space whose name carries a mode qualifier ("_M<digit>"). */
+	private String modeQualifiedSpaces() {
+		StringBuilder sb = new StringBuilder();
+		for (AddressSpace sp : currentProgram.getAddressFactory().getAllAddressSpaces()) {
+			if (sp.getName().matches(".*_M[0-9].*")) {
+				sb.append(' ').append(sp.getName());
+			}
+		}
+		return sb.toString();
+	}
+
+	private String layoutModeProperty() {
+		return currentProgram.getOptions(Program.PROGRAM_INFO).getString(LAYOUT_MODE_PROPERTY,
+			null);
+	}
+
+	/**
+	 * Unanimous vote: five literal select writes, all with bit 6 set. NesRomLoader.scanImageMode
+	 * resolves mode 1, WindowPlanner drops the mode-0 instances and collapses mode 1's into
+	 * the invariant set, so no name carries an _M qualifier.
+	 */
+	protected void checkNesMmc3Modetest() {
+		java.util.List<String> names = blockNameList();
+
+		String qualifiedBlocks = "";
+		for (String n : names) {
+			if (n.matches(".*_M[0-9].*")) {
+				qualifiedBlocks += " " + n;
+			}
+		}
+		criterion("MODE1:no-mode-qualifier",
+			qualifiedBlocks.isEmpty() && modeQualifiedSpaces().isEmpty(),
+			"no _M-qualified block or address space (blocks:" + qualifiedBlocks + " spaces:" +
+				modeQualifiedSpaces() + ")");
+
+		// Mode 0's window instances: W8000 maps PRG[r6] ONLY in mode 0, so any W8000 overlay
+		// (qualified or not) means a mode-0 instance survived. Mode 1's W8000 is the fixed
+		// second-last bank and has no overlays at all.
+		String w8000Overlays = "";
+		for (String n : names) {
+			if (n.startsWith("W8000_")) {
+				w8000Overlays += " " + n;
+			}
+		}
+		criterion("MODE2:no-mode0-only-window", w8000Overlays.isEmpty(),
+			"no W8000_* overlay exists (mode 0's switchable W8000 was suppressed):" +
+				(w8000Overlays.isEmpty() ? " none" : w8000Overlays));
+
+		String missing = "";
+		for (String want : new String[] { "WC000", "WC000_B2", "WC000_B4", "WC000_B5", "W8000",
+			"WA000", "WA000_B3", "WE000" }) {
+			if (!names.contains(want)) {
+				missing += " " + want;
+			}
+		}
+		criterion("MODE3:unqualified-mode1-overlays", missing.isEmpty(),
+			"unqualified mode-1 blocks present (missing:" + (missing.isEmpty() ? " none" : missing) +
+				")");
+
+		// 8 base blocks (APU_IO PPU_REGS PRG_RAM RAM W8000 WA000 WC000 WE000) + 7 WA000_B*
+		// (bank 1 is the home) + 7 WC000_B* (bank 0 is the home) = 22. The unsuppressed board
+		// has 31 (see MODE of nesmmc3splittest), so a silent re-enable fails here.
+		int total = currentProgram.getMemory().getBlocks().length;
+		criterion("MODE4:blocks-total", total == 22, "blocks.total = " + total + " (expect 22)");
+
+		String mode = layoutModeProperty();
+		criterion("MODE5:layout-mode-property", "1".equals(mode),
+			LAYOUT_MODE_PROPERTY + " = " + mode + " (expect 1)");
+
+		// The analyzer must have planned with the same mode and found the renamed spaces.
+		Reference r = findOverlayRef(findFirstJsr(0xC000), "WC000_B2", 0xC000);
+		criterionPrimaryCall("MODE6:ref-WC000_B2", r,
+			"JSR $C000 (mode1/r6=2) retargeted to unqualified WC000_B2, primary: ");
+		r = findOverlayRef(findFirstJsr(0xA000), "WA000_B3", 0xA000);
+		criterionPrimaryCall("MODE6:ref-WA000_B3", r,
+			"JSR $A000 (r7=3) retargeted to WA000_B3, primary: ");
+		criterion("MODE7:instr-WC000_B2", hasInstructionAt("WC000_B2", 0xC000),
+			"instruction exists at WC000_B2::C000");
+	}
+
+	/**
+	 * Split vote: five literal select writes, four with bit 6 clear and one set. The loader must
+	 * DECLINE (not unanimous -- and not by majority either), so nothing is suppressed and every
+	 * mode keeps its mode-qualified names. The decline path of scanImageMode.
+	 */
+	protected void checkNesMmc3Splittest() {
+		java.util.List<String> names = blockNameList();
+
+		String missing = "";
+		for (String want : new String[] { "W8000_M0_B2", "W8000_M0_B4", "WC000_M1_B5",
+			"W8000_M1", "WC000_M1_B0", "WA000_B3" }) {
+			if (!names.contains(want)) {
+				missing += " " + want;
+			}
+		}
+		criterion("SPLIT1:all-modes-kept", missing.isEmpty(),
+			"both modes' qualified blocks present (missing:" +
+				(missing.isEmpty() ? " none" : missing) + ")");
+
+		// Specifically the mode the majority (4 of 5) would have picked must not have been
+		// collapsed: its switchable window keeps the _M0_ qualifier.
+		int m0 = 0;
+		int m1 = 0;
+		for (String n : names) {
+			m0 += n.startsWith("W8000_M0_") ? 1 : 0;
+			m1 += n.startsWith("WC000_M1_") ? 1 : 0;
+		}
+		criterion("SPLIT2:qualified-counts", m0 == 7 && m1 == 8,
+			"W8000_M0_* = " + m0 + " (expect 7), WC000_M1_* = " + m1 + " (expect 8)");
+
+		int total = currentProgram.getMemory().getBlocks().length;
+		criterion("SPLIT3:blocks-total", total == 31,
+			"blocks.total = " + total + " (expect 31: nothing suppressed)");
+
+		String mode = layoutModeProperty();
+		criterion("SPLIT4:no-layout-mode-property", mode == null || mode.isBlank(),
+			LAYOUT_MODE_PROPERTY + " = " + mode + " (expect absent)");
+
+		Reference r = findOverlayRef(findFirstJsr(0x8000), "W8000_M0_B2", 0x8000);
+		criterionPrimaryCall("SPLIT5:ref-W8000_M0_B2", r,
+			"JSR $8000 (mode0/r6=2) retargeted to W8000_M0_B2, primary: ");
+		r = findOverlayRef(findFirstJsr(0xC000), "WC000_M1_B5", 0xC000);
+		criterionPrimaryCall("SPLIT5:ref-WC000_M1_B5", r,
+			"JSR $C000 (mode1/r6=5) retargeted to WC000_M1_B5, primary: ");
+	}
+
+	/** CPU address (in WE000) of the first JSR to {@code target}, or -1. */
+	private long findFirstJsr(long target) {
+		for (long a = 0xE000; a < 0xE100; a++) {
+			if (readByteAt(a) == 0x20 && (readByteAt(a + 1) | (readByteAt(a + 2) << 8)) == target) {
+				return a;
+			}
+		}
+		return -1;
+	}
+
+	// ------------------------------------------------------------------
 	// nesmmc3test2.nes criteria (function-level requires-on-entry, bead grm-6a7.2)
 	// ------------------------------------------------------------------
 

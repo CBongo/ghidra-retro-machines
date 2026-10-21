@@ -1,0 +1,63 @@
+IDENTITY prg:1ed7d768c501125be22b4922552d8460d9a077e518d2bbe421b156d791cf78ea file:93b383a5709f1566228d765b5ec557cf2b427af8655cf7e4187dd7e501e3b31a
+BLOCK APU_IO 4000-401f overlay=false
+BLOCK PPU_REGS 2000-2007 overlay=false
+BLOCK PRG_RAM 6000-7fff overlay=false
+BLOCK RAM 0000-07ff overlay=false
+BLOCK W8000 8000-9fff overlay=false
+BLOCK W8000_M0_B1 8000-9fff overlay=true
+BLOCK W8000_M0_B2 8000-9fff overlay=true
+BLOCK W8000_M0_B3 8000-9fff overlay=true
+BLOCK W8000_M0_B4 8000-9fff overlay=true
+BLOCK W8000_M0_B5 8000-9fff overlay=true
+BLOCK W8000_M0_B6 8000-9fff overlay=true
+BLOCK W8000_M0_B7 8000-9fff overlay=true
+BLOCK W8000_M1 8000-9fff overlay=true
+BLOCK WA000 a000-bfff overlay=false
+BLOCK WA000_B0 a000-bfff overlay=true
+BLOCK WA000_B2 a000-bfff overlay=true
+BLOCK WA000_B3 a000-bfff overlay=true
+BLOCK WA000_B4 a000-bfff overlay=true
+BLOCK WA000_B5 a000-bfff overlay=true
+BLOCK WA000_B6 a000-bfff overlay=true
+BLOCK WA000_B7 a000-bfff overlay=true
+BLOCK WC000 c000-dfff overlay=false
+BLOCK WC000_M1_B0 c000-dfff overlay=true
+BLOCK WC000_M1_B1 c000-dfff overlay=true
+BLOCK WC000_M1_B2 c000-dfff overlay=true
+BLOCK WC000_M1_B3 c000-dfff overlay=true
+BLOCK WC000_M1_B4 c000-dfff overlay=true
+BLOCK WC000_M1_B5 c000-dfff overlay=true
+BLOCK WC000_M1_B6 c000-dfff overlay=true
+BLOCK WC000_M1_B7 c000-dfff overlay=true
+BLOCK WE000 e000-ffff overlay=false
+COMMENT e002 bank -> select=6,prg_mode=0,r6=0,r7=1 [switch-value flow]
+COMMENT e007 bank -> select=6,prg_mode=0,r6=2,r7=1 [switch-value flow]
+COMMENT e00f bank -> select=7,prg_mode=0,r6=2,r7=1 [switch-value flow]
+COMMENT e014 bank -> select=7,prg_mode=0,r6=2,r7=3 [switch-value flow]
+COMMENT e01c bank -> select=6,prg_mode=0,r6=2,r7=3 [switch-value flow]
+COMMENT e021 bank -> select=6,prg_mode=0,r6=4,r7=3 [switch-value flow]
+COMMENT e029 bank -> select=0,prg_mode=0,r6=4,r7=3 [switch-value flow]
+COMMENT e033 bank -> select=6,prg_mode=1,r6=4,r7=3 [switch-value flow]
+COMMENT e038 bank -> select=6,prg_mode=1,r6=5,r7=3 [switch-value flow]
+REF e00a -> W8000_M0_B2::8000 UNCONDITIONAL_CALL primary=true
+REF e017 -> WA000_B3::a000 UNCONDITIONAL_CALL primary=true
+REF e024 -> W8000_M0_B4::8000 UNCONDITIONAL_CALL primary=true
+REF e03b -> WC000_M1_B5::c000 UNCONDITIONAL_CALL primary=true
+SYMBOL 2000 PPUCTRL IMPORTED primary=true
+SYMBOL 2001 PPUMASK IMPORTED primary=true
+SYMBOL 2002 PPUSTATUS IMPORTED primary=true
+SYMBOL 2003 OAMADDR IMPORTED primary=true
+SYMBOL 2004 OAMDATA IMPORTED primary=true
+SYMBOL 2005 PPUSCROLL IMPORTED primary=true
+SYMBOL 2006 PPUADDR IMPORTED primary=true
+SYMBOL 2007 PPUDATA IMPORTED primary=true
+SYMBOL 4014 OAMDMA IMPORTED primary=true
+SYMBOL 4015 SND_CHN IMPORTED primary=true
+SYMBOL 4016 JOY1 IMPORTED primary=true
+SYMBOL 4017 JOY2 IMPORTED primary=true
+SYMBOL e000 RESET IMPORTED primary=true
+SYMBOL e041 IRQ IMPORTED primary=false
+SYMBOL e041 NMI IMPORTED primary=true
+SYMBOL fffa NMI_VEC IMPORTED primary=true
+SYMBOL fffc RESET_VEC IMPORTED primary=true
+SYMBOL fffe IRQ_VEC IMPORTED primary=true

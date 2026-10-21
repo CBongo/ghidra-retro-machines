@@ -1348,6 +1348,9 @@ if selected nes-banking; then
 	run_one nesmodetest "$WORK/nes/nesmodetest.nes" NesRomLoader
 	run_one nesmmc3test "$WORK/nes/nesmmc3test.nes" NesRomLoader
 	run_one nesmmc3test2 "$WORK/nes/nesmmc3test2.nes" NesRomLoader
+	# grm-70ih: known-layout-mode window suppression (unanimous) and its decline (split vote)
+	run_one nesmmc3modetest "$WORK/nes/nesmmc3modetest.nes" NesRomLoader
+	run_one nesmmc3splittest "$WORK/nes/nesmmc3splittest.nes" NesRomLoader
 	run_one nesserialtest "$WORK/nes/nesserialtest.nes" NesRomLoader
 	run_one nesmmc1test "$WORK/nes/nesmmc1test.nes" NesRomLoader
 
