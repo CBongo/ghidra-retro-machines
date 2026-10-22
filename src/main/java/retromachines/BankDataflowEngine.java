@@ -813,7 +813,12 @@ final class BankDataflowEngine {
 				}
 				return acc;
 			};
-			CallEffect callEffect = helper.constState() != null
+			// grm-bcxx: a restore stub's constState knows NOTHING, so the call overwrites the
+			// helper's bits with unknown and carries the cell to the RESTORED_BANK note.
+			CallEffect callEffect = helper.restoreCell() != null
+					? new CallEffect(helper.constState(), helper.effectMask(), false, false, false,
+						helper.restoreCell())
+					: helper.constState() != null
 					? new CallEffect(helper.constState(), helper.effectMask())
 					: recoverCall(instr, helper, outState, RegisterEnv.NONE, oracle);
 			callEffect = applyBracketClaim(callEffect, addr, bracketClaims, oracle);

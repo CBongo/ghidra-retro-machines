@@ -713,7 +713,8 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				CallVerdict verdict = classifyCallSite(callSwitch, flow.hintNotes().get(addr),
 					() -> multiValuedWarning(board, callSwitch.arms()),
 					() -> callerRestoreDetail(program, listing, finalFlow, addr, callSwitch,
-						finalMirrors, asyncEntries));
+						finalMirrors, asyncEntries),
+					restoreStubSkippable(program, instr, helpers, callSwitch));
 				BankAnnotationAdapter.Marked marked = BankAnnotationAdapter.annotateOrWarn(this,
 					program, listing, addr, annotState, board, bankUniverse,
 					new BankAnnotationAdapter.Annotation(callSwitch.helperName(),
@@ -1172,6 +1173,19 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	}
 
 	/**
+	 * Whether the helper this call reaches is a restore stub (grm-bcxx), and if so whether it is
+	 * skippable; null when the call has no restore cell or its helper is not a stub.
+	 */
+	private static Boolean restoreStubSkippable(Program program, Instruction instr,
+			Map<Function, HelperModel> helpers, CallSwitch callSwitch) {
+		if (callSwitch.restoreCell() == null) {
+			return null;
+		}
+		HelperModel helper = HelperDiscovery.calledHelper(program, instr, helpers);
+		return helper == null || helper.restoreCell() == null ? null : helper.restoreSkippable();
+	}
+
+	/**
 	 * Classifies one non-forked call-switch site (the stop reason, WARNING text and honest detail
 	 * Phase 2 hands {@link BankAnnotationAdapter#annotateOrWarn}). Pure: everything it needs from
 	 * the program arrives as arguments. {@code hintNote} is the site's
@@ -1182,6 +1196,21 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 */
 	static CallVerdict classifyCallSite(CallSwitch callSwitch, SwitchSiteHints.HintNote hintNote,
 			Supplier<String> multiValuedText, Supplier<String> callerRestoreDetail) {
+		return classifyCallSite(callSwitch, hintNote, multiValuedText, callerRestoreDetail, null);
+	}
+
+	/**
+	 * As above, for a call whose helper may be a RESTORE STUB (bead grm-bcxx,
+	 * {@link HelperModel#restoreStub}): {@code restoreStubSkippable} is null for any other helper
+	 * (the generic RESTORED_BANK text, unchanged, since other rows' goldens carry it), else whether
+	 * the stub reaches the switch by a conditional branch. A stub's honest detail differs from the
+	 * generic one because it does not reload-and-commit unconditionally. Carrying this as a
+	 * parameter, resolved by the caller from the helpers map, keeps {@link CallSwitch} and the
+	 * engine's call tally untouched.
+	 */
+	static CallVerdict classifyCallSite(CallSwitch callSwitch, SwitchSiteHints.HintNote hintNote,
+			Supplier<String> multiValuedText, Supplier<String> callerRestoreDetail,
+			Boolean restoreStubSkippable) {
 		// ANALYZER_LIMIT, unconditionally, still (bead grm-jqt0's final ruling --
 		// superseding this method's own first cut at the bead, which is why this
 		// paragraph is worth reading rather than skimming past). This IS the call site
@@ -1283,6 +1312,20 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			// a shadow_commits hint in RESTORE mode names its own cells and reason
 			callStop = BankSwitchStrategy.ValueStop.RESTORED_BANK;
 			honestDetail = hintNote.honestDetail();
+		}
+		else if (callSwitch.restoreCell() != null && !callSwitch.argumentResolved() &&
+			restoreStubSkippable != null) {
+			callStop = BankSwitchStrategy.ValueStop.RESTORED_BANK;
+			honestDetail = "Bank value is RESTORED here, not resolved: this call's helper " +
+				callSwitch.helperName() + " is a restore stub -- it loads the bank from " +
+				callSwitch.restoreCell() + ", a writable RAM cell, and " +
+				(restoreStubSkippable
+						? "branches to the helper's switch when it is nonzero (when it is zero the " +
+							"switch is skipped and the bank is left as it was)"
+						: "jumps to the helper's switch") +
+				". The bank after this call is therefore whatever was last saved at " +
+				callSwitch.restoreCell() + (restoreStubSkippable ? ", or unchanged" : "") +
+				" -- a property of the game, not a gap in analysis.";
 		}
 		else if (callSwitch.restoreCell() != null && !callSwitch.argumentResolved()) {
 			callStop = BankSwitchStrategy.ValueStop.RESTORED_BANK;

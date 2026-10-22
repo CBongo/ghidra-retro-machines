@@ -36,6 +36,7 @@ import ghidra.program.model.listing.FunctionManager;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
+import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.symbol.FlowType;
 import ghidra.program.model.symbol.Symbol;
 
@@ -1269,6 +1270,10 @@ final class HelperDiscovery {
 			}
 			StubLanding landing = constantStubLanding(program, stub.getEntryPoint(), switchResults);
 			if (landing == null) {
+				HelperModel restore = restoreStub(program, stub, helpers, switchResults);
+				if (restore != null) {
+					result.put(stub, restore);
+				}
 				continue;
 			}
 			Function owner = program.getFunctionManager().getFunctionContaining(landing.site());
@@ -1297,6 +1302,131 @@ final class HelperDiscovery {
 				placement.position(deposit.value()), wrapped.effectMask()));
 		}
 		return result;
+	}
+
+	/**
+	 * A RESTORE STUB (bead grm-bcxx): a function whose entry loads the wrapped helper's argument
+	 * register from a writable RAM cell and goes straight to that helper's mechanism write --
+	 * Punch-Out's {@code aa39  LDA $0E / BNE aa19}, which restores the "home bank" an earlier
+	 * constant stub saved at {@code $0E}. Returns its model, or {@code null} to decline.
+	 * <p>
+	 * <pre>
+	 *   aa39  LDA $0E          ; plain, non-indexed load of the helper's argument register
+	 *   aa3b  BNE aa19         ; (a) taken -> the shared write; or  (b) JMP aa19 / fall into it
+	 *   aa3d  ...              ; BNE not taken: the cell was zero
+	 * </pre>
+	 * The cell's value cannot be resolved here (it depends on which stub ran earlier, in another
+	 * function), so the model is {@link HelperModel#restoreStub}: the bank bits are UNKNOWN after
+	 * the call and the call is reported as an honest RESTORED_BANK note, not a warning.
+	 * <p>
+	 * The load is tested like {@link HelperArgumentRecovery#restoreSourceCell}: a plain absolute
+	 * load ({@link HelperArgumentRecovery#argumentReloadSource}) whose cell is writable RAM and
+	 * not on the stack page. The flags after the load are unknown, so the {@code BNE} is the ONE
+	 * undecided branch the stub walk admits, and only in this position. {@code BEQ} and every
+	 * other shape decline; so does a branch/jump whose target is not a recognized write of a
+	 * plain single-site helper (same admission conditions as the constant path).
+	 * <p>
+	 * <b>The not-taken path (cell == 0) must be inert.</b> It falls through to the next
+	 * instruction, and the model claims the bank is "whatever was saved, or unchanged", which is
+	 * only true if that continuation neither writes a mechanism nor calls a bank-switch helper.
+	 * So the function containing the fall-through address is checked: none of its instructions
+	 * is a recognized mechanism write, and none of its flows lands on a known helper's entry. A
+	 * fall-through with no instruction or function declines.
+	 */
+	private static HelperModel restoreStub(Program program, Function stub,
+			Map<Function, HelperModel> helpers, Map<Address, SwitchResult> switchResults) {
+		Listing listing = program.getListing();
+		Instruction load = listing.getInstructionAt(stub.getEntryPoint());
+		if (load == null || load.isFallThroughOverridden()) {
+			return null;
+		}
+		String mnem = load.getMnemonicString().toUpperCase();
+		if (mnem.length() != 3 || !mnem.startsWith("LD") || "AXY".indexOf(mnem.charAt(2)) < 0) {
+			return null;
+		}
+		char reg = mnem.charAt(2);
+		Address cell = HelperArgumentRecovery.argumentReloadSource(load, reg);
+		if (cell == null || StackFloor.mayAliasStack(program, cell)) {
+			return null;
+		}
+		MemoryBlock block = program.getMemory().getBlock(cell);
+		if (block == null || !block.isWrite()) {
+			return null;
+		}
+		Address afterLoad = load.getFallThrough();
+		Instruction branch = afterLoad == null ? null : listing.getInstructionAt(afterLoad);
+		if (branch == null) {
+			return null;
+		}
+		FlowType flow = branch.getFlowType();
+		String bm = branch.getMnemonicString().toUpperCase();
+		Address landingSite;
+		boolean skippable;
+		if (switchResults.containsKey(afterLoad)) {
+			landingSite = afterLoad; // falls straight into the write
+			skippable = false;
+		}
+		else if (bm.equals("BNE") && flow.isConditional() && !flow.isComputed() &&
+			branch.getFlows().length == 1 && !branch.isFallThroughOverridden()) {
+			landingSite = branch.getFlows()[0];
+			skippable = true;
+			if (!fallThroughIsInert(program, branch.getFallThrough(), helpers, switchResults)) {
+				return null;
+			}
+		}
+		else if (bm.equals("JMP") && flow.isJump() && flow.isUnConditional() &&
+			!flow.isComputed() && branch.getFlows().length == 1) {
+			landingSite = branch.getFlows()[0];
+			skippable = false;
+		}
+		else {
+			return null;
+		}
+		if (!switchResults.containsKey(landingSite)) {
+			return null;
+		}
+		Function owner = program.getFunctionManager().getFunctionContaining(landingSite);
+		HelperModel wrapped = owner == null ? null : helpers.get(owner);
+		if (wrapped == null || wrapped.relay() != null || wrapped.strategy() == null ||
+			wrapped.argReg() == null || wrapped.constState() != null ||
+			wrapped.sites() == null || wrapped.sites().size() != 1 ||
+			!landingSite.equals(wrapped.switchSite()) || wrapped.argReg() != reg) {
+			return null;
+		}
+		return HelperModel.restoreStub(stub, cell, wrapped.effectMask(), skippable);
+	}
+
+	/**
+	 * Whether the code control reaches when a restore stub's {@code BNE} is NOT taken is inert
+	 * for bank state: the function containing {@code fallThrough} writes no recognized mechanism
+	 * and no flow of it lands on a known helper's entry. See {@link #restoreStub}.
+	 */
+	private static boolean fallThroughIsInert(Program program, Address fallThrough,
+			Map<Function, HelperModel> helpers, Map<Address, SwitchResult> switchResults) {
+		if (fallThrough == null) {
+			return false;
+		}
+		Listing listing = program.getListing();
+		FunctionManager fm = program.getFunctionManager();
+		if (listing.getInstructionAt(fallThrough) == null) {
+			return false;
+		}
+		Function f = fm.getFunctionContaining(fallThrough);
+		if (f == null) {
+			return false;
+		}
+		for (Instruction instr : listing.getInstructions(f.getBody(), true)) {
+			if (switchResults.containsKey(instr.getMinAddress())) {
+				return false;
+			}
+			for (Address target : instr.getFlows()) {
+				Function callee = fm.getFunctionAt(target);
+				if (callee != null && helpers.containsKey(callee)) {
+					return false;
+				}
+			}
+		}
+		return true;
 	}
 
 	private static PartialByte regByte(Integer value) {
@@ -1720,7 +1850,8 @@ final class HelperDiscovery {
 	// change: every other member keeps its own visibility.
 	record HelperModel(Function function, Address entry, BankState constState,
 			Character argReg, int effectMask, int lsb, BankSwitchStrategy strategy,
-			Address switchSite, Address firstSite, Relay relay, List<Address> sites) {
+			Address switchSite, Address firstSite, Relay relay, List<Address> sites,
+			Address restoreCell, boolean restoreSkippable) {
 
 		/**
 		 * Normalizes {@code sites} to an immutable ascending list, defaulting a null or empty
@@ -1812,6 +1943,34 @@ final class HelperDiscovery {
 		}
 
 		/**
+		 * This record as it was before bead grm-bcxx added {@code restoreCell} and
+		 * {@code restoreSkippable}: not a restore stub.
+		 */
+		HelperModel(Function function, Address entry, BankState constState, Character argReg,
+				int effectMask, int lsb, BankSwitchStrategy strategy, Address switchSite,
+				Address firstSite, Relay relay, List<Address> sites) {
+			this(function, entry, constState, argReg, effectMask, lsb, strategy, switchSite,
+				firstSite, relay, sites, null, false);
+		}
+
+		/**
+		 * A RESTORE STUB (bead grm-bcxx): a function that reloads the wrapped helper's argument
+		 * register from the RAM cell {@code cell} and enters that helper's mechanism write, so
+		 * the bank after a call is whatever the game last saved at {@code cell}. The composite's
+		 * {@code constState} is a state with NOTHING known: the engine overwrites the helper's
+		 * {@code effectMask} bits with unknown rather than leaving the previous bank in place,
+		 * and {@code restoreCell} routes the call to the honest RESTORED_BANK note.
+		 *
+		 * @param skippable true when the stub reaches the write by a conditional branch, so a
+		 *        zero cell skips the switch and leaves the bank as it was
+		 */
+		static HelperModel restoreStub(Function stub, Address cell, int effectMask,
+				boolean skippable) {
+			return new HelperModel(stub, stub.getEntryPoint(), BankState.unknown(), null,
+				effectMask, 0, null, null, null, null, null, cell, skippable);
+		}
+
+		/**
 		 * This helper re-keyed to a mid-body {@code entry}, with {@code constState} dropped.
 		 * <p>
 		 * Dropping the constant is the one thing that cannot be reused. A constant is a claim
@@ -1824,8 +1983,10 @@ final class HelperDiscovery {
 		 * body's entire recognized site set.
 		 */
 		HelperModel atMidBodyEntry(Address midBody) {
+			// restoreCell is dropped with the constant: a mid-body entry skips the reload that
+			// makes the restore claim true (and the engine's restore branch needs a constState)
 			return new HelperModel(function, midBody, null, argReg, effectMask, lsb, strategy,
-				switchSite, firstSite, relay, sites);
+				switchSite, firstSite, relay, sites, null, false);
 		}
 
 		/**
@@ -1863,7 +2024,8 @@ final class HelperDiscovery {
 		 */
 		HelperModel atFallThroughWrapper(Function wrapper) {
 			return new HelperModel(wrapper, wrapper.getEntryPoint(), constState, argReg,
-				effectMask, lsb, strategy, switchSite, firstSite, relay, sites);
+				effectMask, lsb, strategy, switchSite, firstSite, relay, sites, restoreCell,
+				restoreSkippable);
 		}
 
 		/**
@@ -1903,7 +2065,7 @@ final class HelperDiscovery {
 		HelperModel atCallEdgeWrapper(Function wrapper, Address callSite) {
 			return new HelperModel(wrapper, wrapper.getEntryPoint(), constState, argReg,
 				effectMask, lsb, strategy, switchSite, firstSite, new Relay(callSite, entry),
-				sites);
+				sites, restoreCell, restoreSkippable);
 		}
 	}
 
