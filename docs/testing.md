@@ -585,15 +585,29 @@ same change because they blocked the ADC/SBC verdicts:
    vendored `6510_illegal.sinc` (used by `OP3`, `SAX`, `LAX` and `SHA`) since grm-gtmp
    re-synced that file to deity-informant 0.6.0, which absorbed these fixes (PR #359).
 
-The 14 remaining FAIL rows are one coherent family and two known groups, all filed as
-**`grm-m9nu`** with the per-row analysis: the stack-fidelity family (`BRK`/`PHP`/`JSR`/`RTS` fail
-every case, `PLP`/`RTI`/`PHA`/`PLA` ~1/256 -- `S` not wrapping within page 1, the decompiler-
-friendly `JSR` pushes `inst_next`/`RTS` returns it convention versus hardware's `PC+2`/`+1`,
-`PHP`/`BRK` pushing the `B` register rather than forcing it); `JMP ($xxFF)`'s page-wrap quirk
-(deliberately left, because `ADDRI` exports a memory reference Ghidra's reference analysis
-depends on); and the unstable `SHA`/`SHX`/`SHY`/`TAS` rows the vendored `6510_illegal.sinc`
-declines to model by design. Treat any NEW FAIL row, or a change in an existing row's ratio, as
-a regression to explain -- that is what the baseline is for.
+**Since `grm-m9nu` (2026-10-22) there are no FAIL rows: 244 PASS, 12 N/A.** The 14 rows that
+failed until then were fixed or narrowed as follows:
+
+- **Fixed in `6502core.sinc`.** `JSR` pushes the address of its own last byte (`inst_next - 1`)
+  and `RTS` adds 1, which is the hardware convention and the one the 65816 language here already
+  used. `BRK` pushes `PC+2`. `PHP`/`BRK` push B and bit 5 as 1. `JMP ($xxFF)` reads its high byte
+  from `$xx00`, through a separate `ADDRI` constructor, so every other pointer keeps the plain
+  `*:2` export that reference analysis needs. The full gate's C64/C128/PET goldens did not move.
+- **Excluded per case as `(N unmodelled)`.** This is a sixth `OpcodeBaseline` category with the
+  same "out of the ratio, counted in the open" contract as decode-boundary. It covers three
+  kinds of case, each named in `Mos6502VectorHarnessSupport#unmodelledReason`:
+  - A push or pull that wraps `S` past `$00`/`$FF`, about 1/256 of each stack opcode's cases.
+    The language deliberately keeps stock's linear arithmetic on the 2-byte `SP`. A wrap-correct
+    version that writes `S` alone was tried, and it broke `CalleeRegisterSummary` (26 tests) and,
+    by construction, every other analysis here that models the stack as `EntrySP + k`.
+  - The one `JSR` whose return-address push overwrites its own operand.
+  - `SHA`/`SHX`/`SHY`/`TAS` with a page-crossing index. Measured over all 50,000 cases, the
+    no-cross cases match the vendored formula 25,168/25,168. The cross cases all follow the
+    "stored value replaces the target's high byte" rule, which the vendored file declines to
+    model and which stays byte-identical to upstream.
+
+Treat any new FAIL row, or a change in an existing row's ratio or unmodelled count, as a
+regression to explain. That is what the baseline is for.
 
 ### Disassembly-text corpus differential (`grm-uy9s`)
 

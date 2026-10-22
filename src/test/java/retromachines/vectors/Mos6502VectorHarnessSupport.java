@@ -56,6 +56,10 @@ import retromachines.vectors.VectorRunner.CaseResult;
  * ]}, which lists them MSB to LSB: N=7, V=6, B=4, D=3, I=2, Z=1, C=0): bit 5 is unused (never a
  * real 6502 status bit) and is skipped entirely.
  *
+ * <p>(Since grm-m9nu {@code PHP}/{@code BRK} push bit 4 as a constant 1, as hardware does, so the
+ * seed below no longer reaches the pushed byte; it is kept because it is harmless and the
+ * reasoning still holds for anything that reads the {@code B} register.)
+ *
  * <p><b>The break flag ({@code B}, bit 4) is SEEDED into the initial state only, never
  * compared</b> -- the identical asymmetry {@code W65816VectorHarnessSupport} documents for its
  * own break flag, and for the same reason: {@code B} is not a real, continuously-tracked 6502
@@ -257,8 +261,13 @@ final class Mos6502VectorHarnessSupport {
 
 		int passed = 0;
 		int decodeBoundary = 0;
+		int unmodelled = 0;
 		TreeSet<String> mismatchedFields = new TreeSet<>();
 		for (VectorCase raw : rawCases) {
+			if (unmodelledReason(opcodeHex, raw) != null) {
+				unmodelled++;
+				continue;
+			}
 			VectorCase adapted = adapt(raw);
 			CaseResult result = runner.run(adapted);
 			if (result.decodeBoundary()) {
@@ -274,11 +283,90 @@ final class Mos6502VectorHarnessSupport {
 				}
 			}
 		}
-		int total = rawCases.size() - decodeBoundary;
+		int total = rawCases.size() - decodeBoundary - unmodelled;
 		OpcodeBaseline.Status status =
 			passed == total ? OpcodeBaseline.Status.PASS : OpcodeBaseline.Status.FAIL;
 		return new OpcodeBaseline(opcodeHex, mnemonic, status, passed, total,
-			List.copyOf(mismatchedFields), decodeBoundary);
+			List.copyOf(mismatchedFields), decodeBoundary, 0, 0, unmodelled);
+	}
+
+	/**
+	 * Names the case classes the oracle gets right but this language deliberately does not model
+	 * (bead grm-m9nu), or returns null for a case that is compared. Each class is decided from the
+	 * case's INITIAL state alone, before running it, and is excluded from the ratio but counted in
+	 * the open as {@code (N unmodelled)} -- see {@link OpcodeBaseline}.
+	 *
+	 * <ul>
+	 * <li><b>A push or pull that wraps {@code S} past {@code $00}/{@code $FF}</b>
+	 * ({@code BRK PHP JSR PHA} push 3/1/2/1 bytes, {@code PLP PLA RTS RTI} pull 1/1/2/3). Hardware
+	 * keeps the stack in page 1 by wrapping {@code S} alone; {@code 6502core.sinc} does linear
+	 * arithmetic on the 2-byte {@code SP} because every stack analysis here models it as
+	 * {@code EntrySP + k} -- a stack overflow is not worth breaking them for. About 1 case in
+	 * 256 per opcode.</li>
+	 * <li><b>{@code JSR} overwriting its own operand.</b> Hardware fetches the target's high byte
+	 * AFTER pushing the return address, so a {@code JSR} sitting in page 1 whose push lands on
+	 * {@code pc+2} jumps somewhere else (corpus case {@code "20 55 13"}: {@code JSR} at
+	 * {@code $017B}, {@code S=$7D}, target {@code $1355} becomes {@code $0155}). Modelling it
+	 * would make every {@code JSR} a computed call for flow analysis.</li>
+	 * <li><b>{@code SHA}/{@code SHX}/{@code SHY}/{@code TAS} with a page-crossing index</b>
+	 * ({@code 93 9B 9C 9E 9F}). Measured against all 50,000 cases: with no page cross the oracle
+	 * stores {@code REG & (high(base)+1)} at {@code base+index}, exactly the vendored
+	 * {@code 6510_illegal.sinc}, 25,168/25,168. On a page cross it stores the same value but
+	 * replaces the target's high byte with it, 100% of the remaining cases. The vendored file
+	 * documents page-cross behaviour as unstable and intentionally not modelled, and it is kept
+	 * byte-identical to upstream.</li>
+	 * </ul>
+	 */
+	static String unmodelledReason(String opcodeHex, VectorCase c) {
+		int pc = c.initialRegs().get("pc");
+		int s = c.initialRegs().get("s");
+		Integer stackBytes = STACK_BYTES.get(opcodeHex);
+		if (stackBytes != null && (stackBytes < 0 ? s < -stackBytes : s > 0xff - stackBytes)) {
+			return "stack push/pull wraps S within page 1; the language's SP arithmetic is linear";
+		}
+		switch (opcodeHex) {
+			case "20": {
+				int operandHi = (pc + 2) & 0xffff;
+				if (operandHi == (0x100 | s) || operandHi == (0x100 | ((s - 1) & 0xff))) {
+					return "JSR return-address push overwrites its own operand";
+				}
+				return null;
+			}
+			case "93": {
+				int zp = ram(c, pc + 1);
+				int base = ram(c, zp) | (ram(c, (zp + 1) & 0xff) << 8);
+				return pageCross(base, c.initialRegs().get("y"));
+			}
+			case "9B":
+			case "9E":
+			case "9F":
+				return pageCross(ram(c, pc + 1) | (ram(c, pc + 2) << 8), c.initialRegs().get("y"));
+			case "9C":
+				return pageCross(ram(c, pc + 1) | (ram(c, pc + 2) << 8), c.initialRegs().get("x"));
+			default:
+				return null;
+		}
+	}
+
+	/** Bytes each stack opcode moves: negative pushes, positive pulls. */
+	private static final Map<String, Integer> STACK_BYTES = Map.of(
+		"00", -3, "08", -1, "20", -2, "48", -1,
+		"28", 1, "68", 1, "60", 2, "40", 3);
+
+	private static String pageCross(int base, int index) {
+		return (base & 0xff) + index > 0xff
+				? "unstable store with page-crossing index: hardware replaces the target's high byte"
+				: null;
+	}
+
+	private static int ram(VectorCase c, int address) {
+		int a = address & 0xffff;
+		for (VectorCase.RamByte b : c.initialRam()) {
+			if (b.address() == a) {
+				return b.value();
+			}
+		}
+		return 0;
 	}
 
 	/**

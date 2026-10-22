@@ -116,6 +116,25 @@ public class OpcodeBaselineTest {
 	}
 
 	@Test
+	public void formatAndParseRoundTripWithUnmodelledAnnotation() {
+		// The (N unmodelled) token (grm-m9nu): same contract again, rendered last.
+		OpcodeBaseline unmodelledOnly = new OpcodeBaseline("20", "JSR 0x8fc2",
+			OpcodeBaseline.Status.PASS, 9999, 9999, List.of(), 0, 0, 0, 1);
+		assertEquals("20  JSR 0x8fc2  PASS  9999/9999  (1 unmodelled)", unmodelledOnly.format());
+		assertEquals(unmodelledOnly, OpcodeBaseline.parseLine(unmodelledOnly.format()));
+
+		OpcodeBaseline all = new OpcodeBaseline("9F", "SHA 0x1234,Y",
+			OpcodeBaseline.Status.FAIL, 5000, 5001, List.of("$1300"), 1, 0, 2, 4998);
+		assertEquals("9F  SHA 0x1234,Y  FAIL  5000/5001  (1 decode-boundary)  (2 corpus-defect)  " +
+			"(4998 unmodelled)  $1300", all.format());
+		assertEquals(all, OpcodeBaseline.parseLine(all.format()));
+
+		// A pre-grm-m9nu row reads back with a zero unmodelled count.
+		assertEquals(0, OpcodeBaseline.parseLine("E1.E  SBC (dp,X)  PASS  9999/9999  " +
+			"(1 corpus-defect)").unmodelledCount());
+	}
+
+	@Test
 	public void parseSkipsBlankAndCommentLines() {
 		List<OpcodeBaseline> parsed = OpcodeBaseline.parse(List.of(
 			"# generated; review the diff, do not hand-edit casually",

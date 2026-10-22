@@ -13,7 +13,7 @@
 # The packed 'p' field and the hardwired stack-high-byte are adapted into
 # synthetic register-backed fields -- see Mos6502VectorHarnessSupport's class
 # doc for exactly which bits are compared and which are seed-only.
-00  BRK  FAIL  0/32  $106,$108,$10c,$115,$121,$123,$128,$12d,$13b,$143,$145,$150,$15e,$17a,$182,$186,$1a4,$1ba,$1bc,$1c6,$1c8,$1cc,$1d9,$1da,$1e2
+00  BRK  PASS  32/32
 01  ORA (0xbd,X)  PASS  32/32
 02  JAM  N/A  0/32  JAM/KIL: unconditional 'goto inst_start' locks up the processor; every case throws DecodePcodeExecutionException (verified directly against 0x02) rather than reaching a post-single-step state
 03  SLO (0xbb,X)  PASS  32/32
@@ -21,7 +21,7 @@
 05  ORA 0x00ca  PASS  32/32
 06  ASL 0x0089  PASS  32/32
 07  SLO 0x0007  PASS  32/32
-08  PHP  FAIL  0/32  $107,$114,$115,$118,$126,$130,$13a,$142,$144,$147,$148,$14c,$151,$158,$15b,$174,$17e,$19a,$19d,$1aa,$1ad,$1b0,$1b7,$1c8,$1cd,$1d4,$1d9,$1e0,$1e2,$1f1,$1f9
+08  PHP  PASS  32/32
 09  ORA #0xfb  PASS  32/32
 0A  ASL A  PASS  32/32
 0B  ANC #0xb8  PASS  32/32
@@ -45,7 +45,7 @@
 1D  ORA 0x10b5,X  PASS  32/32
 1E  ASL 0x5b1,X  PASS  32/32
 1F  SLO 0x8148,X  PASS  32/32
-20  JSR 0x8fc2  FAIL  0/32  $103,$110,$117,$119,$11a,$11c,$127,$128,$13d,$151,$153,$157,$158,$160,$172,$174,$187,$194,$195,$1a7,$1b1,$1ba,$1d4,$1df,$1e3,$1e6,$1e7,$1ef,$1ff,SH
+20  JSR 0x8fc2  PASS  30/30  (2 unmodelled)
 21  AND (0xb7,X)  PASS  32/32
 22  JAM  N/A  0/32  JAM/KIL: unconditional 'goto inst_start' locks up the processor; every case throws DecodePcodeExecutionException (verified directly against 0x02) rather than reaching a post-single-step state
 23  RLA (0xa3,X)  PASS  32/32
@@ -109,7 +109,7 @@
 5D  EOR 0xecf7,X  PASS  32/32
 5E  LSR 0x9e96,X  PASS  32/32
 5F  SRE 0x6644,X  PASS  32/32
-60  RTS  FAIL  0/32  PC
+60  RTS  PASS  32/32
 61  ADC (0x96,X)  PASS  32/32
 62  JAM  N/A  0/32  JAM/KIL: unconditional 'goto inst_start' locks up the processor; every case throws DecodePcodeExecutionException (verified directly against 0x02) rather than reaching a post-single-step state
 63  RRA (0x74,X)  PASS  32/32
@@ -160,7 +160,7 @@
 90  BCC 0x0ac8  PASS  32/32
 91  STA (0xbb),Y  PASS  32/32
 92  JAM  N/A  0/32  JAM/KIL: unconditional 'goto inst_start' locks up the processor; every case throws DecodePcodeExecutionException (verified directly against 0x02) rather than reaching a post-single-step state
-93  SHA (0x89),Y  FAIL  20/32  $102c,$16f,$2082,$2497,$2860,$2a3,$4e7,$824,$9017,$c06,$c082,$e03c
+93  SHA (0x89),Y  PASS  17/17  (15 unmodelled)
 94  STY 0x8e,X  PASS  32/32
 95  STA 0xac,X  PASS  32/32
 96  STX 0xd2,Y  PASS  32/32
@@ -168,11 +168,11 @@
 98  TYA  PASS  32/32
 99  STA 0xfaf,Y  PASS  32/32
 9A  TXS  PASS  32/32
-9B  TAS 0xd100,Y  FAIL  25/32  $101d,$1d2,$212f,$26a,$419,$420,$6e4
-9C  SHY 0xdb8f,X  FAIL  15/32  $11ae,$24c,$2834,$2c02,$342d,$3c6e,$3c7f,$408d,$447f,$5133,$5228,$5c66,$841a,$8c07,$a01b,$c47,$e35d
+9B  TAS 0xd100,Y  PASS  16/16  (16 unmodelled)
+9C  SHY 0xdb8f,X  PASS  13/13  (19 unmodelled)
 9D  STA 0xadb8,X  PASS  32/32
-9E  SHX 0xefad,Y  FAIL  24/32  $215,$3023,$30d4,$445,$454,$4870,$58c4,$834a
-9F  SHA 0xf93b,Y  FAIL  20/32  $122f,$2006,$2063,$408e,$443,$4475,$481,$4b0,$6,$601e,$8b51,$c14
+9E  SHX 0xefad,Y  PASS  21/21  (11 unmodelled)
+9F  SHA 0xf93b,Y  PASS  18/18  (14 unmodelled)
 A0  LDY #0xc9  PASS  32/32
 A1  LDA (0xb0,X)  PASS  32/32
 A2  LDX #0x72  PASS  32/32

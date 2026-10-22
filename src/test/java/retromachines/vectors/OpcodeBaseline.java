@@ -72,6 +72,14 @@ import java.util.stream.Collectors;
  * appear. Only the 65816 harness produces it (see
  * {@code W65816VectorHarnessSupport#CORPUS_DEFECT_CASES}).
  *
+ * <p>The optional {@code (N unmodelled)} token (see {@link #unmodelledCount}, bead grm-m9nu) is a
+ * SIXTH category: cases where the oracle is right about the hardware, but the language
+ * deliberately does not model that behaviour because modelling it would make analysis worse --
+ * e.g. a {@code JSR} whose own return-address push overwrites its operand. Each class is named
+ * per opcode with its reason by the harness that produces it (only the 6502's today, see
+ * {@code Mos6502VectorHarnessSupport#unmodelledReason}). Same contract as the three above, and
+ * rendered last.
+ *
  * <h2>{@code N/A}, not {@code PASS} or {@code FAIL} (grm-c9d.3 increment 9)</h2>
  * A small, explicit set of opcodes (currently {@code SLEEP}/{@code STOP} -- see
  * {@code Spc700VectorHarnessSupport}'s allowlist) legitimately halt the processor; there is no
@@ -86,7 +94,18 @@ import java.util.stream.Collectors;
  */
 public record OpcodeBaseline(String opcodeHex, String mnemonic, Status status, int passedCount,
 		int totalCount, List<String> mismatchedFields, int decodeBoundaryCount,
-		int bankWrapCount, int corpusDefectCount) {
+		int bankWrapCount, int corpusDefectCount, int unmodelledCount) {
+
+	/**
+	 * Convenience constructor for callers with no unmodelled cases to report (every call site
+	 * before grm-m9nu): equivalent to the canonical constructor with {@code unmodelledCount = 0}.
+	 */
+	public OpcodeBaseline(String opcodeHex, String mnemonic, Status status, int passedCount,
+			int totalCount, List<String> mismatchedFields, int decodeBoundaryCount,
+			int bankWrapCount, int corpusDefectCount) {
+		this(opcodeHex, mnemonic, status, passedCount, totalCount, mismatchedFields,
+			decodeBoundaryCount, bankWrapCount, corpusDefectCount, 0);
+	}
 
 	/**
 	 * Convenience constructor for callers with no corpus-defect cases to report (every call site
@@ -108,7 +127,7 @@ public record OpcodeBaseline(String opcodeHex, String mnemonic, Status status, i
 	public OpcodeBaseline(String opcodeHex, String mnemonic, Status status, int passedCount,
 			int totalCount, List<String> mismatchedFields, int decodeBoundaryCount) {
 		this(opcodeHex, mnemonic, status, passedCount, totalCount, mismatchedFields,
-			decodeBoundaryCount, 0, 0);
+			decodeBoundaryCount, 0, 0, 0);
 	}
 
 	/**
@@ -152,6 +171,7 @@ public record OpcodeBaseline(String opcodeHex, String mnemonic, Status status, i
 	private static final Pattern BANK_WRAP_TOKEN = Pattern.compile("^\\((\\d+) bank-wrap\\)$");
 	private static final Pattern CORPUS_DEFECT_TOKEN =
 		Pattern.compile("^\\((\\d+) corpus-defect\\)$");
+	private static final Pattern UNMODELLED_TOKEN = Pattern.compile("^\\((\\d+) unmodelled\\)$");
 
 	/** Renders this row in the committed file's format (see class doc). */
 	public String format() {
@@ -166,6 +186,9 @@ public record OpcodeBaseline(String opcodeHex, String mnemonic, Status status, i
 		}
 		if (corpusDefectCount > 0) {
 			sb.append("  (").append(corpusDefectCount).append(" corpus-defect)");
+		}
+		if (unmodelledCount > 0) {
+			sb.append("  (").append(unmodelledCount).append(" unmodelled)");
 		}
 		if (!mismatchedFields.isEmpty()) {
 			sb.append("  ").append(String.join(",", mismatchedFields));
@@ -240,11 +263,19 @@ public record OpcodeBaseline(String opcodeHex, String mnemonic, Status status, i
 				nextField++;
 			}
 		}
+		int unmodelledCount = 0;
+		if (fields.length > nextField) {
+			Matcher m = UNMODELLED_TOKEN.matcher(fields[nextField]);
+			if (m.matches()) {
+				unmodelledCount = Integer.parseInt(m.group(1));
+				nextField++;
+			}
+		}
 		List<String> mismatched = fields.length > nextField
 				? List.of(fields[nextField].split(","))
 				: List.of();
 		return new OpcodeBaseline(opcodeHex, mnemonic, status, passedCount, totalCount, mismatched,
-			decodeBoundaryCount, bankWrapCount, corpusDefectCount);
+			decodeBoundaryCount, bankWrapCount, corpusDefectCount, unmodelledCount);
 	}
 
 	/**

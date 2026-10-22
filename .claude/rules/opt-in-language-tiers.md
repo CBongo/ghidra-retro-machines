@@ -29,9 +29,11 @@ C64/C128 language here shares): needs `GRM_6502_VECTORS`, a clone of
 refuses loudly when unset, excluded from `all`, 2,560,000 cases in ~1m10s measured. **Run it after
 any change to `data/languages/6502core.sinc`, `6510_illegal.sinc` or `6510port.sinc`** — it is
 what validated decimal mode (grm-hzv8) and what found the inherited SBC-carry and zero-page
-pointer-wrap bugs on its first run. Its baseline pins 14 known FAIL rows (stack fidelity,
-`JMP ($xxFF)`, the unstable `SH*`/`TAS` opcodes — bead `grm-m9nu`); a new FAIL row or a changed
-ratio is a regression to explain. The NES boards run on stock Ghidra's `6502:LE:16:default`, so
+pointer-wrap bugs on its first run. Since bead `grm-m9nu` its baseline has no FAIL rows. The
+behaviour deliberately left unmodelled is excluded per case and counted in the open as
+`(N unmodelled)`: the `S` page-1 wrap, a `JSR` that overwrites its own operand, and `SH*`/`TAS`
+page crossings. A new FAIL row, a changed ratio, or a changed unmodelled count is a regression
+to explain. The NES boards run on stock Ghidra's `6502:LE:16:default`, so
 nothing this tier checks reaches the NES corpus, and nothing that moves the NES corpus can be
 attributed to these languages.
 
