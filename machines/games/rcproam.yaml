@@ -21,9 +21,18 @@
 # This hint is the per-game tier's designed answer for exactly that -- a fact a human (or a
 # prior analysis run) can establish in minutes but no byte scan can.
 #
-# prg_bank is deliberately NOT hinted: the analyzer's own recovery leaves it at the descriptor's
-# initial 0, and in mode 0 the hardware ignores its LSB, so bank 0 (PRG[0x0000..0x8000)) is
-# the resident 32 KiB image in base -- which is where every sampled reference already points.
+# prg_bank is deliberately NOT given an initial_state hint: the analyzer's own recovery leaves
+# it at the descriptor's initial 0, and in mode 0 the hardware ignores its LSB, so bank 0
+# (PRG[0x0000..0x8000)) is the resident 32 KiB image in base -- which is where every sampled
+# reference already points. It IS declared fixed_after_init (grm-6ild): the PRG-bank register
+# ($E000-$FFFF) is written by exactly one helper, FUN_ffc5 (five STA $FFFF), whose only caller
+# is the init sequence at 801b (value 0), and a byte scan finds no other store into that window.
+# Without the fact, the NMI vector (9aab: LDX #$f0 / TXS / JMP (table,X)) dispatches the whole
+# game state machine from an async entry seeded with every bank field unknown, so each helper
+# call site reached from it merged to prg_bank "assumed from initial" (`prg_bank=0?`). The
+# reset-only flow had it firm -- the old duplicate WC000_M3 overlay copy of the code looked
+# firm only because the reset flow was retargeted into it and the NMI flow stayed in base.
+# SOUNDNESS RESIDUAL: an indirect (`STA ($zp),Y`) store into $E000+ is invisible to the scan.
 #
 # The analyzer now reaches the same answer on its own: its layout-mode lock lets the explicit
 # control writes outvote the ff85/ffea shifter resets and locks prg_mode 0 (grm-dos9.9). That
@@ -56,3 +65,6 @@ banking:
   # layout); folded in last, after banking.initial_state_expr, by
   # DescriptorSupport.applyGameInitialStateHint.
   initial_state: { prg_mode: 0 }
+  # Board state-field NAMES that hold their initial_state value at every instruction after init
+  # (grm-mej.12); async entries (NMI/IRQ) are seeded with these known.
+  fixed_after_init: [prg_bank]
