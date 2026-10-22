@@ -114,6 +114,17 @@ Each is minutes of work and settles something specific. Highest value per unit e
   the likely cause is a wrong assumption about which bank `e72a JSR $8574` enters (`$80` gives 16K
   bank 0). Say so, and `grm-mej.19` can aim for a full RESTORED note.
 
+### 1.2 punchout `b18c STA $AEB1,X`: a real MMC2 PRG-select write, or the game poking ROM? (`grm-bbe7`)
+
+- [ ] **Question.** `FUN_b165` (called from `a671`) does `STA $AEB1,X` at `b18c`. `$AEB1+X` cannot
+  leave `$A000-$AFFF`, the MMC2 PRG-select range, so the analyzer counts it as a mechanism write
+  and warns "mechanism write with undeterminable value". The stored value comes out of a
+  stream/decompressor loop (`LDA ($3B),Y / AND #$0F / TAX`, then `JSR $AEA3`), so "undeterminable"
+  is honest *if* it is a bank switch at all. One emulator breakpoint on `b18c` settles it: does the
+  bank at `$8000` change after it executes, and does `$AEB1,X` look like a deliberate select or a
+  table write into ROM (a no-op on real hardware)? If it is not a switch, say so and the analyzer
+  should stop counting indexed stores there as mechanism writes for this board.
+
 ---
 
 ## 2. Def-use passes on untraced titles

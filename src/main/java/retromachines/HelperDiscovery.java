@@ -1186,6 +1186,195 @@ final class HelperDiscovery {
 	}
 
 	/**
+	 * Step cap for {@link #constantStubLanding}'s walk. A stub is two to four instructions
+	 * (Punch-Out's longest is {@code LDA #imm / BNE / STA $0E / BNE}); the cap only stops a loop.
+	 */
+	private static final int MAX_STUB_STEPS = 12;
+
+	/** The instruction mnemonics {@link #constantStubLanding} steps over without touching A/X/Y
+	 *  or N/Z: stores, and the flag ops that leave Z and N alone. */
+	private static final Set<String> STUB_INERT = Set.of("STA", "STX", "STY", "NOP", "CLC", "SEC",
+		"CLI", "SEI", "CLD", "SED", "CLV");
+
+	/**
+	 * Where a constant-entry stub lands, and what A/X/Y hold when it does: a recognized mechanism
+	 * write {@code site}, with each register's value ({@code null} = the caller's, unknown).
+	 */
+	private record StubLanding(Address site, Integer a, Integer x, Integer y) {
+		Integer valueOf(char reg) {
+			return switch (reg) {
+				case 'A' -> a;
+				case 'X' -> x;
+				case 'Y' -> y;
+				default -> null;
+			};
+		}
+	}
+
+	/**
+	 * {@code helpers}, plus every CONSTANT-ENTRY STUB: a function that loads an immediate into
+	 * the register a bank-switch helper's mechanism write stores, and reaches that write by
+	 * branch or jump rather than by call or fall-through (bead grm-bbe7).
+	 * <p>
+	 * <pre>
+	 *   aa13  LDA #$0B / BNE aa19            ; Punch-Out: a stub per bank
+	 *   aa17  LDA $02                        ;   the helper's own entry (bank from a shadow)
+	 *   aa19  STA $AFFF                      ;   the shared mechanism write
+	 *   aa1f  LDA #$06 / BNE aa35            ; ... and stubs that go through a shared tail
+	 *   aa35  STA $0E / BNE aa19
+	 * </pre>
+	 * Every {@code JSR} to a stub is a constant bank switch, and before this none was seen: the
+	 * stub writes no mechanism itself, so {@link #findHelpers} never admits it; it is not a
+	 * pass-through wrapper (it does not fall into the helper) nor a call-edge wrapper (it does
+	 * not call it, and the caller's argument does not survive its own {@code LDA #imm}); and the
+	 * branch is a conditional one, which {@link #exitEffect} does not follow. The calls were
+	 * folded as no-ops on bank state -- a silent miss, with the bank after each call unmodeled.
+	 * <p>
+	 * <b>The proof is a concrete walk from the stub's entry</b> ({@link #constantStubLanding}):
+	 * it interprets only immediate loads, stores and flag-neutral instructions, tracks the N/Z
+	 * of the last load so it can DECIDE a branch (an {@code LDA #imm} makes {@code BNE} taken or
+	 * not by the immediate alone, whatever the join the branch lands on), follows unconditional
+	 * jumps, and succeeds only on reaching a recognized mechanism write with every instruction
+	 * on the way understood. Anything else -- a call, a push, a read-modify-write, an undecidable
+	 * branch, a loop -- declines. Walking the single concrete path makes joins on it irrelevant:
+	 * other paths into the shared tail bring their own register values, but this walk is not
+	 * asked about them.
+	 * <p>
+	 * <b>The value is then the helper's own mini-inline</b>: the register values the walk ended
+	 * with are handed to the strategy's {@link BankSwitchStrategy#depositHelperArgument} as the
+	 * caller's registers, with an entry stop AT the write, exactly as {@code recoverCallArgument}
+	 * hands it a call site's. The remainder of the helper after the write is the helper's own
+	 * and runs unchanged, so the stub's effect is the helper's effect for that argument. Admitted
+	 * only for a single-site helper that is a plain model (no relay, an argument register, a
+	 * strategy), whose write the walk landed on, and whose deposit pins down at least one bit.
+	 * <p>
+	 * A stub is NOT admitted when its landing write is a different helper's second site, when the
+	 * helper is caller-independent already (that is its own model), or when the walk's register
+	 * is not the helper's argument register.
+	 */
+	// Package-private (not private): BoardBankAnalyzer.added() reaches this via import static.
+	static Map<Function, HelperModel> findConstantEntryStubs(Program program,
+			Map<Function, HelperModel> helpers, Map<Address, SwitchResult> switchResults) {
+		Map<Function, HelperModel> result = new LinkedHashMap<>(helpers);
+		Listing listing = program.getListing();
+	candidates:
+		for (Function stub : program.getFunctionManager().getFunctions(true)) {
+			if (helpers.containsKey(stub)) {
+				continue;
+			}
+			for (Instruction instr : listing.getInstructions(stub.getBody(), true)) {
+				if (switchResults.containsKey(instr.getMinAddress())) {
+					continue candidates; // writes a mechanism itself -- a helper, not a stub
+				}
+			}
+			StubLanding landing = constantStubLanding(program, stub.getEntryPoint(), switchResults);
+			if (landing == null) {
+				continue;
+			}
+			Function owner = program.getFunctionManager().getFunctionContaining(landing.site());
+			HelperModel wrapped = owner == null ? null : helpers.get(owner);
+			if (wrapped == null || wrapped.relay() != null || wrapped.strategy() == null ||
+				wrapped.argReg() == null || wrapped.constState() != null ||
+				wrapped.sites() == null || wrapped.sites().size() != 1 ||
+				!landing.site().equals(wrapped.switchSite())) {
+				continue;
+			}
+			Integer argument = landing.valueOf(wrapped.argReg());
+			Instruction siteInstr = listing.getInstructionAt(landing.site());
+			if (argument == null || siteInstr == null) {
+				continue;
+			}
+			MechanismPlacement placement = wrapped.placement();
+			RegisterEnv env = new RegisterEnv(landing.site(), regByte(landing.a()),
+				regByte(landing.x()), regByte(landing.y()));
+			BankSwitchStrategy.HelperDeposit deposit = wrapped.strategy().depositHelperArgument(
+				program, siteInstr, PartialByte.fullyKnown(argument), MechanismState.unknown(),
+				placement.widthMask(), env);
+			if (deposit.value().knownMask() == 0) {
+				continue; // the strategy could not pin a bit from this constant -- decline
+			}
+			result.put(stub, HelperModel.composite(stub,
+				placement.position(deposit.value()), wrapped.effectMask()));
+		}
+		return result;
+	}
+
+	private static PartialByte regByte(Integer value) {
+		return value == null ? PartialByte.unknown() : PartialByte.fullyKnown(value);
+	}
+
+	/**
+	 * Walks the single concrete path from {@code entry} (see {@link #findConstantEntryStubs});
+	 * the landing mechanism write with the registers it is reached under, or {@code null}.
+	 */
+	private static StubLanding constantStubLanding(Program program, Address entry,
+			Map<Address, SwitchResult> switchResults) {
+		Listing listing = program.getListing();
+		Integer a = null;
+		Integer x = null;
+		Integer y = null;
+		Integer flagValue = null; // the value whose N/Z the flags currently reflect
+		Address pc = entry;
+		for (int step = 0; step < MAX_STUB_STEPS; step++) {
+			if (step > 0 && switchResults.containsKey(pc)) {
+				return new StubLanding(pc, a, x, y);
+			}
+			Instruction instr = listing.getInstructionAt(pc);
+			if (instr == null || instr.isFallThroughOverridden() &&
+				!instr.getFlowType().isConditional()) {
+				return null;
+			}
+			String mnem = instr.getMnemonicString().toUpperCase();
+			FlowType flow = instr.getFlowType();
+			Address next = instr.getFallThrough();
+			if (mnem.equals("LDA") || mnem.equals("LDX") || mnem.equals("LDY")) {
+				if (!MosOperands.isImmediate(instr)) {
+					return null;
+				}
+				Integer imm = MosOperands.immediateOperandValue(instr);
+				if (imm == null || next == null) {
+					return null;
+				}
+				switch (mnem) {
+					case "LDA" -> a = imm;
+					case "LDX" -> x = imm;
+					default -> y = imm;
+				}
+				flagValue = imm;
+				pc = next;
+			}
+			else if (STUB_INERT.contains(mnem) && !flow.isJump() && !flow.isCall() &&
+				!flow.isTerminal() && next != null) {
+				pc = next;
+			}
+			else if (mnem.equals("JMP") && flow.isJump() && flow.isUnConditional() &&
+				!flow.isComputed() && instr.getFlows().length == 1) {
+				pc = instr.getFlows()[0];
+			}
+			else if ((mnem.equals("BEQ") || mnem.equals("BNE") || mnem.equals("BMI") ||
+				mnem.equals("BPL")) && flow.isConditional() && !flow.isComputed() &&
+				instr.getFlows().length == 1 && flagValue != null) {
+				boolean z = (flagValue & 0xFF) == 0;
+				boolean n = (flagValue & 0x80) != 0;
+				boolean taken = switch (mnem) {
+					case "BEQ" -> z;
+					case "BNE" -> !z;
+					case "BMI" -> n;
+					default -> !n;
+				};
+				pc = taken ? instr.getFlows()[0] : instr.getMaxAddress().next();
+				if (pc == null) {
+					return null;
+				}
+			}
+			else {
+				return null;
+			}
+		}
+		return null;
+	}
+
+	/**
 	 * Hop cap for {@link #reachableEntries}. A real argument relay is one link -- a jump-table
 	 * slot, or Ghidra's own thunk typing of the same. Three is slack, not a modeled depth.
 	 */

@@ -26,13 +26,78 @@ REALROM block WC000 c000-dfff overlay=false
 REALROM block WE000 e000-ffff overlay=false
 REALROM count blocks.total 22
 REALROM count blocks.overlay 15
-REALROM count refs.intoOverlay.retargeted 0
-REALROM count refs.intoOverlay.intraOverlay 0
-REALROM count instrs.inOverlay 0
-REALROM count bankComments 0
-REALROM count warnings 13
-REALROM count notes 3
+REALROM count refs.intoOverlay.retargeted 45
+REALROM count refs.intoOverlay.intraOverlay 914
+REALROM count instrs.inOverlay 3776
+REALROM count bankComments 38
+REALROM count warnings 18
+REALROM count notes 9
 REALROM count symbols 18
+REALROM sample.bankcomment a02e bank -> 8 (prg_bank=8) via FUN_aa0f
+REALROM sample.bankcomment a1e2 bank -> 7 (prg_bank=7) via FUN_aa23
+REALROM sample.bankcomment a293 bank -> 6 (prg_bank=6) via FUN_aa1f
+REALROM sample.bankcomment a311 bank -> 12 (prg_bank=12) via FUN_aa33
+REALROM sample.bankcomment a320 bank -> 7 (prg_bank=7) via FUN_aa23
+REALROM sample.bankcomment a32d bank -> 12 (prg_bank=12) via FUN_aa33
+REALROM sample.bankcomment a33c bank -> 7 (prg_bank=7) via FUN_aa23
+REALROM sample.bankcomment a397 bank -> 7 (prg_bank=7) via FUN_aa23
+REALROM sample.bankcomment a3ec bank -> 7 (prg_bank=7) via FUN_aa23
+REALROM sample.bankcomment a43e bank -> 7 (prg_bank=7) via FUN_aa23
+REALROM sample.bankcomment a47e bank -> 12 (prg_bank=12) via FUN_aa33
+REALROM sample.bankcomment a61b bank -> 7 (prg_bank=7) via FUN_aa0b
+REALROM sample.bankcomment a65c bank -> 8 (prg_bank=8) via FUN_aa0f
+REALROM sample.bankcomment a683 bank -> 7 (prg_bank=7) via FUN_aa0b
+REALROM sample.bankcomment a6f3 bank -> 7 (prg_bank=7) via FUN_aa0b
+REALROM sample.bankcomment a6f9 bank -> 8 (prg_bank=8) via FUN_aa0f
+REALROM sample.bankcomment aa56 bank -> 11 (prg_bank=11) via FUN_aa13
+REALROM sample.bankcomment aa65 bank -> 11 (prg_bank=11) via FUN_aa13
+REALROM sample.bankcomment aa6e bank -> 11 (prg_bank=11) via FUN_aa13
+REALROM sample.bankcomment abac bank -> 7 (prg_bank=7) via FUN_aa23
+REALROM sample.bankcomment ac3e bank -> 7 (prg_bank=7) via FUN_aa23
+REALROM sample.bankcomment ad38 bank -> 7 (prg_bank=7) via FUN_aa23
+REALROM sample.bankcomment b24f bank -> 7 (prg_bank=7) via FUN_aa0b
+REALROM sample.bankcomment b25b bank -> 7 (prg_bank=7) via FUN_aa0b
+REALROM sample.bankcomment b264 bank -> 7 (prg_bank=7) via FUN_aa0b
+REALROM sample.bankcomment b729 bank -> 9 (prg_bank=9) via FUN_aa2b
+REALROM sample.bankcomment b747 bank -> 7 (prg_bank=7) via FUN_aa23
+REALROM sample.bankcomment b74d bank -> 12 (prg_bank=12) via FUN_aa33
+REALROM sample.bankcomment b79f bank -> 9 (prg_bank=9) via FUN_aa2b
+REALROM sample.bankcomment b80b bank -> 9 (prg_bank=9) via FUN_aa2b
+REALROM sample.bankcomment bb79 bank -> 9 (prg_bank=9) via FUN_aa2b
+REALROM sample.bankcomment bb8f bank -> 12 (prg_bank=12) via FUN_aa33
+REALROM sample.bankcomment bc8d bank -> 9 (prg_bank=9) via FUN_aa2b
+REALROM sample.bankcomment bd0e bank -> 12 (prg_bank=12) via FUN_aa33
+REALROM sample.bankcomment bdd8 bank -> 10 (prg_bank=10) via FUN_aa2f
+REALROM sample.bankcomment bf21 bank -> 12 (prg_bank=12) via FUN_aa33
+REALROM sample.bankcomment bfc7 bank -> 12 (prg_bank=12) via FUN_aa33
+REALROM sample.bankcomment c50a bank -> 6 (prg_bank=6) via FUN_aa07
+REALROM sample.ref 8000 -> W8000_B10::8087 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8000 -> W8000_B11::8020 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8000 -> W8000_B7::8974 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8003 -> W8000_B11::8119 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8003 -> W8000_B7::890d UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8005 -> W8000_B8::8025 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8006 -> W8000_B11::8319 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8006 -> W8000_B7::881e UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8008 -> W8000_B8::80ca UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8009 -> W8000_B11::8280 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8009 -> W8000_B7::8759 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 800b -> W8000_B8::84b1 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 800c -> W8000_B7::86d0 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 800e -> W8000_B8::88e2 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 800f -> W8000_B7::8a6f UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8012 -> W8000_B7::85e9 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8015 -> W8000_B7::805d UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8016 -> W8000_B10::804a CONDITIONAL_JUMP primary=true
+REALROM sample.ref 801a -> W8000_B10::8034 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 801b -> W8000_B7::8ded UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 801e -> W8000_B7::8e11 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 801f -> W8000_B10::8181 DATA primary=true
+REALROM sample.ref 8020 -> W8000_B8::807b CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8021 -> W8000_B7::8e1f UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8024 -> W8000_B7::8e23 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref.truncated 25 of 959
+REALROM sample.warn 8393 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_b252, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
 REALROM sample.warn a665 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_aa17, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
 REALROM sample.warn a671 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_b165, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
 REALROM sample.warn a67a [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_aa17, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
@@ -45,9 +110,19 @@ REALROM sample.warn aa74 [NesBankingAnalyzer] Bank state becomes unknown here: c
 REALROM sample.warn aac5 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_aa17, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
 REALROM sample.warn abf1 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_aa17, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
 REALROM sample.warn b18c [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn b249 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_aa17, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
+REALROM sample.warn b252 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_aa17, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
+REALROM sample.warn b255 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn b25e [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_aa17, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
 REALROM sample.warn c45d [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_aa17, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
+REALROM sample.note 8a2a [CopyLoopAnalyzer] copy-shaped loop W8000_B7:8a12 -> RAM:0410 (6 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note 8fc6 [CopyLoopAnalyzer] copy-shaped loop RAM:0120 -> RAM:0110 (10 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note 8fd7 [CopyLoopAnalyzer] copy-shaped loop RAM:0130 -> RAM:0170 (6 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note 8ff0 [CopyLoopAnalyzer] copy-shaped loop RAM:0170 -> RAM:0130 (6 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note a245 [CopyLoopAnalyzer] copy-shaped loop RAM:a1ab -> RAM:0160 (16 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note af12 [CopyLoopAnalyzer] copy-shaped loop RAM:af1e -> RAM:0200 (12 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note b267 [CopyLoopAnalyzer] copy-shaped loop RAM:b36d -> RAM:00c0 (5 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note b2bf [CopyLoopAnalyzer] copy-shaped loop RAM:b362 -> RAM:00c0 (11 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note b664 [CopyLoopAnalyzer] copy-shaped loop RAM:b696 -> RAM:0208 (4 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.symbol a000 IRQ IMPORTED primary=false
 REALROM sample.symbol a000 RESET IMPORTED primary=true

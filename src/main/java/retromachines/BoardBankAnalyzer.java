@@ -54,6 +54,7 @@ import ghidra.util.task.TaskMonitor;
 import static retromachines.BankDataflowEngine.runDataflow;
 import static retromachines.HelperDiscovery.composeTailCalls;
 import static retromachines.HelperDiscovery.findCallEdgeWrappers;
+import static retromachines.HelperDiscovery.findConstantEntryStubs;
 import static retromachines.HelperDiscovery.findHelpers;
 import static retromachines.HelperDiscovery.findPassThroughWrappers;
 import static retromachines.HelperDiscovery.findSecondTierHelpers;
@@ -471,9 +472,13 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// Order is load-bearing. findCallEdgeWrappers runs LAST so its relay lookups see
 		// pass-through wrappers as helpers; it is also why exitEffect never encounters a relay
 		// model. See findCallEdgeWrappers' javadoc for the one gap this order leaves open.
-		Map<Function, HelperModel> callEdgeHelpers = findCallEdgeWrappers(program,
-			findPassThroughWrappers(program,
-				composeTailCalls(program, findHelpers(program, flow.switchResults())),
+		// bead grm-bbe7: constant-entry stubs (LDA #imm / BNE into a helper's shared write) are
+		// admitted last of all, once every helper they could land in is final.
+		Map<Function, HelperModel> callEdgeHelpers = findConstantEntryStubs(program,
+			findCallEdgeWrappers(program,
+				findPassThroughWrappers(program,
+					composeTailCalls(program, findHelpers(program, flow.switchResults())),
+					flow.switchResults()),
 				flow.switchResults()),
 			flow.switchResults());
 		// bead grm-ylm6: SECOND-TIER helpers -- a function that writes no mechanism itself and
