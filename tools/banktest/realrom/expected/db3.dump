@@ -20,17 +20,10 @@ REALROM count refs.intoOverlay.retargeted 0
 REALROM count refs.intoOverlay.intraOverlay 0
 REALROM count instrs.inOverlay 0
 REALROM count bankComments 0
-REALROM count warnings 8
-REALROM count notes 9
+REALROM count warnings 1
+REALROM count notes 16
 REALROM count symbols 135
 REALROM sample.warn db73 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_db2e, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
-REALROM sample.warn e553 [CopyLoopAnalyzer] copy-shaped loop RAM:e7d4 -> RAM:0200 could not be bounded; not applied
-REALROM sample.warn e5bc [CopyLoopAnalyzer] copy-shaped loop RAM:e826 -> RAM:0200 could not be bounded; not applied
-REALROM sample.warn e5c7 [CopyLoopAnalyzer] copy-shaped loop RAM:e7fd -> RAM:0200 could not be bounded; not applied
-REALROM sample.warn e5d2 [CopyLoopAnalyzer] copy-shaped loop RAM:e84f -> RAM:0200 could not be bounded; not applied
-REALROM sample.warn e69e [CopyLoopAnalyzer] copy-shaped loop RAM:e7d4 -> RAM:0200 could not be bounded; not applied
-REALROM sample.warn e707 [CopyLoopAnalyzer] copy-shaped loop RAM:e826 -> RAM:0200 could not be bounded; not applied
-REALROM sample.warn e712 [CopyLoopAnalyzer] copy-shaped loop RAM:e7fd -> RAM:0200 could not be bounded; not applied
 REALROM sample.note c4d2 [CopyLoopAnalyzer] copy-shaped loop RAM:c4f5 -> RAM:0200 (16 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note c585 [CopyLoopAnalyzer] copy-shaped loop RAM:c5af -> RAM:0200 (33 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note c712 [CopyLoopAnalyzer] copy-shaped loop RAM:c9af -> RAM:0200 (77 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
@@ -39,6 +32,13 @@ REALROM sample.note c980 [CopyLoopAnalyzer] copy-shaped loop RAM:c98e -> RAM:020
 REALROM sample.note db30 [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
 REALROM sample.note db80 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call re-commits the bank READ BACK at db6e from write-through bank shadow 006a -- a RAM cell the switch code keeps in step with every bank it commits, so the byte read is the last bank committed through it, carried on the stack across the call at db73 -- the save/restore idiom. The bank after this call is whatever 006a held at that read, not a fresh value this analyzer failed to pin down. A property of the game, not a gap in analysis.
 REALROM sample.note e11d [CopyLoopAnalyzer] copy-shaped loop RAM:e109 -> RAM:0200 (13 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note e553 [CopyLoopAnalyzer] copy-shaped loop RAM:e7d4 -> RAM:0200 (41 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note e5bc [CopyLoopAnalyzer] copy-shaped loop RAM:e826 -> RAM:0200 (41 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note e5c7 [CopyLoopAnalyzer] copy-shaped loop RAM:e7fd -> RAM:0200 (41 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note e5d2 [CopyLoopAnalyzer] copy-shaped loop RAM:e84f -> RAM:0200 (41 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note e69e [CopyLoopAnalyzer] copy-shaped loop RAM:e7d4 -> RAM:0200 (41 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note e707 [CopyLoopAnalyzer] copy-shaped loop RAM:e826 -> RAM:0200 (41 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note e712 [CopyLoopAnalyzer] copy-shaped loop RAM:e7fd -> RAM:0200 (41 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note f0cd [CopyLoopAnalyzer] copy-shaped loop RAM:f0d9 -> RAM:0503 (8 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.symbol c0d8 RESET IMPORTED primary=true
 REALROM sample.symbol c1ab switch USER_DEFINED primary=true

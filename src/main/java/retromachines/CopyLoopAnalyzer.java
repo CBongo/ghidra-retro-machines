@@ -272,6 +272,17 @@ public class CopyLoopAnalyzer extends AbstractAnalyzer {
 		// Bound the range from the LDX/LDY #imm counter init. Only the clean down-counting form
 		// gives a range certain to be [dst, dst+len).
 		Instruction init = LoopIdioms.findCounterInit(listing, lda, idx);
+		// grm-7pp: an init further back than the linear lookback (a counter loaded once, then
+		// several loops after a dispatch) is found by walking the CFG backwards; it must dominate
+		// the loop on every path. Such an init is shared between loops, so everything keyed on
+		// "the init's address" below (the declined NOTE, the provenance site, the jump-exclusion
+		// range) is anchored on the loop's own LDA instead.
+		boolean farInit = false;
+		if (init == null && downCount && bpl && backEdge) {
+			init = LoopIdioms.findDominatingCounterInit(program, lda, idx, branch);
+			farInit = init != null;
+		}
+		Address anchor = farInit ? lda.getAddress() : init == null ? null : init.getAddress();
 		Integer n = init == null ? null : MosOperands.immediateOperandValue(init);
 		if (!(downCount && bpl && backEdge)) {
 			return null; // not a copy loop -- an ordinary adjacent indexed load/store, ignore
@@ -319,7 +330,7 @@ public class CopyLoopAnalyzer extends AbstractAnalyzer {
 		Address entry = null;
 		if (jumpInto == null) {
 			LoopIdioms.FlowInto flow = LoopIdioms.findFlowIntoRange(program, dst, len,
-				init.getAddress(), branch.getAddress());
+				anchor, branch.getAddress());
 			if (flow != null) {
 				jumpInto = flow.site();
 				entry = flow.target();
@@ -352,7 +363,7 @@ public class CopyLoopAnalyzer extends AbstractAnalyzer {
 			}
 		}
 		if (jumpInto == null && !decodes) {
-			program.getBookmarkManager().setBookmark(init.getAddress(), BookmarkType.NOTE,
+			program.getBookmarkManager().setBookmark(anchor, BookmarkType.NOTE,
 				CATEGORY, DECLINED_PREFIX + TransferMaterializer.fmt(src) + " -> " +
 					TransferMaterializer.fmt(dst) + " (" + len + " bytes) recognized but NOT " +
 					"materialized: nothing jumps into the destination and " +
@@ -385,7 +396,7 @@ public class CopyLoopAnalyzer extends AbstractAnalyzer {
 		return RunFromElsewhere.request(resolvedSrc != null ? resolvedSrc : src,
 			resolved != null ? resolved : dst, len)
 				.target(resolved != null ? TransferTarget.RESOLVED_SPACE : TransferTarget.SAME_SPACE)
-				.provenanceSite(init.getAddress())
+				.provenanceSite(anchor)
 				.disassemble(true)
 				.makeFunction(true)
 				.entryPoint(entry)

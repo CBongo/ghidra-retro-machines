@@ -253,6 +253,117 @@ final class LoopIdioms {
 		return null;
 	}
 
+	/** How many instructions {@link #findDominatingCounterInit} may visit before giving up. */
+	static final int COUNTER_WALK_BUDGET = 96;
+
+	/** The mnemonics that write index register {@code X} / {@code Y}, other than the immediate load. */
+	private static final java.util.Set<String> X_WRITERS = java.util.Set.of("LDX", "TAX", "TSX",
+		"INX", "DEX");
+	private static final java.util.Set<String> Y_WRITERS = java.util.Set.of("LDY", "TAY", "INY",
+		"DEY");
+
+	/**
+	 * The {@code LDX/LDY #imm} that seeds {@code idx} on EVERY path into the loop, found by walking
+	 * the control-flow graph backwards from the loop head {@code lda} (grm-7pp). The linear
+	 * {@link #findCounterInit} only sees an init within a handful of instructions in address order;
+	 * a counter loaded once at the top of a routine and consumed by several loops after a
+	 * dispatch (db3's {@code LDX #$28} at e66e feeding three loops at e69e/e707/e712 across
+	 * branches) is out of its reach even though the length is not in doubt.
+	 *
+	 * <p>Conservative by construction -- null unless every backward path reaches an immediate load
+	 * of the same value without crossing anything that could change the register: any other
+	 * writer of it, a call (the callee may clobber it), an entry with no known predecessor (a
+	 * function entry or an unreached head: the register arrives from a caller we cannot see), a
+	 * computed flow into the path, or running past {@link #COUNTER_WALK_BUDGET}. The loop's own
+	 * back edge ({@code loopBranch}) is not a way in. Several distinct inits that agree on the
+	 * value are fine; the lowest-addressed is returned.
+	 */
+	static Instruction findDominatingCounterInit(Program program, Instruction lda, Register idx,
+			Instruction loopBranch) {
+		java.util.Set<String> writers;
+		String load;
+		if (idx.getName().equalsIgnoreCase("X")) {
+			writers = X_WRITERS;
+			load = "LDX";
+		}
+		else if (idx.getName().equalsIgnoreCase("Y")) {
+			writers = Y_WRITERS;
+			load = "LDY";
+		}
+		else {
+			return null;
+		}
+		Listing listing = program.getListing();
+		ReferenceManager refMgr = program.getReferenceManager();
+		java.util.ArrayDeque<Instruction> work = new java.util.ArrayDeque<>();
+		java.util.Set<Address> seen = new java.util.HashSet<>();
+		Instruction best = null;
+		Integer value = null;
+		work.add(lda);
+		seen.add(lda.getAddress());
+		boolean first = true;
+		while (!work.isEmpty()) {
+			Instruction cur = work.poll();
+			// Predecessors of cur: the fall-through source and every direct flow reference in.
+			List<Instruction> preds = new ArrayList<>();
+			Instruction before = listing.getInstructionBefore(cur.getAddress());
+			if (before != null && cur.getAddress().equals(before.getFallThrough())) {
+				preds.add(before);
+			}
+			for (Reference ref : refMgr.getReferencesTo(cur.getAddress())) {
+				RefType type = ref.getReferenceType();
+				if (type.isCall()) {
+					return null; // cur is a routine entry: the register comes from a caller
+				}
+				if (!type.isFlow()) {
+					continue;
+				}
+				if (type.isComputed()) {
+					return null;
+				}
+				Instruction src = listing.getInstructionAt(ref.getFromAddress());
+				if (src == null) {
+					return null;
+				}
+				if (!preds.contains(src)) {
+					preds.add(src);
+				}
+			}
+			if (preds.isEmpty()) {
+				return null; // unreached head or entry point
+			}
+			for (Instruction p : preds) {
+				if (first && loopBranch != null && p.getAddress().equals(loopBranch.getAddress())) {
+					continue; // the loop's own back edge
+				}
+				if (!seen.add(p.getAddress())) {
+					continue;
+				}
+				String m = mnem(p);
+				if (m.equals(load) && MosOperands.isImmediate(p)) {
+					Integer v = MosOperands.immediateOperandValue(p);
+					if (v == null || (value != null && !value.equals(v))) {
+						return null;
+					}
+					value = v;
+					if (best == null || p.getAddress().compareTo(best.getAddress()) < 0) {
+						best = p;
+					}
+					continue; // this path is settled
+				}
+				if (writers.contains(m) || m.equals("JSR") || p.getFlowType().isCall()) {
+					return null;
+				}
+				if (seen.size() > COUNTER_WALK_BUDGET) {
+					return null;
+				}
+				work.add(p);
+			}
+			first = false;
+		}
+		return best;
+	}
+
 	/** A {@code JMP}/{@code JSR} into {@code [base, base+len)} shortly after the loop, or null. */
 	static Address findJumpIntoRange(Listing listing, Instruction branch, Address base, int len) {
 		if (branch == null || branch.getFallThrough() == null) {
