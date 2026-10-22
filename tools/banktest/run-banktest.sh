@@ -673,6 +673,14 @@ finish_fixture() {
 		fail=1
 		return
 	fi
+	local errs
+	if errs=$(grm_script_errors "$log"); then
+		# Headless analyzes on past a script that threw, so the dump below would look fine (grm-h649).
+		echo "FAIL: a script threw during $name's import (log: $log$lognote):"
+		printf '  %s\n' "$errs"
+		fail=1
+		return
+	fi
 	if ! grep -q '^=== BANKDUMP END ===$' "$stripped"; then
 		echo "FAIL: no BANKDUMP section for $name -- did VerifyBankTest run? (log: $log$lognote)"
 		fail=1

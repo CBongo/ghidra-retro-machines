@@ -1380,6 +1380,14 @@ import_and_dump() {
 		echo "    no REALROM block produced (log: $log)" >&2
 		return 1
 	fi
+	# A dump can exist on top of a script that threw: headless analyzes on past a failed
+	# preScript, so without this a row's manual transfer could vanish into a golden diff (grm-h649).
+	local errs
+	if errs=$(grm_script_errors "$log"); then
+		echo "    a script threw during $id's import -- row FAILs (log: $log):" >&2
+		printf '      %s\n' "$errs" >&2
+		return 1
+	fi
 	return 0
 }
 
@@ -1658,6 +1666,9 @@ flush_batch() {
 			why="no section in the batch log"
 		elif ! extract_dump "$sec" "$out"; then
 			why="no REALROM block in its section of the batch log"
+		elif grm_script_errors "$sec" >/dev/null; then
+			# The solo rerun reports the error lines and FAILs the row (grm-h649).
+			why="a script threw (REPORT SCRIPT ERROR in its section)"
 		fi
 		if [ -n "$why" ]; then
 			echo "NOTE: batch $seq FALLBACK -- re-running $id individually ($why; batch log: $blog)"

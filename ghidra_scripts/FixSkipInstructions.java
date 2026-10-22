@@ -96,6 +96,8 @@ import ghidra.program.model.listing.InstructionIterator;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.symbol.Reference;
 
+import retromachines.TypedAddress;
+
 public class FixSkipInstructions extends GhidraScript {
 
 	/** Dialog title for the interactive prompts. */
@@ -155,7 +157,9 @@ public class FixSkipInstructions extends GhidraScript {
 			askForOptions();
 		}
 		else if (!parseArgs(getScriptArgs())) {
-			return; // parseArgs already reported the reason
+			// parseArgs already printed the reason; throw so headless logs REPORT SCRIPT ERROR
+			// instead of reading a returned-from script as success (grm-h649).
+			throw new IllegalArgumentException("FixSkipInstructions: " + argError);
 		}
 
 		listing = currentProgram.getListing();
@@ -440,7 +444,7 @@ public class FixSkipInstructions extends GhidraScript {
 			// SPACE:offset on a banked board, so an unbounded split would truncate the value.
 			String[] kv = arg.split(":", 2);
 			if (kv.length != 2 || kv[0].isEmpty() || kv[1].isEmpty()) {
-				printerr("malformed argument '" + arg + "'; expected key:value with no whitespace");
+				argError("malformed argument '" + arg + "'; expected key:value with no whitespace");
 				return false;
 			}
 			String key = kv[0];
@@ -454,14 +458,14 @@ public class FixSkipInstructions extends GhidraScript {
 					case "reanalyze" -> reanalyze = flag(key, value);
 					case "range" -> parseRange(value);
 					default -> {
-						printerr("unknown key '" + key + "' in argument '" + arg + "'; expected " +
+						argError("unknown key '" + key + "' in argument '" + arg + "'; expected " +
 							"one of carriers, weak, dryrun, function, reanalyze, range");
 						return false;
 					}
 				}
 			}
 			catch (IllegalArgumentException e) {
-				printerr("bad value in argument '" + arg + "': " + e.getMessage());
+				argError("bad value in argument '" + arg + "': " + e.getMessage());
 				return false;
 			}
 		}
@@ -497,12 +501,21 @@ public class FixSkipInstructions extends GhidraScript {
 		}
 	}
 
+	/** The last argument problem parseArgs reported, carried into the exception run() throws. */
+	private String argError = "bad arguments";
+
+	/** Reports an argument problem on the console and remembers it for the exception. */
+	private void argError(String message) {
+		argError = message;
+		printerr(message);
+	}
+
 	/**
-	 * An address token. {@code parseAddress} already accepts a {@code 0x} prefix and a
-	 * {@code SPACE:offset} qualifier; only the assembler-style {@code $} needs stripping.
+	 * An address token: hex, {@code $}/{@code 0x}-prefixed or not, optionally
+	 * {@code SPACE:offset}. {@link TypedAddress} names a space that does not exist (grm-h649).
 	 */
 	private Address address(String text) {
-		return parseAddress(text.startsWith("$") ? text.substring(1) : text);
+		return TypedAddress.parse(currentProgram, text);
 	}
 
 	/** A strict boolean: anything but true/false is a typo worth failing on, not a false. */

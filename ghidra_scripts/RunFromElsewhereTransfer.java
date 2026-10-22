@@ -49,6 +49,7 @@ import ghidra.util.exception.CancelledException;
 import retromachines.RunFromElsewhere;
 import retromachines.TransferTarget;
 import retromachines.TransferTransform;
+import retromachines.TypedAddress;
 
 public class RunFromElsewhereTransfer extends GhidraScript {
 
@@ -73,7 +74,10 @@ public class RunFromElsewhereTransfer extends GhidraScript {
 		RunFromElsewhere.Request request =
 			getScriptArgs().length == 0 ? askForRequest() : parseArgs(getScriptArgs());
 		if (request == null) {
-			return; // parseArgs already reported the reason
+			// parseArgs already printed the reason. Throwing, not returning, is what makes
+			// headless log REPORT SCRIPT ERROR, which the real-ROM runner fails a row on: a
+			// returned-from script reads as success (grm-h649).
+			throw new IllegalArgumentException("RunFromElsewhereTransfer: " + argError);
 		}
 
 		// No start()/end() here: GhidraScript.executeNormal (GhidraScript.java:457-466) wraps
@@ -88,11 +92,14 @@ public class RunFromElsewhereTransfer extends GhidraScript {
 		println("RFE placement " + result.placement() + " block " +
 			(result.blockName() == null ? "<none>" : result.blockName()) +
 			(result.alreadyPresent() ? " (already present)" : ""));
-		if (!result.satisfied()) {
-			printerr("RFE transfer not materialized: " + result.detail());
-		}
 		if (log.hasMessages()) {
 			printerr(log.toString());
+		}
+		if (!result.satisfied()) {
+			printerr("RFE transfer not materialized: " + result.detail());
+			// A transfer someone asked for by hand that placed nothing is a failure, not a
+			// result: an unthrown one leaves analysis to run on as if the copy existed.
+			throw new IllegalStateException("RFE transfer not materialized: " + result.detail());
 		}
 	}
 
@@ -168,7 +175,7 @@ public class RunFromElsewhereTransfer extends GhidraScript {
 			// would truncate the value at the space separator and parse the wrong address.
 			String[] kv = arg.split(":", 2);
 			if (kv.length != 2 || kv[0].isEmpty() || kv[1].isEmpty()) {
-				printerr("malformed argument '" + arg + "'; expected key:value with no whitespace");
+				argError("malformed argument '" + arg + "'; expected key:value with no whitespace");
 				return null;
 			}
 			String key = kv[0];
@@ -187,7 +194,7 @@ public class RunFromElsewhereTransfer extends GhidraScript {
 					case "disassemble" -> disassemble = flag(key, value);
 					case "function" -> function = flag(key, value);
 					default -> {
-						printerr("unknown key '" + key + "' in argument '" + arg + "'; expected " +
+						argError("unknown key '" + key + "' in argument '" + arg + "'; expected " +
 							"one of src, dst, len, transform, target, entry, site, jump, " +
 							"disassemble, function");
 						return null;
@@ -195,18 +202,18 @@ public class RunFromElsewhereTransfer extends GhidraScript {
 				}
 			}
 			catch (IllegalArgumentException e) {
-				printerr("bad value in argument '" + arg + "': " + e.getMessage());
+				argError("bad value in argument '" + arg + "': " + e.getMessage());
 				return null;
 			}
 		}
 
 		if (src == null || dst == null || len < 0) {
-			printerr("src, dst and len are all required (got src=" + src + " dst=" + dst +
+			argError("src, dst and len are all required (got src=" + src + " dst=" + dst +
 				" len=" + (len < 0 ? "<missing>" : Long.toString(len)) + ")");
 			return null;
 		}
 		if (len <= 0 || len > Integer.MAX_VALUE) {
-			printerr("len must be between 1 and " + Integer.MAX_VALUE + ", got " + len);
+			argError("len must be between 1 and " + Integer.MAX_VALUE + ", got " + len);
 			return null;
 		}
 
@@ -222,12 +229,21 @@ public class RunFromElsewhereTransfer extends GhidraScript {
 	}
 
 	/**
-	 * An address token. Addresses are always hex, and {@code parseAddress} already accepts a
-	 * {@code 0x} prefix and a {@code SPACE:offset} qualifier (AbstractAddressSpace.java:203-232);
-	 * only the assembler-style {@code $} needs stripping first.
+	 * An address token: hex, {@code $}/{@code 0x}-prefixed or not, optionally
+	 * {@code SPACE:offset}. {@link TypedAddress} rather than {@code parseAddress} so a space that
+	 * does not exist is named, with the spelling that does (grm-h649).
 	 */
 	private Address address(String text) {
-		return parseAddress(text.startsWith("$") ? text.substring(1) : text);
+		return TypedAddress.parse(currentProgram, text);
+	}
+
+	/** The last argument problem parseArgs reported, carried into the exception run() throws. */
+	private String argError = "bad arguments";
+
+	/** Reports an argument problem on the console and remembers it for the exception. */
+	private void argError(String message) {
+		argError = message;
+		printerr(message);
 	}
 
 	/** A count. Unlike an address this defaults to DECIMAL, so {@code len:8} means eight. */

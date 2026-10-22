@@ -879,6 +879,19 @@ grm_split_batch_log() {
 	' "$1"
 }
 
+# A script that threw (bead grm-h649). analyzeHeadless logs "REPORT SCRIPT ERROR" and then carries
+# on: for a plain GhidraScript (every script here) a failed preScript aborts nothing, so the import
+# still analyzes and the postScript still dumps, and the only trace of the failure is this line.
+# Prints the offending lines (CR-stripped, at most 5) and succeeds when <log> has any.
+#
+#   grm_script_errors <log>
+grm_script_errors() {
+	local hits
+	hits=$(sed 's/\r$//' "$1" | grep 'REPORT SCRIPT ERROR' | head -5) || return 1
+	[ -n "$hits" ] || return 1
+	printf '%s\n' "$hits"
+}
+
 # Strip anything that isn't [A-Za-z0-9._-]: analyzeHeadless.bat chokes on parentheses and spaces.
 # Shared by realrom-test.sh and measure-overlay-scale.sh (bead grm-rx1i.11).
 sanitize() {
