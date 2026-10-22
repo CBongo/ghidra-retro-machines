@@ -7,39 +7,22 @@ REALROM placement NONE
 REALROM block PRG_RAM 6000-7fff overlay=false
 REALROM block RAM 0000-07ff overlay=false
 REALROM block W8000 8000-bfff overlay=false
-REALROM block W8000_M0_B0 8000-ffff overlay=true
-REALROM block W8000_M0_B2 8000-ffff overlay=true
-REALROM block W8000_M0_B4 8000-ffff overlay=true
-REALROM block W8000_M0_B6 8000-ffff overlay=true
-REALROM block W8000_M1_B0 8000-ffff overlay=true
-REALROM block W8000_M1_B2 8000-ffff overlay=true
-REALROM block W8000_M1_B4 8000-ffff overlay=true
-REALROM block W8000_M1_B6 8000-ffff overlay=true
-REALROM block W8000_M2 8000-bfff overlay=true
-REALROM block W8000_M3_B1 8000-bfff overlay=true
-REALROM block W8000_M3_B2 8000-bfff overlay=true
-REALROM block W8000_M3_B3 8000-bfff overlay=true
-REALROM block W8000_M3_B4 8000-bfff overlay=true
-REALROM block W8000_M3_B5 8000-bfff overlay=true
-REALROM block W8000_M3_B6 8000-bfff overlay=true
-REALROM block W8000_M3_B7 8000-bfff overlay=true
+REALROM block W8000_B1 8000-bfff overlay=true
+REALROM block W8000_B2 8000-bfff overlay=true
+REALROM block W8000_B3 8000-bfff overlay=true
+REALROM block W8000_B4 8000-bfff overlay=true
+REALROM block W8000_B5 8000-bfff overlay=true
+REALROM block W8000_B6 8000-bfff overlay=true
+REALROM block W8000_B7 8000-bfff overlay=true
 REALROM block WC000 c000-ffff overlay=false
-REALROM block WC000_M2_B0 c000-ffff overlay=true
-REALROM block WC000_M2_B1 c000-ffff overlay=true
-REALROM block WC000_M2_B2 c000-ffff overlay=true
-REALROM block WC000_M2_B3 c000-ffff overlay=true
-REALROM block WC000_M2_B4 c000-ffff overlay=true
-REALROM block WC000_M2_B5 c000-ffff overlay=true
-REALROM block WC000_M2_B6 c000-ffff overlay=true
-REALROM block WC000_M2_B7 c000-ffff overlay=true
-REALROM count blocks.total 30
-REALROM count blocks.overlay 24
+REALROM count blocks.total 13
+REALROM count blocks.overlay 7
 REALROM count refs.intoOverlay.retargeted 72
 REALROM count refs.intoOverlay.intraOverlay 3743
 REALROM count instrs.inOverlay 15099
 REALROM count bankComments 106
-REALROM count warnings 9
-REALROM count notes 8
+REALROM count warnings 5
+REALROM count notes 12
 REALROM count symbols 110
 REALROM sample.bankcomment a947 bank -> mirroring=3,prg_mode=3,prg_bank=3 via FUN_ce56 [switch-value flow]
 REALROM sample.bankcomment bf6c bank -> mirroring=3,prg_mode=3,prg_bank=2 via FUN_ce56 [switch-value flow]
@@ -147,42 +130,39 @@ REALROM sample.bankcomment dbe1 bank -> mirroring=0,prg_mode=3,prg_bank=1 via FU
 REALROM sample.bankcomment dd41 bank -> mirroring=0,prg_mode=3,prg_bank=1? via FUN_cea7 [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
 REALROM sample.bankcomment ffda bank -> mirroring=0,prg_mode=3,prg_bank=0 [switch-value flow]
 REALROM sample.bankcomment ffdd bank -> mirroring=0,prg_mode=3,prg_bank=31 (wraps to 7) via FUN_c310 [switch-value flow]
-REALROM sample.ref 8003 -> W8000_M3_B6::8007 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8005 -> W8000_M3_B5::8012 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8007 -> W8000_M3_B6::8010 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 800b -> W8000_M3_B5::8012 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 800d -> W8000_M3_B6::8007 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 800f -> W8000_M3_B5::bd24 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 8013 -> W8000_M3_B6::8016 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8017 -> W8000_M3_B5::802c CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8019 -> W8000_M3_B6::8021 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 801b -> W8000_M3_B5::8020 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 801b -> W8000_M3_B6::80cc UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 8020 -> W8000_M3_B5::8032 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 8021 -> W8000_M3_B6::808c UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 8023 -> W8000_M3_B5::8049 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 8027 -> W8000_M3_B6::802f CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8029 -> W8000_M3_B5::8077 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 802f -> W8000_M3_B5::8014 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8033 -> W8000_M3_B6::8043 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8035 -> W8000_M3_B5::803e CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8037 -> W8000_M3_B6::8041 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8039 -> W8000_M3_B5::8046 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 803b -> W8000_M3_B5::8212 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 803b -> W8000_M3_B6::8047 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8041 -> W8000_M3_B5::803b CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8043 -> W8000_M3_B5::93f0 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8003 -> W8000_B6::8007 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8005 -> W8000_B5::8012 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8007 -> W8000_B6::8010 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 800b -> W8000_B5::8012 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 800d -> W8000_B6::8007 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 800f -> W8000_B5::bd24 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8013 -> W8000_B6::8016 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8017 -> W8000_B5::802c CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8019 -> W8000_B6::8021 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 801b -> W8000_B5::8020 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 801b -> W8000_B6::80cc UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8020 -> W8000_B5::8032 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8021 -> W8000_B6::808c UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8023 -> W8000_B5::8049 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8027 -> W8000_B6::802f CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8029 -> W8000_B5::8077 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 802f -> W8000_B5::8014 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8033 -> W8000_B6::8043 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8035 -> W8000_B5::803e CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8037 -> W8000_B6::8041 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8039 -> W8000_B5::8046 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 803b -> W8000_B5::8212 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 803b -> W8000_B6::8047 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8041 -> W8000_B5::803b CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8043 -> W8000_B5::93f0 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref.truncated 25 of 3815
 REALROM sample.warn 97a5 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
-REALROM sample.warn c3c8 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_cea7 whose bank argument could not be recovered at this call site
 REALROM sample.warn ced2 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_cea7 whose bank argument could not be recovered at this call site
 REALROM sample.warn cf0d [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_cea7 whose bank argument could not be recovered at this call site
-REALROM sample.warn d06f [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_cea7 whose bank argument could not be recovered at this call site
-REALROM sample.warn d159 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_cea7 whose bank argument could not be recovered at this call site
-REALROM sample.warn d1aa [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_cea7 whose bank argument could not be recovered at this call site
 REALROM sample.warn d1c9 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_cea7 whose bank argument could not be recovered at this call site
 REALROM sample.warn dd28 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_cea7 whose bank argument could not be recovered at this call site
 REALROM sample.note 97a5 [NesBankingAnalyzer mode lock] prg_mode assumed to stay 3 here: this write's prg_mode bits could not be resolved, and code reached from reset only ever sets prg_mode=3 (first at c32b). Not verified at this site.
+REALROM sample.note c3c8 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call re-commits the bank READ BACK at c3bc from bank-identifying ROM byte 8000 -- a byte whose value is the bank it is read from, so the byte read is the bank live at the read, carried on the stack across the call at c3c4 -- the save/restore idiom. The bank after this call is whatever 8000 held at that read, not a fresh value this analyzer failed to pin down. A property of the game, not a gap in analysis.
 REALROM sample.note c89d [CopyLoopAnalyzer] copy-shaped loop RAM:00c2 -> RAM:00c8 (3 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note ce59 [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
 REALROM sample.note ce69 [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
@@ -190,6 +170,9 @@ REALROM sample.note ce74 [NesBankingAnalyzer] Bank value is this helper's ARGUME
 REALROM sample.note ce8f [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
 REALROM sample.note ceaa [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
 REALROM sample.note ceba [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
+REALROM sample.note d06f [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call re-commits the bank READ BACK at d067 from bank-identifying ROM byte 8000 -- a byte whose value is the bank it is read from, so the byte read is the bank live at the read, carried on the stack across the call at d06b -- the save/restore idiom. The bank after this call is whatever 8000 held at that read, not a fresh value this analyzer failed to pin down. That read sits at the ENTRY of FUN_d067 (nothing switches between its entry and the read), so it is the bank live on entry: each of its call sites' own bank, which those sites already track -- the call passes it through unchanged. A property of the game, not a gap in analysis.
+REALROM sample.note d159 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call re-commits the bank READ BACK at d151 from bank-identifying ROM byte 8000 -- a byte whose value is the bank it is read from, so the byte read is the bank live at the read, carried on the stack across the call at d155 -- the save/restore idiom. The bank after this call is whatever 8000 held at that read, not a fresh value this analyzer failed to pin down. That read sits at the ENTRY of FUN_d151 (nothing switches between its entry and the read), so it is the bank live on entry: each of its call sites' own bank, which those sites already track -- the call passes it through unchanged. A property of the game, not a gap in analysis.
+REALROM sample.note d1aa [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call re-commits the bank READ BACK at d1a2 from bank-identifying ROM byte 8000 -- a byte whose value is the bank it is read from, so the byte read is the bank live at the read, carried on the stack across the call at d1a6 -- the save/restore idiom. The bank after this call is whatever 8000 held at that read, not a fresh value this analyzer failed to pin down. That read sits at the ENTRY of FUN_d1a2 (nothing switches between its entry and the read), so it is the bank live on entry: each of its call sites' own bank, which those sites already track -- the call passes it through unchanged. A property of the game, not a gap in analysis.
 REALROM sample.symbol 82e0 switch USER_DEFINED primary=true
 REALROM sample.symbol 832f case_3 USER_DEFINED primary=true
 REALROM sample.symbol 8341 case_0 USER_DEFINED primary=true

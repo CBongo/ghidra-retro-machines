@@ -7,57 +7,24 @@ REALROM placement NONE
 REALROM block PRG_RAM 6000-7fff overlay=false
 REALROM block RAM 0000-07ff overlay=false
 REALROM block W8000 8000-bfff overlay=false
-REALROM block W8000_M0_B0 8000-ffff overlay=true
-REALROM block W8000_M0_B10 8000-ffff overlay=true
-REALROM block W8000_M0_B12 8000-ffff overlay=true
-REALROM block W8000_M0_B14 8000-ffff overlay=true
-REALROM block W8000_M0_B2 8000-ffff overlay=true
-REALROM block W8000_M0_B4 8000-ffff overlay=true
-REALROM block W8000_M0_B6 8000-ffff overlay=true
-REALROM block W8000_M0_B8 8000-ffff overlay=true
-REALROM block W8000_M1_B0 8000-ffff overlay=true
-REALROM block W8000_M1_B10 8000-ffff overlay=true
-REALROM block W8000_M1_B12 8000-ffff overlay=true
-REALROM block W8000_M1_B14 8000-ffff overlay=true
-REALROM block W8000_M1_B2 8000-ffff overlay=true
-REALROM block W8000_M1_B4 8000-ffff overlay=true
-REALROM block W8000_M1_B6 8000-ffff overlay=true
-REALROM block W8000_M1_B8 8000-ffff overlay=true
-REALROM block W8000_M2 8000-bfff overlay=true
-REALROM block W8000_M3_B1 8000-bfff overlay=true
-REALROM block W8000_M3_B10 8000-bfff overlay=true
-REALROM block W8000_M3_B11 8000-bfff overlay=true
-REALROM block W8000_M3_B12 8000-bfff overlay=true
-REALROM block W8000_M3_B13 8000-bfff overlay=true
-REALROM block W8000_M3_B14 8000-bfff overlay=true
-REALROM block W8000_M3_B15 8000-bfff overlay=true
-REALROM block W8000_M3_B2 8000-bfff overlay=true
-REALROM block W8000_M3_B3 8000-bfff overlay=true
-REALROM block W8000_M3_B4 8000-bfff overlay=true
-REALROM block W8000_M3_B5 8000-bfff overlay=true
-REALROM block W8000_M3_B6 8000-bfff overlay=true
-REALROM block W8000_M3_B7 8000-bfff overlay=true
-REALROM block W8000_M3_B8 8000-bfff overlay=true
-REALROM block W8000_M3_B9 8000-bfff overlay=true
+REALROM block W8000_B1 8000-bfff overlay=true
+REALROM block W8000_B10 8000-bfff overlay=true
+REALROM block W8000_B11 8000-bfff overlay=true
+REALROM block W8000_B12 8000-bfff overlay=true
+REALROM block W8000_B13 8000-bfff overlay=true
+REALROM block W8000_B14 8000-bfff overlay=true
+REALROM block W8000_B15 8000-bfff overlay=true
+REALROM block W8000_B2 8000-bfff overlay=true
+REALROM block W8000_B3 8000-bfff overlay=true
+REALROM block W8000_B4 8000-bfff overlay=true
+REALROM block W8000_B5 8000-bfff overlay=true
+REALROM block W8000_B6 8000-bfff overlay=true
+REALROM block W8000_B7 8000-bfff overlay=true
+REALROM block W8000_B8 8000-bfff overlay=true
+REALROM block W8000_B9 8000-bfff overlay=true
 REALROM block WC000 c000-ffff overlay=false
-REALROM block WC000_M2_B0 c000-ffff overlay=true
-REALROM block WC000_M2_B1 c000-ffff overlay=true
-REALROM block WC000_M2_B10 c000-ffff overlay=true
-REALROM block WC000_M2_B11 c000-ffff overlay=true
-REALROM block WC000_M2_B12 c000-ffff overlay=true
-REALROM block WC000_M2_B13 c000-ffff overlay=true
-REALROM block WC000_M2_B14 c000-ffff overlay=true
-REALROM block WC000_M2_B15 c000-ffff overlay=true
-REALROM block WC000_M2_B2 c000-ffff overlay=true
-REALROM block WC000_M2_B3 c000-ffff overlay=true
-REALROM block WC000_M2_B4 c000-ffff overlay=true
-REALROM block WC000_M2_B5 c000-ffff overlay=true
-REALROM block WC000_M2_B6 c000-ffff overlay=true
-REALROM block WC000_M2_B7 c000-ffff overlay=true
-REALROM block WC000_M2_B8 c000-ffff overlay=true
-REALROM block WC000_M2_B9 c000-ffff overlay=true
-REALROM count blocks.total 54
-REALROM count blocks.overlay 48
+REALROM count blocks.total 21
+REALROM count blocks.overlay 15
 REALROM count refs.intoOverlay.retargeted 45
 REALROM count refs.intoOverlay.intraOverlay 1754
 REALROM count instrs.inOverlay 7340
@@ -99,10 +66,10 @@ REALROM sample.bankcomment d8b8 bank -> mirroring=0,prg_mode=3,prg_bank=0? via F
 REALROM sample.bankcomment d97f bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_fe1a [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment db69 bank -> mirroring=0,prg_mode=3,prg_bank=10? via FUN_fe1a [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=0,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment dd7a bank -> mirroring=0,prg_mode=3,prg_bank=0? via FUN_fe1a [known: prg_bank.0=0,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
-REALROM sample.bankcomment deb0 bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_fe1a [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
-REALROM sample.bankcomment df2f bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_fe1a [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
-REALROM sample.bankcomment e000 bank -> mirroring=0,prg_mode=3,prg_bank=10? via FUN_fe1a [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=1,prg_bank.2=0,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
-REALROM sample.bankcomment e031 bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_fe1a [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
+REALROM sample.bankcomment deb0 bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_fe1a [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
+REALROM sample.bankcomment df2f bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_fe1a [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
+REALROM sample.bankcomment e000 bank -> mirroring=0,prg_mode=3,prg_bank=10? via FUN_fe1a [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=0,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
+REALROM sample.bankcomment e031 bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_fe1a [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment e81f bank -> mirroring=0,prg_mode=3,prg_bank=0? via FUN_fe1a [known: prg_bank.0=0,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment e8b0 bank -> mirroring=0,prg_mode=3,prg_bank=11? via FUN_fe1a [known: prg_bank.0=1,prg_bank.1=1,prg_bank.2=0,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment e8df bank -> mirroring=0,prg_mode=3,prg_bank=11? via FUN_fe1a [known: prg_bank.0=1,prg_bank.1=1,prg_bank.2=0,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
@@ -112,26 +79,26 @@ REALROM sample.bankcomment e977 bank -> mirroring=0,prg_mode=3,prg_bank=3? via F
 REALROM sample.bankcomment e990 bank -> mirroring=0,prg_mode=3,prg_bank=9? via FUN_fe1a [known: prg_bank.0=1,prg_bank.1=0,prg_bank.2=0,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment e9d5 bank -> mirroring=0,prg_mode=3,prg_bank=0? via FUN_fe1a [known: prg_bank.0=0,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment e9e9 bank -> mirroring=0,prg_mode=3,prg_bank=2? via FUN_fe1a [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
-REALROM sample.bankcomment ea04 bank -> mirroring=0,prg_mode=3,prg_bank=9? via FUN_fe1a [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=0,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
+REALROM sample.bankcomment ea04 bank -> mirroring=0,prg_mode=3,prg_bank=9? via FUN_fe1a [known: prg_bank.0=1,prg_bank.1=0,prg_bank.2=0,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment ea2a bank -> mirroring=0,prg_mode=3,prg_bank=0? via FUN_fe1a [known: prg_bank.0=0,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment ea5d bank -> mirroring=0,prg_mode=3,prg_bank=11? via FUN_fe1a [known: prg_bank.0=1,prg_bank.1=1,prg_bank.2=0,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment ea97 bank -> mirroring=0,prg_mode=3,prg_bank=7? [known: prg_bank.0=1,prg_bank.1=1,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] | mirroring=0,prg_mode=3,prg_bank=8? [known: prg_bank.0=0,prg_bank.1=0,prg_bank.2=0,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] via FUN_fe1a [path fork: 2 arms] [switch-value flow]
-REALROM sample.bankcomment eaa4 bank -> mirroring=0,prg_mode=3,prg_bank=13? via FUN_fe1a [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
-REALROM sample.bankcomment eabb bank -> mirroring=0,prg_mode=3,prg_bank=9? via FUN_fe1a [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=0,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
+REALROM sample.bankcomment eaa4 bank -> mirroring=0,prg_mode=3,prg_bank=13? via FUN_fe1a [known: prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
+REALROM sample.bankcomment eabb bank -> mirroring=0,prg_mode=3,prg_bank=9? via FUN_fe1a [known: prg_bank.0=1,prg_bank.1=0,prg_bank.2=0,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment eae3 bank -> mirroring=0,prg_mode=3,prg_bank=9? via FUN_fe1a [known: prg_bank.0=1,prg_bank.1=0,prg_bank.2=0,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment eb1b bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_fe1a [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
-REALROM sample.bankcomment eb44 bank -> mirroring=0,prg_mode=3,prg_bank=0? via FUN_fe1a [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
+REALROM sample.bankcomment eb44 bank -> mirroring=0,prg_mode=3,prg_bank=0? via FUN_fe1a [known: prg_bank.0=0,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment eb7e bank -> mirroring=0,prg_mode=3,prg_bank=0? via FUN_fe1a [known: prg_bank.0=0,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment ecc3 bank -> mirroring=0,prg_mode=3,prg_bank=13? via FUN_fe1a [known: prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment ecd7 bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_fe1a [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
-REALROM sample.bankcomment ed05 bank -> mirroring=0,prg_mode=3,prg_bank=10? via FUN_fe1a [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=1,prg_bank.2=0,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
-REALROM sample.bankcomment ed6e bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_fe1a [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
-REALROM sample.bankcomment ed94 bank -> mirroring=0,prg_mode=3,prg_bank=12? via FUN_fe1a [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
-REALROM sample.bankcomment edcf bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_fe1a [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
-REALROM sample.bankcomment ee1d bank -> mirroring=0,prg_mode=3,prg_bank=12? via FUN_fe1a [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
-REALROM sample.bankcomment ee58 bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_fe1a [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
-REALROM sample.bankcomment ef72 bank -> mirroring=0,prg_mode=3,prg_bank=10? via FUN_fe1a [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=1,prg_bank.2=0,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
-REALROM sample.bankcomment ef9e bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_fe1a [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
+REALROM sample.bankcomment ed05 bank -> mirroring=0,prg_mode=3,prg_bank=10? via FUN_fe1a [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=0,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
+REALROM sample.bankcomment ed6e bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_fe1a [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
+REALROM sample.bankcomment ed94 bank -> mirroring=0,prg_mode=3,prg_bank=12? via FUN_fe1a [known: prg_bank.0=0,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
+REALROM sample.bankcomment edcf bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_fe1a [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
+REALROM sample.bankcomment ee1d bank -> mirroring=0,prg_mode=3,prg_bank=12? via FUN_fe1a [known: prg_bank.0=0,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
+REALROM sample.bankcomment ee58 bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_fe1a [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
+REALROM sample.bankcomment ef72 bank -> mirroring=0,prg_mode=3,prg_bank=10? via FUN_fe1a [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=0,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
+REALROM sample.bankcomment ef9e bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_fe1a [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment f297 bank -> mirroring=0,prg_mode=3,prg_bank=11? via FUN_fe1a [known: prg_bank.0=1,prg_bank.1=1,prg_bank.2=0,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment f337 bank -> mirroring=0,prg_mode=3,prg_bank=12? via FUN_fe1a [known: prg_bank.0=0,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment f37f bank -> mirroring=0,prg_mode=3,prg_bank=11? via FUN_fe1a [known: prg_bank.0=1,prg_bank.1=1,prg_bank.2=0,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
@@ -142,33 +109,33 @@ REALROM sample.bankcomment fe53 bank -> mirroring=0,prg_mode=3,prg_bank=0 [switc
 REALROM sample.bankcomment fe58 bank -> mirroring=2,prg_mode=3,prg_bank=0 via FUN_fe06 [switch-value flow]
 REALROM sample.bankcomment fe7b bank -> mirroring=0,prg_mode=3,prg_bank=6? via FUN_fe1a [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment fe96 bank -> mirroring=0,prg_mode=3,prg_bank=6? via FUN_fe1a [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
-REALROM sample.bankcomment ffc2 bank -> mirroring=0,prg_mode=3,prg_bank=1? via FUN_fe1a [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
-REALROM sample.bankcomment ffca bank -> mirroring=0,prg_mode=3,prg_bank=9? via FUN_fe1a [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=0,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
-REALROM sample.ref 8480 -> W8000_M3_B14::a219 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 8488 -> W8000_M3_B14::848b UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 848b -> W8000_M3_B14::84a7 DATA primary=true
-REALROM sample.ref 8491 -> W8000_M3_B14::84a6 DATA primary=true
-REALROM sample.ref 8499 -> W8000_M3_B14::84a6 DATA primary=true
-REALROM sample.ref 849c -> W8000_M3_B14::84a4 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 84a2 -> W8000_M3_B14::8499 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 84d6 -> W8000_M3_B14::84d9 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8d72 -> W8000_M3_B14::8d77 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8d74 -> W8000_M3_B14::8e37 UNCONDITIONAL_JUMP primary=true
-REALROM sample.ref 8d79 -> W8000_M3_B14::8dd8 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8d7d -> W8000_M3_B14::8ddc CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8d81 -> W8000_M3_B14::8de0 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8d85 -> W8000_M3_B14::8de4 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8d89 -> W8000_M3_B14::8de8 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8d8d -> W8000_M3_B14::8dec CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8d91 -> W8000_M3_B14::8df0 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8d95 -> W8000_M3_B14::8df4 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8d99 -> W8000_M3_B14::8dae CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8d9d -> W8000_M3_B14::8dc5 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8dab -> W8000_M3_B14::8e5c UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 8db0 -> W8000_M3_B14::8dc5 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8dc2 -> W8000_M3_B14::8e70 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 8dd5 -> W8000_M3_B14::8e84 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 8dda -> W8000_M3_B14::8e21 CONDITIONAL_JUMP primary=true
+REALROM sample.bankcomment ffc2 bank -> mirroring=0,prg_mode=3,prg_bank=1? via FUN_fe1a [known: prg_bank.0=1,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
+REALROM sample.bankcomment ffca bank -> mirroring=0,prg_mode=3,prg_bank=9? via FUN_fe1a [known: prg_bank.0=1,prg_bank.1=0,prg_bank.2=0,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
+REALROM sample.ref 8480 -> W8000_B14::a219 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8488 -> W8000_B14::848b UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 848b -> W8000_B14::84a7 DATA primary=true
+REALROM sample.ref 8491 -> W8000_B14::84a6 DATA primary=true
+REALROM sample.ref 8499 -> W8000_B14::84a6 DATA primary=true
+REALROM sample.ref 849c -> W8000_B14::84a4 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 84a2 -> W8000_B14::8499 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 84d6 -> W8000_B14::84d9 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8d72 -> W8000_B14::8d77 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8d74 -> W8000_B14::8e37 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8d79 -> W8000_B14::8dd8 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8d7d -> W8000_B14::8ddc CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8d81 -> W8000_B14::8de0 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8d85 -> W8000_B14::8de4 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8d89 -> W8000_B14::8de8 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8d8d -> W8000_B14::8dec CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8d91 -> W8000_B14::8df0 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8d95 -> W8000_B14::8df4 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8d99 -> W8000_B14::8dae CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8d9d -> W8000_B14::8dc5 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8dab -> W8000_B14::8e5c UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8db0 -> W8000_B14::8dc5 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8dc2 -> W8000_B14::8e70 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8dd5 -> W8000_B14::8e84 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8dda -> W8000_B14::8e21 CONDITIONAL_JUMP primary=true
 REALROM sample.ref.truncated 25 of 1799
 REALROM sample.warn c693 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fe1a whose bank argument could not be recovered at this call site
 REALROM sample.warn d1e0 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fe1a whose bank argument could not be recovered at this call site
@@ -190,15 +157,15 @@ REALROM sample.warn fe6d [NesBankingAnalyzer] Bank state becomes unknown here: m
 REALROM sample.warn fe70 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn fe73 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn fe76 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
-REALROM sample.note 993b [CopyLoopAnalyzer] copy-shaped loop W8000_M3_B14:9b71 -> RAM:0300 (32 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
-REALROM sample.note 9c72 [CopyLoopAnalyzer] copy-shaped loop W8000_M3_B14:a0ae -> RAM:0300 (64 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note 993b [CopyLoopAnalyzer] copy-shaped loop W8000_B14:9b71 -> RAM:0300 (32 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note 9c72 [CopyLoopAnalyzer] copy-shaped loop W8000_B14:a0ae -> RAM:0300 (64 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note a7df [CopyLoopAnalyzer] copy-shaped loop RAM:0010 -> RAM:0300 (5 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
-REALROM sample.note adc2 [CopyLoopAnalyzer] copy-shaped loop W8000_M3_B14:ad78 -> RAM:03c0 (12 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
-REALROM sample.note ae77 [CopyLoopAnalyzer] copy-shaped loop W8000_M3_B13:afb8 -> RAM:0300 (16 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
-REALROM sample.note ae89 [CopyLoopAnalyzer] copy-shaped loop W8000_M3_B13:bf00 -> RAM:03c0 (16 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
-REALROM sample.note b9f3 [CopyLoopAnalyzer] copy-shaped loop W8000_M3_B13:bf00 -> RAM:03c0 (16 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
-REALROM sample.note b9ff [CopyLoopAnalyzer] copy-shaped loop W8000_M3_B13:bf10 -> RAM:03c0 (16 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
-REALROM sample.note beb2 [CopyLoopAnalyzer] copy-shaped loop W8000_M3_B9:bf20 -> RAM:03c0 (16 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note adc2 [CopyLoopAnalyzer] copy-shaped loop W8000_B14:ad78 -> RAM:03c0 (12 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note ae77 [CopyLoopAnalyzer] copy-shaped loop W8000_B13:afb8 -> RAM:0300 (16 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note ae89 [CopyLoopAnalyzer] copy-shaped loop W8000_B13:bf00 -> RAM:03c0 (16 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note b9f3 [CopyLoopAnalyzer] copy-shaped loop W8000_B13:bf00 -> RAM:03c0 (16 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note b9ff [CopyLoopAnalyzer] copy-shaped loop W8000_B13:bf10 -> RAM:03c0 (16 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note beb2 [CopyLoopAnalyzer] copy-shaped loop W8000_B9:bf20 -> RAM:03c0 (16 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note d8ab [CopyLoopAnalyzer] copy-shaped loop RAM:0780 -> RAM:03c0 (48 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note ea1c [CopyLoopAnalyzer] copy-shaped loop RAM:eb74 -> RAM:03c4 (8 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note eb99 [CopyLoopAnalyzer] copy-shaped loop RAM:eba5 -> RAM:03d0 (16 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.

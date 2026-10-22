@@ -7,57 +7,24 @@ REALROM placement NONE
 REALROM block PRG_RAM 6000-7fff overlay=false
 REALROM block RAM 0000-07ff overlay=false
 REALROM block W8000 8000-bfff overlay=false
-REALROM block W8000_M0_B0 8000-ffff overlay=true
-REALROM block W8000_M0_B10 8000-ffff overlay=true
-REALROM block W8000_M0_B12 8000-ffff overlay=true
-REALROM block W8000_M0_B14 8000-ffff overlay=true
-REALROM block W8000_M0_B2 8000-ffff overlay=true
-REALROM block W8000_M0_B4 8000-ffff overlay=true
-REALROM block W8000_M0_B6 8000-ffff overlay=true
-REALROM block W8000_M0_B8 8000-ffff overlay=true
-REALROM block W8000_M1_B0 8000-ffff overlay=true
-REALROM block W8000_M1_B10 8000-ffff overlay=true
-REALROM block W8000_M1_B12 8000-ffff overlay=true
-REALROM block W8000_M1_B14 8000-ffff overlay=true
-REALROM block W8000_M1_B2 8000-ffff overlay=true
-REALROM block W8000_M1_B4 8000-ffff overlay=true
-REALROM block W8000_M1_B6 8000-ffff overlay=true
-REALROM block W8000_M1_B8 8000-ffff overlay=true
-REALROM block W8000_M2 8000-bfff overlay=true
-REALROM block W8000_M3_B1 8000-bfff overlay=true
-REALROM block W8000_M3_B10 8000-bfff overlay=true
-REALROM block W8000_M3_B11 8000-bfff overlay=true
-REALROM block W8000_M3_B12 8000-bfff overlay=true
-REALROM block W8000_M3_B13 8000-bfff overlay=true
-REALROM block W8000_M3_B14 8000-bfff overlay=true
-REALROM block W8000_M3_B15 8000-bfff overlay=true
-REALROM block W8000_M3_B2 8000-bfff overlay=true
-REALROM block W8000_M3_B3 8000-bfff overlay=true
-REALROM block W8000_M3_B4 8000-bfff overlay=true
-REALROM block W8000_M3_B5 8000-bfff overlay=true
-REALROM block W8000_M3_B6 8000-bfff overlay=true
-REALROM block W8000_M3_B7 8000-bfff overlay=true
-REALROM block W8000_M3_B8 8000-bfff overlay=true
-REALROM block W8000_M3_B9 8000-bfff overlay=true
+REALROM block W8000_B1 8000-bfff overlay=true
+REALROM block W8000_B10 8000-bfff overlay=true
+REALROM block W8000_B11 8000-bfff overlay=true
+REALROM block W8000_B12 8000-bfff overlay=true
+REALROM block W8000_B13 8000-bfff overlay=true
+REALROM block W8000_B14 8000-bfff overlay=true
+REALROM block W8000_B15 8000-bfff overlay=true
+REALROM block W8000_B2 8000-bfff overlay=true
+REALROM block W8000_B3 8000-bfff overlay=true
+REALROM block W8000_B4 8000-bfff overlay=true
+REALROM block W8000_B5 8000-bfff overlay=true
+REALROM block W8000_B6 8000-bfff overlay=true
+REALROM block W8000_B7 8000-bfff overlay=true
+REALROM block W8000_B8 8000-bfff overlay=true
+REALROM block W8000_B9 8000-bfff overlay=true
 REALROM block WC000 c000-ffff overlay=false
-REALROM block WC000_M2_B0 c000-ffff overlay=true
-REALROM block WC000_M2_B1 c000-ffff overlay=true
-REALROM block WC000_M2_B10 c000-ffff overlay=true
-REALROM block WC000_M2_B11 c000-ffff overlay=true
-REALROM block WC000_M2_B12 c000-ffff overlay=true
-REALROM block WC000_M2_B13 c000-ffff overlay=true
-REALROM block WC000_M2_B14 c000-ffff overlay=true
-REALROM block WC000_M2_B15 c000-ffff overlay=true
-REALROM block WC000_M2_B2 c000-ffff overlay=true
-REALROM block WC000_M2_B3 c000-ffff overlay=true
-REALROM block WC000_M2_B4 c000-ffff overlay=true
-REALROM block WC000_M2_B5 c000-ffff overlay=true
-REALROM block WC000_M2_B6 c000-ffff overlay=true
-REALROM block WC000_M2_B7 c000-ffff overlay=true
-REALROM block WC000_M2_B8 c000-ffff overlay=true
-REALROM block WC000_M2_B9 c000-ffff overlay=true
-REALROM count blocks.total 54
-REALROM count blocks.overlay 48
+REALROM count blocks.total 21
+REALROM count blocks.overlay 15
 REALROM count refs.intoOverlay.retargeted 2
 REALROM count refs.intoOverlay.intraOverlay 126
 REALROM count instrs.inOverlay 706
@@ -71,31 +38,31 @@ REALROM sample.bankcomment c14a bank -> mirroring=2,prg_mode=3,prg_bank=12 via L
 REALROM sample.bankcomment c2e2 bank -> mirroring=2,prg_mode=3,prg_bank=11 via FUN_dcbe [switch-value flow]
 REALROM sample.bankcomment c5e0 bank -> mirroring=2,prg_mode=3,prg_bank=12 via LAB_dcaa (mid-body entry in FUN_dca8) [switch-value flow]
 REALROM sample.bankcomment ffe1 bank -> mirroring=0,prg_mode=3,prg_bank=0 [switch-value flow]
-REALROM sample.ref 8000 -> W8000_M3_B12::8235 UNCONDITIONAL_JUMP primary=true
-REALROM sample.ref 8224 -> W8000_M3_B12::822f CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8239 -> W8000_M3_B12::823c CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8261 -> W8000_M3_B12::8266 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8263 -> W8000_M3_B12::856d UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 8269 -> W8000_M3_B12::826e CONDITIONAL_JUMP primary=true
-REALROM sample.ref 826b -> W8000_M3_B12::8286 UNCONDITIONAL_JUMP primary=true
-REALROM sample.ref 8275 -> W8000_M3_B12::8286 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8280 -> W8000_M3_B12::86b4 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 8283 -> W8000_M3_B12::8294 UNCONDITIONAL_JUMP primary=true
-REALROM sample.ref 8289 -> W8000_M3_B12::8294 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8291 -> W8000_M3_B12::8222 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 8296 -> W8000_M3_B12::829e CONDITIONAL_JUMP primary=true
-REALROM sample.ref 82a0 -> W8000_M3_B12::82b9 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 82b6 -> W8000_M3_B12::824c UNCONDITIONAL_JUMP primary=true
-REALROM sample.ref 82bd -> W8000_M3_B12::82dd CONDITIONAL_JUMP primary=true
-REALROM sample.ref 82c1 -> W8000_M3_B12::82dd CONDITIONAL_JUMP primary=true
-REALROM sample.ref 82cf -> W8000_M3_B12::82dd CONDITIONAL_JUMP primary=true
-REALROM sample.ref 82d3 -> W8000_M3_B12::82d9 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 82df -> W8000_M3_B12::82e3 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 82f4 -> W8000_M3_B12::82f8 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 82fe -> W8000_M3_B12::832b CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8306 -> W8000_M3_B12::8310 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 830e -> W8000_M3_B12::830a CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8313 -> W8000_M3_B12::8324 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8000 -> W8000_B12::8235 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8224 -> W8000_B12::822f CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8239 -> W8000_B12::823c CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8261 -> W8000_B12::8266 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8263 -> W8000_B12::856d UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8269 -> W8000_B12::826e CONDITIONAL_JUMP primary=true
+REALROM sample.ref 826b -> W8000_B12::8286 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8275 -> W8000_B12::8286 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8280 -> W8000_B12::86b4 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8283 -> W8000_B12::8294 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8289 -> W8000_B12::8294 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8291 -> W8000_B12::8222 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8296 -> W8000_B12::829e CONDITIONAL_JUMP primary=true
+REALROM sample.ref 82a0 -> W8000_B12::82b9 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 82b6 -> W8000_B12::824c UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 82bd -> W8000_B12::82dd CONDITIONAL_JUMP primary=true
+REALROM sample.ref 82c1 -> W8000_B12::82dd CONDITIONAL_JUMP primary=true
+REALROM sample.ref 82cf -> W8000_B12::82dd CONDITIONAL_JUMP primary=true
+REALROM sample.ref 82d3 -> W8000_B12::82d9 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 82df -> W8000_B12::82e3 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 82f4 -> W8000_B12::82f8 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 82fe -> W8000_B12::832b CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8306 -> W8000_B12::8310 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 830e -> W8000_B12::830a CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8313 -> W8000_B12::8324 CONDITIONAL_JUMP primary=true
 REALROM sample.ref.truncated 25 of 128
 REALROM sample.note c043 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_dca8 is a proven no-argument restore entry -- its own prologue reloads the bank directly from 0065, a writable RAM cell nothing between that load and the switch touches, and commits it unchanged. The bank after this call is therefore whatever was last saved at 0065, not a fresh value this analyzer failed to pin down -- a property of the game, not a gap in analysis.
 REALROM sample.note dcaa [NesBankingAnalyzer] Bank value is supplied at each ENTRY: this code is reached from several entries into the helper, and on every path the value is fixed at the entry -- either the caller's argument, or a bank the entry's own prologue restores from RAM -- so the bank cannot be known from inside the helper body. Each entry's CALL SITES are judged separately; see their own annotations.

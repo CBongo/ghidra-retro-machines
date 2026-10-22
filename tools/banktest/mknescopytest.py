@@ -29,14 +29,14 @@ executes inside a switchable PRG window while storing into base-space PRG RAM:
     throughout: W8000 switches on prg_bank, WC000 is pinned to PRG[last]. RESET runs in
     the fixed WC000 window (bank 7), so the code doing the bank switch never moves.
   * the copy loop lives in bank 1, which is NOT W8000's home bank (initial_state has
-    prg_bank=0), so the loader realizes it as the overlay W8000_M3_B1 ($8000-$BFFF) and
+    prg_bank=0), so the loader realizes it as the overlay W8000_B1 ($8000-$BFFF) and
     BoardBankAnalyzer retargets RESET's JMP $8000 into it. Every instruction of the loop
-    is therefore disassembled at W8000_M3_B1::80xx, and its `STA $6C90,X` operand is born
+    is therefore disassembled at W8000_B1::80xx, and its `STA $6C90,X` operand is born
     in that overlay space.
 
 PRG bank layout (16 KiB each, PRG image is 8 banks = 128 KiB):
   bank 0 (W8000's home bank, visible in the base space at $8000-$BFFF): marker byte 0x00.
-  bank 1 (W8000_M3_B1 overlay): the copy loop at $8000 and its payload at $8010.
+  bank 1 (W8000_B1 overlay): the copy loop at $8000 and its payload at $8010.
   banks 2-6: marker bytes 0x02..0x06, never selected; just distinguishable filler.
   bank 7 (= PRG[last] = the fixed WC000 window): RESET code and the vector table.
 
@@ -63,11 +63,11 @@ RESET ($C000, executing in the fixed WC000 window; seed prg_mode=3/prg_bank=0/mi
                                       ; bits 14:13 ($E000 -> 3) select the PRG bank
                                       ; register, so this lands prg_bank=1
   C01A  4C 00 80     JMP $8000       ; prg_mode=3 + prg_bank=1, both known -> retargeted
-                                      ; to W8000_M3_B1::8000, which is what puts the copy
+                                      ; to W8000_B1::8000, which is what puts the copy
                                       ; loop below inside a bank overlay
   C01D  40           RTI             ; NMI/IRQ handler
 
-The copy loop, at bank 1 offset 0 (= W8000_M3_B1::8000). It is the canonical
+The copy loop, at bank 1 offset 0 (= W8000_B1::8000). It is the canonical
 down-counting indexed copy CopyLoopAnalyzer recognizes, with the load and store on
 DIFFERENT bases (a relocation, not an in-place decrypt) and a JMP into the destination
 range to prove the copied bytes are code:
@@ -75,7 +75,7 @@ range to prove the copied bytes are code:
   8000  A2 04        LDX #$04        ; index 4..0 -> COPY_LEN = 5 bytes
   8002  BD 10 80     LDA $8010,X     ; source: bank 1's own payload -- an address INSIDE
                                       ; the executing overlay, so it stays an overlay
-                                      ; address (W8000_M3_B1:8010) and the materializer
+                                      ; address (W8000_B1:8010) and the materializer
                                       ; reads the copied bytes straight out of bank 1
   8005  9D 90 6C     STA $6C90,X     ; destination: PRG_RAM $6C90 -- OUTSIDE the executing
                                       ; overlay's own $8000-$BFFF range, and the reason
@@ -158,7 +158,7 @@ def make_prg():
     bank7_base = (PRG_BANKS - 1) * PRG_BANK_SIZE
 
     def put1(cpu_addr, data):
-        # Bank 1 seen through W8000 ($8000-$BFFF), i.e. the W8000_M3_B1 overlay.
+        # Bank 1 seen through W8000 ($8000-$BFFF), i.e. the W8000_B1 overlay.
         prg[bank1_base + (cpu_addr - 0x8000):
             bank1_base + (cpu_addr - 0x8000) + len(data)] = bytes(data)
 
@@ -171,10 +171,10 @@ def make_prg():
     put7(0xC000, [0xA9, 0x80])                       # LDA #$80
     put7(0xC002, [0x8D, 0x00, 0x80])                 # STA $8000 (reset dance -> prg_mode=3)
     put7(0xC005, _serial_commit(COPY_BANK, 0xE000))  # LDA #$01 + 5x STA $E000 -> prg_bank=1
-    put7(0xC01A, [0x4C, 0x00, 0x80])                 # JMP $8000 -> W8000_M3_B1::8000
+    put7(0xC01A, [0x4C, 0x00, 0x80])                 # JMP $8000 -> W8000_B1::8000
     put7(0xC01D, [0x40])                             # RTI (NMI/IRQ handler)
 
-    # --- the copy loop, in bank 1 (the W8000_M3_B1 overlay) ----------------------
+    # --- the copy loop, in bank 1 (the W8000_B1 overlay) ----------------------
     put1(0x8000, [0xA2, COPY_LEN - 1])               # LDX #$04
     put1(0x8002, [0xBD, COPY_SRC & 0xFF, COPY_SRC >> 8])   # LDA $8010,X (source)
     put1(0x8005, [0x9D, COPY_DST & 0xFF, COPY_DST >> 8])   # STA $6C90,X (destination)
@@ -257,7 +257,7 @@ def main():
     assert (prg[vec + 4] | (prg[vec + 5] << 8)) == 0xC01D   # IRQ   -> RTI
 
     write_rom(outdir, "nescopytest.nes", prg)
-    print("nescopytest: copy loop @ W8000_M3_B1::8000, src $%04X (bank %d), dst $%04X, "
+    print("nescopytest: copy loop @ W8000_B1::8000, src $%04X (bank %d), dst $%04X, "
           "len %d, payload %s" %
           (COPY_SRC, COPY_BANK, COPY_DST, COPY_LEN,
            " ".join("%02x" % b for b in PAYLOAD)))

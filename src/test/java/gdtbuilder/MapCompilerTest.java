@@ -666,6 +666,37 @@ public class MapCompilerTest {
 	}
 
 	// ------------------------------------------------------------------
+	// banking.assume_initial_layout_mode (bead grm-ic5)
+	// ------------------------------------------------------------------
+
+	@Test
+	public void assumeInitialLayoutModeIsEmittedOnlyWhenTrue() throws Exception {
+		Path temp = tmp.getRoot().toPath();
+		assertTrue("absent must not emit the key",
+			!compileBanking("assume-absent", "{ MODE: 0, BANK: 0 }")
+					.has("assume_initial_layout_mode"));
+		for (String value : new String[] { "true", "false" }) {
+			Path yaml = temp.resolve("assume-" + value + ".yaml");
+			Path map = temp.resolve("assume-" + value + ".map");
+			Files.writeString(yaml, bankingYaml("assume-" + value, "{ MODE: 0, BANK: 0 }")
+					.replace("  initial_state:",
+						"  assume_initial_layout_mode: " + value + "\n  initial_state:"));
+			MapCompiler.main(new String[] { yaml.toString(), map.toString() });
+			assertEquals(value.equals("true"), JsonParser.parseString(Files.readString(map))
+					.getAsJsonObject().getAsJsonObject("banking")
+					.has("assume_initial_layout_mode"));
+		}
+	}
+
+	@Test
+	public void nonBooleanAssumeInitialLayoutModeIsRejected() throws Exception {
+		expectCompileError(tmp.getRoot().toPath(), "assume-bad",
+			bankingYaml("assume-bad", "{ MODE: 0, BANK: 0 }")
+					.replace("  initial_state:", "  assume_initial_layout_mode: yes-ish\n  initial_state:"),
+			"must be true or false");
+	}
+
+	// ------------------------------------------------------------------
 	// banking.bank_wrap (bead grm-p25h)
 	// ------------------------------------------------------------------
 

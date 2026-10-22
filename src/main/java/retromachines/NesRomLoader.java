@@ -95,6 +95,18 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 
 	private static final String PLACEMENT_CMD_ARG = Loader.COMMAND_LINE_ARG_PREFIX + "-placement";
 
+	/**
+	 * Whether a board that declares {@code banking.assume_initial_layout_mode} (MMC1) may take its
+	 * power-on layout mode as known when no image scan or per-game hint states one, and so drop
+	 * the other modes' overlay blocks (bead {@code grm-ic5}). On by default; uncheck it to
+	 * re-import a title the analyzer's mode-lock warning says runs in another mode, or that
+	 * switches modes at runtime. Headless arg: {@code -loader-assumeLayoutMode false}.
+	 */
+	static final String ASSUME_LAYOUT_MODE_OPTION_NAME = "Assume Power-On Layout Mode";
+
+	private static final String ASSUME_LAYOUT_MODE_CMD_ARG =
+		Loader.COMMAND_LINE_ARG_PREFIX + "-assumeLayoutMode";
+
 	/** Preferences key remembering the last text-table path chosen in the GUI (grm-pqk). */
 	private static final String TBL_PREF_KEY = "retromachines.nes.tblFile";
 
@@ -482,6 +494,8 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 		}
 		options.add(new Option(BOARD_OPTION_NAME, defaultBoard));
 		options.add(new Option(PLACEMENT_OPTION_NAME, "", String.class, PLACEMENT_CMD_ARG));
+		options.add(new Option(ASSUME_LAYOUT_MODE_OPTION_NAME, Boolean.TRUE, Boolean.class,
+			ASSUME_LAYOUT_MODE_CMD_ARG));
 		options.add(TblTableSupport.newOption(TBL_PREF_KEY));
 		return options;
 	}
@@ -703,8 +717,10 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 			// every other in-range bank value gets an overlay block <name>_B<value> that
 			// the bank analyzer retargets references into.
 			List<PlacedWindow> placed = new ArrayList<>();
+			boolean assumeLayoutMode = OptionUtils.getOption(ASSUME_LAYOUT_MODE_OPTION_NAME,
+				settings.options(), Boolean.TRUE);
 			EffectiveState eff = resolveEffectiveInitialState(program, provider, header, map,
-				board, gameDescriptor, log);
+				board, gameDescriptor, assumeLayoutMode, log);
 			recordFixedAfterInit(program, map, gameDescriptor, log);
 			realizeWindows(program, baseSpace, map, eff.liveMode(), eff.initialState(), header,
 				fileBytes, board.mapPath(), placed, log);
@@ -872,7 +888,8 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 	/** Resolves the {@link EffectiveState}, publishing the state when it moved off the literal. */
 	private static EffectiveState resolveEffectiveInitialState(Program program,
 			ByteProvider provider, InesHeader header, JsonObject map, NesBoardRegistry.Board board,
-			GameDescriptorRegistry.GameDescriptor gameDescriptor, MessageLog log) {
+			GameDescriptorRegistry.GameDescriptor gameDescriptor, boolean assumeLayoutMode,
+			MessageLog log) {
 		// Image-relative seeds (banking.initial_state_expr, bead grm-y0ml) resolve HERE:
 		// the PRG size is a load-time fact, so the .map keeps the expression symbolic and
 		// this is the first place it can be evaluated. Published below for the analyzer,
@@ -917,6 +934,26 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 				log.appendMsg("layout mode " + liveMode + " stated by " +
 					gameDescriptor.gmapPath() +
 					"; it licenses suppressing the other modes' overlay blocks");
+			}
+		}
+		// grm-ic5: a title whose descriptor says it switches modes at runtime has NO known mode,
+		// whatever the scan or a hint said -- every mode's blocks stay. Otherwise, with nothing
+		// stating a mode, a board that opts in (MMC1) assumes its power-on mode, unless the user
+		// unchecked the loader option. Its residual risk is caught by the analyzer's mode lock
+		// (BankAnnotationAdapter.annotateLayoutModeMismatch).
+		if (gameDescriptor != null && BoardStateFields.gameLayoutModeVaries(gameDescriptor.doc())) {
+			if (liveMode != null) {
+				log.appendMsg(gameDescriptor.gmapPath() + ": banking.layout_mode_varies " +
+					"overrides layout mode " + liveMode + "; every mode's blocks are kept");
+			}
+			liveMode = null;
+		}
+		else if (liveMode == null && assumeLayoutMode) {
+			liveMode = BoardStateFields.assumedLayoutMode(map, initialState);
+			if (liveMode != null) {
+				log.appendMsg("layout mode " + liveMode + " assumed from the board's power-on " +
+					"state (" + board.mapPath() + " assume_initial_layout_mode); uncheck '" +
+					ASSUME_LAYOUT_MODE_OPTION_NAME + "' to keep every mode's blocks");
 			}
 		}
 		if (liveMode != null) {

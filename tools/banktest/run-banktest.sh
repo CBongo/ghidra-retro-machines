@@ -1246,6 +1246,19 @@ if selected descriptors; then
 		unset GRM_KEY_INPUTS
 		flush_batch "dependency:bankhint-overlay-unplant"
 		unplant_overlay "${bankhint_files[@]}"
+
+		# grm-ic5: `banking: layout_mode_varies: true` in a planted game yaml opts an MMC1 image out
+		# of the assumed power-on layout mode, so every mode's blocks are kept. The bytes are
+		# nesmmc1test's; nesmmc1mismatchtest (nes-banking chunk, nothing planted) imports the same
+		# bytes afterwards and doubles as the leak check -- it asserts no descriptor resolved.
+		flush_batch "dependency:layoutvary-overlay-plant"
+		unplant_overlay nesmmc1varytest.yaml
+		plant_overlay nesmmc1varytest.yaml
+		GRM_KEY_INPUTS="$WORK/nes/nesmmc1varytest.yaml"
+		run_one nesmmc1varytest "$WORK/nes/nesmmc1varytest.nes" NesRomLoader
+		unset GRM_KEY_INPUTS
+		flush_batch "dependency:layoutvary-overlay-unplant"
+		unplant_overlay nesmmc1varytest.yaml
 	fi
 
 	# grm-hb6.16: DescriptorAnnotationAnalyzer re-run one-shot on an already-imported program.
@@ -1352,7 +1365,13 @@ if selected nes-banking; then
 	run_one nesmmc3modetest "$WORK/nes/nesmmc3modetest.nes" NesRomLoader
 	run_one nesmmc3splittest "$WORK/nes/nesmmc3splittest.nes" NesRomLoader
 	run_one nesserialtest "$WORK/nes/nesserialtest.nes" NesRomLoader
-	run_one nesmmc1test "$WORK/nes/nesmmc1test.nes" NesRomLoader
+	# grm-ic5: this image commits prg_mode 2 at runtime, so it must keep every mode's blocks --
+	# MMC1 assumes its power-on mode (3) by default, so opt out through the loader option.
+	run_one nesmmc1test "$WORK/nes/nesmmc1test.nes" NesRomLoader "-loader-assumeLayoutMode false"
+	# grm-ic5: the SAME bytes with DEFAULT options: mode 3 is assumed, only its (unqualified)
+	# blocks exist, and the analyzer's mode lock bookmarks a "Layout mode mismatch" WARNING.
+	# Also the negative control for nesmmc1varytest's planted yaml: nothing may resolve here.
+	run_one nesmmc1mismatchtest "$WORK/nes/nesmmc1mismatchtest.nes" NesRomLoader
 
 	# grm-sen5: bank-mirror read-back on a SELECT-DATA board, resolved PER WINDOW (MMC3's
 	# R6/R7 own different windows), plus the per-site effectDependsOnPriorState guard in

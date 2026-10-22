@@ -217,6 +217,8 @@ public class VerifyBankTest extends GhidraScript {
 		dumped("nesmmc3mirrortest", nes::checkNesMmc3Mirrortest);
 		dumped("nesmmc3idtest", nes::checkNesMmc3Idtest);
 		dumped("nesmmc1test", nes::checkNesMmc1test);
+		dumped("nesmmc1varytest", nes::checkNesMmc1Vary);
+		dumped("nesmmc1mismatchtest", nes::checkNesMmc1Mismatch);
 		dumped("nesserialtest", nes::checkNesSerialtest);
 		dumped("nesmmc3test2", nes::checkNesMmc3test2);
 		dumped("nesmmc3modetest", nes::checkNesMmc3Modetest);

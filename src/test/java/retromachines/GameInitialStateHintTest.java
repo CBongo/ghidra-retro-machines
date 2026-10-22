@@ -239,6 +239,32 @@ public class GameInitialStateHintTest {
 	}
 
 	@Test
+	public void assumedModeNeedsTheBoardOptIn() {
+		// MMC1_SHAPE does not opt in: its power-on mode is never assumed known.
+		assertNull(BoardStateFields.assumedLayoutMode(json(MMC1_SHAPE), 12L));
+		JsonObject optedIn = json(MMC1_SHAPE);
+		optedIn.getAsJsonObject("banking").addProperty("assume_initial_layout_mode", true);
+		// Literal 12 = prg_mode 3 (bits 2-3); a hint-moved state (0 = prg_mode 0) is honoured.
+		assertEquals(Integer.valueOf(3), BoardStateFields.assumedLayoutMode(optedIn, 12L));
+		assertEquals(Integer.valueOf(0), BoardStateFields.assumedLayoutMode(optedIn, 0L));
+		assertNull(BoardStateFields.assumedLayoutMode(optedIn, null));
+		// A board with no layouts has no layout field to assume, opt-in or not.
+		JsonObject noLayouts = json(MMC3_SHAPE);
+		noLayouts.getAsJsonObject("banking").addProperty("assume_initial_layout_mode", true);
+		assertNull(BoardStateFields.assumedLayoutMode(noLayouts, 9L));
+	}
+
+	@Test
+	public void layoutModeVariesIsReadFromTheGameDescriptor() {
+		assertTrue(BoardStateFields.gameLayoutModeVaries(
+			json("{ \"banking\": { \"layout_mode_varies\": true } }")));
+		assertTrue(!BoardStateFields.gameLayoutModeVaries(
+			json("{ \"banking\": { \"layout_mode_varies\": false } }")));
+		assertTrue(!BoardStateFields.gameLayoutModeVaries(gameDoc("{ \"prg_mode\": 0 }")));
+		assertTrue(!BoardStateFields.gameLayoutModeVaries(json("{}")));
+	}
+
+	@Test
 	public void modeOutsideTheLayoutsCollapsesNothing() {
 		// A liveMode no layout's when: names is a descriptor/image mismatch, not a licence to
 		// delete or rename anything: every mode's instances stay varying.

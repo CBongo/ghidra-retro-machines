@@ -425,6 +425,21 @@ with the runtime fully wired up is `machines/nes-mmc3.yaml` (bead `grm-6a7.1`) a
 `machines/nes-mmc1.yaml` (bead `grm-hsv.2`, whose four `prg_mode` layouts also exercise
 the `>>` operator above).
 
+**A KNOWN layout mode creates only that mode's windows, unqualified** (bead `grm-ic5`). When the
+loader knows the image's layout mode, it skips every other mode's window instances and names the
+survivors as if they were mode-invariant (`W8000_B5`, not `W8000_M1_B5`). It publishes the mode
+in the program property `Retro Machines.Layout Mode` so the analyzer plans the same windows. The
+mode is known from, strongest first:
+
+1. a per-game `banking: layout_mode_varies: true` — then NO mode is known and every mode's
+   windows are kept (for a title that switches modes at runtime);
+2. a per-game `banking: initial_state:` hint naming the layout field;
+3. the MMC3 image scan (`NesRomLoader.scanImageMode`: at least 4 literal select writes, unanimous);
+4. `banking.assume_initial_layout_mode: true` on the board — the power-on value is ASSUMED known.
+   MMC1 opts in. This is the only assumption in the list. The NES loader option "Assume Power-On
+   Layout Mode" (`-loader-assumeLayoutMode false`) turns it off. After analysis, the bank analyzer
+   bookmarks a WARNING if its reset-side mode lock disagrees with the published mode.
+
 ## Initial state
 
 Initial state comes from `banking.initial_state` (per-field map or packed integer),

@@ -266,18 +266,13 @@ final class BoardStateFields {
 			JsonObject gameDescriptor) {
 		JsonObject gameBanking = gameDescriptor.getAsJsonObject("banking");
 		if (resolvedInitialState == null || gameBanking == null ||
-			!gameBanking.has("initial_state") || !boardMap.has("layouts")) {
+			!gameBanking.has("initial_state")) {
 			return null;
 		}
-		JsonArray layouts = boardMap.getAsJsonArray("layouts");
-		if (layouts.isEmpty()) {
+		String modeField = layoutModeField(boardMap);
+		if (modeField == null) {
 			return null;
 		}
-		JsonObject when = layouts.get(0).getAsJsonObject().getAsJsonObject("when");
-		if (when == null || when.entrySet().size() != 1) {
-			return null; // planWindows ignores such layouts entirely; nothing to suppress
-		}
-		String modeField = when.keySet().iterator().next();
 		JsonObject hint = gameBanking.getAsJsonObject("initial_state");
 		FieldSpec field = findField(parseStateFields(boardMap), modeField);
 		if (!hint.has(modeField) || field == null) {
@@ -294,6 +289,58 @@ final class BoardStateFields {
 			return null;
 		}
 		return (int) value;
+	}
+
+	/**
+	 * The board's LAYOUT mode field -- the single field every {@code memory.layouts[].when}
+	 * names, as read off the first layout -- or null when the board has no layouts, or a
+	 * {@code when:} that is not a single field (planWindows ignores such layouts entirely).
+	 */
+	static String layoutModeField(JsonObject boardMap) {
+		if (!boardMap.has("layouts")) {
+			return null;
+		}
+		JsonArray layouts = boardMap.getAsJsonArray("layouts");
+		if (layouts.isEmpty()) {
+			return null;
+		}
+		JsonObject when = layouts.get(0).getAsJsonObject().getAsJsonObject("when");
+		if (when == null || when.entrySet().size() != 1) {
+			return null;
+		}
+		return when.keySet().iterator().next();
+	}
+
+	/**
+	 * The layout mode a board lets the loader ASSUME known when nothing better states one
+	 * (bead {@code grm-ic5}): {@code resolvedInitialState}'s layout-field value, when the board
+	 * declares {@code banking.assume_initial_layout_mode} -- else null.
+	 * <p>
+	 * This is the weakest of the three sources of a known mode (image scan, curated hint, this),
+	 * and the only one that is an assumption rather than evidence: the power-on value describes
+	 * t=0. The board opts in only where the pinned corpus was surveyed and every exception carries
+	 * a hint (MMC1); the analyzer's mode lock catches an unlisted exception afterwards.
+	 */
+	static Integer assumedLayoutMode(JsonObject boardMap, Long resolvedInitialState) {
+		JsonObject banking = boardMap.getAsJsonObject("banking");
+		if (resolvedInitialState == null || banking == null ||
+			!banking.has("assume_initial_layout_mode") ||
+			!banking.get("assume_initial_layout_mode").getAsBoolean()) {
+			return null;
+		}
+		FieldSpec field = findField(parseStateFields(boardMap), layoutModeField(boardMap));
+		return field == null ? null : (int) field.valueIn(resolvedInitialState);
+	}
+
+	/**
+	 * Whether a game descriptor says its title switches layout mode at runtime
+	 * ({@code banking.layout_mode_varies: true}, bead {@code grm-ic5}): no mode may then be
+	 * taken as known for it, whatever the scan, a hint, or the board's assumption would say.
+	 */
+	static boolean gameLayoutModeVaries(JsonObject gameDescriptor) {
+		JsonObject gameBanking = gameDescriptor.getAsJsonObject("banking");
+		return gameBanking != null && gameBanking.has("layout_mode_varies") &&
+			gameBanking.get("layout_mode_varies").getAsBoolean();
 	}
 
 	/** Finds a field by name in a {@link #parseStateFields} result, or null. */

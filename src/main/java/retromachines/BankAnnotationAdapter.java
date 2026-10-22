@@ -322,6 +322,12 @@ final class BankAnnotationAdapter {
 	 * <li><b>Held</b>: a NOTE at each write whose mode bits the analyzer could not resolve, where
 	 * the engine ASSUMED the locked value (owner ruling 2026-10-11), so the assumption is visible
 	 * at the site it was made.</li>
+	 * <li><b>Layout-mode mismatch</b> (bead grm-ic5): when the loader published a layout mode
+	 * ({@link DescriptorHints#LAYOUT_MODE_PROPERTY}) and so created only that mode's overlay
+	 * blocks, a WARNING at the lock's source if a held lock names a DIFFERENT mode, or if the lock
+	 * was rejected (the game may switch modes). It names the fixes. This is what makes MMC1's
+	 * assumed power-on mode self-correcting: an unlisted title that runs another mode is told,
+	 * instead of quietly losing the blocks its references need.</li>
 	 * </ul>
 	 * {@link DescriptorHints#DETECTED_PRG_MODE_PROPERTY} carries the locked value while the lock
 	 * holds and is removed otherwise. The bookmarks live in their own category, cleared on every
@@ -344,6 +350,13 @@ final class BankAnnotationAdapter {
 		int locked = field.valueIn(lock.state().bits());
 		String origin = "code reached from reset only ever sets " + field.name() + "=" + locked +
 			" (first at " + lock.source() + ")";
+		// grm-ic5: the loader may have dropped every other layout's overlay blocks on the strength
+		// of a known -- or, on MMC1, ASSUMED -- layout mode. This lock is the analysis's own
+		// verdict on the same question, arriving too late to stop the load but in time to say so.
+		Integer loadedMode = DescriptorHints.readLayoutMode(program);
+		String reimport = " Re-import with a per-game descriptor (machines/games/<title>.yaml) " +
+			"stating the right mode, or with the NES loader option '" +
+			NesRomLoader.ASSUME_LAYOUT_MODE_OPTION_NAME + "' unchecked.";
 		if (!lock.rejected()) {
 			info.setString(DescriptorHints.DETECTED_PRG_MODE_PROPERTY, Integer.toString(locked));
 			for (Address site : lock.assumed()) {
@@ -351,7 +364,23 @@ final class BankAnnotationAdapter {
 					locked + " here: this write's " + field.name() + " bits could not be resolved, and " +
 					origin + ". Not verified at this site.");
 			}
+			if (loadedMode != null && loadedMode != locked) {
+				bm.setBookmark(lock.source(), BookmarkType.WARNING, category, "Layout mode " +
+					"mismatch: this program was loaded with " + field.name() + "=" + loadedMode +
+					" and the other modes' overlay blocks were not created, but " + origin +
+					". References into the blocks that mode needs cannot resolve." + reimport);
+				return 1;
+			}
 			return 0;
+		}
+		if (loadedMode != null) {
+			bm.setBookmark(lock.source(), BookmarkType.WARNING, category, "Layout mode " +
+				"mismatch: this program was loaded with " + field.name() + "=" + loadedMode +
+				" and the other modes' overlay blocks were not created, but its " + field.name() +
+				" writes disagree (" + lock.contradictions() + "), so it may switch modes at " +
+				"runtime. If it does, give it a per-game descriptor with " +
+				"'banking: layout_mode_varies: true', or re-import with the NES loader option '" +
+				NesRomLoader.ASSUME_LAYOUT_MODE_OPTION_NAME + "' unchecked.");
 		}
 		info.removeOption(DescriptorHints.DETECTED_PRG_MODE_PROPERTY);
 		for (Address site : lock.contradictions()) {
@@ -367,7 +396,7 @@ final class BankAnnotationAdapter {
 		bm.setBookmark(lock.source(), BookmarkType.NOTE, category, field.name() + "=" + locked +
 			" was locked from the writes reached from reset and then contradicted at " +
 			lock.contradictions() + "; the lock was discarded and analysis rerun without it.");
-		return lock.contradictions().size();
+		return lock.contradictions().size() + (loadedMode != null ? 1 : 0);
 	}
 
 	/**

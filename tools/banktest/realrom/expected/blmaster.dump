@@ -7,33 +7,16 @@ REALROM placement NONE
 REALROM block PRG_RAM 6000-7fff overlay=false
 REALROM block RAM 0000-07ff overlay=false
 REALROM block W8000 8000-bfff overlay=false
-REALROM block W8000_M0_B0 8000-ffff overlay=true
-REALROM block W8000_M0_B2 8000-ffff overlay=true
-REALROM block W8000_M0_B4 8000-ffff overlay=true
-REALROM block W8000_M0_B6 8000-ffff overlay=true
-REALROM block W8000_M1_B0 8000-ffff overlay=true
-REALROM block W8000_M1_B2 8000-ffff overlay=true
-REALROM block W8000_M1_B4 8000-ffff overlay=true
-REALROM block W8000_M1_B6 8000-ffff overlay=true
-REALROM block W8000_M2 8000-bfff overlay=true
-REALROM block W8000_M3_B1 8000-bfff overlay=true
-REALROM block W8000_M3_B2 8000-bfff overlay=true
-REALROM block W8000_M3_B3 8000-bfff overlay=true
-REALROM block W8000_M3_B4 8000-bfff overlay=true
-REALROM block W8000_M3_B5 8000-bfff overlay=true
-REALROM block W8000_M3_B6 8000-bfff overlay=true
-REALROM block W8000_M3_B7 8000-bfff overlay=true
+REALROM block W8000_B1 8000-bfff overlay=true
+REALROM block W8000_B2 8000-bfff overlay=true
+REALROM block W8000_B3 8000-bfff overlay=true
+REALROM block W8000_B4 8000-bfff overlay=true
+REALROM block W8000_B5 8000-bfff overlay=true
+REALROM block W8000_B6 8000-bfff overlay=true
+REALROM block W8000_B7 8000-bfff overlay=true
 REALROM block WC000 c000-ffff overlay=false
-REALROM block WC000_M2_B0 c000-ffff overlay=true
-REALROM block WC000_M2_B1 c000-ffff overlay=true
-REALROM block WC000_M2_B2 c000-ffff overlay=true
-REALROM block WC000_M2_B3 c000-ffff overlay=true
-REALROM block WC000_M2_B4 c000-ffff overlay=true
-REALROM block WC000_M2_B5 c000-ffff overlay=true
-REALROM block WC000_M2_B6 c000-ffff overlay=true
-REALROM block WC000_M2_B7 c000-ffff overlay=true
-REALROM count blocks.total 30
-REALROM count blocks.overlay 24
+REALROM count blocks.total 13
+REALROM count blocks.overlay 7
 REALROM count refs.intoOverlay.retargeted 2
 REALROM count refs.intoOverlay.intraOverlay 115
 REALROM count instrs.inOverlay 566
@@ -50,31 +33,31 @@ REALROM sample.bankcomment ec53 bank -> mirroring=0,prg_mode=3,prg_bank=5? via F
 REALROM sample.bankcomment f25a bank -> mirroring=0,prg_mode=3,prg_bank=0 via FUN_e68c [switch-value flow]
 REALROM sample.bankcomment f25f bank -> mirroring=2,prg_mode=3,prg_bank=0 via FUN_e678 [switch-value flow]
 REALROM sample.bankcomment fff4 bank -> mirroring=0,prg_mode=3,prg_bank=0 [switch-value flow]
-REALROM sample.ref 8017 -> W8000_M3_B5::84b0 DATA primary=true
-REALROM sample.ref 801c -> W8000_M3_B5::84b1 DATA primary=true
-REALROM sample.ref 8028 -> W8000_M3_B5::806d CONDITIONAL_JUMP primary=true
-REALROM sample.ref 806f -> W8000_M3_B5::802a CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8073 -> W8000_M3_B5::bdf6 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 8077 -> W8000_M3_B5::be23 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 8086 -> W8000_M3_B5::808c UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 808a -> W8000_M3_B5::8086 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 808f -> W8000_M3_B5::8071 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 809c -> W8000_M3_B5::80a2 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 80a4 -> W8000_M3_B5::80ac CONDITIONAL_JUMP primary=true
-REALROM sample.ref 80a6 -> W8000_M3_B5::82ce UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 80a9 -> W8000_M3_B5::835c UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 80af -> W8000_M3_B5::8071 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 80bd -> W8000_M3_B5::80db CONDITIONAL_JUMP primary=true
-REALROM sample.ref 80c1 -> W8000_M3_B5::80e7 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 80c5 -> W8000_M3_B5::80ff CONDITIONAL_JUMP primary=true
-REALROM sample.ref 80c9 -> W8000_M3_B5::80de CONDITIONAL_JUMP primary=true
-REALROM sample.ref 80cd -> W8000_M3_B5::80e1 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 80d1 -> W8000_M3_B5::80e4 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 80d8 -> W8000_M3_B5::827a UNCONDITIONAL_JUMP primary=true
-REALROM sample.ref 80db -> W8000_M3_B5::821d UNCONDITIONAL_JUMP primary=true
-REALROM sample.ref 80de -> W8000_M3_B5::813f UNCONDITIONAL_JUMP primary=true
-REALROM sample.ref 80e1 -> W8000_M3_B5::819c UNCONDITIONAL_JUMP primary=true
-REALROM sample.ref 80e4 -> W8000_M3_B5::81c2 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8017 -> W8000_B5::84b0 DATA primary=true
+REALROM sample.ref 801c -> W8000_B5::84b1 DATA primary=true
+REALROM sample.ref 8028 -> W8000_B5::806d CONDITIONAL_JUMP primary=true
+REALROM sample.ref 806f -> W8000_B5::802a CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8073 -> W8000_B5::bdf6 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8077 -> W8000_B5::be23 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8086 -> W8000_B5::808c UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 808a -> W8000_B5::8086 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 808f -> W8000_B5::8071 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 809c -> W8000_B5::80a2 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 80a4 -> W8000_B5::80ac CONDITIONAL_JUMP primary=true
+REALROM sample.ref 80a6 -> W8000_B5::82ce UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 80a9 -> W8000_B5::835c UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 80af -> W8000_B5::8071 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 80bd -> W8000_B5::80db CONDITIONAL_JUMP primary=true
+REALROM sample.ref 80c1 -> W8000_B5::80e7 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 80c5 -> W8000_B5::80ff CONDITIONAL_JUMP primary=true
+REALROM sample.ref 80c9 -> W8000_B5::80de CONDITIONAL_JUMP primary=true
+REALROM sample.ref 80cd -> W8000_B5::80e1 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 80d1 -> W8000_B5::80e4 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 80d8 -> W8000_B5::827a UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 80db -> W8000_B5::821d UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 80de -> W8000_B5::813f UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 80e1 -> W8000_B5::819c UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 80e4 -> W8000_B5::81c2 UNCONDITIONAL_JUMP primary=true
 REALROM sample.ref.truncated 25 of 117
 REALROM sample.warn c3cf [Bad Instruction] Disassembly not permitted within uninitialized memory block (flow from c3cf)
 REALROM sample.warn c695 [CopyLoopAnalyzer] copy-shaped loop RAM:c6bf -> RAM:0660 could not be bounded; not applied

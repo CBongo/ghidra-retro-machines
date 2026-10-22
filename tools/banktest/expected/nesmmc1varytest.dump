@@ -1,0 +1,95 @@
+IDENTITY prg:18ca523f421129253cefb6753a95743ecceeb1fe416eaa69bf2372cc2014e9f9 file:2a97c9933ed2e1e6646def52887cf5f50782790344a0390e18545b725c9fa11f
+BLOCK APU_IO 4000-401f overlay=false
+BLOCK PPU_REGS 2000-2007 overlay=false
+BLOCK PRG_RAM 6000-7fff overlay=false
+BLOCK RAM 0000-07ff overlay=false
+BLOCK W8000 8000-bfff overlay=false
+BLOCK W8000_M0_B0 8000-ffff overlay=true
+BLOCK W8000_M0_B2 8000-ffff overlay=true
+BLOCK W8000_M0_B4 8000-ffff overlay=true
+BLOCK W8000_M0_B6 8000-ffff overlay=true
+BLOCK W8000_M1_B0 8000-ffff overlay=true
+BLOCK W8000_M1_B2 8000-ffff overlay=true
+BLOCK W8000_M1_B4 8000-ffff overlay=true
+BLOCK W8000_M1_B6 8000-ffff overlay=true
+BLOCK W8000_M2 8000-bfff overlay=true
+BLOCK W8000_M3_B1 8000-bfff overlay=true
+BLOCK W8000_M3_B2 8000-bfff overlay=true
+BLOCK W8000_M3_B3 8000-bfff overlay=true
+BLOCK W8000_M3_B4 8000-bfff overlay=true
+BLOCK W8000_M3_B5 8000-bfff overlay=true
+BLOCK W8000_M3_B6 8000-bfff overlay=true
+BLOCK W8000_M3_B7 8000-bfff overlay=true
+BLOCK WC000 c000-ffff overlay=false
+BLOCK WC000_M2_B0 c000-ffff overlay=true
+BLOCK WC000_M2_B1 c000-ffff overlay=true
+BLOCK WC000_M2_B2 c000-ffff overlay=true
+BLOCK WC000_M2_B3 c000-ffff overlay=true
+BLOCK WC000_M2_B4 c000-ffff overlay=true
+BLOCK WC000_M2_B5 c000-ffff overlay=true
+BLOCK WC000_M2_B6 c000-ffff overlay=true
+BLOCK WC000_M2_B7 c000-ffff overlay=true
+COMMENT c002 bank -> mirroring=0,prg_mode=3,prg_bank=0 [switch-value flow]
+COMMENT c007 bank -> mirroring=0,prg_mode=3,prg_bank=2 via FUN_c200 [switch-value flow]
+COMMENT c00f bank -> mirroring=0,prg_mode=3,prg_bank=2 [switch-value flow]
+COMMENT c024 bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_c200 [switch-value flow]
+COMMENT c02c bank -> mirroring=0,prg_mode=3,prg_bank=3 via FUN_c200 [switch-value flow]
+COMMENT c032 bank ? via FUN_c250 [NOTE: restored bank]
+COMMENT c037 bank -> mirroring=0,prg_mode=3,prg_bank=4 via LAB_c252 (mid-body entry in FUN_c250) [switch-value flow]
+COMMENT c03f bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_c2a0 [switch-value flow]
+COMMENT c047 bank ? via FUN_c250 [NOTE: restored bank]
+COMMENT c04c bank -> mirroring=0,prg_mode=3,prg_bank=7 via FUN_c200 [switch-value flow]
+COMMENT c061 bank -> mirroring=0,prg_mode=2,prg_bank=7 [switch-value flow]
+COMMENT c06c bank ? via FUN_WC000_M2_B7__c200 [WARNING: analyzer limit]
+COMMENT c200 bank ? [NOTE: helper argument]
+COMMENT c200 bank ? [NOTE: helper argument]
+COMMENT c210 bank ? [NOTE: helper argument]
+COMMENT c210 bank ? [NOTE: helper argument]
+COMMENT c252 bank ? [NOTE: entry-supplied]
+COMMENT c262 bank ? [NOTE: entry-supplied]
+COMMENT c2a7 bank ? [NOTE: helper argument]
+COMMENT c2b7 bank ? [NOTE: helper argument]
+BOOKMARK Note c032
+BOOKMARK Note c047
+BOOKMARK Note c200
+BOOKMARK Note c200
+BOOKMARK Note c210
+BOOKMARK Note c210
+BOOKMARK Note c252
+BOOKMARK Note c262
+BOOKMARK Note c2a7
+BOOKMARK Note c2b7
+BOOKMARK Warning c06c
+REF 8000 -> WC000_M2_B0::c072 COMPUTED_JUMP primary=true
+REF c00a -> W8000_M3_B2::8000 UNCONDITIONAL_CALL primary=true
+REF c027 -> W8000_M3_B5::8000 UNCONDITIONAL_CALL primary=true
+REF c02f -> W8000_M3_B3::8000 UNCONDITIONAL_CALL primary=true
+REF c03a -> W8000_M3_B4::8000 UNCONDITIONAL_CALL primary=true
+REF c042 -> W8000_M3_B1::8000 UNCONDITIONAL_CALL primary=true
+REF c064 -> WC000_M2_B7::c300 UNCONDITIONAL_CALL primary=true
+REF c069 -> WC000_M2_B7::c400 READ primary=true
+REF c06c -> WC000_M2_B7::c200 UNCONDITIONAL_CALL primary=true
+REF c06f -> WC000_M2_B0::c06f UNCONDITIONAL_JUMP primary=true
+REF c200 -> WC000_M2_B7::e000 DATA primary=true
+REF c204 -> WC000_M2_B7::e000 DATA primary=true
+REF c208 -> WC000_M2_B7::e000 DATA primary=true
+REF c20c -> WC000_M2_B7::e000 DATA primary=true
+REF c210 -> WC000_M2_B7::e000 DATA primary=true
+SYMBOL 2000 PPUCTRL IMPORTED primary=true
+SYMBOL 2001 PPUMASK IMPORTED primary=true
+SYMBOL 2002 PPUSTATUS IMPORTED primary=true
+SYMBOL 2003 OAMADDR IMPORTED primary=true
+SYMBOL 2004 OAMDATA IMPORTED primary=true
+SYMBOL 2005 PPUSCROLL IMPORTED primary=true
+SYMBOL 2006 PPUADDR IMPORTED primary=true
+SYMBOL 2007 PPUDATA IMPORTED primary=true
+SYMBOL 4014 OAMDMA IMPORTED primary=true
+SYMBOL 4015 SND_CHN IMPORTED primary=true
+SYMBOL 4016 JOY1 IMPORTED primary=true
+SYMBOL 4017 JOY2 IMPORTED primary=true
+SYMBOL c000 RESET IMPORTED primary=true
+SYMBOL c072 IRQ IMPORTED primary=false
+SYMBOL c072 NMI IMPORTED primary=true
+SYMBOL fffa NMI_VEC IMPORTED primary=true
+SYMBOL fffc RESET_VEC IMPORTED primary=true
+SYMBOL fffe IRQ_VEC IMPORTED primary=true

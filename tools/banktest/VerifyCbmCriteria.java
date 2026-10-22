@@ -1024,8 +1024,8 @@ public class VerifyCbmCriteria extends VerifyBase {
 	// Fixture contract from mknescopytest.py (nescopytest.nes, MMC1 / iNES mapper 1): RESET
 	// runs in the fixed WC000 window, commits prg_bank=1 through the unrolled serial-shift
 	// chain, and JMPs into $8000 -- which BoardBankAnalyzer retargets into the bank-1 overlay
-	// W8000_M3_B1. The copy loop therefore EXECUTES inside a bank overlay:
-	//   W8000_M3_B1::8000  LDX #$04 / LDA $8010,X / STA $6C90,X / DEX / BPL / JMP $6C90
+	// W8000_B1. The copy loop therefore EXECUTES inside a bank overlay:
+	//   W8000_B1::8000  LDX #$04 / LDA $8010,X / STA $6C90,X / DEX / BPL / JMP $6C90
 	// Its source ($8010) is inside that same overlay, but its destination ($6C90) is the
 	// base-space PRG_RAM block nes-mmc1.yaml declares at $6000-$7FFF -- an offset OUTSIDE the
 	// executing overlay's own $8000-$BFFF range. This fixture is the only automated coverage
@@ -1041,7 +1041,7 @@ public class VerifyCbmCriteria extends VerifyBase {
 	// destination ever stayed in the executing overlay, canCarve would refuse it (dstStart in an
 	// overlay space) and the copy would silently degrade to a byte-mapped overlay instead of the
 	// in-place carve asserted here.
-	protected static final String NESCOPY_OVERLAY = "W8000_M3_B1";
+	protected static final String NESCOPY_OVERLAY = "W8000_B1";
 	protected static final long NESCOPY_ENTRY = 0x8000;   // the LDX #imm -- provenance anchor
 	protected static final long NESCOPY_JUMP = 0x800b;    // the JMP into the copied range
 	protected static final long NESCOPY_SRC = 0x8010;

@@ -331,6 +331,7 @@ moved from $E250 to $E260 and CallerG from $E260 to $E280 because CallerF now ru
 through $E250 (it needs three extra bytes for its own select-establishing LDA/STA).
 """
 
+import hashlib
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -3097,10 +3098,10 @@ def make_prg_mmc1_override():
     `-loader-placement W8000:5` (window:bank; colon separator, not '=' -- cmd.exe's
     analyzeHeadless.bat splits arg values on '=') and BoardBankAnalyzer applies:
       1. OVERRIDE FIRES where dataflow left the switchable bank unknown -- a JSR $8000
-         after an *unresolvable* prg_bank commit retargets into W8000_M3_B5 (the pinned
+         after an *unresolvable* prg_bank commit retargets into W8000_B5 (the pinned
          bank), tagged "[user override]", instead of the home-bank fallback.
       2. FLOW WINS over the override where dataflow DID recover the bank -- a later JSR
-         $8000 after a KNOWN prg_bank=3 commit retargets into W8000_M3_B3 (not the pinned
+         $8000 after a KNOWN prg_bank=3 commit retargets into W8000_B3 (not the pinned
          B5); the override is inert, no "[user override]" tag.
 
     All in prg_mode 3 (home). The reset dance makes the whole state known (prg_mode=3,
@@ -3117,10 +3118,10 @@ def make_prg_mmc1_override():
       C005 LDX #$00
       C007 LDA $C400,X                 -- opaque indexed load: A unresolvable.
       C00A chain5($E000)               -- commits prg_bank UNKNOWN (commit STA5 @ C01A).
-      C01D JSR $8000                   -- prg_bank unknown -> OVERRIDE -> W8000_M3_B5::8000.
+      C01D JSR $8000                   -- prg_bank unknown -> OVERRIDE -> W8000_B5::8000.
       C020 LDA #$03
       C022 chain5($E000)               -- commits prg_bank=3 KNOWN (commit STA5 @ C032).
-      C035 JSR $8000                   -- prg_bank=3 known -> FLOW WINS -> W8000_M3_B3::8000.
+      C035 JSR $8000                   -- prg_bank=3 known -> FLOW WINS -> W8000_B3::8000.
       C038 JMP $C038                   -- idle loop.
       C03B RTI                         -- NMI/IRQ handler.
     """
@@ -3128,7 +3129,7 @@ def make_prg_mmc1_override():
 
     _bank_markers(prg, MMC1_BANKS, PRG_BANK_SIZE)  # bank marker, matching the other fixtures
 
-    # Banks 3 and 5's JSR targets (W8000_M3_B3::8000 / W8000_M3_B5::8000): lone RTS,
+    # Banks 3 and 5's JSR targets (W8000_B3::8000 / W8000_B5::8000): lone RTS,
     # replacing the marker byte, as in nesmmc1test's bank 2/5 targets.
     prg[3 * PRG_BANK_SIZE] = 0x60
     prg[5 * PRG_BANK_SIZE] = 0x60
@@ -3153,13 +3154,13 @@ def make_prg_mmc1_override():
     uchain = main.chain5(0xE000)             # commits prg_bank UNKNOWN
     labels['unknown_commit'] = uchain[4]
     labels['override_jsr'] = main.label()
-    main.jsr(0x8000)                         # prg_bank unknown -> override -> W8000_M3_B5
+    main.jsr(0x8000)                         # prg_bank unknown -> override -> W8000_B5
 
     main.lda_imm(0x03)                        # known seed
     fchain = main.chain5(0xE000)             # commits prg_bank=3 KNOWN
     labels['known_commit'] = fchain[4]
     labels['flow_jsr'] = main.label()
-    main.jsr(0x8000)                         # prg_bank=3 known -> flow wins -> W8000_M3_B3
+    main.jsr(0x8000)                         # prg_bank=3 known -> flow wins -> W8000_B3
 
     labels['idle'] = main.label()
     main.jmp(labels['idle'])                 # idle loop
@@ -3898,17 +3899,17 @@ def make_prg_wrapper():
       LDA #$80 / STA $8000             -- reset dance: prg_mode=3 known.
 
       LDA #$03 / JSR single_wrapper    -- W1: resolves prg_bank=3 through the wrapper.
-      JSR $8000                        -- -> W8000_M3_B3::8000, proving the retarget.
+      JSR $8000                        -- -> W8000_B3::8000, proving the retarget.
       LDA #$06 / JSR single_wrapper    -- W2: SAME wrapper, distinct immediate ->
                                            prg_bank=6, distinguishable from W1.
-      JSR $8000                        -- -> W8000_M3_B6::8000.
+      JSR $8000                        -- -> W8000_B6::8000.
 
       LDA #$04 / JSR outer_wrapper     -- W3: the OUTER call of the stacked pair. Must
                                            resolve: `STA $21` then `LDA $21` is a
                                            same-cell save/restore, which the prologue
                                            guard (extended from grm-mu7's stack-based
                                            PHA/PLA case) already models -> prg_bank=4.
-      JSR $8000                        -- -> W8000_M3_B4::8000.
+      JSR $8000                        -- -> W8000_B4::8000.
       JSR inner_wrapper                -- W4: the INNER call, entering directly at
                                            `LDA $21` with no immediate beforehand. Must
                                            NOT resolve: from this entry point the body is
@@ -3949,9 +3950,9 @@ def make_prg_wrapper():
     # replacing the marker byte, as in make_prg_mmc1(). Banks used only by the
     # fixture-integrity direct calls (2, 5, 1, 7) need no RTS -- nothing retargets
     # against them.
-    prg[3 * PRG_BANK_SIZE] = 0x60  # W8000_M3_B3::8000 (single wrapper, call A)
-    prg[6 * PRG_BANK_SIZE] = 0x60  # W8000_M3_B6::8000 (single wrapper, call B)
-    prg[4 * PRG_BANK_SIZE] = 0x60  # W8000_M3_B4::8000 (stacked pair, outer call)
+    prg[3 * PRG_BANK_SIZE] = 0x60  # W8000_B3::8000 (single wrapper, call A)
+    prg[6 * PRG_BANK_SIZE] = 0x60  # W8000_B6::8000 (single wrapper, call B)
+    prg[4 * PRG_BANK_SIZE] = 0x60  # W8000_B4::8000 (stacked pair, outer call)
 
     bank7_base = 7 * PRG_BANK_SIZE
 
@@ -4018,7 +4019,7 @@ def make_prg_wrapper():
     labels['w1a_jsr'] = main.label()
     main.jsr(labels['single_wrapper'])
     labels['w1a_use_jsr'] = main.label()
-    main.jsr(0x8000)                          # -> W8000_M3_B3::8000
+    main.jsr(0x8000)                          # -> W8000_B3::8000
 
     # W2: single wrapper, call B -- SAME wrapper, bank 6 (distinct immediate).
     labels['w1b_imm'] = main.label()
@@ -4026,7 +4027,7 @@ def make_prg_wrapper():
     labels['w1b_jsr'] = main.label()
     main.jsr(labels['single_wrapper'])
     labels['w1b_use_jsr'] = main.label()
-    main.jsr(0x8000)                          # -> W8000_M3_B6::8000
+    main.jsr(0x8000)                          # -> W8000_B6::8000
 
     # W3: stacked pair, OUTER call -- bank 4; must resolve (same-cell save/restore).
     labels['w2_imm'] = main.label()
@@ -4034,7 +4035,7 @@ def make_prg_wrapper():
     labels['w2_jsr'] = main.label()
     main.jsr(labels['outer_wrapper'])
     labels['w2_use_jsr'] = main.label()
-    main.jsr(0x8000)                          # -> W8000_M3_B4::8000
+    main.jsr(0x8000)                          # -> W8000_B4::8000
 
     # W4: stacked pair, INNER call -- no immediate; must NOT resolve (untracked shadow).
     labels['w3_jsr'] = main.label()
@@ -4138,11 +4139,11 @@ def make_prg_relay():
       LDA #$80 / STA $8000             -- prg_mode=3 known.
 
       LDA #$03 / JSR relay_wrapper     -- R1: MUST resolve prg_bank=3 through the relay.
-      JSR $8000                        -- -> W8000_M3_B3::8000, proving the retarget.
+      JSR $8000                        -- -> W8000_B3::8000, proving the retarget.
       LDA #$06 / JSR relay_wrapper     -- R2: SAME wrapper, distinct immediate ->
                                           prg_bank=6, so the recovery is per-call-site
                                           rather than a constant folded onto the wrapper.
-      JSR $8000                        -- -> W8000_M3_B6::8000.
+      JSR $8000                        -- -> W8000_B6::8000.
 
       LDA #$07 / JSR two_call_pred     -- R3: must NOT resolve (exactly-one rule).
       LDA #$07 / JSR nonhelper_pred    -- R4: must NOT resolve (no helper call at all).
@@ -4164,8 +4165,8 @@ def make_prg_relay():
     # JSR $8000 targets for the two RESOLVING call sites (R1/R2): RTS, replacing the
     # marker byte, as in make_prg_mmc1(). Banks reached only by the fixture-integrity
     # direct calls need no RTS -- nothing retargets against them.
-    prg[3 * PRG_BANK_SIZE] = 0x60  # W8000_M3_B3::8000 (relay wrapper, call A)
-    prg[6 * PRG_BANK_SIZE] = 0x60  # W8000_M3_B6::8000 (relay wrapper, call B)
+    prg[3 * PRG_BANK_SIZE] = 0x60  # W8000_B3::8000 (relay wrapper, call A)
+    prg[6 * PRG_BANK_SIZE] = 0x60  # W8000_B6::8000 (relay wrapper, call B)
 
     bank7_base = 7 * PRG_BANK_SIZE
 
@@ -4251,7 +4252,7 @@ def make_prg_relay():
     labels['r1_jsr'] = main.label()
     main.jsr(labels['relay_wrapper'])
     labels['r1_use_jsr'] = main.label()
-    main.jsr(0x8000)                          # -> W8000_M3_B3::8000
+    main.jsr(0x8000)                          # -> W8000_B3::8000
 
     # R2: SAME wrapper, bank 6 -- proves per-call-site recovery, not a folded constant.
     labels['r2_imm'] = main.label()
@@ -4259,7 +4260,7 @@ def make_prg_relay():
     labels['r2_jsr'] = main.label()
     main.jsr(labels['relay_wrapper'])
     labels['r2_use_jsr'] = main.label()
-    main.jsr(0x8000)                          # -> W8000_M3_B6::8000
+    main.jsr(0x8000)                          # -> W8000_B6::8000
 
     # R3-R6: the four negative controls; none may produce a "bank ->" claim.
     labels['r3_imm'] = main.label()
@@ -4354,6 +4355,23 @@ def make_prg_nromsub():
     prg[0x1FFE] = 0x05              # IRQ -> $E005
     prg[0x1FFF] = 0xE0
     return bytes(prg)
+
+
+MMC1_VARY_YAML = """# Planted by run-banktest.sh for the nesmmc1varytest fixture (bead grm-ic5). Synthetic.
+schema: 2
+
+game:
+  id: nesmmc1varytest
+  title: "MMC1 layout_mode_varies fixture (synthetic)"
+  board: nes_mmc1
+  identity:
+    prg_sha256: "{prg}"
+    file_sha256: "{file}"
+  provenance: "synthetic: tools/banktest/mknesbanktest.py (nesmmc1test bytes)"
+
+banking:
+  layout_mode_varies: true
+"""
 
 
 def _write_rom(outdir, filename, prg, mapper=MAPPER, prg_banks=None,
@@ -5161,11 +5179,25 @@ def main():
 
     _write_rom(outdir, "nesmmc1test.nes", prgm1, mapper=MAPPER_MMC1)
 
+    # grm-ic5: the SAME bytes under two more names. MMC1 now assumes its power-on layout mode
+    # (3) when nothing states one, so nesmmc1test -- which deliberately commits prg_mode 2 at
+    # runtime -- is imported with the loader option off; these two cover the other routes:
+    #   nesmmc1varytest.nes      imported with nesmmc1varytest.yaml planted by run-banktest.sh
+    #                            (banking: layout_mode_varies: true) -> every mode's blocks kept
+    #   nesmmc1mismatchtest.nes  imported with DEFAULT options -> mode 3 assumed, and the
+    #                            analyzer's mode lock bookmarks the mismatch WARNING
+    _write_rom(outdir, "nesmmc1varytest.nes", prgm1, mapper=MAPPER_MMC1)
+    _write_rom(outdir, "nesmmc1mismatchtest.nes", prgm1, mapper=MAPPER_MMC1)
+    m1rom = bankgen.ines_header(len(prgm1) // 0x4000, 0, MAPPER_MMC1) + prgm1
+    with open(os.path.join(outdir, "nesmmc1varytest.yaml"), "w", newline="\n") as f:
+        f.write(MMC1_VARY_YAML.format(prg=hashlib.sha256(prgm1).hexdigest(),
+                                      file=hashlib.sha256(m1rom).hexdigest()))
+
     # nesmmc1overridetest.nes (bead grm-hsv.3): user placement override + provenance.
     prgm1o, m1olabels = make_prg_mmc1_override()
     m1obank7_base = 7 * PRG_BANK_SIZE
-    assert prgm1o[3 * PRG_BANK_SIZE] == 0x60  # RTS at W8000_M3_B3::8000 target
-    assert prgm1o[5 * PRG_BANK_SIZE] == 0x60  # RTS at W8000_M3_B5::8000 target
+    assert prgm1o[3 * PRG_BANK_SIZE] == 0x60  # RTS at W8000_B3::8000 target
+    assert prgm1o[5 * PRG_BANK_SIZE] == 0x60  # RTS at W8000_B5::8000 target
     assert prgm1o[m1obank7_base + 0x002] == 0x8D  # STA opcode (reset dance) at $C002
     assert prgm1o[m1obank7_base + 0x007] == 0xBD  # LDA abs,X opcode (opaque load) at $C007
     veco = m1obank7_base + 0x3FFC
@@ -5326,9 +5358,9 @@ def main():
     prgw, wlabels = make_prg_wrapper()
     wbank7_base = 7 * PRG_BANK_SIZE
     assert len(prgw) == MMC1_PRG_SIZE
-    assert prgw[3 * PRG_BANK_SIZE] == 0x60  # RTS: W8000_M3_B3::8000 (W1)
-    assert prgw[6 * PRG_BANK_SIZE] == 0x60  # RTS: W8000_M3_B6::8000 (W2)
-    assert prgw[4 * PRG_BANK_SIZE] == 0x60  # RTS: W8000_M3_B4::8000 (W3)
+    assert prgw[3 * PRG_BANK_SIZE] == 0x60  # RTS: W8000_B3::8000 (W1)
+    assert prgw[6 * PRG_BANK_SIZE] == 0x60  # RTS: W8000_B6::8000 (W2)
+    assert prgw[4 * PRG_BANK_SIZE] == 0x60  # RTS: W8000_B4::8000 (W3)
     # The wrapper/helper pairs must abut exactly -- that IS the shape under test.
     assert wlabels['single_helper'] == wlabels['single_wrapper'] + 2   # STA $20 is 2 bytes
     assert wlabels['inner_wrapper'] == wlabels['outer_wrapper'] + 2    # STA $21 is 2 bytes
@@ -5359,8 +5391,8 @@ def main():
     prgr, rlabels = make_prg_relay()
     rbank7_base = 7 * PRG_BANK_SIZE
     assert len(prgr) == MMC1_PRG_SIZE
-    assert prgr[3 * PRG_BANK_SIZE] == 0x60  # RTS: W8000_M3_B3::8000 (R1)
-    assert prgr[6 * PRG_BANK_SIZE] == 0x60  # RTS: W8000_M3_B6::8000 (R2)
+    assert prgr[3 * PRG_BANK_SIZE] == 0x60  # RTS: W8000_B3::8000 (R1)
+    assert prgr[6 * PRG_BANK_SIZE] == 0x60  # RTS: W8000_B6::8000 (R2)
     # The relay wrapper's shape IS the thing under test: store, reload, then the JSR.
     assert prgr[rbank7_base + 0x100] == 0x85  # STA zp opcode: relay_wrapper entry
     assert prgr[rbank7_base + 0x102] == 0xA5  # LDA zp opcode: the reload

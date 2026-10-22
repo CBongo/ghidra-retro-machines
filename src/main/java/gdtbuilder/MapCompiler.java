@@ -1196,6 +1196,18 @@ public class MapCompiler {
 		if (banking.containsKey("bank_wrap")) {
 			out.put("bank_wrap", parseBankWrap(banking.get("bank_wrap"), stateFields));
 		}
+		if (banking.containsKey("assume_initial_layout_mode")) {
+			// grm-ic5: the board's power-on layout mode may be TAKEN AS KNOWN when nothing better
+			// (image scan, per-game hint) states one, licensing suppression of the other modes.
+			Object assume = banking.get("assume_initial_layout_mode");
+			if (!(assume instanceof Boolean)) {
+				throw new IllegalArgumentException(
+					"banking 'assume_initial_layout_mode:' must be true or false");
+			}
+			if ((Boolean) assume) {
+				out.put("assume_initial_layout_mode", true);
+			}
+		}
 
 		// state tuple (already validated by parseStateFields)
 		List<Map<String, Object>> stateOut = new ArrayList<>();

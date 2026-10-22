@@ -2411,6 +2411,102 @@ public class VerifyNesCriteria extends VerifyBase {
 			"instruction exists at W8000_M3_B4::8000");
 		criterion("M10:WC000_M2_B7_C300", hasInstructionAt("WC000_M2_B7", 0xC300),
 			"instruction exists at WC000_M2_B7::C300");
+
+		// M16 (grm-ic5): imported with -loader-assumeLayoutMode false, so MMC1's assumed
+		// power-on mode must NOT have been published -- every mode's qualified blocks stay.
+		String mode = layoutModeProperty();
+		criterion("M16:no-layout-mode-property", mode == null || mode.isBlank(),
+			LAYOUT_MODE_PROPERTY + " = " + mode + " (expect absent: assumption opted out by " +
+				"-loader-assumeLayoutMode false)");
+	}
+
+	/**
+	 * nesmmc1varytest (bead grm-ic5): nesmmc1test's bytes imported with a PLANTED game yaml
+	 * carrying {@code banking: layout_mode_varies: true}, default loader options. The yaml, not
+	 * the loader option, must keep every mode's blocks and withhold the Layout Mode property.
+	 */
+	protected void checkNesMmc1Vary() {
+		String path = currentProgram.getOptions(Program.PROGRAM_INFO)
+				.getString(VerifyDescriptorCriteria.GAME_DESCRIPTOR_PROPERTY, null);
+		String norm = path == null ? null : path.replace('\\', '/');
+		criterion("VARY1:planted-yaml-resolved",
+			norm != null && norm.endsWith("/retro-machines/games/nesmmc1varytest.yaml"),
+			"Game Descriptor property = " + path);
+
+		java.util.List<String> names = blockNameList();
+		String missing = "";
+		for (String want : new String[] { "W8000_M3_B2", "W8000_M3_B5", "W8000_M3_B3",
+			"W8000_M3_B4", "WC000_M2_B7" }) {
+			if (!names.contains(want)) {
+				missing += " " + want;
+			}
+		}
+		criterion("VARY2:mode-qualified-blocks-kept", missing.isEmpty(),
+			"mode-qualified blocks present despite the default loader options (missing:" +
+				(missing.isEmpty() ? " none" : missing) + ")");
+
+		boolean unqualifiedLeft = names.contains("W8000_B2") || names.contains("W8000_B5");
+		criterion("VARY3:no-collapsed-names", !unqualifiedLeft,
+			"no unqualified W8000_B<n> block (the layout mode must not be treated as known)");
+
+		String mode = layoutModeProperty();
+		criterion("VARY4:no-layout-mode-property", mode == null || mode.isBlank(),
+			LAYOUT_MODE_PROPERTY + " = " + mode + " (expect absent: layout_mode_varies)");
+	}
+
+	/**
+	 * nesmmc1mismatchtest (bead grm-ic5): nesmmc1test's bytes (they switch to prg_mode 2 at
+	 * runtime) imported with DEFAULT options and nothing planted. Mode 3 is assumed, so only its
+	 * unqualified blocks exist, and the analyzer must bookmark a "Layout mode mismatch" WARNING.
+	 */
+	protected void checkNesMmc1Mismatch() {
+		// Nothing may have resolved: this is also the leak check for nesmmc1varytest's yaml.
+		String path = currentProgram.getOptions(Program.PROGRAM_INFO)
+				.getString(VerifyDescriptorCriteria.GAME_DESCRIPTOR_PROPERTY, null);
+		criterion("MISM1:no-descriptor", path == null,
+			"Game Descriptor property = " + path + " (nesmmc1varytest's yaml must not leak)");
+
+		String mode = layoutModeProperty();
+		criterion("MISM2:layout-mode-assumed-3", "3".equals(mode),
+			LAYOUT_MODE_PROPERTY + " = " + mode + " (expect 3: MMC1's power-on mode assumed)");
+
+		java.util.List<String> names = blockNameList();
+		String qualified = "";
+		for (String n : names) {
+			if (n.matches(".*_M[0-9].*")) {
+				qualified += " " + n;
+			}
+		}
+		criterion("MISM3:only-mode3-unqualified",
+			qualified.isEmpty() && modeQualifiedSpaces().isEmpty() &&
+				names.contains("W8000_B2") && names.contains("W8000_B5") &&
+				!names.contains("WC000_B7"),
+			"no _M-qualified block or space, W8000_B2/_B5 present (qualified:" + qualified +
+				" spaces:" + modeQualifiedSpaces() + ")");
+
+		String found = "";
+		int count = 0;
+		for (ghidra.program.model.listing.Bookmark bm : iterableOf(
+				currentProgram.getBookmarkManager().getBookmarksIterator("Warning"))) {
+			if (bm.getCategory().equals(CATEGORY_NES + " mode lock") && bm.getComment() != null &&
+				bm.getComment().startsWith("Layout mode mismatch")) {
+				count++;
+				found = bm.getAddress() + ": " + bm.getComment();
+			}
+		}
+		// The path that fires on these bytes is the LOCK DISAGREEMENT one (the reset-side lock
+		// forms prg_mode=2 from the write at $C061 against the assumed 3), not a rejected lock:
+		// the text names the locked mode and the source address, and does not say "disagree".
+		criterion("MISM4:mismatch-warning-lock-disagrees",
+			count == 1 && found.startsWith("c061: ") &&
+				found.contains("only ever sets prg_mode=2 (first at c061)") &&
+				!found.contains("writes disagree"),
+			"one 'Layout mode mismatch' WARNING in category '" + CATEGORY_NES + " mode lock' (count " +
+				count + ") from a held lock of prg_mode=2 vs assumed 3, at c061: " + found);
+	}
+
+	private static <T> Iterable<T> iterableOf(java.util.Iterator<T> it) {
+		return () -> it;
 	}
 
 	// ------------------------------------------------------------------
@@ -2470,11 +2566,11 @@ public class VerifyNesCriteria extends VerifyBase {
 				"c007: \"" + c + "\"");
 
 		// R2b: load-bearing -- the JSR $8000 right after it, at $C00A, retargets to
-		// W8000_M3_B3 (bank 3 is non-home). A recovered value nothing retargets against
+		// W8000_B3 (bank 3 is non-home). A recovered value nothing retargets against
 		// would not be worth much.
-		Reference r = findOverlayRef(0xC00A, "W8000_M3_B3", 0x8000);
+		Reference r = findOverlayRef(0xC00A, "W8000_B3", 0x8000);
 		criterionPrimaryCall("R2b", r,
-			"JSR $8000 (prg_bank=3, via call-edge wrapper) retargeted to W8000_M3_B3 " +
+			"JSR $8000 (prg_bank=3, via call-edge wrapper) retargeted to W8000_B3 " +
 				"overlay, primary: ");
 
 		// R3: the SAME wrapper with a distinct immediate (prg_bank=6), proving the
@@ -2485,10 +2581,10 @@ public class VerifyNesCriteria extends VerifyBase {
 			"call-edge-wrapper call (2nd, distinct immediate) resolves prg_bank=6 via " +
 				"the wrapper, no '?', at c00f: \"" + c + "\"");
 
-		// R3b: load-bearing -- the JSR $8000 at $C012 retargets to W8000_M3_B6.
-		r = findOverlayRef(0xC012, "W8000_M3_B6", 0x8000);
+		// R3b: load-bearing -- the JSR $8000 at $C012 retargets to W8000_B6.
+		r = findOverlayRef(0xC012, "W8000_B6", 0x8000);
 		criterionPrimaryCall("R3b", r,
-			"JSR $8000 (prg_bank=6, via call-edge wrapper) retargeted to W8000_M3_B6 " +
+			"JSR $8000 (prg_bank=6, via call-edge wrapper) retargeted to W8000_B6 " +
 				"overlay, primary: ");
 
 		// R4: negative control -- two_call_pred makes TWO known-helper calls, so the
@@ -2596,11 +2692,11 @@ public class VerifyNesCriteria extends VerifyBase {
 				c + "\"");
 
 		// W2b: load-bearing -- the JSR $8000 right after it, at $C00A, retargets to
-		// W8000_M3_B3 (bank 3 is non-home). A recovered value nothing retargets against
+		// W8000_B3 (bank 3 is non-home). A recovered value nothing retargets against
 		// would not be worth much.
-		Reference r = findOverlayRef(0xC00A, "W8000_M3_B3", 0x8000);
+		Reference r = findOverlayRef(0xC00A, "W8000_B3", 0x8000);
 		criterionPrimaryCall("W2b", r,
-			"JSR $8000 (prg_bank=3, via single wrapper) retargeted to W8000_M3_B3 " +
+			"JSR $8000 (prg_bank=3, via single wrapper) retargeted to W8000_B3 " +
 				"overlay, primary: ");
 
 		// W3: call site W1b's JSR $C100 at $C00F -- the SAME wrapper, a distinct
@@ -2612,10 +2708,10 @@ public class VerifyNesCriteria extends VerifyBase {
 			"single-wrapper call (2nd, distinct immediate) resolves prg_bank=6 via the " +
 				"wrapper, no '?', at c00f: \"" + c + "\"");
 
-		// W3b: load-bearing -- the JSR $8000 at $C012 retargets to W8000_M3_B6.
-		r = findOverlayRef(0xC012, "W8000_M3_B6", 0x8000);
+		// W3b: load-bearing -- the JSR $8000 at $C012 retargets to W8000_B6.
+		r = findOverlayRef(0xC012, "W8000_B6", 0x8000);
 		criterionPrimaryCall("W3b", r,
-			"JSR $8000 (prg_bank=6, via single wrapper) retargeted to W8000_M3_B6 " +
+			"JSR $8000 (prg_bank=6, via single wrapper) retargeted to W8000_B6 " +
 				"overlay, primary: ");
 
 		// W4: the Castlevania 2 stacked shape, and the only real test of the fixpoint (a
@@ -2631,11 +2727,11 @@ public class VerifyNesCriteria extends VerifyBase {
 			"stacked-wrapper OUTER call resolves prg_bank=4 (same-cell save/restore), " +
 				"no '?', at c017: \"" + c + "\"");
 
-		// W4b: load-bearing -- the JSR $8000 at $C01A retargets to W8000_M3_B4.
-		r = findOverlayRef(0xC01A, "W8000_M3_B4", 0x8000);
+		// W4b: load-bearing -- the JSR $8000 at $C01A retargets to W8000_B4.
+		r = findOverlayRef(0xC01A, "W8000_B4", 0x8000);
 		criterionPrimaryCall("W4b", r,
 			"JSR $8000 (prg_bank=4, via stacked outer wrapper) retargeted to " +
-				"W8000_M3_B4 overlay, primary: ");
+				"W8000_B4 overlay, primary: ");
 
 		// W5: the stacked pair's INNER call -- JSR $C142 at $C01D, entering DIRECTLY at
 		// `LDA $21` with no immediate beforehand (and no visibility into outer_wrapper's
@@ -2729,12 +2825,12 @@ public class VerifyNesCriteria extends VerifyBase {
 		// W13: disassembly sanity -- the JSR-target overlay instructions actually exist,
 		// so the retargeted references above point at real code (same style as
 		// nesmmc1test's M10).
-		criterion("W13:W8000_M3_B3_8000", hasInstructionAt("W8000_M3_B3", 0x8000),
-			"instruction exists at W8000_M3_B3::8000");
-		criterion("W13:W8000_M3_B6_8000", hasInstructionAt("W8000_M3_B6", 0x8000),
-			"instruction exists at W8000_M3_B6::8000");
-		criterion("W13:W8000_M3_B4_8000", hasInstructionAt("W8000_M3_B4", 0x8000),
-			"instruction exists at W8000_M3_B4::8000");
+		criterion("W13:W8000_B3_8000", hasInstructionAt("W8000_B3", 0x8000),
+			"instruction exists at W8000_B3::8000");
+		criterion("W13:W8000_B6_8000", hasInstructionAt("W8000_B6", 0x8000),
+			"instruction exists at W8000_B6::8000");
+		criterion("W13:W8000_B4_8000", hasInstructionAt("W8000_B4", 0x8000),
+			"instruction exists at W8000_B4::8000");
 	}
 
 	protected void checkNesMmc1Override() {
@@ -2760,10 +2856,10 @@ public class VerifyNesCriteria extends VerifyBase {
 				hasWarningBookmark(0xC01A) + " comment=\"" + eol(0xC01A) + "\"");
 
 		// O3 (OVERRIDE FIRES): the JSR $8000 at $C01D, where prg_bank is unknown, retargets
-		// into W8000_M3_B5 -- the bank pinned by the override, NOT the home-bank fallback.
-		Reference r = findOverlayRef(0xC01D, "W8000_M3_B5", 0x8000);
+		// into W8000_B5 -- the bank pinned by the override, NOT the home-bank fallback.
+		Reference r = findOverlayRef(0xC01D, "W8000_B5", 0x8000);
 		criterionPrimaryCall("O3", r,
-			"JSR $8000 with unknown prg_bank retargeted to the override's W8000_M3_B5, " +
+			"JSR $8000 with unknown prg_bank retargeted to the override's W8000_B5, " +
 				"primary: ");
 
 		// O4: the override site carries "[user override]" provenance in the listing/dump.
@@ -2781,20 +2877,20 @@ public class VerifyNesCriteria extends VerifyBase {
 			"known commit -> prg_bank=3 recovered, flow-tagged, at c032: \"" + c + "\"");
 
 		// O6 (FLOW WINS): the JSR $8000 at $C035, where prg_bank=3 IS known, retargets into
-		// W8000_M3_B3 -- dataflow beats the override (which pins W8000 to bank 5); no
+		// W8000_B3 -- dataflow beats the override (which pins W8000 to bank 5); no
 		// "[user override]" tag here, and no ref into B5.
-		r = findOverlayRef(0xC035, "W8000_M3_B3", 0x8000);
+		r = findOverlayRef(0xC035, "W8000_B3", 0x8000);
 		criterion("O6", r != null && r.getReferenceType().isCall() && r.isPrimary() &&
-			findOverlayRef(0xC035, "W8000_M3_B5", 0x8000) == null &&
+			findOverlayRef(0xC035, "W8000_B5", 0x8000) == null &&
 			!eol(0xC035).contains("[user override]"),
-			"JSR $8000 with known prg_bank=3 retargeted to W8000_M3_B3 (flow wins over " +
+			"JSR $8000 with known prg_bank=3 retargeted to W8000_B3 (flow wins over " +
 				"override), primary: " + describe(r));
 
 		// O7: disassembly sanity -- both retargeted overlay targets exist.
-		criterion("O7:W8000_M3_B5_8000", hasInstructionAt("W8000_M3_B5", 0x8000),
-			"instruction exists at W8000_M3_B5::8000");
-		criterion("O7:W8000_M3_B3_8000", hasInstructionAt("W8000_M3_B3", 0x8000),
-			"instruction exists at W8000_M3_B3::8000");
+		criterion("O7:W8000_B5_8000", hasInstructionAt("W8000_B5", 0x8000),
+			"instruction exists at W8000_B5::8000");
+		criterion("O7:W8000_B3_8000", hasInstructionAt("W8000_B3", 0x8000),
+			"instruction exists at W8000_B3::8000");
 	}
 
 	protected void checkNesMmc3Override() {

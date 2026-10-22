@@ -1,5 +1,5 @@
 id	title	sha256	mapper	board	golden	loader_opts	member
-zelda	Legend of Zelda, The (U) (V1.0) [!]	1dff2d002168e0234d206938afc5189a79eb0ec055ada12f2cd4e105f713fc7d	1	nes_mmc1	zelda.dump	-preScript RunFromElsewhereTransfer.java src:W8000_M3_B1:a500 dst:6c90 len:0x1270 disassemble:true function:true site:W8000_M3_B1:8d00 jump:W8000_M3_B1:a13b	
+zelda	Legend of Zelda, The (U) (V1.0) [!]	1dff2d002168e0234d206938afc5189a79eb0ec055ada12f2cd4e105f713fc7d	1	nes_mmc1	zelda.dump	-preScript RunFromElsewhereTransfer.java src:W8000_B1:a500 dst:6c90 len:0x1270 disassemble:true function:true site:W8000_B1:8d00 jump:W8000_B1:a13b	
 smb3	Super Mario Bros. 3 (U) (V1.1) [!]	1ddc4b429490e298c05fa70389034107c0cb50f671c7c1baaa3f228224afc2e9	4	nes_mmc3	smb3.dump		
 contra	Contra (U) [!]	1f4a9b3f04e2f828688512c0b83611a87c3fc1bd4f85ed91da1b19abc5816d73	2	nes_uxrom	contra.dump		
 megaman	Mega Man (U) [!]	6f74e8a7575ab43a36ea4cb337114ca1af8b1955b7e8ee4a6088a3824e736e34	2	nes_uxrom	megaman.dump		

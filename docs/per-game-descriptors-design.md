@@ -786,6 +786,14 @@ analyzer verifies: the descriptor's `provenance` should record the survey of eve
 field (blmaster: `machines/games/blmaster.yaml`, the one shipped user). The general
 whole-image invariance pass was deliberately deferred until a title needs it.
 
+**`banking.layout_mode_varies` (bead `grm-ic5`) says the title switches layout mode at
+runtime.** Syntax: `banking: { layout_mode_varies: true }` (GameCompiler rejects a non-boolean).
+The loader then treats NO layout mode as known for the title, overriding the MMC3 image scan, an
+`initial_state` hint for the layout field, and MMC1's assumed power-on mode. Every mode's overlay
+blocks are created, with their mode-qualified names (see SCHEMA.md "Mode-dependent layouts").
+Like `initial_state`, it is consumed at import, so changing it needs a RE-IMPORT. It is the fix
+the bank analyzer's "Layout mode mismatch" WARNING names for a rejected mode lock.
+
 **`banking.save_cells` (bead `grm-mej.9`) is the third loader-published hint.** Syntax:
 `banking: { save_cells: [{ address: 0xF0, provenance: "..." }] }` -- a non-empty list of RAM cell
 addresses (GameCompiler rejects an empty list, a non-list, an unknown key, a duplicate, a

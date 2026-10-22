@@ -7,36 +7,19 @@ REALROM placement NONE
 REALROM block PRG_RAM 6000-7fff overlay=false
 REALROM block RAM 0000-07ff overlay=false
 REALROM block W8000 8000-bfff overlay=false
-REALROM block W8000_M0_B0 8000-ffff overlay=true
-REALROM block W8000_M0_B2 8000-ffff overlay=true
-REALROM block W8000_M0_B4 8000-ffff overlay=true
-REALROM block W8000_M0_B6 8000-ffff overlay=true
-REALROM block W8000_M1_B0 8000-ffff overlay=true
-REALROM block W8000_M1_B2 8000-ffff overlay=true
-REALROM block W8000_M1_B4 8000-ffff overlay=true
-REALROM block W8000_M1_B6 8000-ffff overlay=true
-REALROM block W8000_M2 8000-bfff overlay=true
-REALROM block W8000_M3_B1 8000-bfff overlay=true
-REALROM block W8000_M3_B2 8000-bfff overlay=true
-REALROM block W8000_M3_B3 8000-bfff overlay=true
-REALROM block W8000_M3_B4 8000-bfff overlay=true
-REALROM block W8000_M3_B5 8000-bfff overlay=true
-REALROM block W8000_M3_B6 8000-bfff overlay=true
-REALROM block W8000_M3_B7 8000-bfff overlay=true
+REALROM block W8000_B1 8000-bfff overlay=true
+REALROM block W8000_B2 8000-bfff overlay=true
+REALROM block W8000_B3 8000-bfff overlay=true
+REALROM block W8000_B4 8000-bfff overlay=true
+REALROM block W8000_B5 8000-bfff overlay=true
+REALROM block W8000_B6 8000-bfff overlay=true
+REALROM block W8000_B7 8000-bfff overlay=true
 REALROM block WC000 c000-ffff overlay=false
-REALROM block WC000_M2_B0 c000-ffff overlay=true
-REALROM block WC000_M2_B1 c000-ffff overlay=true
-REALROM block WC000_M2_B2 c000-ffff overlay=true
-REALROM block WC000_M2_B3 c000-ffff overlay=true
-REALROM block WC000_M2_B4 c000-ffff overlay=true
-REALROM block WC000_M2_B5 c000-ffff overlay=true
-REALROM block WC000_M2_B6 c000-ffff overlay=true
-REALROM block WC000_M2_B7 c000-ffff overlay=true
-REALROM count blocks.total 30
-REALROM count blocks.overlay 24
+REALROM count blocks.total 13
+REALROM count blocks.overlay 7
 REALROM count refs.intoOverlay.retargeted 4
 REALROM count refs.intoOverlay.intraOverlay 428
-REALROM count instrs.inOverlay 1404
+REALROM count instrs.inOverlay 1405
 REALROM count bankComments 10
 REALROM count warnings 6
 REALROM count notes 44
@@ -51,31 +34,31 @@ REALROM sample.bankcomment c4d2 bank -> mirroring=2,prg_mode=3,prg_bank=5 via FU
 REALROM sample.bankcomment cf23 bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffcc [switch-value flow]
 REALROM sample.bankcomment ff8f bank -> mirroring=3,prg_mode=3,prg_bank=0? via FUN_ff9d [known: mirroring.0=1,mirroring.1=1,prg_mode.0=1,prg_mode.1=1; assumed from initial: prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
 REALROM sample.bankcomment ff97 bank -> mirroring=3,prg_mode=3,prg_bank=7 via FUN_ffcc [switch-value flow]
-REALROM sample.ref 9002 -> W8000_M3_B6::900b CONDITIONAL_JUMP primary=true
-REALROM sample.ref 9009 -> W8000_M3_B6::9030 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 9010 -> W8000_M3_B6::920b UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 9013 -> W8000_M3_B6::990b UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 9016 -> W8000_M3_B6::92f4 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 9019 -> W8000_M3_B6::9408 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 901c -> W8000_M3_B6::95a7 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 901f -> W8000_M3_B6::9b18 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 903f -> W8000_M3_B6::9031 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 9045 -> W8000_M3_B6::9190 DATA primary=true
-REALROM sample.ref 9048 -> W8000_M3_B6::9063 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 904f -> W8000_M3_B6::9055 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 9053 -> W8000_M3_B6::905b CONDITIONAL_JUMP primary=true
-REALROM sample.ref 9057 -> W8000_M3_B6::905b CONDITIONAL_JUMP primary=true
-REALROM sample.ref 905b -> W8000_M3_B6::918f DATA primary=true
-REALROM sample.ref 9064 -> W8000_M3_B6::9038 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 9069 -> W8000_M3_B6::9044 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 906d -> W8000_M3_B6::9044 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 907b -> W8000_M3_B6::914d DATA primary=true
-REALROM sample.ref 9082 -> W8000_M3_B6::908c CONDITIONAL_JUMP primary=true
-REALROM sample.ref 9087 -> W8000_M3_B6::908c CONDITIONAL_JUMP primary=true
-REALROM sample.ref 9090 -> W8000_M3_B6::909e CONDITIONAL_JUMP primary=true
-REALROM sample.ref 9095 -> W8000_M3_B6::909a CONDITIONAL_JUMP primary=true
-REALROM sample.ref 90a3 -> W8000_M3_B6::90ac CONDITIONAL_JUMP primary=true
-REALROM sample.ref 90aa -> W8000_M3_B6::90b1 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 9002 -> W8000_B6::900b CONDITIONAL_JUMP primary=true
+REALROM sample.ref 9009 -> W8000_B6::9030 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 9010 -> W8000_B6::920b UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 9013 -> W8000_B6::990b UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 9016 -> W8000_B6::92f4 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 9019 -> W8000_B6::9408 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 901c -> W8000_B6::95a7 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 901f -> W8000_B6::9b18 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 903f -> W8000_B6::9031 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 9045 -> W8000_B6::9190 DATA primary=true
+REALROM sample.ref 9048 -> W8000_B6::9063 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 904f -> W8000_B6::9055 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 9053 -> W8000_B6::905b CONDITIONAL_JUMP primary=true
+REALROM sample.ref 9057 -> W8000_B6::905b CONDITIONAL_JUMP primary=true
+REALROM sample.ref 905b -> W8000_B6::918f DATA primary=true
+REALROM sample.ref 9064 -> W8000_B6::9038 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 9069 -> W8000_B6::9044 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 906d -> W8000_B6::9044 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 907b -> W8000_B6::914d DATA primary=true
+REALROM sample.ref 9082 -> W8000_B6::908c CONDITIONAL_JUMP primary=true
+REALROM sample.ref 9087 -> W8000_B6::908c CONDITIONAL_JUMP primary=true
+REALROM sample.ref 9090 -> W8000_B6::909e CONDITIONAL_JUMP primary=true
+REALROM sample.ref 9095 -> W8000_B6::909a CONDITIONAL_JUMP primary=true
+REALROM sample.ref 90a3 -> W8000_B6::90ac CONDITIONAL_JUMP primary=true
+REALROM sample.ref 90aa -> W8000_B6::90b1 CONDITIONAL_JUMP primary=true
 REALROM sample.ref.truncated 25 of 432
 REALROM sample.warn b9f8 [CopyLoopAnalyzer] copy-shaped loop RAM:0008 -> RAM:0000 could not be bounded; not applied
 REALROM sample.warn cd5c [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffcc whose bank argument could not be recovered at this call site
@@ -89,7 +72,7 @@ REALROM sample.note 8b1a [CopyLoopAnalyzer] copy-shaped loop RAM:04d0 -> RAM:04e
 REALROM sample.note 8ce1 [CopyLoopAnalyzer] copy-shaped loop RAM:8cdd -> RAM:0200 (4 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note 8ff8 [CopyLoopAnalyzer] copy-shaped loop RAM:8faa -> RAM:0302 (8 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note a7d7 [CopyLoopAnalyzer] copy-shaped loop RAM:a7a1 -> RAM:0302 (10 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
-REALROM sample.note b976 [CopyLoopAnalyzer] copy-shaped loop W8000_M3_B5:bae3 -> RAM:0000 (50 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note b976 [CopyLoopAnalyzer] copy-shaped loop W8000_B5:bae3 -> RAM:0000 (50 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note b9a7 [CopyLoopAnalyzer] copy-shaped loop RAM:0008 -> RAM:0000 (50 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note b9d3 [CopyLoopAnalyzer] copy-shaped loop RAM:0777 -> RAM:0008 (50 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note bf9d [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.

@@ -483,6 +483,21 @@ public class GameCompiler {
 		if (fixed != null) {
 			out.put("fixed_after_init", fixed);
 		}
+		if (banking.containsKey("layout_mode_varies")) {
+			// grm-ic5: this title switches layout mode at runtime, so no mode may be taken as
+			// known for it and every mode's overlay blocks are kept.
+			Object varies = banking.get("layout_mode_varies");
+			if (!(varies instanceof Boolean)) {
+				throw new IllegalArgumentException(
+					"game descriptor 'banking.layout_mode_varies:' must be true or false");
+			}
+			// An initial_state hint naming the layout field would contradict this; which field
+			// that is is a board fact this compiler does not see, so the loader arbitrates
+			// (varies wins, and says so).
+			if ((Boolean) varies) {
+				out.put("layout_mode_varies", true);
+			}
+		}
 		return out.isEmpty() ? null : out;
 	}
 
