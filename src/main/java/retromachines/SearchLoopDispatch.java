@@ -34,7 +34,9 @@ import ghidra.program.model.symbol.Reference;
 
 /**
  * The cases of a jump table indexed by a KEYED LINEAR SEARCH (grm-jt7s), read exactly from the
- * index values the search can leave in {@code Y}. megaman's bank 5:
+ * index values the search can leave in {@code Y} (or {@code X}: the same proof with the register
+ * swapped, grm-gcwb; the loop must compare, load and count in the one register, and a mixed loop is
+ * declined). megaman's bank 5:
  * <pre>
  *   9998  LDY #$2d            ; the last 3-byte (id, lo, hi) record
  *   999f  CMP $99bb,Y   &lt;-+  ; L: compare this record's id
@@ -89,7 +91,18 @@ final class SearchLoopDispatch {
 	 * is not this one, a table byte is unreadable, or a target is not among {@code realCases}.
 	 */
 	static List<Address> cases(Program program, Instruction switchInstr, List<Address> realCases) {
-		Register y = program.getRegister("Y");
+		for (String name : new String[] { "Y", "X" }) {
+			List<Address> cases = cases(program, switchInstr, realCases, program.getRegister(name));
+			if (cases != null) {
+				return cases;
+			}
+		}
+		return null;
+	}
+
+	/** {@link #cases(Program, Instruction, List)} for one index register, X or Y. */
+	private static List<Address> cases(Program program, Instruction switchInstr,
+			List<Address> realCases, Register y) {
 		Listing listing = program.getListing();
 		if (y == null || !switchInstr.getFlowType().isJump() ||
 			!switchInstr.getFlowType().isComputed()) {
@@ -121,7 +134,7 @@ final class SearchLoopDispatch {
 		// LDA base,Y / STA zp pairs in the run, filling the switch's pointer low then high byte.
 		Map<Long, Long> baseByZp = new LinkedHashMap<>();
 		for (int i = 0; i + 1 < run.size(); i++) {
-			Long base = yIndexedLoadBase(run.get(i), y);
+			Long base = indexedLoadBase(run.get(i), y);
 			Instruction store = run.get(i + 1);
 			if (base != null && "STA".equalsIgnoreCase(store.getMnemonicString())) {
 				Long zp = scalarOperand(store);
@@ -140,7 +153,7 @@ final class SearchLoopDispatch {
 		Set<Integer> values = new LinkedHashSet<>();
 		Instruction fallback = FlowEdges.fallThroughPredecessor(listing, join);
 		if (fallback != null) {
-			Integer imm = ldyImmediate(fallback);
+			Integer imm = ldImmediate(fallback, y);
 			if (imm == null) {
 				return null;
 			}
@@ -197,7 +210,7 @@ final class SearchLoopDispatch {
 		// After the branch: k DEYs, then the BPL back to L.
 		int step = 0;
 		Instruction cur = FlowEdges.nextFallThrough(listing, branch);
-		while (cur != null && "DEY".equalsIgnoreCase(cur.getMnemonicString())) {
+		while (cur != null && LoopIdioms.decMnemonic(y).equalsIgnoreCase(cur.getMnemonicString())) {
 			step++;
 			cur = FlowEdges.nextFallThrough(listing, cur);
 		}
@@ -217,10 +230,13 @@ final class SearchLoopDispatch {
 			}
 		}
 		cur = head;
+		boolean comparesIndexed = false; // the loop must search the register it dispatches on
 		for (int i = 0; ; i++) {
 			if (i >= MAX_RUN || MosOperands.writesRegister(cur, y)) {
 				return null;
 			}
+			comparesIndexed |= "CMP".equalsIgnoreCase(cur.getMnemonicString()) &&
+				y.equals(LoopIdioms.indexReg(cur));
 			if (cur.equals(branch)) {
 				break;
 			}
@@ -229,6 +245,9 @@ final class SearchLoopDispatch {
 				return null;
 			}
 		}
+		if (!comparesIndexed) {
+			return null;
+		}
 		// Before L: a straight-line run up from an LDY #n, entered from nowhere else.
 		Instruction before = head;
 		for (int i = 0; i < MAX_RUN; i++) {
@@ -236,7 +255,7 @@ final class SearchLoopDispatch {
 			if (prev == null) {
 				return null;
 			}
-			Integer n = ldyImmediate(prev);
+			Integer n = ldImmediate(prev, y);
 			if (n != null) {
 				return loopValues(n, step);
 			}
@@ -262,17 +281,17 @@ final class SearchLoopDispatch {
 		return !incomingFlow(program, instr).isEmpty();
 	}
 
-	/** {@code n} for {@code LDY #n}, else null. */
-	private static Integer ldyImmediate(Instruction instr) {
-		if (!"LDY".equalsIgnoreCase(instr.getMnemonicString()) || instr.getLength() != 2) {
+	/** {@code n} for {@code LDY #n} / {@code LDX #n} of the register {@code idx}, else null. */
+	private static Integer ldImmediate(Instruction instr, Register idx) {
+		if (!("LD" + idx.getName()).equalsIgnoreCase(instr.getMnemonicString()) || instr.getLength() != 2) {
 			return null;
 		}
 		Long v = scalarOperand(instr);
 		return v == null || !instr.toString().contains("#") ? null : v.intValue() & 0xff;
 	}
 
-	/** The base of {@code LDA base,Y} (absolute, indexed by Y), else null. */
-	private static Long yIndexedLoadBase(Instruction instr, Register y) {
+	/** The base of {@code LDA base,Y} / {@code LDA base,X} (absolute, indexed by {@code y}), else null. */
+	private static Long indexedLoadBase(Instruction instr, Register y) {
 		if (!"LDA".equalsIgnoreCase(instr.getMnemonicString()) || instr.getLength() != 3) {
 			return null;
 		}

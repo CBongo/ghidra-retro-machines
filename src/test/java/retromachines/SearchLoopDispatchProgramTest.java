@@ -71,6 +71,19 @@ public class SearchLoopDispatchProgramTest extends AbstractBundledLanguageTest {
 
 	/** {@code extraEntry}: a JMP elsewhere into J, which makes Y at J unknown to the rule. */
 	private ProgramDB build(boolean extraEntry) throws Exception {
+		return build(extraEntry, Y_CODE);
+	}
+
+	private static final String Y_CODE =
+		"a0 09 d9 40 80 f0 07 88 88 88 10 f6 a0 00 b9 41 80 85 04 b9 42 80 85 05 6c 04 00";
+	/** The same dispatch with X for the index register (grm-gcwb). */
+	private static final String X_CODE =
+		"a2 09 dd 40 80 f0 07 ca ca ca 10 f6 a2 00 bd 41 80 85 04 bd 42 80 85 05 6c 04 00";
+	/** LDX / DEX / LDA,X as X_CODE, but the search compares through Y: not this idiom. */
+	private static final String MIXED_CODE =
+		"a2 09 d9 40 80 f0 07 ca ca ca 10 f6 a2 00 bd 41 80 85 04 bd 42 80 85 05 6c 04 00";
+
+	private ProgramDB build(boolean extraEntry, String code) throws Exception {
 		builder = newBuilder("Test", LANG);
 		uninitializedRam(builder, ".zp", "0x0", 0x100);
 		builder.createMemory(".text", "0x8000", 0x1000);
@@ -84,9 +97,7 @@ public class SearchLoopDispatchProgramTest extends AbstractBundledLanguageTest {
 		for (long t : REAL) {
 			builder.setBytes(String.format("0x%x", t), "60", true); // RTS
 		}
-		builder.setBytes("0x8000",
-			"a0 09 d9 40 80 f0 07 88 88 88 10 f6 a0 00 b9 41 80 85 04 b9 42 80 85 05 6c 04 00",
-			true);
+		builder.setBytes("0x8000", code, true);
 		if (extraEntry) {
 			builder.setBytes("0x8300", "a4 10 4c 0e 80", true); // LDY $10 / JMP $800e
 		}
@@ -167,6 +178,33 @@ public class SearchLoopDispatchProgramTest extends AbstractBundledLanguageTest {
 	@Test
 	public void secondEntryIntoTheJoinDeclines() throws Exception {
 		ProgramDB program = build(true);
+		Function function = createFunction(program);
+		JumpTable table = decompiledTable(program, function);
+		assertNull(SearchLoopDispatch.cases(program,
+			program.getListing().getInstructionAt(addr(SWITCH)),
+			new ArrayList<>(Arrays.asList(table.getCases()))));
+	}
+
+	@Test
+	public void xIndexedFormResolvesTheSameFourRecords() throws Exception {
+		ProgramDB program = build(false, X_CODE);
+		Function function = createFunction(program);
+		JumpTable table = decompiledTable(program, function);
+		List<Address> cases = SearchLoopDispatch.cases(program,
+			program.getListing().getInstructionAt(addr(SWITCH)),
+			new ArrayList<>(Arrays.asList(table.getCases())));
+		assertNotNull(cases);
+		List<Address> expected = new ArrayList<>();
+		for (long t : REAL) {
+			expected.add(addr(t));
+		}
+		assertEquals(expected, cases);
+	}
+
+	/** LDX #n / CMP tbl,Y / ... / LDA tbl,X is neither form: it must decline. */
+	@Test
+	public void mixedRegisterLoopDeclines() throws Exception {
+		ProgramDB program = build(false, MIXED_CODE);
 		Function function = createFunction(program);
 		JumpTable table = decompiledTable(program, function);
 		assertNull(SearchLoopDispatch.cases(program,
