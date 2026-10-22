@@ -770,6 +770,34 @@ public final class JumpTableBound {
 	/** How many cases after a {@link #codePrefix} cut must also fail to decode for it to stand. */
 	static final int CODE_CUT_CONFIRM = 2;
 
+	/**
+	 * Whether the bytes at a kept case's target read as the start of a table of little-endian
+	 * words into one page, rather than a handler (grm-6j5q): {@link #WORD_TABLE_RUN} words sharing
+	 * one high byte, with strictly increasing low bytes. Such bytes can pseudo-decode for the
+	 * whole of {@link InlineJumpTableDispatch#decodesAsCode}'s budget -- cv3 a04f's over-read
+	 * entries 19..28 point into a table of {@code xx a1} words, which decodes as a run of
+	 * {@code ORA abs,Y} / {@code LDA (zp,X)} -- and so make the first {@link #codePrefix} cut look
+	 * ambiguous. Real code rarely repeats one byte at every other position: 6502 instructions are
+	 * 1 to 3 bytes long.
+	 *
+	 * @param bytes the bytes at the target; fewer than {@code 2 * WORD_TABLE_RUN} never match
+	 */
+	static boolean looksLikeWordTable(byte[] bytes) {
+		if (bytes.length < 2 * WORD_TABLE_RUN) {
+			return false;
+		}
+		for (int k = 1; k < WORD_TABLE_RUN; k++) {
+			if (bytes[2 * k + 1] != bytes[1] ||
+				(bytes[2 * k] & 0xff) <= (bytes[2 * k - 2] & 0xff)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** How many words {@link #looksLikeWordTable} needs. */
+	static final int WORD_TABLE_RUN = 4;
+
 	/** Which rule produced a bounded {@link Result}. */
 	public enum Rule {
 		/** {@link #bound}: the table precedes its targets and cannot overlap the lowest one. */

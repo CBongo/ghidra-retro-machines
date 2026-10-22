@@ -798,6 +798,31 @@ public class JumpTableBoundTest {
 		assertEquals(3, JumpTableBound.codePrefix(List.of(true, false, true)));
 	}
 
+	/** grm-6j5q: cv3 a04f's over-read entries 19..28 point into a table of {@code xx a1} words. */
+	@Test
+	public void wordTableBytesAreRecognized() {
+		assertTrue(JumpTableBound.looksLikeWordTable(bytes(0x19, 0xa1, 0x1c, 0xa1, 0x1f, 0xa1, 0x22, 0xa1)));
+		assertTrue(JumpTableBound.looksLikeWordTable(bytes(0x11, 0xa1, 0x12, 0xa1, 0x16, 0xa1, 0x18, 0xa1, 0x00)));
+	}
+
+	/** A changing high byte, a non-increasing low byte, or too few bytes is not a word table. */
+	@Test
+	public void wordTableNeedsOnePageAndRisingLowBytes() {
+		assertFalse(JumpTableBound.looksLikeWordTable(bytes(0x19, 0xa1, 0x1c, 0xa2, 0x1f, 0xa1, 0x22, 0xa1)));
+		assertFalse(JumpTableBound.looksLikeWordTable(bytes(0x19, 0xa1, 0x19, 0xa1, 0x1f, 0xa1, 0x22, 0xa1)));
+		assertFalse(JumpTableBound.looksLikeWordTable(bytes(0x19, 0xa1, 0x1c, 0xa1, 0x1f, 0xa1, 0x22)));
+		// Real code: LDA $04e0,X / BNE $9501 / STA $00 (megaman2 948d)
+		assertFalse(JumpTableBound.looksLikeWordTable(bytes(0xbd, 0xe0, 0x04, 0xd0, 0x6f, 0x85, 0x00, 0x60)));
+	}
+
+	private static byte[] bytes(int... values) {
+		byte[] b = new byte[values.length];
+		for (int i = 0; i < values.length; i++) {
+			b[i] = (byte) values[i];
+		}
+		return b;
+	}
+
 	/** Every target decodes: nothing to cut. */
 	@Test
 	public void codePrefixKeepsAllWhenEveryTargetDecodes() {

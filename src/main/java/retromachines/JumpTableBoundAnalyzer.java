@@ -577,7 +577,9 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		// ever a refinement). Bytes only, never the listing, so analysis order cannot move it.
 		List<Boolean> decodes = new ArrayList<>(firstN.size());
 		for (Address a : firstN) {
-			decodes.add(InlineJumpTableDispatch.decodesAsCode(program, a, true));
+			// grm-6j5q: a target into a word table can pseudo-decode; it is not code either.
+			decodes.add(InlineJumpTableDispatch.decodesAsCode(program, a, true) &&
+				!JumpTableBound.looksLikeWordTable(bytesAt(program, a, 2 * JumpTableBound.WORD_TABLE_RUN)));
 		}
 		// An exact search-loop set is not an extent to refine.
 		int codePrefix = searched != null ? firstN.size() : JumpTableBound.codePrefix(decodes);
@@ -822,6 +824,18 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		catch (ghidra.program.model.mem.MemoryAccessException |
 				ghidra.program.model.address.AddressOutOfBoundsException e) {
 			return false;
+		}
+	}
+
+	/** Up to {@code n} bytes at {@code a}: fewer where memory ends or is not initialized. */
+	private static byte[] bytesAt(Program program, Address a, int n) {
+		byte[] buf = new byte[n];
+		try {
+			int got = program.getMemory().getBytes(a, buf);
+			return got == n ? buf : java.util.Arrays.copyOf(buf, Math.max(got, 0));
+		}
+		catch (ghidra.program.model.mem.MemoryAccessException e) {
+			return new byte[0];
 		}
 	}
 

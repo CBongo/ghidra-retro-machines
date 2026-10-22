@@ -94,12 +94,12 @@ REALROM block WE000_B9 e000-ffff overlay=true
 REALROM count blocks.total 89
 REALROM count blocks.overlay 77
 REALROM count refs.intoOverlay.retargeted 154
-REALROM count refs.intoOverlay.intraOverlay 4962
+REALROM count refs.intoOverlay.intraOverlay 4953
 REALROM count instrs.inOverlay 19416
 REALROM count bankComments 176
 REALROM count warnings 14
 REALROM count notes 14
-REALROM count symbols 173
+REALROM count symbols 151
 REALROM sample.bankcomment 8065 bank -> prg_mode=2,bank_5114=0,bank_5115=0,bank_5116=7,bank_5117=31? via FUN_e2d6 [known: prg_mode.0=0,prg_mode.1=1,bank_5116.0=1,bank_5116.1=1,bank_5116.2=1,bank_5116.3=0,bank_5116.4=0,bank_5116.5=0,bank_5116.6=0; assumed from initial: bank_5114.0,bank_5114.1,bank_5114.2,bank_5114.3,bank_5114.4,bank_5114.5,bank_5114.6,bank_5115.0,bank_5115.1,bank_5115.2,bank_5115.3,bank_5115.4,bank_5115.5,bank_5115.6,bank_5117.0,bank_5117.1,bank_5117.2,bank_5117.3,bank_5117.4,bank_5117.5,bank_5117.6] [switch-value flow]
 REALROM sample.bankcomment a19d bank -> prg_mode=2,bank_5114=0,bank_5115=0,bank_5116=7,bank_5117=31? via FUN_e2d6 [known: prg_mode.0=0,prg_mode.1=1,bank_5116.0=1,bank_5116.1=1,bank_5116.2=1,bank_5116.3=0,bank_5116.4=0,bank_5116.5=0,bank_5116.6=0; assumed from initial: bank_5114.0,bank_5114.1,bank_5114.2,bank_5114.3,bank_5114.4,bank_5114.5,bank_5114.6,bank_5115.0,bank_5115.1,bank_5115.2,bank_5115.3,bank_5115.4,bank_5115.5,bank_5115.6,bank_5117.0,bank_5117.1,bank_5117.2,bank_5117.3,bank_5117.4,bank_5117.5,bank_5117.6] [switch-value flow]
 REALROM sample.bankcomment a1d0 bank -> prg_mode=2,bank_5114=0,bank_5115=0,bank_5116=30,bank_5117=31? via FUN_e2da [known: prg_mode.0=0,prg_mode.1=1,bank_5116.0=0,bank_5116.1=1,bank_5116.2=1,bank_5116.3=1,bank_5116.4=1,bank_5116.5=0,bank_5116.6=0; assumed from initial: bank_5114.0,bank_5114.1,bank_5114.2,bank_5114.3,bank_5114.4,bank_5114.5,bank_5114.6,bank_5115.0,bank_5115.1,bank_5115.2,bank_5115.3,bank_5115.4,bank_5115.5,bank_5115.6,bank_5117.0,bank_5117.1,bank_5117.2,bank_5117.3,bank_5117.4,bank_5117.5,bank_5117.6] [switch-value flow]
@@ -301,7 +301,7 @@ REALROM sample.ref 8019 -> W8000_B24::801e CONDITIONAL_JUMP primary=true
 REALROM sample.ref 801a -> W8000_B18::8252 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 801b -> W8000_B24::812c UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 801c -> W8000_B4::802d CONDITIONAL_JUMP primary=true
-REALROM sample.ref.truncated 25 of 5116
+REALROM sample.ref.truncated 25 of 5107
 REALROM sample.warn c912 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_e2e6, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
 REALROM sample.warn e1b8 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_e2e6, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
 REALROM sample.warn e1c8 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_e2e6, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
@@ -355,5 +355,5 @@ REALROM sample.symbol 870a case_33 USER_DEFINED primary=true
 REALROM sample.symbol 920c case_29 USER_DEFINED primary=true
 REALROM sample.symbol 934c case_30 USER_DEFINED primary=true
 REALROM sample.symbol 9369 case_31 USER_DEFINED primary=true
-REALROM sample.symbol.truncated 25 of 161
+REALROM sample.symbol.truncated 25 of 139
 === REALROM END ===
