@@ -217,6 +217,15 @@ Blocked on judgment, not effort.
       `generated/*.yaml`, or git submodule + build-time generation. Binds `grm-hb6.6` and `grm-54p`
       too. Decide once.
 
+- [ ] **Is `JumpTableBound.looksLikeWordTable` too narrow?** (`grm-tyi3` P3, from `grm-6j5q`).
+      It treats a jump-table target as non-code when its bytes read as 4 little-endian words in
+      one page with rising low bytes. That misses page-crossing tables, unsorted tables, and
+      odd-offset targets. Keep it, widen it (options A–E in the bead), or replace it.
+      Before deciding, consider how it is applied. It only refines a table that is already
+      bounded, so a miss costs only the old behaviour. A false match on a real handler cuts
+      nothing unless the next 2 cases also fail (`codePrefix`'s confirm rule). The bead holds
+      the full analysis, plus a cheap measurement an agent can run to size the missed population.
+
 ---
 
 ## 5. Upstream (needs your GitHub identity)
