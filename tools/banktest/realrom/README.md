@@ -217,6 +217,13 @@ It emits paste-ready rows. Where a ROM sits in a per-title subdirectory, that di
 name becomes the `id`; otherwise the file's base name does. Titles already pinned in
 either manifest are reported rather than re-nominated, and it needs no Ghidra install.
 
+When several dumps of one title are present (same name once the `[...]` tags are stripped;
+`(...)` region/revision groups are kept, so `(U)` and `(E)` stay separate titles), only the
+best is nominated, ranked as in "Which dump each NES row pins" above: `[!]` > untagged >
+`[o]` `[b]` `[a]` `[h]` `[t]` `[f]` `[p]`, the worst tag on a file deciding its tier. The
+others are listed as comments. A title that is already pinned nominates nothing more, but a
+dump of a better tier than the pin is flagged `BETTER ... consider retargeting` (grm-m1ub).
+
 A mapper no shipped descriptor claims is reported as a comment rather than a row. **That
 is a board gap, not a bad dump** — it is the most useful thing the expanded set surfaces,
 and a candidate for a new descriptor.

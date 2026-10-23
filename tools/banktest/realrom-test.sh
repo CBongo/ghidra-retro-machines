@@ -901,10 +901,47 @@ if [ "$MODE" = nominate ]; then
 	known_shas=" $(cat "${nominate_known[@]}" | tr -d '\r' |
 		awk -F'\t' '!/^#/ && NF && $1 != "id" { printf "%s:%s ", tolower($3), $1 }')"
 
+	dump_tier() {
+		# $1 GoodNES file base name -> dump tier in REPLY, lower is better (bead grm-m1ub):
+		# 0 [!] verified, 1 untagged, then [o#] [b#] [a#] [h#] [t#] [f#] [p#] as 2..8, and 9
+		# for a bracket tag this list does not know. The WORST tag wins, so "[!][h1]" is a
+		# hack. ( )-groups are region/revision, not dump quality, and are ignored here.
+		local s="${1,,}" tag t bang=0 worst=1
+		while [[ $s =~ \[([^]]*)\] ]]; do
+			tag="${BASH_REMATCH[1]}"; s="${s#*"${BASH_REMATCH[0]}"}"
+			case "$tag" in
+				'!'*) bang=1; continue ;;
+				o*) t=2 ;; b*) t=3 ;; a*) t=4 ;; h*) t=5 ;; t*) t=6 ;; f*) t=7 ;; p*) t=8 ;;
+				*) t=9 ;;
+			esac
+			[ "$t" -gt "$worst" ] && worst=$t
+		done
+		if [ "$worst" -eq 1 ] && [ "$bang" -eq 1 ]; then REPLY=0; else REPLY=$worst; fi
+	}
+	tier_name() {
+		local names=('[!]' untagged '[o]' '[b]' '[a]' '[h]' '[t]' '[f]' '[p]' unknown-tag)
+		echo "${names[$1]}"
+	}
+	title_key() {
+		# $1 base name -> in REPLY, the title several dumps share: [ ]-tags stripped, ( )-groups
+		# KEPT, so a different region or revision is a different title and is never silently
+		# swapped for this one (README "Which dump each NES row pins"). Pure bash, like
+		# dump_tier: both run once per dump, and a GoodNES region dir holds thousands.
+		local k="${1,,}" w
+		while [[ $k =~ \[[^]]*\] ]]; do k="${k/"${BASH_REMATCH[0]}"/}"; done
+		read -ra w <<<"$k"
+		REPLY="${w[*]}"
+	}
+	declare -A pin_of_title=()
+
 	echo "# Nominated rows -- review, then paste into realrom/manifest-gme.tsv."
 	echo "# id is the containing directory name where the ROM sits in a per-title subdir"
 	echo "# (your game-music-extraction shorthand), else the file's base name."
-	n_new=0; n_known=0; n_unsupported=0; n_notines=0
+	echo "# Where several dumps of one title are present, only the best GoodNES tier is"
+	echo "# nominated ([!] > untagged > [o] [b] [a] [h] [t] [f] [p]); the rest are noted."
+	n_new=0; n_known=0; n_unsupported=0; n_notines=0; n_alt=0
+	# Pass 1: hash and classify every dump. Pass 2 (below) groups them by title.
+	c_base=(); c_id=(); c_sha=(); c_mapper=(); c_tier=(); c_pin=(); c_order=()
 	shopt -s nullglob nocaseglob
 	platform_dirs "${PLATFORMS_USED[0]}" nominate_dirs
 	for dir in "${nominate_dirs[@]}"; do
@@ -914,47 +951,87 @@ if [ "$MODE" = nominate ]; then
 		for f in "$dir"/*.nes "$dir"/*/*.nes; do
 			[ -f "$f" ] || continue
 			base="$(basename "$f" .nes)"
+			if ! mapper="$(ines_mapper "$f")"; then
+				echo "# NOT an iNES image (no NES\\x1a magic), skipped: $f"
+				n_notines=$((n_notines + 1))
+				continue
+			fi
 			# A per-title subdir names the row; a ROM sitting loose in a scanned dir does not.
 			if [ "$(dirname "$f")" = "$dir" ]; then
 				id_raw="$base"
 			else
 				id_raw="$(basename "$(dirname "$f")")"
 			fi
-			id="$(printf '%s' "$id_raw" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9' '_' | sed 's/__*/_/g; s/^_//; s/_$//')"
 			sha="$(sha256sum "$f" | cut -d' ' -f1)"
-
+			pin=""
 			case "$known_shas" in
-				*" $sha:"*)
-					was="${known_shas##*" $sha:"}"; was="${was%% *}"
-					echo "# already pinned as '$was': $base"
-					n_known=$((n_known + 1))
-					continue
-					;;
+				*" $sha:"*) pin="${known_shas##*" $sha:"}"; pin="${pin%% *}" ;;
 			esac
-
-			if ! mapper="$(ines_mapper "$f")"; then
-				echo "# NOT an iNES image (no NES\\x1a magic), skipped: $f"
-				n_notines=$((n_notines + 1))
-				continue
-			fi
-			if board="$(board_for_mapper "$mapper")"; then
-				# Trailing tab is deliberate: GitHub's tabular viewer wants every row to have
-				# the same field count as the header, so rows with no loader_opts carry an
-				# explicit empty final field rather than ending short. `read` treats the two
-				# identically, so an editor that strips it costs rendering, never correctness.
-				printf '%s\t%s\t%s\t%s\t%s\t%s.dump\t\n' "$id" "$base" "$sha" "$mapper" "$board" "$id"
-				n_new=$((n_new + 1))
-			else
-				# Not a failure -- this is the planning signal the expanded set exists to give.
-				printf '# NO SHIPPED BOARD claims mapper %s -- %s (id would be %s)\n' \
-					"$mapper" "$base" "$id"
-				n_unsupported=$((n_unsupported + 1))
-			fi
+			i=${#c_base[@]}
+			c_base+=("$base")
+			c_id+=("$(printf '%s' "$id_raw" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9' '_' | sed 's/__*/_/g; s/^_//; s/_$//')")
+			c_sha+=("$sha"); c_mapper+=("$mapper"); c_pin+=("$pin")
+			dump_tier "$base"; c_tier+=("$REPLY")
+			title_key "$base"
+			[ -n "$pin" ] && pin_of_title["$REPLY"]=$i
+			# Sort key: title, then tier, then name so a tie is still deterministic.
+			c_order+=("$REPLY"$'\t'"${c_tier[$i]}"$'\t'"$base"$'\t'"$i")
 		done
 	done
 	shopt -u nullglob nocaseglob
+
+	# Pass 2: per title, the first entry in sorted order is the best dump. A title with a
+	# pinned dump nominates nothing more -- a second row would duplicate the title under a
+	# new id -- but a better-tier dump beside the pin is flagged, since that is a retarget
+	# candidate (grm-cssm).
+	mapfile -t sorted < <(printf '%s\n' "${c_order[@]}" | LC_ALL=C sort -t "$(printf '\t')" -k1,1 -k2,2n -k3,3)
+	prev_key=""
+	for line in "${sorted[@]}"; do
+		[ -n "$line" ] || continue
+		IFS="$(printf '\t')" read -r key _ _ i <<<"$line"
+		if [ "$key" != "$prev_key" ]; then
+			prev_key="$key"; best=$i; pinned_tier=""
+			# Which member, if any, is pinned? Its tier decides whether others are better.
+			if [ -n "${pin_of_title[$key]+set}" ]; then
+				pinned=${pin_of_title[$key]}; pinned_tier=${c_tier[$pinned]}
+			fi
+		fi
+		base="${c_base[$i]}"; id="${c_id[$i]}"; sha="${c_sha[$i]}"; mapper="${c_mapper[$i]}"
+		if [ -n "${c_pin[$i]}" ]; then
+			echo "# already pinned as '${c_pin[$i]}': $base"
+			n_known=$((n_known + 1))
+			continue
+		fi
+		if [ -n "$pinned_tier" ]; then
+			if [ "${c_tier[$i]}" -lt "$pinned_tier" ]; then
+				echo "# BETTER dump of pinned '${c_pin[$pinned]}' ($(tier_name "${c_tier[$i]}") vs pinned $(tier_name "$pinned_tier")), consider retargeting: $base"
+			else
+				echo "# other dump of pinned '${c_pin[$pinned]}' ($(tier_name "${c_tier[$i]}")): $base"
+			fi
+			n_alt=$((n_alt + 1))
+			continue
+		fi
+		if [ "$i" != "$best" ]; then
+			echo "# other dump of '${c_base[$best]}' ($(tier_name "${c_tier[$i]}")), not nominated: $base"
+			n_alt=$((n_alt + 1))
+			continue
+		fi
+		if board="$(board_for_mapper "$mapper")"; then
+			# Trailing tab is deliberate: GitHub's tabular viewer wants every row to have
+			# the same field count as the header, so rows with no loader_opts carry an
+			# explicit empty final field rather than ending short. `read` treats the two
+			# identically, so an editor that strips it costs rendering, never correctness.
+			printf '%s\t%s\t%s\t%s\t%s\t%s.dump\t\n' "$id" "$base" "$sha" "$mapper" "$board" "$id"
+			n_new=$((n_new + 1))
+		else
+			# Not a failure -- this is the planning signal the expanded set exists to give.
+			printf '# NO SHIPPED BOARD claims mapper %s -- %s (id would be %s)\n' \
+				"$mapper" "$base" "$id"
+			n_unsupported=$((n_unsupported + 1))
+		fi
+	done
 	echo "#"
-	echo "# nominated=$n_new  already-pinned=$n_known  unsupported-mapper=$n_unsupported  not-ines=$n_notines"
+	echo "# nominated=$n_new  already-pinned=$n_known  other-dumps=$n_alt  unsupported-mapper=$n_unsupported  not-ines=$n_notines"
 	[ "$n_unsupported" -eq 0 ] ||
 		echo "# An unsupported mapper is a board gap, not a bad dump: it is a candidate for a new descriptor."
 	exit 0
