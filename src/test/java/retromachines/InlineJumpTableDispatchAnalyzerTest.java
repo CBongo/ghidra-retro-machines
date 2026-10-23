@@ -110,6 +110,65 @@ public class InlineJumpTableDispatchAnalyzerTest extends AbstractBundledLanguage
 		assertEquals(Boolean.TRUE, result);
 	}
 
+	/** The megaman3 8023 shape (grm-gipk.4): the lo byte is parked on the stack (PHA) and popped
+	 *  into the base pointer's own cell after the hi byte is stored, which doubles as the vector. */
+	@Test
+	public void recognizesPhaPlaParkedLoByteShape() throws Exception {
+		ProgramDB program = freshProgram();
+		long entry = 0x8023;
+		// ASL A; TAY; INY; PLA; STA $c1; PLA; STA $c2; LDA ($c1),Y; PHA; INY; LDA ($c1),Y;
+		// STA $c2; PLA; STA $c1; JMP ($00c1)
+		builder.setBytes(String.format("0x%x", entry),
+			"0a a8 c8 68 85 c1 68 85 c2 b1 c1 48 c8 b1 c1 85 c2 68 85 c1 6c c1 00", true);
+
+		assertEquals(Boolean.TRUE, InlineJumpTableDispatch.recognizeDispatcher(program, addr(entry)));
+	}
+
+	/** An unbalanced PHA: the lo byte is pushed and never popped. */
+	@Test
+	public void declinesPhaWithoutBalancingPla() throws Exception {
+		ProgramDB program = freshProgram();
+		long entry = 0x8100;
+		// ... LDA ($c1),Y; PHA; INY; LDA ($c1),Y; STA $c2; JMP ($00c1)   -- PLA/STA missing
+		builder.setBytes(String.format("0x%x", entry),
+			"0a a8 c8 68 85 c1 68 85 c2 b1 c1 48 c8 b1 c1 85 c2 6c c1 00", true);
+
+		assertEquals(Boolean.FALSE, InlineJumpTableDispatch.recognizeDispatcher(program, addr(entry)));
+	}
+
+	@Test
+	public void declinesPhaPlaWithExtraStackOpBetween() throws Exception {
+		ProgramDB program = freshProgram();
+		long entry = 0x8140;
+		// as the megaman3 shape, with a PHP between the hi store and the PLA
+		builder.setBytes(String.format("0x%x", entry),
+			"0a a8 c8 68 85 c1 68 85 c2 b1 c1 48 c8 b1 c1 85 c2 08 68 85 c1 6c c1 00", true);
+
+		assertEquals(Boolean.FALSE, InlineJumpTableDispatch.recognizeDispatcher(program, addr(entry)));
+	}
+
+	@Test
+	public void declinesPhaPlaWithExtraPlaBetween() throws Exception {
+		ProgramDB program = freshProgram();
+		long entry = 0x8180;
+		// a stray PLA between the PHA and the second load
+		builder.setBytes(String.format("0x%x", entry),
+			"0a a8 c8 68 85 c1 68 85 c2 b1 c1 48 68 c8 b1 c1 85 c2 68 85 c1 6c c1 00", true);
+
+		assertEquals(Boolean.FALSE, InlineJumpTableDispatch.recognizeDispatcher(program, addr(entry)));
+	}
+
+	@Test
+	public void declinesPhaPlaIntoWrongZeroPageByte() throws Exception {
+		ProgramDB program = freshProgram();
+		long entry = 0x81c0;
+		// the PLA stores to $c3, not $c1 (= hi cell $c2 minus one)
+		builder.setBytes(String.format("0x%x", entry),
+			"0a a8 c8 68 85 c1 68 85 c2 b1 c1 48 c8 b1 c1 85 c2 68 85 c3 6c c3 00", true);
+
+		assertEquals(Boolean.FALSE, InlineJumpTableDispatch.recognizeDispatcher(program, addr(entry)));
+	}
+
 	// ---------------------------------------------------------------------
 	// Recognizer: declines.
 	// ---------------------------------------------------------------------

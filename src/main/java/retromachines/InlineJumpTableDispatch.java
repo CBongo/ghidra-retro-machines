@@ -94,6 +94,11 @@ final class InlineJumpTableDispatch {
 		int loadCount = 0;
 		Address pAddr = null;
 		Integer firstLoadYOffset = null;
+		// The PHA/PLA variant (grm-gipk.4, megaman3 8023): the lo byte is parked on the stack
+		// instead of stored. 0 = not in use; 1 = lo byte pushed, awaiting the hi load; 2 = hi byte
+		// stored at hiVectorAddr, awaiting the balancing PLA; 3 = PLA'd and stored, vector complete.
+		int parkState = 0;
+		Address hiVectorAddr = null;
 
 		// What the NEXT instruction is required to be, set by PLA / the indirect-Y load.
 		final int PENDING_NONE = 0;
@@ -131,6 +136,18 @@ final class InlineJumpTableDispatch {
 				if (!"STA".equals(mn) || zp == null) {
 					return Boolean.FALSE;
 				}
+				if (parkState == 2) {
+					// the parked lo byte lands in the cell just below the stored hi byte
+					if (hiVectorAddr == null || !hiVectorAddr.equals(zp.add(1))) {
+						return Boolean.FALSE;
+					}
+					pAddr = zp;
+					parkState = 3;
+					loadCount = 2;
+					pending = PENDING_NONE;
+					pc = instr.getFallThrough();
+					continue;
+				}
 				if (plaCount == 1) {
 					loAddr = zp;
 				}
@@ -152,11 +169,23 @@ final class InlineJumpTableDispatch {
 					pc = instr.getFallThrough();
 					continue;
 				}
+				// The lo byte goes on the stack instead of into a cell (megaman3 JumpEngine).
+				if (loadCount == 0 && parkState == 0 && "PHA".equals(mn)) {
+					parkState = 1;
+					pending = PENDING_NONE;
+					pc = instr.getFallThrough();
+					continue;
+				}
 				Address zp = directZeroPageStoreAddress(instr);
 				if (!"STA".equals(mn) || zp == null) {
 					return Boolean.FALSE;
 				}
-				if (loadCount == 0) {
+				if (parkState == 1) {
+					// hi byte stored; the balancing PLA must now pop the lo byte into zp-1.
+					hiVectorAddr = zp;
+					parkState = 2;
+				}
+				else if (loadCount == 0) {
 					pAddr = zp;
 				}
 				else { // loadCount == 1, second (high) byte
@@ -164,7 +193,9 @@ final class InlineJumpTableDispatch {
 						return Boolean.FALSE;
 					}
 				}
-				loadCount++;
+				if (parkState != 2) {
+					loadCount++;
+				}
 				pending = PENDING_NONE;
 				pc = instr.getFallThrough();
 				continue;
@@ -197,6 +228,13 @@ final class InlineJumpTableDispatch {
 					yOffset--;
 					break;
 				case "PLA":
+					if (parkState == 1 || parkState == 3) {
+						return Boolean.FALSE; // PLA before the hi load, or a second one
+					}
+					if (parkState == 2) {
+						pending = PENDING_PLA_STORE; // balances the parked PHA
+						break;
+					}
 					if (loAddr != null && hiAddr == null && plaCount != 1) {
 						return Boolean.FALSE; // stray PLA between the pair and its use
 					}
@@ -209,10 +247,15 @@ final class InlineJumpTableDispatch {
 				case "LDA": {
 					Address indirectBase = indirectIndexedYOperand(instr);
 					if (indirectBase == null || hiAddr == null || !indirectBase.equals(loAddr) ||
-						!ySet || loadCount >= 2) {
+						!ySet || loadCount >= 2 || parkState >= 2) {
 						return Boolean.FALSE;
 					}
-					if (loadCount == 0) {
+					if (parkState == 1) { // second (high) load of the PHA/PLA variant
+						if (firstLoadYOffset == null || yOffset != firstLoadYOffset + 1) {
+							return Boolean.FALSE;
+						}
+					}
+					else if (loadCount == 0) {
 						if (yOffset != 1) {
 							return Boolean.FALSE;
 						}
