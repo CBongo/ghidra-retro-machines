@@ -577,4 +577,73 @@ public class InlineJumpTableDispatchAnalyzerTest extends AbstractBundledLanguage
 		assertNotNull("target2 must be disassembled",
 			program.getListing().getInstructionAt(addr(target2)));
 	}
+
+	/**
+	/**
+	 * grm-gipk.5 (cv3 a374 {@code BEQ $a384}): DecidedBranch clears a dead fall-through BEFORE the
+	 * table that restores its owner runs. The restored code then branches into the cleared region;
+	 * that branch target must come back too, not stay an undecoded target of a live flow reference.
+	 * The restored code also falls through (NOPs) into the existing 9110, so the disassembler decodes
+	 * on through 9114 as part of that run and drops the whole trailing block when it overlaps the
+	 * existing code -- the BEQ target is then silently skipped as "already disassembled".
+	 * <pre>
+	 *   9110 LDA #$94 / 9112 BNE $9122     ; decided: 9114 is the dead fall-through, cleared
+	 *   9114 LDA #$95 / 9116 RTS           ; reached only by the BEQ below
+	 *   9100 LDA $054e / 9103 BEQ $9114    ; table entry 0 -- not decoded when the clear runs
+	 * </pre>
+	 */
+	@Test
+	public void tableRestoreFollowsBranchIntoRegionDecidedBranchCleared() throws Exception {
+		builder = newBuilder("Test", LANG);
+		uninitializedRam(builder, ".zp", "0x0", 0x100);
+		builder.createMemory("PRG_HI", "0xc000", 0x4000); // fixed bank
+		builder.createMemory("W8000_HOME", "0x8000", 0x4000);
+		var overlay = builder.createOverlayMemory("W8000_B22", "0x8000", 0x4000);
+		ProgramDB program = builder.getProgram();
+		var space = overlay.getStart().getAddressSpace();
+
+		long dispatch = 0xc000;
+		builder.setBytes(String.format("0x%x", dispatch),
+			"0a a8 68 85 04 68 85 05 c8 b1 04 85 06 c8 b1 04 85 07 6c 06 00", false);
+		builder.setBytes("W8000_B22::9000", "20 00 c0 00 91 00 92 00 93", false);
+		builder.setBytes("W8000_B22::9100", "ad 4e 05 f0 0f ea ea ea ea ea ea ea ea ea ea ea", false);
+		builder.setBytes("W8000_B22::9110", "a9 94 d0 0e a9 95 60", false);
+		builder.setBytes("W8000_B22::9122", "60", false);
+		builder.setBytes("W8000_B22::9200", "ea 60", false);
+		builder.setBytes("W8000_B22::9300", "ea 60", false);
+
+		builder.disassemble(String.format("0x%x", dispatch), 20, true);
+		builder.disassemble("W8000_B22::9000", 4, true);
+		builder.disassemble("W8000_B22::9110", 7, true);
+		Address a9114 = space.getAddress(0x9114);
+		Address a9100 = space.getAddress(0x9100);
+		Address a9103 = space.getAddress(0x9103);
+		assertNotNull("control: dead fall-through decoded before the clear",
+			program.getListing().getInstructionAt(a9114));
+
+		inTx(program, "decided", () -> {
+			new DecidedBranchAnalyzer().added(program,
+				program.getMemory().getLoadedAndInitializedAddressSet(), TaskMonitor.DUMMY,
+				new MessageLog());
+		});
+		assertNull("control: DecidedBranch cleared the dead fall-through",
+			program.getListing().getInstructionAt(a9114));
+		assertNull("control: table owner not decoded yet",
+			program.getListing().getInstructionAt(a9100));
+
+		InlineJumpTableDispatchAnalyzer analyzer = new InlineJumpTableDispatchAnalyzer();
+		inTx(program, "table", () -> {
+			analyzer.added(program,
+				new AddressSet(space.getAddress(0x9000), space.getAddress(0x9002)),
+				TaskMonitor.DUMMY, new MessageLog());
+		});
+
+		assertNotNull("table entry restored", program.getListing().getInstructionAt(a9100));
+		Instruction beq = program.getListing().getInstructionAt(a9103);
+		assertNotNull(beq);
+		assertTrue("control: the restored BEQ holds a flow reference to 9114",
+			java.util.Arrays.asList(beq.getFlows()).contains(a9114));
+		assertNotNull("the BEQ's target must be decoded, not left undecoded",
+			program.getListing().getInstructionAt(a9114));
+	}
 }

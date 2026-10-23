@@ -284,8 +284,50 @@ public class InlineJumpTableDispatchAnalyzer extends AbstractAnalyzer {
 				}
 				DisassembleCommand disCmd = new DisassembleCommand(new AddressSet(target), null, true);
 				disCmd.applyTo(program);
+				followDroppedFlows(program, listing, disCmd.getDisassembledAddressSet(), monitor);
 			}
 			analysisManager.createFunction(target, false);
+		}
+	}
+
+	/**
+	 * Disassembles every flow target of the code {@code restored} just laid down that is still
+	 * undecoded, following normal flow from each (grm-gipk.5). Ghidra's disassembler drops such a
+	 * target silently when the restored code ALSO falls into instructions that already exist: it
+	 * decodes straight through them (including the old fall-through of a branch
+	 * {@link DecidedBranchAnalyzer} had cut), counts the target as "already disassembled in this
+	 * instruction set", then {@code Listing.addInstructions} discards that whole trailing block
+	 * because it overlaps existing code. The target keeps its flow reference and no instruction
+	 * (cv3: {@code a374 BEQ $a384}). Restricted to targets of the code this call restored, so it
+	 * is not a sweep of every dangling reference in the program.
+	 */
+	private void followDroppedFlows(Program program, Listing listing, AddressSetView restored,
+			TaskMonitor monitor) throws CancelledException {
+		if (restored == null || restored.isEmpty()) {
+			return;
+		}
+		java.util.ArrayDeque<AddressSetView> work = new java.util.ArrayDeque<>();
+		work.add(restored);
+		while (!work.isEmpty()) {
+			monitor.checkCancelled();
+			AddressSet missing = new AddressSet();
+			for (Instruction instr : listing.getInstructions(work.poll(), true)) {
+				for (Address flow : instr.getFlows()) {
+					if (listing.getInstructionAt(flow) == null &&
+						program.getMemory().contains(flow)) {
+						missing.add(flow);
+					}
+				}
+			}
+			if (missing.isEmpty()) {
+				continue;
+			}
+			DisassembleCommand cmd = new DisassembleCommand(missing, null, true);
+			cmd.applyTo(program);
+			AddressSetView got = cmd.getDisassembledAddressSet();
+			if (got != null && !got.isEmpty()) {
+				work.add(got);
+			}
 		}
 	}
 
