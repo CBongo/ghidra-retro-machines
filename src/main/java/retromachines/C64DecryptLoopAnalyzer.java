@@ -158,6 +158,15 @@ public class C64DecryptLoopAnalyzer extends AbstractAnalyzer {
 		// gives a range certain to be [base, base+len); other counter/branch forms have
 		// off-by-one traps, so we recognize but do not auto-apply them.
 		Instruction init = LoopIdioms.findCounterInit(listing, lda, idx);
+		// grm-29ua (as grm-7pp in CopyLoopAnalyzer): an init further back than the linear lookback
+		// is found by walking the CFG backwards; it must dominate the loop on every path. Such an
+		// init can be shared between loops, so bookmarks and provenance anchor on this loop's own
+		// LDA, while an emulated run still starts at the init (it seeds the index register).
+		boolean farInit = false;
+		if (init == null && downCount && bpl && backEdge) {
+			init = LoopIdioms.findDominatingCounterInit(program, lda, idx, branch);
+			farInit = init != null;
+		}
 		Integer n = init == null ? null : MosOperands.immediateOperandValue(init);
 		if (!(downCount && bpl && backEdge) || n == null) {
 			program.getBookmarkManager().setBookmark(lda.getAddress(), BookmarkType.WARNING,
@@ -180,7 +189,9 @@ public class C64DecryptLoopAnalyzer extends AbstractAnalyzer {
 				? RecognizedDecryptor.Confidence.AUTO
 				: RecognizedDecryptor.Confidence.CANDIDATE;
 
-		RecognizedDecryptor rd = new RecognizedDecryptor(entry, target, key, conf, jumpInto);
+		Address anchor = farInit ? lda.getAddress() : entry;
+		RecognizedDecryptor rd =
+			new RecognizedDecryptor(entry, anchor, target, key, conf, jumpInto);
 		apply(program, rd, monitor, log);
 	}
 
@@ -193,7 +204,7 @@ public class C64DecryptLoopAnalyzer extends AbstractAnalyzer {
 		RecognizedDecryptor.KeyModel.Kind kind = rd.key().kind();
 
 		if (rd.confidence() != RecognizedDecryptor.Confidence.AUTO) {
-			program.getBookmarkManager().setBookmark(rd.entry(), BookmarkType.WARNING, CATEGORY,
+			program.getBookmarkManager().setBookmark(rd.anchor(), BookmarkType.WARNING, CATEGORY,
 				"possible decrypt loop " + rd.target() + " (key=" + rd.key() +
 					"); no jump into range, not applied");
 			return;
@@ -202,7 +213,7 @@ public class C64DecryptLoopAnalyzer extends AbstractAnalyzer {
 		if (kind == RecognizedDecryptor.KeyModel.Kind.CONSTANT) {
 			byte[] plain = decryptConstant(program, base, len, rd.key().constant());
 			if (plain == null) {
-				program.getBookmarkManager().setBookmark(rd.entry(), BookmarkType.WARNING, CATEGORY,
+				program.getBookmarkManager().setBookmark(rd.anchor(), BookmarkType.WARNING, CATEGORY,
 					"constant decrypt: could not read encrypted bytes at " + base);
 				return;
 			}
@@ -215,7 +226,7 @@ public class C64DecryptLoopAnalyzer extends AbstractAnalyzer {
 			RecoveryResult res = runEmulation(program, rd, monitor);
 			byte[] plain = res.recoveredBytes(base, len);
 			if (plain == null) {
-				program.getBookmarkManager().setBookmark(rd.entry(), BookmarkType.WARNING, CATEGORY,
+				program.getBookmarkManager().setBookmark(rd.anchor(), BookmarkType.WARNING, CATEGORY,
 					"emulated decrypt did not cover " + rd.target() + " (" + res.stopReason() +
 						"); not applied");
 				return;
@@ -308,11 +319,11 @@ public class C64DecryptLoopAnalyzer extends AbstractAnalyzer {
 				: "";
 		String msg = (suspect ? "SUSPECT " : "") + "decrypted " + rd.target() + " key=" + rd.key() +
 			"; " + detail + referral;
-		program.getBookmarkManager().setBookmark(rd.entry(),
+		program.getBookmarkManager().setBookmark(rd.anchor(),
 			suspect ? BookmarkType.WARNING : BookmarkType.NOTE, CATEGORY, msg);
 		program.getBookmarkManager().setBookmark(base,
 			suspect ? BookmarkType.WARNING : BookmarkType.NOTE, CATEGORY,
 			"decrypted range start; see overlay " + name);
-		AnalyzerCommentRecord.set(program, rd.entry(), CommentType.EOL, "decrypt loop -> " + name);
+		AnalyzerCommentRecord.set(program, rd.anchor(), CommentType.EOL, "decrypt loop -> " + name);
 	}
 }

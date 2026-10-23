@@ -120,6 +120,7 @@ public class RecognizedDecryptor {
 	}
 
 	private final Address entry;
+	private final Address anchor;
 	private final AddressRange target;
 	private final KeyModel key;
 	private final Confidence confidence;
@@ -137,7 +138,26 @@ public class RecognizedDecryptor {
 	 */
 	public RecognizedDecryptor(Address entry, AddressRange target, KeyModel key,
 			Confidence confidence, Address jumpInto) {
+		this(entry, entry, target, key, confidence, jumpInto);
+	}
+
+	/**
+	 * Describes one statically recognized in-place decryption loop whose bookmarks are anchored
+	 * apart from its recovery entry (a counter init far from the loop, grm-29ua).
+	 *
+	 * @param entry      where recovery starts -- the counter-init instruction, so an emulated run
+	 *                   seeds the index register
+	 * @param anchor     where bookmarks and comments go -- the loop's own load instruction when the
+	 *                   init is shared with other loops, otherwise {@code entry}
+	 * @param target     the in-place range the loop rewrites, {@code [base, base+len)}
+	 * @param key        the key model
+	 * @param confidence AUTO if the range is executed as code, else CANDIDATE
+	 * @param jumpInto   the branch instruction that enters {@code target}, or null
+	 */
+	public RecognizedDecryptor(Address entry, Address anchor, AddressRange target, KeyModel key,
+			Confidence confidence, Address jumpInto) {
 		this.entry = entry;
+		this.anchor = anchor;
 		this.target = target;
 		this.key = key;
 		this.confidence = confidence;
@@ -149,6 +169,13 @@ public class RecognizedDecryptor {
 	 */
 	public Address entry() {
 		return entry;
+	}
+
+	/** Returns the address bookmarks and comments for this loop are placed on.
+	 * @return the annotation anchor; equals {@link #entry()} unless the counter init is shared
+	 */
+	public Address anchor() {
+		return anchor;
 	}
 
 	/** Returns the range rewritten by the loop.
