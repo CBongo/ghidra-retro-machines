@@ -43,7 +43,7 @@ public class C64BasicSegmentsTest {
 			case 0x99 -> new BasicTokenLookup.Match(1, "PRINT", PRIMARY, null);
 			case 0x8f -> new BasicTokenLookup.Match(1, "REM", PRIMARY, null);
 			case 0x83 -> new BasicTokenLookup.Match(1, "DATA", PRIMARY, null);
-			case 0xce -> off + 1 >= data.length ? null : (data[off + 1] == 2
+			case 0xce -> off + 1 >= data.length ? new BasicTokenLookup.Match(1, null) : (data[off + 1] == 2
 					? new BasicTokenLookup.Match(2, "POT", null, PAGE)
 					: new BasicTokenLookup.Match(2, null));
 			default -> null;
@@ -105,6 +105,15 @@ public class C64BasicSegmentsTest {
 		assertEquals(SegmentKind.BYTE, r.segments().get(0).kind());
 		assertEquals(2, r.segments().get(0).length());
 		assertEquals(SegmentKind.TEXT, r.segments().get(1).kind());
+	}
+
+	@Test
+	public void truncatedPrefixStaysByteNotText() throws IOException {
+		// A prefix as the line's last byte has no selector; it is a raw byte, not a text run
+		// that would absorb the terminator as a one-glyph string (grm-kmx1).
+		LineRender r = render(' ', 0xce);
+		assertEquals("TE0+1 BY1+1", shape(r.segments()));
+		assertEquals("{$ce}", r.text().substring(1));
 	}
 
 	@Test

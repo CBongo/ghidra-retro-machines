@@ -96,10 +96,11 @@ final class BasicDescriptorTokenLookup implements BasicTokenLookup {
 
 		// A configured prefix always owns its first byte. A complete but unrecognized pair is
 		// returned as a two-byte raw match, so its selector cannot affect later quote or DATA
-		// state. A truncated prefix remains one raw byte.
+		// state. A truncated prefix (last byte of the line) is a one-byte raw match: it is still
+		// a prefix, not PETSCII text, so it must not join a text run (grm-kmx1).
 		if (prefixEnums.containsKey(first)) {
 			if (offset + 1 >= data.length) {
-				return null;
+				return new Match(1, null);
 			}
 			ghidra.program.model.data.Enum page = prefixEnums.get(first);
 			String name = page == null ? null : enumMember(page, data[offset + 1] & 0xff);
