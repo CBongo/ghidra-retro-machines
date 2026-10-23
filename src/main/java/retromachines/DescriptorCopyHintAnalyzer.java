@@ -216,8 +216,19 @@ public class DescriptorCopyHintAnalyzer extends AbstractAnalyzer {
 			// destination needs no block lookup -- unlike the source, which may be a banked
 			// occupant.
 			dst = baseSpace.getAddress(start);
-			src = resolveSource(program, baseSpace, hint.get("source").getAsString(),
-				hint.get("source_addr").getAsLong());
+			String sourceName = hint.get("source").getAsString();
+			long sourceAddr = hint.get("source_addr").getAsLong();
+			if (isMisspelledOverlay(program, sourceName)) {
+				// Applying the hint would read the base-space byte instead of the bank's: wrong
+				// data with no signal. Skipping is the safer failure -- it matches this
+				// analyzer's ROM-gated rule (an unreadable source means the directive is
+				// ignored), and a missing copy is visible in the listing where silently wrong
+				// bytes are not. The WARNING bookmark makes the skip visible headlessly.
+				DescriptorApply.warnUnresolvedBlock(program, what + " copy hint", sourceName,
+					sourceAddr);
+				return;
+			}
+			src = resolveSource(program, baseSpace, sourceName, sourceAddr);
 		}
 		catch (AddressOutOfBoundsException | IllegalArgumentException e) {
 			AnalyzerLog.warn(this, log, what + ": could not resolve addresses (" + e.getMessage() +
@@ -281,6 +292,17 @@ public class DescriptorCopyHintAnalyzer extends AbstractAnalyzer {
 			return block.getStart().getAddressSpace().getAddress(sourceAddr);
 		}
 		return baseSpace.getAddress(sourceAddr);
+	}
+
+	/**
+	 * True when {@code source} names no block AND a block exists that differs from it only by an
+	 * {@code _M<mode>} segment (grm-2854): the shape of a stale overlay name after a rename. A
+	 * name matching no block and nothing near it stays a legitimate carve fallback (see
+	 * {@link #resolveSource}).
+	 */
+	private static boolean isMisspelledOverlay(Program program, String source) {
+		return program.getMemory().getBlock(source) == null &&
+			!TypedAddress.nearSpaceNames(source, DescriptorApply.blockNames(program)).isEmpty();
 	}
 
 	/** An optional boolean directive key; absent means false. */

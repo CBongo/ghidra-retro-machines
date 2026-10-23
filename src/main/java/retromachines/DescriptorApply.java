@@ -15,6 +15,8 @@
  */
 package retromachines;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.BiConsumer;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -29,6 +31,7 @@ import ghidra.program.model.data.DataTypeManager;
 import ghidra.program.model.data.DataUtilities;
 import ghidra.program.model.data.DataUtilities.ClearDataMode;
 import ghidra.program.model.data.FileDataTypeManager;
+import ghidra.program.model.listing.BookmarkType;
 import ghidra.program.model.listing.CommentType;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryBlock;
@@ -120,6 +123,9 @@ final class DescriptorApply {
 				log.appendMsg("Symbol '" + name + "' at 0x" + Long.toHexString(addr) +
 					" names block '" + block + "', which has no such address in this program; " +
 					"ignored");
+				if (block != null) {
+					warnUnresolvedBlock(program, "Symbol '" + name + "'", block, addr);
+				}
 				continue;
 			}
 			try {
@@ -180,6 +186,9 @@ final class DescriptorApply {
 				log.appendMsg("Comment at 0x" + Long.toHexString(addr) +
 					(block == null ? "" : " in block '" + block + "'") +
 					" has no such address in this program; ignored");
+				if (block != null) {
+					warnUnresolvedBlock(program, "Comment", block, addr);
+				}
 				continue;
 			}
 			for (CommentType type : CommentType.values()) {
@@ -193,6 +202,50 @@ final class DescriptorApply {
 			}
 		}
 		return written;
+	}
+
+	/** Bookmark category prefix for {@link #warnUnresolvedBlock}; the block name is appended. */
+	static final String UNRESOLVED_BLOCK_CATEGORY = "Descriptor block ";
+
+	/**
+	 * Leaves a headless-visible record that a descriptor entry named a memory block that does not
+	 * resolve (bead grm-2854). {@code MessageLog} is invisible headlessly, so the log line alone
+	 * left a renamed overlay (W8000_M3_B1 -> W8000_B1, grm-ic5) completely silent in every
+	 * banktest and real-ROM run. A WARNING bookmark is durable, shows in dumps, and is assertable.
+	 * <p>
+	 * It sits at the program's minimum address because the entry has no resolvable address of its
+	 * own. The category carries the block name, because a bookmark is unique per
+	 * (address, type, category) and several bad names must not overwrite each other. The text
+	 * suggests near spellings via {@link TypedAddress#nearSpaceNames}.
+	 */
+	static void warnUnresolvedBlock(Program program, String what, String blockName, long addr) {
+		MemoryBlock existing = program.getMemory().getBlock(blockName);
+		String message;
+		if (existing != null) {
+			message = what + " at 0x" + Long.toHexString(addr) + " names block '" + blockName +
+				"', which does not contain that address; ignored";
+		}
+		else {
+			List<String> near = TypedAddress.nearSpaceNames(blockName, blockNames(program));
+			message = what + " at 0x" + Long.toHexString(addr) + " names block '" + blockName +
+				"', which does not exist in this program; ignored" + (near.isEmpty() ? ""
+						: " (did you mean " + String.join(" or ", near) + "?)");
+		}
+		Address where = program.getMinAddress();
+		if (where == null) {
+			return;
+		}
+		program.getBookmarkManager().setBookmark(where, BookmarkType.WARNING,
+			UNRESOLVED_BLOCK_CATEGORY + blockName, message);
+	}
+
+	/** Names of every memory block in the program. */
+	static List<String> blockNames(Program program) {
+		List<String> names = new ArrayList<>();
+		for (MemoryBlock b : program.getMemory().getBlocks()) {
+			names.add(b.getName());
+		}
+		return names;
 	}
 
 	/** {@code offset} in the address space of memory block {@code blockName}, or null. */
