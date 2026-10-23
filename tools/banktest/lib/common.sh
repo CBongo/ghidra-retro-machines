@@ -247,6 +247,35 @@ _grm_path_has_dot_segment() {
 	return 1
 }
 
+# The TEMP-side stand-in for a repo-local scratch dir named TAG, keyed by REPO_ROOT so
+# concurrent worktrees do not collide. Unconditional; clean.sh needs it to find a fallback
+# dir from a non-dot checkout too.
+_grm_temp_fallback_dir() {
+	printf '%s\n' "${TMPDIR:-${TEMP:-/tmp}}/grm-$1-$(printf '%s' "$REPO_ROOT" | tr -c 'A-Za-z0-9' '_')"
+}
+
+# A scratch dir Ghidra will accept as (or as a parent of) a project location: $2, the
+# repo-local path, unless REPO_ROOT has a dot-leading segment, in which case it is
+# _grm_temp_fallback_dir $1 (bead grm-hhd). Silent; callers own any NOTE.
+grm_dotsafe_dir() {
+	if _grm_path_has_dot_segment "$REPO_ROOT"; then
+		_grm_temp_fallback_dir "$1"
+	else
+		printf '%s\n' "$2"
+	fi
+}
+
+# Where realrom-test.sh --keep-project keeps <id>/headless.gpr, and where
+# tools/ghidra-mcp/serve.sh looks for it (bead grm-f0i0: the two must agree, fallback
+# included). GRM_KEEP_PROJECT_DIR, when set, names this dir outright.
+grm_kept_project_dir() {
+	if [ -n "${GRM_KEEP_PROJECT_DIR:-}" ]; then
+		printf '%s\n' "$GRM_KEEP_PROJECT_DIR"
+	else
+		printf '%s\n' "$(grm_dotsafe_dir kept-projects "$REPO_ROOT/build/kept-projects")/realrom"
+	fi
+}
+
 # A fresh per-run work directory, REPO-LOCAL by default (bead grm-419).
 #
 # These scripts keep the work dir on failure and print its path so the dump, the
@@ -293,10 +322,8 @@ grm_work_dir() {
 grm_work_base() {
 	if [ -n "${GRM_BANKTEST_WORK:-}" ]; then
 		printf '%s\n' "$GRM_BANKTEST_WORK"
-	elif _grm_path_has_dot_segment "$REPO_ROOT"; then
-		printf '%s\n' "${TMPDIR:-${TEMP:-/tmp}}/grm-banktest-work-$(printf '%s' "$REPO_ROOT" | tr -c 'A-Za-z0-9' '_')"
 	else
-		printf '%s\n' "$REPO_ROOT/build/banktest-work"
+		grm_dotsafe_dir banktest-work "$REPO_ROOT/build/banktest-work"
 	fi
 }
 

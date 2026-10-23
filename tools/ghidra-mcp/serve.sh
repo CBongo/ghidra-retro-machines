@@ -55,7 +55,11 @@ case "$cmd" in
 	*) echo "usage: $0 start <row> | stop" >&2; exit 2 ;;
 esac
 
-kept="$REPO_ROOT/build/kept-projects/realrom/$row"
+# Both project paths go through the runners' dot-segment fallback (grm-hhd, grm-f0i0): from an
+# agent worktree under .claude/worktrees/ the kept project lives under TEMP, and Ghidra would
+# refuse to open a served copy placed under the repo. The settings snapshot is not a project
+# location, so it stays under build/ either way, as build/ghidra-home does.
+kept="$(grm_kept_project_dir)/$row"
 [ -f "$kept/headless.gpr" ] || {
 	echo "FAIL: no kept project at $kept -- run:" >&2
 	echo "  bash tools/banktest/realrom-test.sh check nes --only $row --keep-project" >&2
@@ -86,7 +90,7 @@ rm -rf "$SNAP"
 		mkdir -p "$SNAP/$(dirname "$f")"
 		cp -f "$REPO_ROOT/build/ghidra-home/$f" "$SNAP/$f"
 	done
-proj="$REPO_ROOT/build/mcp-project/$row"
+proj="$(grm_dotsafe_dir mcp-project "$REPO_ROOT/build/mcp-project")/$row"
 rm -rf "$proj"; mkdir -p "$(dirname "$proj")"
 cp -rf "$kept" "$proj"
 

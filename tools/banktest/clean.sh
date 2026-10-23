@@ -16,6 +16,8 @@
 #   - build/kept-projects         --keep-project analysis projects (and the TEMP fallback)
 #                         NB: tools/ghidra-mcp/serve.sh serves from these; they are re-made
 #                         by `realrom-test.sh check <set> --only <id> --keep-project`.
+#   - build/mcp-project           serve.sh's served project copies (and the TEMP fallback);
+#                         serve.sh re-copies on every start. Stop any server first.
 #
 # --dry-run prints the same report and deletes nothing.
 set -u
@@ -44,11 +46,15 @@ report() { # $1 label  $2 path
 
 WORK_BASE="$(grm_work_base)"
 KEPT="$REPO_ROOT/build/kept-projects"
-KEPT_FALLBACK="${TMPDIR:-${TEMP:-/tmp}}/grm-kept-projects-$(printf '%s' "$REPO_ROOT" | tr -c 'A-Za-z0-9' '_')"
+KEPT_FALLBACK="$(_grm_temp_fallback_dir kept-projects)"
+# serve.sh's project copies (grm-f0i0), repo-local or at the same dot-segment fallback.
+MCP_PROJ="$REPO_ROOT/build/mcp-project"
+MCP_PROJ_FALLBACK="$(_grm_temp_fallback_dir mcp-project)"
 [ -n "${GRM_KEEP_PROJECT_DIR:-}" ] && KEPT_OVERRIDE="$GRM_KEEP_PROJECT_DIR" || KEPT_OVERRIDE=""
 
 targets=()
-for d in "$WORK_BASE" "$REPO_ROOT/build/banktest-cache" "$KEPT" "$KEPT_FALLBACK"; do
+for d in "$WORK_BASE" "$REPO_ROOT/build/banktest-cache" "$KEPT" "$KEPT_FALLBACK" \
+	"$MCP_PROJ" "$MCP_PROJ_FALLBACK"; do
 	[ -d "$d" ] && targets+=("$d")
 done
 

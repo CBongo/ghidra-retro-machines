@@ -89,6 +89,12 @@ pyghidra-mcp runs `analyzeAll` with default options (plus symbol-server setup) o
 flagged as analyzed, and saves every program on a clean exit. To keep the kept project exactly as
 the tier left it, `serve.sh` serves a copy at `build/mcp-project/<row>`.
 
+In a checkout whose path has a dot-leading segment, such as an agent worktree under
+`.claude/worktrees/`, Ghidra rejects both project locations. The runners already move the kept
+project under the temp dir there (`grm-hhd`). `serve.sh` finds it through the same
+`grm_kept_project_dir` helper and puts its copy at the matching temp fallback
+(`grm_dotsafe_dir`), so the two scripts cannot disagree (`grm-f0i0`).
+
 ### 3. Our extension, from an isolated settings dir
 
 Ghidra loads extensions from its **user settings dir**, not from the install. The runners isolate

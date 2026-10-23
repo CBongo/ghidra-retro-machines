@@ -1166,12 +1166,10 @@ WORK_IS_OURS=1
 WORK="${REALROM_WORK_DIR:-$(grm_work_dir realrom)}"
 mkdir -p "$WORK"
 echo "== work dir: $WORK =="
-KEEP_DIR="${GRM_KEEP_PROJECT_DIR:-$REPO_ROOT/build/kept-projects/realrom}"
 # Same dot-segment hazard as grm_work_dir (bead grm-hhd): Ghidra rejects a project path with a
-# dot-leading segment, e.g. an agent worktree under .claude/worktrees/. Same fallback.
-if [ -z "${GRM_KEEP_PROJECT_DIR:-}" ] && _grm_path_has_dot_segment "$REPO_ROOT"; then
-	KEEP_DIR="${TMPDIR:-${TEMP:-/tmp}}/grm-kept-projects-$(printf '%s' "$REPO_ROOT" | tr -c 'A-Za-z0-9' '_')/realrom"
-fi
+# dot-leading segment, e.g. an agent worktree under .claude/worktrees/. Same fallback, shared
+# with tools/ghidra-mcp/serve.sh so it finds what this keeps (grm-f0i0).
+KEEP_DIR="$(grm_kept_project_dir)"
 # Headless timeout (beads grm-w9ev.5, grm-x4y1.2; shared helper in lib/common.sh). Real-ROM rows
 # are slower than synthetic fixtures: median ~7s, worst ~52s (dragonpower ~36s). One row = one
 # program, so 200s + 90s/program = 290s, 5.6x the slowest row ever seen -- load can't trip it, a

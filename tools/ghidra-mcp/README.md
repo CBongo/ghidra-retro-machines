@@ -52,6 +52,10 @@ bash tools/ghidra-mcp/serve.sh stop
   `build/ghidra-home`'s.
 - **Modified projects.** pyghidra-mcp re-runs auto-analysis (default options) on a program not
   flagged analyzed, and saves on clean exit, so it serves a copy (`build/mcp-project/<row>`).
+- **Agent worktrees.** Ghidra refuses a project path with a dot-leading segment, such as
+  `.claude/worktrees/...`. From such a checkout, `--keep-project` and this copy both move under
+  the temp dir. `serve.sh` resolves both through the runners' own helpers
+  (`grm_kept_project_dir`, `grm_dotsafe_dir`), so it works there unchanged (`grm-f0i0`).
 - **Orphaned servers.** Stopping the background shell that ran `serve.sh start` does NOT stop
   the server: `pyghidra-mcp`, its python and `decompile.exe` live on, holding the snapshot.
   `serve.sh stop` kills the whole process tree. It leaves a marker first, so the background
