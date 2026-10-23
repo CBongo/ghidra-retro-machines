@@ -125,6 +125,18 @@ Each is minutes of work and settles something specific. Highest value per unit e
   table write into ROM (a no-op on real hardware)? If it is not a switch, say so and the analyzer
   should stop counting indexed stores there as mechanism writes for this board.
 
+### 1.3 kicarus bank 4: what is the record array at `$A180`, and what walks it? (`grm-gipk.6`)
+
+- [ ] **Question.** None of kicarus's bank-4 menu/screen handlers are in the listing. Examples are
+  `a217`, `a225`, `a23a`, `a253`, `a25b`, `abee`, plus everything they call (`a21e`,
+  `a27a`/`a27e`/`a282`, `a381`, `a38d`, ...). Their addresses appear as pointer words inside what
+  looks like 10-byte records at `$A180`: PRG offsets `0x12180`, `0x1218a`, `0x12194`, `0x1219e`,
+  `0x121a3`, `0x121ad`. Note the uneven offsets; `0x121a3` breaks the stride. The dispatch looks
+  like a zero-page pointer: `a28c LDA #$a1 / STA $ec`, then `a22f JMP ($00eb)`.
+  - What is the record layout, where does the array end, and what sets `$eb`?
+  - Is this a general "struct array with an embedded code pointer" shape, worth a recognizer?
+    Or is it one game's menu table, better handled by a per-game descriptor hint?
+
 ---
 
 ## 2. Def-use passes on untraced titles
