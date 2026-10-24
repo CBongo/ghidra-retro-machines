@@ -2,22 +2,22 @@
 REALROM program w_fzero.sfc
 REALROM sha256 bf16c3c867c58e2ab061c70de9295b6930d63f29f81cc986f5ecae03e0ad18d2
 REALROM language 65816:LE:24:retro
-REALROM instrs 16498
-REALROM functions 477
+REALROM instrs 16628
+REALROM functions 480
 REALROM ctx E0M0X0 1345
-REALROM ctx E0M0X1 3645
+REALROM ctx E0M0X1 3717
 REALROM ctx E0M1X0 1221
-REALROM ctx E0M1X1 10284
+REALROM ctx E0M1X1 10342
 REALROM ctx E1M1X1 3
 REALROM desync BRK 0
 REALROM desync COP 0
 REALROM desync STP 0
 REALROM desync WDM 0
 REALROM ops PHP 146
-REALROM ops PLP 170
-REALROM ops REP 330
+REALROM ops PLP 173
+REALROM ops REP 331
 REALROM ops RTI 1
-REALROM ops SEP 391
+REALROM ops SEP 393
 REALROM ops XCE 1
 REALROM bookmarks.error 0
 REALROM vector NATIVE_COP 008138 code=yes ctx=E0M0X0 function=true
@@ -30,7 +30,7 @@ REALROM vector EMU_ABORT 008138 code=yes ctx=E0M0X0 function=true
 REALROM vector EMU_NMI 008138 code=yes ctx=E0M0X0 function=true
 REALROM vector EMU_RESET 008000 code=yes ctx=E1M1X1 function=true
 REALROM vector EMU_IRQBRK 008138 code=yes ctx=E0M0X0 function=true
-REALROM calls direct=826 decodedTarget=826 widthDisagree=45 distinctTargets=29
+REALROM calls direct=840 decodedTarget=840 widthDisagree=45 distinctTargets=29
 REALROM calls.disagree 00890c E0M1X1 -> 00b0c8 E0M0X1
 REALROM calls.disagree 00890f E0M1X1 -> 00b164 E0M0X1
 REALROM calls.disagree 008a3a E0M0X1 -> 009eec E0M1X1
@@ -72,12 +72,12 @@ REALROM calls.disagree 03800a E0M1X0 -> 008364 E0M1X1
 REALROM calls.disagree 038d3c E0M0X0 -> 039806 E0M1X0
 REALROM calls.disagree 038d46 E0M0X0 -> 038031 E0M0X1
 REALROM calls.disagree.truncated 40 of 45
-REALROM widtheffect callees=449 needsM=196 needsX=113
-REALROM widtheffect exitM preserves=299 sets0=15 sets1=81 mixedOrNone=54
-REALROM widtheffect exitX preserves=362 sets0=7 sets1=47 mixedOrNone=33
-REALROM widthconflict sites=826 entry=0 entryTargets=0 return=1 returnTargets=1
+REALROM widtheffect callees=452 needsM=199 needsX=114
+REALROM widtheffect exitM preserves=301 sets0=15 sets1=81 mixedOrNone=55
+REALROM widtheffect exitX preserves=365 sets0=7 sets1=47 mixedOrNone=33
+REALROM widthconflict sites=840 entry=0 entryTargets=0 return=1 returnTargets=1
 REALROM widthconflict.return 00b59c -> 00d1f0 returns=M1 continuation=M0X1
-REALROM exitwidth functions=477 returnsAtOtherWidth=83
+REALROM exitwidth functions=480 returnsAtOtherWidth=83
 REALROM exitwidth 00808c entry=M1X1 exits=M0X1
 REALROM exitwidth 008140 entry=M1X1 exits=M0X0
 REALROM exitwidth 00824f entry=M1X1 exits=M1X0
@@ -119,10 +119,10 @@ REALROM exitwidth 00d107 entry=M0X1 exits=M1X1
 REALROM exitwidth 00d1d5 entry=M1X1 exits=M1X0
 REALROM exitwidth 00d2cf entry=M1X1 exits=M0X1
 REALROM exitwidth.truncated 40 of 83
-REALROM computed JMP (!$0x0) sites=1 withTargets=0
-REALROM computed JMP (!$0xn) sites=3 withTargets=0
+REALROM computed JMP (!$0x0) sites=1 withTargets=1
+REALROM computed JMP (!$0xn) sites=3 withTargets=1
 REALROM computed JMP (!$0xn,X) sites=14 withTargets=14
 REALROM computed JSR (!$0xn,X) sites=3 withTargets=3
 REALROM computed RTI <UNSUPPORTn> sites=1 withTargets=0
-REALROM plp sites=170 paired=166 ambiguous=0 unpaired=4 stale=0
+REALROM plp sites=173 paired=166 ambiguous=0 unpaired=7 stale=0
 === REALROM END ===

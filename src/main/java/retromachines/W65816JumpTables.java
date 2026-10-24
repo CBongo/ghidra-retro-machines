@@ -64,6 +64,18 @@ final class W65816JumpTables {
 	 */
 	static int bound(long tableStart, int cap, IntFunction<Integer> word,
 			LongPredicate tableByteFree, LongPredicate targetPlausible, List<Long> targets) {
+		return bound(tableStart, tableStart & 0xff0000L, cap, word, tableByteFree, targetPlausible,
+			targets);
+	}
+
+	/**
+	 * As {@link #bound(long, int, IntFunction, LongPredicate, LongPredicate, List)}, for a table
+	 * whose targets lie in {@code targetBank} rather than the table's own bank: a pointer loaded
+	 * by {@code LDA long,X} from another bank and jumped through with {@code JMP (abs)} (program
+	 * bank) or {@code JML [abs]} (a constant bank byte), grm-9nxj.5.8.
+	 */
+	static int bound(long tableStart, long targetBank, int cap, IntFunction<Integer> word,
+			LongPredicate tableByteFree, LongPredicate targetPlausible, List<Long> targets) {
 		long bank = tableStart & 0xff0000L;
 		long lowestAbove = Long.MAX_VALUE;   // lowest accepted target at or above the table
 		int n = 0;
@@ -80,7 +92,7 @@ final class W65816JumpTables {
 			if (w == null) {
 				break;
 			}
-			long target = bank | (w & 0xffff);
+			long target = (targetBank & 0xff0000L) | (w & 0xffff);
 			if (target >= tableStart && target <= at + 1) {
 				break;   // points into the table itself
 			}

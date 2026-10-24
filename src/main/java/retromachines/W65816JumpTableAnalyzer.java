@@ -126,24 +126,24 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 			DONE.computeIfAbsent(program, p -> Collections.synchronizedSet(new LinkedHashSet<>()));
 		Map<Address, Set<Address>> tables = TABLES.computeIfAbsent(program,
 			p -> Collections.synchronizedMap(new LinkedHashMap<>()));
-		repairOverreads(program, tables, monitor);
+		// Every dispatch's table start, program-wide: one table ends where another begins.
+		Set<Address> tableStarts = new LinkedHashSet<>();
+		for (Instruction in : listing.getInstructions(true)) {
+			Dispatch d = in.getFlowType().isComputed() ? dispatchOf(listing, in) : null;
+			if (d != null) {
+				tableStarts.add(d.table());
+			}
+		}
+		repairOverreads(program, tables, tableStarts, monitor);
 
 		List<Instruction> sites = new ArrayList<>();
 		for (Instruction in : listing.getInstructions(set, true)) {
-			if (tableOf(in) != null && !done.contains(in.getMinAddress())) {
+			if (dispatchOf(listing, in) != null && !done.contains(in.getMinAddress())) {
 				sites.add(in);
 			}
 		}
 		if (sites.isEmpty()) {
 			return true;
-		}
-		// Every dispatch's table start, program-wide: one table ends where another begins.
-		Set<Address> tableStarts = new LinkedHashSet<>();
-		for (Instruction in : listing.getInstructions(true)) {
-			Address t = tableOf(in);
-			if (t != null) {
-				tableStarts.add(t);
-			}
 		}
 
 		int resolved = 0;
@@ -154,19 +154,21 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 			Address siteAddr = site.getMinAddress();
 			done.add(siteAddr);
 			site = listing.getInstructionAt(siteAddr);   // an earlier site may have re-decoded it
-			Address table = site == null ? null : tableOf(site);
-			if (table == null || effects.emulation(site) || hasFlowTargets(site)) {
+			Dispatch dispatch = site == null ? null : dispatchOf(listing, site);
+			if (dispatch == null || effects.emulation(site) || hasFlowTargets(site)) {
 				continue;
 			}
+			Address table = dispatch.table();
+			long targetBank = dispatch.targetBank();
 			Map<Register, Integer> ctx = context(program, site);
-			int cap = indexCap(listing, site);
+			int cap = indexCap(listing, dispatch.index());
 			List<Long> targets = new ArrayList<>();
 			// Several dispatches often share one table (CT $C1:B80D has four): the first defines
 			// it, the rest reuse its extent rather than finding its bytes taken.
-			int n = sharedTableEntries(program, table, cap, targets);
+			int n = sharedTableEntries(program, table, targetBank, cap, targets);
 			boolean shared = n > 0;
 			if (!shared) {
-				n = W65816JumpTables.bound(table.getOffset(), cap,
+				n = W65816JumpTables.bound(table.getOffset(), targetBank, cap,
 					i -> word(program.getMemory(), table.add(2L * i)),
 					b -> tableByteFree(program, table.getNewAddress(b), table, tableStarts),
 					t -> plausibleTarget(program, table.getNewAddress(t), ctx),
@@ -236,9 +238,14 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 	 * have 16). The disassembler then stops at the table with an error bookmark. Each such
 	 * conflict shrinks the table to end before it: the lost entries' flow references go, and the
 	 * code is decoded there after all. A conflict at the first entry removes the table.
+	 *
+	 * <p>Likewise a dispatch decoded later may read a table that starts inside an earlier one
+	 * (FF2 {@code $03:BF43}'s table {@code $03:C11C} lies inside {@code $03:BCF5}'s, bounded at
+	 * {@code $03:C104} before the second dispatch was reached): the earlier table is cut where the
+	 * later one begins, so the later one finds its bytes free (grm-9nxj.5.8).
 	 */
 	private void repairOverreads(Program program, Map<Address, Set<Address>> tables,
-			TaskMonitor monitor) throws CancelledException {
+			Set<Address> tableStarts, TaskMonitor monitor) throws CancelledException {
 		Listing listing = program.getListing();
 		var bookmarks = program.getBookmarkManager();
 		for (Map.Entry<Address, Set<Address>> t : new ArrayList<>(tables.entrySet())) {
@@ -251,6 +258,15 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 			int n = a.getNumElements();
 			Address end = table.add(2L * n - 1);
 			int keep = n;
+			long targetBank = table.getOffset() & 0xff0000L;
+			for (Address site : t.getValue()) {
+				Instruction in = listing.getInstructionAt(site);
+				Dispatch dp = in == null ? null : dispatchOf(listing, in);
+				if (dp != null) {
+					targetBank = dp.targetBank();
+					break;
+				}
+			}
 			List<Address> conflicts = new ArrayList<>();
 			var it = bookmarks.getBookmarksIterator(table, true);
 			while (it.hasNext()) {
@@ -263,6 +279,16 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 					keep = Math.min(keep, (int) (b.getAddress().subtract(table) / 2));
 					conflicts.add(b.getAddress());
 					bookmarks.removeBookmark(b);
+				}
+			}
+			Address cutAt = null;
+			for (Address other : tableStarts) {
+				if (other.compareTo(table) > 0 && other.compareTo(end) <= 0) {
+					int k = (int) (other.subtract(table) / 2);
+					if (k < keep) {
+						keep = k;
+						cutAt = other;
+					}
 				}
 			}
 			if (keep == n) {
@@ -280,7 +306,7 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 				for (int i = 0; i < keep; i++) {
 					Integer w = word(program.getMemory(), table.add(2L * i));
 					if (w != null) {
-						kept.add(table.getNewAddress((table.getOffset() & 0xff0000L) | w));
+						kept.add(table.getNewAddress(targetBank | w));
 					}
 				}
 			}
@@ -301,17 +327,253 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 							"entry", COMMENT_PREFIX);
 				}
 				else if (in != null) {
+					Dispatch dp = dispatchOf(listing, in);
 					AnalyzerCommentRecord.replaceOwn(program, site, CommentType.EOL,
-						note(table, keep, kept.size(), context(program, in), indexCap(listing, in)) +
-							"; shortened, code later decoded past it", COMMENT_PREFIX);
+						note(table, keep, kept.size(), context(program, in),
+							indexCap(listing, dp == null ? in : dp.index())) +
+							(cutAt != null ? "; shortened, another table starts at " + cutAt
+									: "; shortened, code later decoded past it"), COMMENT_PREFIX);
 				}
 			}
 			for (Address c : conflicts) {
 				new DisassembleCommand(c, null, true).applyTo(program, monitor);
 			}
 			AnalyzerLog.info(this, "table " + table + " shortened from " + n + " to " + keep +
-				" entries: code later decoded at " + conflicts);
+				" entries: " + (cutAt != null ? "another table starts at " + cutAt
+						: "code later decoded at " + conflicts));
 		}
+	}
+
+	/**
+	 * A computed dispatch through a word table.
+	 *
+	 * @param table the table's first byte
+	 * @param targetBank the bank its 16-bit entries jump into (bits 16-23 only)
+	 * @param index the instruction whose X indexes the table -- where the index bound is read
+	 */
+	record Dispatch(Address table, long targetBank, Instruction index) {}
+
+	/**
+	 * The word table {@code in} dispatches through, either shape; else null. A table whose index
+	 * cannot be zero starts at its second entry ({@link #indexNonZero}).
+	 */
+	static Dispatch dispatchOf(Listing listing, Instruction in) {
+		Address t = tableOf(in);
+		Dispatch d = t != null ? new Dispatch(t, t.getOffset() & 0xff0000L, in)
+				: pointerDispatch(listing, in);
+		if (d != null && indexNonZero(listing, d.index())) {
+			d = new Dispatch(d.table().add(2), d.targetBank(), d.index());
+		}
+		return d;
+	}
+
+	/** Mnemonics whose result sets Z from the accumulator. */
+	private static final Set<String> SETS_Z_FROM_A = Set.of("LDA", "AND", "ORA", "EOR", "ADC",
+		"SBC", "ASL", "LSR", "ROL", "ROR", "PLA", "TXA", "TYA", "TDC", "INC", "DEC");
+
+	/**
+	 * Whether the index X holds at {@code use} is known nonzero: {@code TAX} reached only by
+	 * falling past a {@code BEQ} that tests the accumulator, so entry 0 is never read (FF3
+	 * {@code $C2:47F8}: {@code LDA $3A6E / BEQ skip / TAX / JMP ($48F5,X)} -- entry 0's bytes are
+	 * code, and the real table starts at {@code $48F7}).
+	 */
+	static boolean indexNonZero(Listing listing, Instruction use) {
+		Instruction tax = fallsFrom(listing, use);
+		if (tax == null || !tax.getMnemonicString().equalsIgnoreCase("TAX") || hasFlowInto(tax)) {
+			return false;
+		}
+		Instruction beq = fallsFrom(listing, tax);
+		if (beq == null || !beq.getMnemonicString().equalsIgnoreCase("BEQ")) {
+			return false;
+		}
+		Instruction test = fallsFrom(listing, beq);
+		if (test == null || hasFlowInto(beq)) {
+			return false;
+		}
+		String mn = test.getMnemonicString().toUpperCase();
+		String op = test.getNumOperands() > 0 ? test.getDefaultOperandRepresentation(0) : "";
+		boolean onA = !(mn.equals("ASL") || mn.equals("LSR") || mn.equals("ROL") ||
+			mn.equals("ROR") || mn.equals("INC") || mn.equals("DEC")) || op.isEmpty() ||
+			op.equals("A");
+		return SETS_Z_FROM_A.contains(mn) && onA;
+	}
+
+	/** The instruction falling straight into {@code in}, or null. */
+	private static Instruction fallsFrom(Listing listing, Instruction in) {
+		Instruction p = listing.getInstructionBefore(in.getMinAddress());
+		return p != null && in.getMinAddress().equals(p.getFallThrough()) ? p : null;
+	}
+
+	/** Bound on the instructions searched back from a pointer jump for the stores that built it. */
+	private static final int POINTER_LOOKBACK = 12;
+
+	/**
+	 * A pointer-variable dispatch (grm-9nxj.5.8): {@code JMP (ptr)} or {@code JML [ptr]} whose
+	 * pointer the straight-line code just before it assembled from a word table indexed by X.
+	 * The shapes on the snes-analysis rows:
+	 * <ul>
+	 * <li>16-bit: {@code LDA tbl,X / STA ptr / ... / JMP (ptr)} (FF3 {@code $C0:77FE});</li>
+	 * <li>byte pairs: {@code LDA tbl,X / STA ptr / LDA tbl+1,X / STA ptr+1 / JMP (ptr)} (FF2
+	 * {@code $00:E0D0});</li>
+	 * <li>long: the byte pairs plus {@code LDA #bank / STA ptr+2 / JML [ptr]} (FF2 {@code
+	 * $03:869C}).</li>
+	 * </ul>
+	 * {@code JMP (abs)} reads its pointer from bank 0 and jumps within the program bank; a
+	 * direct-page store matches by its low byte, since D is not known (FF2 stores {@code $3D}
+	 * and jumps through {@code ($063D)}). An abs table is taken to be in the program bank.
+	 * Anything else -- another write to a pointer byte, a source that is not an X-indexed load
+	 * (or an immediate, for the bank byte), X changing between the loads -- is not matched.
+	 */
+	static Dispatch pointerDispatch(Listing listing, Instruction in) {
+		FlowType ft = in.getFlowType();
+		if (!ft.isComputed() || ft.isCall() || in.getNumOperands() != 1) {
+			return null;
+		}
+		String mn = in.getMnemonicString().toUpperCase();
+		String op = in.getDefaultOperandRepresentation(0);
+		int bytes;
+		if (mn.equals("JMP") && op.startsWith("(") && !op.contains(",")) {
+			bytes = 2;
+		}
+		else if (mn.equals("JML") && op.startsWith("[")) {
+			bytes = 3;
+		}
+		else {
+			return null;
+		}
+		long ptr = operandValue(in);
+		if (ptr < 0) {
+			return null;
+		}
+		ptr &= 0xffff;
+		Register mReg = in.getProgram().getRegister("ctx_MF");
+		// Walking back: the latest store to each pointer byte, and the chain walked.
+		Instruction[] store = new Instruction[bytes];
+		List<Instruction> chain = new ArrayList<>();
+		Instruction cur = in;
+		int found = 0;
+		for (int i = 0; i < POINTER_LOOKBACK && found < bytes; i++) {
+			Instruction prev = listing.getInstructionBefore(cur.getMinAddress());
+			if (prev == null || !cur.getMinAddress().equals(prev.getFallThrough()) ||
+				(cur != in && hasFlowInto(cur))) {
+				break;
+			}
+			cur = prev;
+			chain.add(0, cur);
+			String m = cur.getMnemonicString().toUpperCase();
+			if (!m.startsWith("ST") || m.equals("STP")) {
+				continue;
+			}
+			int k = pointerByte(cur, ptr, bytes);
+			if (k < 0) {
+				continue;
+			}
+			if (!m.equals("STA")) {
+				return null;   // STX/STY/STZ into the pointer: not a table load
+			}
+			BigInteger mv = cur.getValue(mReg, false);
+			int width = mv != null && mv.intValue() == 0 ? 2 : 1;
+			for (int b = k; b < k + width && b < bytes; b++) {
+				if (store[b] == null) {
+					store[b] = cur;
+					found++;
+				}
+			}
+		}
+		if (found < bytes) {
+			return null;
+		}
+		// Each store's source is the load just before it.
+		Instruction lo = loadBefore(listing, store[0]);
+		if (lo == null || !isIndexedX(lo)) {
+			return null;
+		}
+		Address table = loadAddress(in, lo);
+		if (table == null) {
+			return null;
+		}
+		List<Instruction> loads = new ArrayList<>(List.of(lo));
+		if (store[1] != store[0]) {
+			Instruction hi = loadBefore(listing, store[1]);
+			Address hiTable = hi == null || !isIndexedX(hi) ? null : loadAddress(in, hi);
+			if (hiTable == null || !hiTable.equals(table.add(1))) {
+				return null;
+			}
+			loads.add(hi);
+		}
+		long targetBank = in.getMinAddress().getOffset() & 0xff0000L;
+		if (bytes == 3) {
+			Instruction bank = loadBefore(listing, store[2]);
+			if (bank == null || store[2] == store[1] ||
+				!bank.getDefaultOperandRepresentation(0).startsWith("#")) {
+				return null;
+			}
+			targetBank = (operandValue(bank) & 0xff) << 16;
+		}
+		// X must hold the same index for every load.
+		int first = chain.indexOf(loads.get(0));
+		int last = chain.indexOf(loads.get(loads.size() - 1));
+		for (int i = Math.min(first, last) + 1; i < Math.max(first, last); i++) {
+			if (writesX(chain.get(i))) {
+				return null;
+			}
+		}
+		return new Dispatch(table, targetBank, lo);
+	}
+
+	/** Which pointer byte (0..bytes-1) a plain dp/abs store writes first, or -1. */
+	private static int pointerByte(Instruction st, long ptr, int bytes) {
+		String op = st.getDefaultOperandRepresentation(0);
+		if (op.contains(",") || op.contains("(") || op.contains("[")) {
+			return -1;
+		}
+		long v = operandValue(st);
+		if (v < 0) {
+			return -1;
+		}
+		long k = op.startsWith("<") ? (v & 0xff) - (ptr & 0xff) : (v & 0xffff) - ptr;
+		return k >= 0 && k < bytes ? (int) k : -1;
+	}
+
+	/** The LDA that falls straight into {@code st}, or null. */
+	private static Instruction loadBefore(Listing listing, Instruction st) {
+		Instruction p = listing.getInstructionBefore(st.getMinAddress());
+		return p != null && st.getMinAddress().equals(p.getFallThrough()) &&
+			p.getMnemonicString().equalsIgnoreCase("LDA") ? p : null;
+	}
+
+	private static boolean isIndexedX(Instruction ld) {
+		String op = ld.getDefaultOperandRepresentation(0);
+		return op.endsWith(",X") && !op.startsWith("<") && !op.contains("(") && !op.contains("[");
+	}
+
+	/** An abs,X or long,X load's table address; abs is taken in the dispatch's program bank. */
+	private static Address loadAddress(Instruction dispatch, Instruction ld) {
+		long v = operandValue(ld);
+		if (v < 0) {
+			return null;
+		}
+		boolean isLong = ld.getDefaultOperandRepresentation(0).startsWith("!>");
+		long full = isLong ? v & 0xffffff
+				: (dispatch.getMinAddress().getOffset() & 0xff0000L) | (v & 0xffff);
+		return dispatch.getMinAddress().getNewAddress(full);
+	}
+
+	private static boolean writesX(Instruction in) {
+		return Set.of("LDX", "TAX", "INX", "DEX", "PLX", "TYX", "TSX")
+				.contains(in.getMnemonicString().toUpperCase());
+	}
+
+	private static long operandValue(Instruction in) {
+		for (Object o : in.getOpObjects(0)) {
+			if (o instanceof Scalar s) {
+				return s.getUnsignedValue();
+			}
+			if (o instanceof Address a) {
+				return a.getOffset();
+			}
+		}
+		return -1;
 	}
 
 	/** The table a native {@code JMP/JSR (abs,X)} reads, in the program bank; else null. */
@@ -345,8 +607,8 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 	 * When another dispatch already defined a word table at {@code table}, its first {@code cap}
 	 * entries' targets (appended to {@code targets}) and that count; else 0.
 	 */
-	private static int sharedTableEntries(Program program, Address table, int cap,
-			List<Long> targets) {
+	private static int sharedTableEntries(Program program, Address table, long targetBank,
+			int cap, List<Long> targets) {
 		Data d = program.getListing().getDataAt(table);
 		if (d == null || !(d.getDataType() instanceof Array a) ||
 			!(a.getDataType() instanceof WordDataType)) {
@@ -358,7 +620,7 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 			if (w == null) {
 				return i;
 			}
-			targets.add((table.getOffset() & 0xff0000L) | w);
+			targets.add(targetBank | w);
 		}
 		return n;
 	}

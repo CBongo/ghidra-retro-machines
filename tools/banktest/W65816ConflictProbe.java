@@ -83,6 +83,10 @@ public class W65816ConflictProbe extends GhidraScript {
 			Bookmark b = it.next();
 			Matcher m = p.matcher(b.getComment());
 			if (!m.find()) {
+				Matcher f = Pattern.compile("flow from ([0-9a-fA-F:]+)").matcher(b.getComment());
+				Address src = f.find() ? toAddr(f.group(1)) : null;
+				println("WCP error bm=" + b.getAddress() + " \"" + b.getComment() + "\" from: " +
+					(src == null ? "-" : src + " " + ctx(src)));
 				continue;
 			}
 			Address at = toAddr(m.group(1));
@@ -114,6 +118,32 @@ public class W65816ConflictProbe extends GhidraScript {
 				}
 			}
 			pages.forEach((k, v) -> println("WCP e1 " + k + " " + v));
+		}
+		if (System.getenv("GRM_JMPI") != null) {
+			for (Instruction in : currentProgram.getListing().getInstructions(true)) {
+				String mn = in.getMnemonicString().toUpperCase();
+				String op = in.getNumOperands() == 1 ? in.getDefaultOperandRepresentation(0) : "";
+				boolean ind = (mn.equals("JMP") || mn.equals("JML")) &&
+					((op.startsWith("(") && !op.endsWith(",X)")) || op.startsWith("["));
+				if (!ind) {
+					continue;
+				}
+				StringBuilder sb = new StringBuilder();
+				Instruction cur = in;
+				for (int i = 0; i < 6; i++) {
+					Instruction pi = currentProgram.getListing().getInstructionBefore(cur.getMinAddress());
+					if (pi == null || !cur.getMinAddress().equals(pi.getFallThrough())) {
+						break;
+					}
+					cur = pi;
+					sb.insert(0, " | " + pi + " " + ctxOf(pi).replaceAll(" fn=.*", ""));
+				}
+				int refs = 0;
+				for (Reference r : in.getReferencesFrom()) {
+					refs += r.getReferenceType().isFlow() ? 1 : 0;
+				}
+				println("WCP jmpi " + in.getMinAddress() + " " + in + " flows=" + refs + " ::" + sb);
+			}
 		}
 		String heads = System.getenv("GRM_HEADS");
 		if (heads != null) {

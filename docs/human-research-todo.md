@@ -157,6 +157,20 @@ Each is minutes of work and settles something specific. Highest value per unit e
   or an RTS to somewhere else? The same check applies at `c01ab6` (after `c01ab3 JSR $c01a2a`)
   and at fzero `00b59f` (after `00b59c JSR $00d1f0`, joined by a flow from `00b57a`).
 
+### 1.5 CT / FF3 jump tables with no structural end: how many entries are real? (`grm-9nxj.5.8` item 3)
+
+- [ ] **Question.** The 65816 Jump Tables analyzer stops a table at the first entry that cannot
+  be one: a byte already code or data, the start of another table, a desync opcode within 16
+  instructions. These three pass every one of those checks and still look over-read. A hand look
+  at each table's bytes, or a breakpoint on the dispatch watching X, settles them:
+  - **CT `$C7:0AD9`** (dispatched at `$C7:0173`) takes 10 entries. The last two (`0d53`, `c773`)
+    look like garbage. Its twin `$C5:06FE` stops at 8, because a BRK falls inside the lookahead
+    there, while `c773`'s COP is 32 instructions in. Is it 8 entries?
+  - **CT `$C1:0051`** (dispatched at `$C1:004A`) was cut to 10 entries by the over-read repair,
+    but its targets are scattered over the whole bank. Is this a table at all?
+  - **FF3 `$C1:0008`**: entry 4 (`950f`, among `00xx`–`02xx`) looks wrong. Where does the real
+    table end?
+
 ---
 
 ## 2. Def-use passes on untraced titles
