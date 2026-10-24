@@ -4,3 +4,4 @@ nes-curated	nes	manifest.tsv	*	Curated NES board-representative set
 nes-gme	nes	manifest-gme.tsv	*	NES game-music-extraction titles of interest
 snes-cart	snes	manifest-snes.tsv	*	SNES alt-board cartridge loader sample (LOADER LAYOUT only, -noanalysis)
 snes-spc	snes-spc	manifest-snes-spc.tsv	*	SNES SPC700 sound-driver upload recovery (65816 emulation against the IPL handshake; hashes of recovered blocks only, -noanalysis)
+snes-analysis	snes-analysis	manifest-snes-analysis.tsv	*	SNES 65816 auto-analysis width census (analysis ON; M/X/E context, desync, call-width agreement; bead grm-9nxj.5)

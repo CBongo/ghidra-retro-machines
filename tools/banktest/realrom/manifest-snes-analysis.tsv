@@ -1,0 +1,6 @@
+id	title	sha256	mapper	board	golden	loader_opts	member
+w_fzero	F-Zero (USA).sfc	bf16c3c867c58e2ab061c70de9295b6930d63f29f81cc986f5ecae03e0ad18d2	-	snes_lorom	w_fzero.dump		
+w_smw	Super Mario World (USA).sfc	0838e531fe22c077528febe14cb3ff7c492f1f5fa8de354192bdff7137c27f5b	-	snes_lorom	w_smw.dump		
+w_ff2	Final Fantasy II (USA) (Rev 1).sfc	414bacc05a18a6137c0de060b4094ab6d1b75105342b0bb36a42e45d945a0e4d	-	snes_lorom	w_ff2.dump		
+w_ff3	Final Fantasy III (USA) (Rev 1).sfc	10eccc5d2fab81346dd759f6be478dcb682eef981e8d3d662da176e1f9a996bc	-	snes_hirom	w_ff3.dump		
+w_ct	Chrono Trigger (USA).sfc	06d1c2b06b716052c5596aaa0c2e5632a027fee1a9a28439e509f813c30829a9	-	snes_hirom	w_ct.dump		

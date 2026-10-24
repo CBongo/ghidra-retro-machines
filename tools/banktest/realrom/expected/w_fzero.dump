@@ -1,0 +1,40 @@
+=== REALROM BEGIN ===
+REALROM program w_fzero.sfc
+REALROM sha256 bf16c3c867c58e2ab061c70de9295b6930d63f29f81cc986f5ecae03e0ad18d2
+REALROM language 65816:LE:24:retro
+REALROM instrs 333
+REALROM functions 18
+REALROM ctx E0M0X0 56
+REALROM ctx E0M0X1 63
+REALROM ctx E0M1X0 150
+REALROM ctx E0M1X1 61
+REALROM ctx E1M1X1 3
+REALROM desync BRK 0
+REALROM desync COP 0
+REALROM desync STP 0
+REALROM desync WDM 0
+REALROM ops PHP 5
+REALROM ops PLP 5
+REALROM ops REP 9
+REALROM ops RTI 0
+REALROM ops SEP 9
+REALROM ops XCE 1
+REALROM bookmarks.error 0
+REALROM vector NATIVE_COP 008138 code=no function=false
+REALROM vector NATIVE_BRK 008138 code=no function=false
+REALROM vector NATIVE_ABORT 008138 code=no function=false
+REALROM vector NATIVE_NMI 0080d9 code=no function=false
+REALROM vector NATIVE_IRQ 008601 code=no function=false
+REALROM vector EMU_COP 008138 code=no function=false
+REALROM vector EMU_ABORT 008138 code=no function=false
+REALROM vector EMU_NMI 008138 code=no function=false
+REALROM vector EMU_RESET 008000 code=yes ctx=E1M1X1 function=true
+REALROM vector EMU_IRQBRK 008138 code=no function=false
+REALROM calls direct=24 decodedTarget=24 widthDisagree=0 distinctTargets=0
+REALROM exitwidth functions=18 returnsAtOtherWidth=4
+REALROM exitwidth 00808c entry=M1X1 exits=M0X1
+REALROM exitwidth 00f806 entry=M1X1 exits=M1X0
+REALROM exitwidth 02c4b1 entry=M0X0 exits=M1X0
+REALROM exitwidth 039680 entry=M0X0 exits=M0X1
+REALROM computed JSR (!$0xn,X) sites=1 withTargets=0
+=== REALROM END ===

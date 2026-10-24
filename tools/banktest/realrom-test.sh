@@ -22,6 +22,8 @@
 #   nes-curated   the curated NES board-representative set
 #   nes-gme       the NES game-music-extraction titles of interest
 #   snes-cart     the SNES alt-board cartridge loader sample
+#   snes-spc      SNES SPC700 sound-driver upload recovery
+#   snes-analysis SNES 65816 auto-analysis width census (the only SNES rows WITH analysis)
 #   nes | snes    PLATFORM GROUPS: every set declared for that platform
 #   all           every set on every platform
 #
@@ -1954,7 +1956,7 @@ for p in "${PLATFORMS_USED[@]}"; do
 done
 [ -z "$stamp_skipped" ] ||
 	echo "note: platform(s)$stamp_skipped do not refresh the REALROM staleness stamp -- they" \
-		"verify loader layout with -noanalysis and say nothing about analysis regressions."
+		"say nothing about the NES analysis regressions that stamp tracks."
 
 # THE STAMP RECORDS WHICH SETS RAN, not merely that something did (bead grm-ughg). Once `core`
 # exists -- a five-row, ~40s floor -- a stamp that said only "someone ran the tier at this

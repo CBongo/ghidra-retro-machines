@@ -2,3 +2,4 @@ platform	rom_dir_env	image_exts	copy_ext	loader	dump_script	import_args	nominate
 nes	GRM_ROM_DIR	nes	.nes	NesRomLoader	RealRomDump.java	-	yes	yes	nes-banking
 snes	GRM_SNES_ROM_DIR	sfc,smc,fig,swc	.sfc	SnesRomLoader	SnesRealRomDump.java	-noanalysis	no	no	snes-loader
 snes-spc	GRM_SNES_ROM_DIR	sfc,smc,fig,swc	.sfc	SnesRomLoader	SpcUploadRealRomDump.java	-noanalysis	no	no	snes-loader
+snes-analysis	GRM_SNES_ROM_DIR	sfc,smc,fig,swc	.sfc	SnesRomLoader	W65816WidthDump.java	-	no	no	snes-loader

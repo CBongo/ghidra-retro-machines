@@ -859,7 +859,7 @@ it is never a `run-banktest.sh` chunk (whose `all` would otherwise pull it in).
   Those flags were deprecated aliases until grm-x4y1.5 removed them; they now exit 2 with a hint
   (`--gme`→`nes-gme`, `--all`→`nes` — both NES manifests, 35 rows today — `--snes`→`snes`). The
   *bare word* `all` is the one that changed meaning: before grm-ughg there was no such word, and
-  now it spans every platform (57 rows today).
+  now it spans every platform (62 rows today).
 - **A bare `check` now runs `core`, not the curated NES set.** `core` (`realrom/sets.tsv`) is a
   new always-run floor — five rows (kicarus, cv2, tmnt, smb, zelda) drawn across both NES
   manifests, measured at ~46s — added beneath the full-tier requirement below for changes that

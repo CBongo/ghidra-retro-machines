@@ -1,0 +1,32 @@
+=== REALROM BEGIN ===
+REALROM program w_ff2.sfc
+REALROM sha256 414bacc05a18a6137c0de060b4094ab6d1b75105342b0bb36a42e45d945a0e4d
+REALROM language 65816:LE:24:retro
+REALROM instrs 7
+REALROM functions 0
+REALROM ctx E1M1X1 7
+REALROM desync BRK 1
+REALROM desync COP 0
+REALROM desync STP 0
+REALROM desync WDM 0
+REALROM ops PHP 0
+REALROM ops PLP 0
+REALROM ops REP 0
+REALROM ops RTI 0
+REALROM ops SEP 0
+REALROM ops XCE 0
+REALROM bookmarks.error 0
+REALROM vector NATIVE_COP 00ffff code=no function=false
+REALROM vector NATIVE_BRK 00ffff code=no function=false
+REALROM vector NATIVE_ABORT 00ffff code=no function=false
+REALROM vector NATIVE_NMI 000200 code=no function=false
+REALROM vector NATIVE_IRQ 000204 code=no function=false
+REALROM vector EMU_COP 00ffff code=no function=false
+REALROM vector EMU_ABORT 00ffff code=no function=false
+REALROM vector EMU_NMI 00ffff code=no function=false
+REALROM vector EMU_RESET 008000 code=no function=false
+REALROM vector EMU_IRQBRK 00ffff code=no function=false
+REALROM calls direct=0 decodedTarget=0 widthDisagree=0 distinctTargets=0
+REALROM exitwidth functions=0 returnsAtOtherWidth=0
+REALROM computed BRK 0xn sites=1 withTargets=1
+=== REALROM END ===
