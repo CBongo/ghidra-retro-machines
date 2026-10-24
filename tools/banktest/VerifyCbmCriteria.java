@@ -1671,6 +1671,128 @@ public class VerifyCbmCriteria extends VerifyBase {
 	}
 
 	/**
+	 * RAM-trampoline interrupt handler (bead grm-9nxj.5.6). The native NMI vector points at RAM
+	 * $0108, which the reset code fills with {@code JML $008040}; SpcUploadAnalyzer's boot
+	 * emulation executes the trampoline and must seed $8040 as the NMI handler, and must create
+	 * nothing in RAM (the trampoline itself is not code the program owns).
+	 */
+	protected void checkSnesTramp() {
+		Address h = addr(0x008040);
+		Function f = currentProgram.getFunctionManager().getFunctionAt(h);
+		Instruction i = currentProgram.getListing().getInstructionAt(h);
+		Instruction next = i == null ? null : i.getNext();
+		String comment = currentProgram.getListing().getComment(
+			ghidra.program.model.listing.CommentType.PRE, h);
+		String async = currentProgram.getOptions(Program.PROGRAM_INFO)
+			.getString("Retro Machines.Async Entry Points", "<none>");
+		boolean entry = currentProgram.getSymbolTable().isExternalEntryPoint(h);
+		String desc = describeSnesHandler(0x008040);
+		boolean ramClean = true;
+		for (MemoryBlock b : currentProgram.getMemory().getBlocks()) {
+			if (b.getName().startsWith("ROM")) {
+				continue;
+			}
+			if (currentProgram.getListing().getInstructions(
+				new ghidra.program.model.address.AddressSet(b.getStart(), b.getEnd()), true)
+				.hasNext() ||
+				currentProgram.getFunctionManager().getFunctions(
+					new ghidra.program.model.address.AddressSet(b.getStart(), b.getEnd()), true)
+					.hasNext()) {
+				ramClean = false;
+			}
+		}
+
+		println("=== BANKDUMP BEGIN ===");
+		println("HANDLER 008040 " + desc);
+		println("NEXT " + (next == null ? "<none>" : next.toString().replace(' ', '_')));
+		println("COMMENT " + comment);
+		println("ASYNC " + async);
+		println("RAM_CLEAN " + ramClean);
+		println("=== BANKDUMP END ===");
+
+		criterion("snes-tramp-function",
+			f != null && f.getName().equals("NMI") && entry,
+			"$8040 is a function named NMI and an external entry point: " + desc);
+		criterion("snes-tramp-decoded",
+			i != null && i.getMnemonicString().equals("REP") && next != null &&
+				next.toString().equals("LDA #$0x1234"),
+			"REP at $8040 followed by a 16-bit LDA: " + (next == null ? "<none>" : next));
+		criterion("snes-tramp-context", desc.contains("ctx=E0M1X1"), desc);
+		criterion("snes-tramp-comment",
+			comment != null && comment.contains("$000108") &&
+				comment.contains("constant stores"),
+			"PRE comment names the constant-store provenance of the trampoline at $000108: " + comment);
+		criterion("snes-tramp-async", async.contains("008040"),
+			"handler published as asynchronous entry: " + async);
+		criterion("snes-tramp-no-ram-code", ramClean,
+			"no instruction or function was created outside ROM");
+	}
+
+	/**
+	 * Several handlers behind one trampoline (bead grm-9nxj.5.6). The reset code installs
+	 * JML $0080A0 and JML $0080C0 (the second with a 16-bit STX operand store) into $0108; it also
+	 * stores an RTL ($6B, "disabled"), a JML to RAM ($7E:1234) and an unknown-valued byte, none of
+	 * which may seed anything. Both real targets must be seeded under address-suffixed names.
+	 */
+	protected void checkSnesTramp2() {
+		Address a = addr(0x0080A0);
+		Address b = addr(0x0080C0);
+		Function fa = currentProgram.getFunctionManager().getFunctionAt(a);
+		Function fb = currentProgram.getFunctionManager().getFunctionAt(b);
+		Instruction ia = currentProgram.getListing().getInstructionAt(a);
+		Instruction ib = currentProgram.getListing().getInstructionAt(b);
+		Instruction ibn = ib == null ? null : ib.getNext();
+		String ca = currentProgram.getListing().getComment(
+			ghidra.program.model.listing.CommentType.PRE, a);
+		String cb = currentProgram.getListing().getComment(
+			ghidra.program.model.listing.CommentType.PRE, b);
+		String async = currentProgram.getOptions(Program.PROGRAM_INFO)
+			.getString("Retro Machines.Async Entry Points", "<none>");
+		boolean plainNmi = hasFunctionNamed("NMI");
+		boolean ramFunction = false;
+		for (Function f : currentProgram.getFunctionManager().getFunctions(true)) {
+			long o = f.getEntryPoint().getOffset();
+			if ((o >> 16) == 0x7E || (o >> 16) == 0x7F || (o & 0xFFFF) < 0x2000) {
+				ramFunction = true;
+			}
+		}
+		String da = describeSnesHandler(0x0080A0);
+		String db = describeSnesHandler(0x0080C0);
+
+		println("=== BANKDUMP BEGIN ===");
+		println("HANDLER_A 0080a0 " + da);
+		println("HANDLER_B 0080c0 " + db);
+		println("NEXT_B " + (ibn == null ? "<none>" : ibn.toString().replace(' ', '_')));
+		println("COMMENT_A " + ca);
+		println("COMMENT_B " + cb);
+		println("ASYNC " + async);
+		println("PLAIN_NMI " + plainNmi + " RAM_FUNCTION " + ramFunction);
+		println("=== BANKDUMP END ===");
+
+		criterion("snes-tramp2-names",
+			fa != null && fa.getName().equals("NMI_0080a0") && fb != null &&
+				fb.getName().equals("NMI_0080c0") && !plainNmi,
+			"two handlers get address-suffixed names: " + da + " / " + db);
+		criterion("snes-tramp2-entry-context",
+			da.contains("entry=true") && db.contains("entry=true") &&
+				da.contains("ctx=E0M1X1") && db.contains("ctx=E0M1X1"),
+			da + " / " + db);
+		criterion("snes-tramp2-decoded",
+			ia != null && ia.getMnemonicString().equals("REP") && ib != null &&
+				ib.getMnemonicString().equals("REP") && ibn != null &&
+				ibn.toString().equals("LDX #$0x1"),
+			"handler B decodes with a 16-bit LDX: " + ibn);
+		criterion("snes-tramp2-comments",
+			ca != null && cb != null && ca.contains("constant stores") &&
+				cb.contains("constant stores"),
+			"PRE comments list the store sites: " + ca + " / " + cb);
+		criterion("snes-tramp2-async", async.contains("0080a0") && async.contains("0080c0"),
+			"both handlers published as asynchronous entries: " + async);
+		criterion("snes-tramp2-skips", !ramFunction,
+			"the RTL store and the $7E:1234 group seeded nothing");
+	}
+
+	/**
 	 * The vector table and its handlers, as the SNES loader leaves them (bead grm-9nxj.5.2): one
 	 * token per slot naming what the slot is typed as, then one per handler entry with its
 	 * function, decoded instruction and stamped E/M/X context. Shared by every snestest fixture,

@@ -139,6 +139,11 @@ public class W65816WidthAnalyzer extends AbstractAnalyzer {
 			}
 			W65816WidthEffects.Effect e = effects.effect(target);
 			Map<Register, Integer> want = entryWant(effects, callee, c.getValue());
+			if (want != null && want.isEmpty()) {
+				for (Instruction call : c.getValue()) {
+					warnEntryConflict(program, effects, call, callee, e);   // clears stale ones
+				}
+			}
 			if (want == null) {
 				// Genuinely called at two widths: not representable, so say so at each caller
 				// whose width differs from the decode.
@@ -251,11 +256,109 @@ public class W65816WidthAnalyzer extends AbstractAnalyzer {
 			repaired.add(cont);
 			conts++;
 		}
-		if (entries + conts > 0 || warned > 0) {
-			AnalyzerLog.info(this, "re-decoded " + entries + " callee entr(ies) and " + conts +
-				" call continuation(s); " + warned + " dual-width call warning(s)");
+		int handlers = repairInterruptEntries(program, effects, set, repaired, monitor);
+		if (entries + conts + handlers > 0 || warned > 0) {
+			AnalyzerLog.info(this, "re-decoded " + entries + " callee entr(ies), " + conts +
+				" call continuation(s) and " + handlers + " interrupt handler(s); " + warned +
+				" dual-width call warning(s)");
 		}
 		return true;
+	}
+
+	/**
+	 * Interrupt handlers (the loader's and the trampoline analyzer's asynchronous entry points)
+	 * start with whatever M/X the interrupted code had -- no caller says which. They are seeded
+	 * 8-bit, which is wrong for a game that runs with 16-bit index registers throughout: FF2's
+	 * NMI at {@code $9085} sets M but never X, so its {@code LDX #$0600} decoded as
+	 * {@code LDX #$00} and desynchronized. For each flag a handler's decode depends on, it is
+	 * re-decoded at the program's AMBIENT width -- the value most native-mode instructions hold,
+	 * i.e. the width the code an interrupt lands in is most likely to have. An inference, stated
+	 * as one in the EOL note; a flag the handler sets before using needs no inference at all.
+	 */
+	private int repairInterruptEntries(Program program, W65816WidthEffects effects,
+			AddressSetView set, Set<Address> repaired, TaskMonitor monitor)
+			throws CancelledException {
+		Listing listing = program.getListing();
+		List<Address> candidates = new ArrayList<>();
+		for (Address entry : DescriptorHints.parseAsyncEntryPoints(program)) {
+			Instruction in = listing.getInstructionAt(entry);
+			if (in != null && set.contains(entry) && !repaired.contains(entry) &&
+				!effects.emulation(in)) {
+				candidates.add(entry);
+			}
+		}
+		if (candidates.isEmpty()) {
+			return 0;
+		}
+		Map<Register, Integer> ambient = ambientWidth(program, effects);
+		int done = 0;
+		for (Address entry : candidates) {
+			monitor.checkCancelled();
+			effects.invalidate();
+			Instruction in = listing.getInstructionAt(entry);
+			if (in == null) {
+				continue;
+			}
+			W65816WidthEffects.Effect e = effects.effect(entry);
+			Map<Register, Integer> want = new LinkedHashMap<>();
+			if (e.m().needs() && ambient.containsKey(effects.mRegister()) &&
+				effects.flag(in, effects.mRegister()) != ambient.get(effects.mRegister())) {
+				want.put(effects.mRegister(), ambient.get(effects.mRegister()));
+			}
+			if (e.x().needs() && ambient.containsKey(effects.xRegister()) &&
+				effects.flag(in, effects.xRegister()) != ambient.get(effects.xRegister())) {
+				want.put(effects.xRegister(), ambient.get(effects.xRegister()));
+			}
+			repaired.add(entry);
+			if (want.isEmpty()) {
+				continue;
+			}
+			Function f = program.getFunctionManager().getFunctionAt(entry);
+			String name = f == null ? null : f.getName();
+			SourceType source = f == null ? null : f.getSymbol().getSource();
+			if (f != null) {
+				program.getFunctionManager().removeFunction(entry);
+			}
+			AnalyzerLog.info(this, "interrupt handler " + entry + " re-decoded at the ambient " +
+				"width " + describe(want));
+			reDecode(program, entry, entry, want, monitor);
+			CreateFunctionCmd create = new CreateFunctionCmd(name, entry, null,
+				source == null ? SourceType.ANALYSIS : source);
+			create.applyTo(program, monitor);
+			AnalyzerCommentRecord.set(program, entry, CommentType.EOL,
+				"65816 width " + describe(want) + " on entry: inferred, the width most of the " +
+					"program runs at (an interrupt keeps the interrupted code's M/X)");
+			done++;
+		}
+		return done;
+	}
+
+	/** Per flag, the value held by the majority of decoded native-mode instructions. */
+	private static Map<Register, Integer> ambientWidth(Program program,
+			W65816WidthEffects effects) {
+		int[] m = new int[2];
+		int[] x = new int[2];
+		for (Instruction in : program.getListing().getInstructions(true)) {
+			if (effects.emulation(in)) {
+				continue;
+			}
+			int mv = effects.flag(in, effects.mRegister());
+			int xv = effects.flag(in, effects.xRegister());
+			if (mv == 0 || mv == 1) {
+				m[mv]++;
+			}
+			if (xv == 0 || xv == 1) {
+				x[xv]++;
+			}
+		}
+		Map<Register, Integer> ambient = new LinkedHashMap<>();
+		if (m[0] != m[1]) {
+			ambient.put(effects.mRegister(), m[0] > m[1] ? 0 : 1);
+		}
+		if (x[0] != x[1]) {
+			ambient.put(effects.xRegister(), x[0] > x[1] ? 0 : 1);
+		}
+		return ambient;
 	}
 
 	/**
@@ -460,6 +563,12 @@ public class W65816WidthAnalyzer extends AbstractAnalyzer {
 			which += "X";
 		}
 		if (which.isEmpty()) {
+			// Re-evaluated after a repair elsewhere and consistent now: drop a stale warning.
+			var stale = program.getBookmarkManager().getBookmark(call.getMinAddress(),
+				BookmarkType.WARNING, BOOKMARK_CATEGORY);
+			if (stale != null) {
+				program.getBookmarkManager().removeBookmark(stale);
+			}
 			return false;
 		}
 		program.getBookmarkManager().setBookmark(call.getMinAddress(), BookmarkType.WARNING,

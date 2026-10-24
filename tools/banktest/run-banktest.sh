@@ -1097,6 +1097,11 @@ if selected snes-loader; then
 	# grm-9nxj.5.3: the code after a JSR to a width-setting helper, and a callee every caller
 	# reaches at 8-bit A, both re-decoded at the width they really run at.
 	run_one sneswidth "$WORK/snes/sneswidth.smc" SnesRomLoader
+	# grm-9nxj.5.6: native NMI vector -> RAM $0108 (JML $008040 written by the reset code); the
+	# analyzer must recover $8040 from the constant stores as the NMI handler.
+	run_one snestramp "$WORK/snes/snestramp.smc" SnesRomLoader
+	# grm-9nxj.5.6: two handlers installed into one trampoline, an RTL store and a RAM-target group.
+	run_one snestramp2 "$WORK/snes/snestramp2.smc" SnesRomLoader
 fi
 
 if selected nes-text; then

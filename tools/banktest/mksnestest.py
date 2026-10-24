@@ -25,6 +25,8 @@ IMAGE_BANKS = 2                      # 64 KiB: two LoROM banks, enough for a mir
 RESET = 0x8000
 NMI = 0x8020                         # native-mode NMI handler (bead grm-9nxj.5.2)
 IRQ_EMU = 0x8030                     # emulation-mode IRQ/BRK stub
+TRAMP_RAM = 0x0108                   # RAM trampoline the reset code fills (bead grm-9nxj.5.6)
+TRAMP_HANDLER = 0x8040               # where the trampoline's JML lands
 UNUSED = 0xFFFF                      # the usual filler for a vector nothing takes
 
 
@@ -50,6 +52,117 @@ def nmi_handler():
         0xA9, 0x34, 0x12,            # LDA #$1234
         0x40,                        # RTI
     ])
+
+
+def tramp_code():
+    """Reset code for the RAM-trampoline cartridge: native mode, 8-bit registers, write
+    JML $00:8040 into $0108..$010B with immediate stores, enable NMI, then park on WAI."""
+    return bytes([
+        0x18,                        # CLC
+        0xFB,                        # XCE          ; -> native mode
+        0xE2, 0x30,                  # SEP #$30
+        0xA9, 0x5C, 0x8D, 0x08, 0x01,  # LDA #$5C : STA $0108   ; JML opcode
+        0xA9, 0x40, 0x8D, 0x09, 0x01,  # LDA #$40 : STA $0109   ; target low
+        0xA9, 0x80, 0x8D, 0x0A, 0x01,  # LDA #$80 : STA $010A   ; target high
+        0xA9, 0x00, 0x8D, 0x0B, 0x01,  # LDA #$00 : STA $010B   ; target bank
+        0xA9, 0x80, 0x8D, 0x00, 0x42,  # LDA #$80 : STA $4200   ; NMITIMEN: enable NMI
+        0xCB,                        # WAI
+        0x80, 0xFD,                  # BRA -3       ; back to the WAI
+    ])
+
+
+def tramp_cartridge(title):
+    """LoROM 64 KiB whose native NMI vector points at RAM $0108 (JML $008040, written by the
+    reset code); only RESET and that vector are set, every other slot holds $FFFF."""
+    image = bytearray(cartridge(title))
+    image[RESET - 0x8000:RESET - 0x8000 + 0x40] = b"\xEE" * 0x40     # clear the plain fixture's code
+    image[RESET - 0x8000:RESET - 0x8000 + len(tramp_code())] = tramp_code()
+    image[NMI - 0x8000:NMI - 0x8000 + 0x20] = b"\xEE" * 0x20
+    image[IRQ_EMU - 0x8000:IRQ_EMU - 0x8000 + 1] = b"\xEE"
+    image[TRAMP_HANDLER - 0x8000:TRAMP_HANDLER - 0x8000 + len(nmi_handler())] = nmi_handler()
+    vectors = LOROM_HEADER_AT + 0x20
+    for off, target in {0x04: UNUSED, 0x06: UNUSED, 0x08: UNUSED, 0x0A: TRAMP_RAM, 0x0E: UNUSED,
+                        0x14: UNUSED, 0x18: UNUSED, 0x1A: UNUSED, 0x1C: RESET,
+                        0x1E: UNUSED}.items():
+        image[vectors + off] = target & 0xFF
+        image[vectors + off + 1] = (target >> 8) & 0xFF
+    # Byte-level self-check (a typo'd operand would otherwise be blessed into the golden).
+    r = RESET - 0x8000
+    assert bytes(image[r:r + 4]) == bytes([0x18, 0xFB, 0xE2, 0x30])
+    stores = [(0x5C, 0x0108), (0x40, 0x0109), (0x80, 0x010A), (0x00, 0x010B)]
+    for i, (val, addr) in enumerate(stores):
+        o = r + 4 + i * 5
+        assert bytes(image[o:o + 5]) == bytes([0xA9, val, 0x8D, addr & 0xFF, addr >> 8]), i
+    # the four stored bytes spell JML $008040 at $0108
+    assert [v for v, _ in stores] == [0x5C, TRAMP_HANDLER & 0xFF, TRAMP_HANDLER >> 8, 0x00]
+    assert bytes(image[r + 24:r + 29]) == bytes([0xA9, 0x80, 0x8D, 0x00, 0x42])
+    assert bytes(image[r + 29:r + 32]) == bytes([0xCB, 0x80, 0xFD])
+    h = TRAMP_HANDLER - 0x8000
+    assert bytes(image[h:h + 6]) == bytes([0xC2, 0x30, 0xA9, 0x34, 0x12, 0x40])
+    v = LOROM_HEADER_AT + 0x20
+    assert bytes(image[v + 0x0A:v + 0x0C]) == bytes([0x08, 0x01])
+    assert bytes(image[v + 0x1C:v + 0x1E]) == bytes([0x00, 0x80])
+    return bytes(image)
+
+
+TRAMP2_HANDLER_A = 0x80A0
+TRAMP2_HANDLER_B = 0x80C0
+
+
+def tramp2_code():
+    """Reset code that installs SEVERAL handlers into the one trampoline, plus things the
+    scanner must skip: an RTL ('disabled') store, a group whose target is RAM ($7E:1234), and a
+    store of an unknown value. Group B writes its operand with a 16-bit STX."""
+    def st8(val, addr):
+        return [0xA9, val, 0x8D, addr & 0xFF, addr >> 8]
+    c = [0x18, 0xFB, 0xE2, 0x30]
+    for i, v in enumerate([0x5C, 0xA0, 0x80, 0x00]):          # group A: JML $0080A0
+        c += st8(v, TRAMP_RAM + i)
+    c += st8(0x6B, TRAMP_RAM)                                  # RTL: handler disabled
+    c += st8(0x5C, TRAMP_RAM)                                  # group B: JML $0080C0
+    c += [0xC2, 0x10, 0xA2, 0xC0, 0x80, 0x8E, 0x09, 0x01, 0xE2, 0x10]   # REP #$10 LDX #$80C0 STX $0109 SEP #$10
+    c += st8(0x00, TRAMP_RAM + 3)
+    for i, v in enumerate([0x5C, 0x34, 0x12, 0x7E]):          # group C: JML $7E1234 (RAM, excluded)
+        c += st8(v, TRAMP_RAM + i)
+    c += [0xAD, 0x40, 0x21, 0x8D, 0x08, 0x01]                  # LDA $2140 : STA $0108 (unknown value)
+    c += [0x80, 0xFE]                                          # park
+    return bytes(c)
+
+
+def tramp2_cartridge(title):
+    """Like tramp_cartridge, but the reset code installs two different handlers."""
+    image = bytearray(cartridge(title))
+    image[RESET - 0x8000:RESET - 0x8000 + 0xA0] = b"\xEE" * 0xA0     # clear the plain fixture's code
+    image[RESET - 0x8000:RESET - 0x8000 + len(tramp2_code())] = tramp2_code()
+    image[TRAMP2_HANDLER_A - 0x8000:TRAMP2_HANDLER_A - 0x8000 + len(nmi_handler())] = nmi_handler()
+    handler_b = bytes([0xC2, 0x30, 0xA2, 0x01, 0x00, 0x40])        # REP #$30 / LDX #$0001 / RTI
+    image[TRAMP2_HANDLER_B - 0x8000:TRAMP2_HANDLER_B - 0x8000 + len(handler_b)] = handler_b
+    vectors = LOROM_HEADER_AT + 0x20
+    for off, target in {0x04: UNUSED, 0x06: UNUSED, 0x08: UNUSED, 0x0A: TRAMP_RAM, 0x0E: UNUSED,
+                        0x14: UNUSED, 0x18: UNUSED, 0x1A: UNUSED, 0x1C: RESET,
+                        0x1E: UNUSED}.items():
+        image[vectors + off] = target & 0xFF
+        image[vectors + off + 1] = (target >> 8) & 0xFF
+    # Byte-level self-check.
+    r = RESET - 0x8000
+    code = tramp2_code()
+    assert bytes(image[r:r + len(code)]) == code
+    assert code[4:9] == bytes([0xA9, 0x5C, 0x8D, 0x08, 0x01])           # group A opcode
+    assert code[24:29] == bytes([0xA9, 0x6B, 0x8D, 0x08, 0x01])         # RTL store
+    assert code.count(bytes([0x8E, 0x09, 0x01])) == 1                   # the 16-bit STX
+    assert code.count(bytes([0xA9, 0x7E])) == 1                          # group C bank byte
+    assert code[9:14] == bytes([0xA9, 0xA0, 0x8D, 0x09, 0x01])          # group A operand lo
+    assert code[14:19] == bytes([0xA9, 0x80, 0x8D, 0x0A, 0x01])
+    assert bytes([0xA2, 0xC0, 0x80, 0x8E, 0x09, 0x01]) in code          # group B: LDX/STX
+    assert len(code) < TRAMP2_HANDLER_A - RESET
+    h = TRAMP2_HANDLER_A - 0x8000
+    assert bytes(image[h:h + 6]) == bytes([0xC2, 0x30, 0xA9, 0x34, 0x12, 0x40])
+    b = TRAMP2_HANDLER_B - 0x8000
+    assert bytes(image[b:b + 6]) == handler_b
+    v = LOROM_HEADER_AT + 0x20
+    assert bytes(image[v + 0x0A:v + 0x0C]) == bytes([0x08, 0x01])
+    assert bytes(image[v + 0x1C:v + 0x1E]) == bytes([0x00, 0x80])
+    return bytes(image)
 
 
 def write_vectors(image, vectors):
@@ -169,6 +282,13 @@ def main():
 
     # grm-9nxj.5.3: call-width repair (continuation and callee entry).
     bankgen.write_bytes(outdir, "sneswidth.smc", width_cartridge("SNESWIDTH"))
+    # grm-9nxj.5.6: the native NMI vector points at RAM ($0108) that the reset code fills with
+    # JML $008040; the analyzer must find $8040 from those constant stores and seed it as the NMI handler.
+    bankgen.write_bytes(outdir, "snestramp.smc", tramp_cartridge("SNESTEST TRAMP"))
+
+    # Several handlers installed into the same trampoline (each a real handler at some phase),
+    # an RTL "disabled" store and a RAM-target group that must be skipped.
+    bankgen.write_bytes(outdir, "snestramp2.smc", tramp2_cartridge("SNESTEST TRAMP2"))
 
     print("wrote SNES LoROM fixtures (plain and copier-headered) and an interleaved HiROM one to " + outdir)
 

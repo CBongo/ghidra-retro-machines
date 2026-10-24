@@ -1,0 +1,5 @@
+HANDLER 008040 fn=NMI entry=true instr=REP_#$0x30 ctx=E0M1X1
+NEXT LDA_#$0x1234
+COMMENT NMI handler, recovered from the constant stores the boot code makes to $000108 (store sites: 008006, 00800b, 008010, 008015; grm-9nxj.5.6)
+ASYNC 008040
+RAM_CLEAN true

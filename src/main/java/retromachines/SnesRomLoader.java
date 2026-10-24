@@ -621,7 +621,7 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 	 * Emulation-mode values equal the pspec default, but are written anyway so the handler's
 	 * context does not depend on what the default happens to be.
 	 */
-	private static void stampModeContext(Program program, Address entry, boolean nativeMode,
+	static void stampModeContext(Program program, Address entry, boolean nativeMode,
 			MessageLog log) {
 		ProgramContext context = program.getProgramContext();
 		try {
