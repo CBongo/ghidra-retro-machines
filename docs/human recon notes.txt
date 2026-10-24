@@ -298,7 +298,7 @@ both tables were recovered correctly thanks to JumpTableBound.
 tmnt 8f34/cfcf: one call path is cfcd <- d08d <- d067 <- 2:bd6c <- d2c0 <- 6:9f75 (c702 jump table entry 14)
 
 megaman E:92e4 jump table
-93f0 is a bank table used by the object AI dispatcher when game_mode ($AA) is neither 0 nor 4. if the bank table value is 0, the object ID is used as an index into the split table at 92f0/9370 and is jumped to directly.  otherwise, the bank is decremented by 1 and is used as an index into the split table of bank handlers at 9470/947f. as the max bank in the 93f0 table is 8, the 9470/947f table is really only 8 entries long.  this strongly supports the idea that entries 9-15 were all intended to be eeb5 (as "never used") and the e6 at 9489 is a typo or mastering hiccup.
+93f0 is an alternate table used by the object AI dispatcher when game_mode ($AA) is neither 0 nor 4. if the bank table value is 0, the object ID is used as an index into the split table at 92f0/9370 and is jumped to directly.  otherwise, the alternate value is decremented by 1 and is used as an index into the split table of handlers at 9470/947f. as the max handler id in the 93f0 table is 8, the 9470/947f table is really only 8 entries long.  this strongly supports the idea that entries 9-15 were all intended to be eeb5 (as "never used") and the e6 at 9489 is a typo or mastering hiccup.
 
   Next session's shortest path
 

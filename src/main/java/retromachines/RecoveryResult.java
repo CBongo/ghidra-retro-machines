@@ -17,7 +17,6 @@ package retromachines;
 
 import java.util.Collections;
 import java.util.NavigableMap;
-import java.util.TreeMap;
 
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSetView;

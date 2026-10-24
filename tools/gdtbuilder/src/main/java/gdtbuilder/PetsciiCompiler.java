@@ -445,7 +445,6 @@ public class PetsciiCompiler {
 		}
 	}
 
-	@SuppressWarnings("unchecked")
 	private static void applyGraphicsCodepoints(Map<String, Object> unicode, int[] unshifted,
 			int[] shifted, Category[] unshiftedCoverage, Category[] shiftedCoverage) {
 		Map<?, ?> codepoints = (Map<?, ?>) unicode.get("graphics_codepoints");
@@ -462,7 +461,6 @@ public class PetsciiCompiler {
 	 *  categories above; {@code null} means "no assigned codepoint in this variant" -- falls
 	 *  back to {@code default_fallback_codepoint} (already what the byte holds unless a
 	 *  primary category set something else, so we must re-apply the fallback explicitly). */
-	@SuppressWarnings("unchecked")
 	private static void applyShiftedOverrides(Map<String, Object> unicode, int[] shifted) {
 		Map<?, ?> overrides = (Map<?, ?>) unicode.get("shifted_overrides");
 		if (overrides == null) {
@@ -476,7 +474,6 @@ public class PetsciiCompiler {
 		}
 	}
 
-	@SuppressWarnings("unchecked")
 	private static void applyMirrorRanges(Map<String, Object> unicode, int[] unshifted,
 			int[] shifted) {
 		for (Map<String, Object> rule : mirrorRuleList(unicode)) {

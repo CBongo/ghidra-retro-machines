@@ -256,7 +256,6 @@ public class CallCrossingPushPullProgramTest extends AbstractProgramTest {
 	 */
 	private static final class StubStrategy implements BankSwitchStrategy {
 
-		RegisterEnv captured;
 		StoredValueScanner.Hooks callerSideHooksOverride;
 
 		@Override
@@ -280,7 +279,6 @@ public class CallCrossingPushPullProgramTest extends AbstractProgramTest {
 		public HelperDeposit depositHelperArgument(ghidra.program.model.listing.Program program,
 				Instruction switchSite, PartialByte argValue, MechanismState inState, int stateMask,
 				RegisterEnv callerRegs) {
-			this.captured = callerRegs;
 			return new HelperDeposit(stateMask, new MechanismState(argValue.knownMask(), argValue.bits()));
 		}
 

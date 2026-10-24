@@ -23,9 +23,6 @@ import java.util.Map;
 import java.util.HashSet;
 import java.util.Set;
 
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSpace;

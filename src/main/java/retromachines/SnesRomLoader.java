@@ -45,7 +45,6 @@ import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.data.DataUtilities;
 import ghidra.program.model.data.DataUtilities.ClearDataMode;
 import ghidra.program.model.data.Pointer16DataType;
-import ghidra.program.model.lang.LanguageCompilerSpecPair;
 import ghidra.program.model.listing.ContextChangeException;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.listing.ProgramContext;

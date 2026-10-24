@@ -25,11 +25,9 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
 import ghidra.program.model.address.Address;
-import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
-import ghidra.program.model.symbol.Reference;
 
 /**
  * The {@code serial-shift} mechanism class (bead {@code grm-hsv.1}): MMC1's 5-write
