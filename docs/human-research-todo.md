@@ -137,6 +137,26 @@ Each is minutes of work and settles something specific. Highest value per unit e
   - Is this a general "struct array with an embedded code pointer" shape, worth a recognizer?
     Or is it one game's menu table, better handled by a per-game descriptor hint?
 
+### 1.4 FF3 `$C0:196F` / `$C0:1AB6`, fzero `$00:B59F`: what width does the code after `JSR` really run at? (`grm-9nxj.5.7`)
+
+- [ ] **Question.** Each is a call continuation that two paths enter at different accumulator
+  widths, so Ghidra (one decode per address) can only be right for one of them. The analyzer now
+  reports these with a `65816 Width` warning bookmark instead of guessing. FF3's pair look the same:
+
+  ```
+  c0196a  BEQ $c0196f          ; M=0: skips the call
+  c0196c  JSR $c01a2a          ; c01a2a: REP #$20 ... SEP #$20 / LDY $0803 / LDA $087e,Y / STA $1fd2 / RTS
+  c0196f  LDA $edf483,X        ; decoded M=0 -- the bytes then read AND #$01FF / CMP #$01FF,
+  c01973  AND #$01ff           ;   which only make sense 16-bit
+  ```
+
+  Statically, the `JSR` path arrives with M=1, because `$C0:1A2A` returns after `SEP #$20`. If
+  that is right, the code at `c0196f` is mis-decoded on that path. **Break at `c0196f` once with
+  each route** (branch taken / call made) and read P's M bit. If M=1 on the call route, does
+  something re-widen before `c0196f` that the static read misses: a stack trick in `$C0:1A2A`,
+  or an RTS to somewhere else? The same check applies at `c01ab6` (after `c01ab3 JSR $c01a2a`)
+  and at fzero `00b59f` (after `00b59c JSR $00d1f0`, joined by a flow from `00b57a`).
+
 ---
 
 ## 2. Def-use passes on untraced titles

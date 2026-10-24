@@ -39,6 +39,10 @@
 //   computed             computed jumps/calls, and how many have any resolved target (item 1)
 //   ops                  PLP/RTI/PHP/REP/SEP/XCE counts (PLP/RTI restore widths the language
 //                        cannot see: item 2)
+//   plp                  native PLPs paired (forward from each PHP) with the PHPs whose status
+//                        they pull: paired at one width, ambiguous (PHPs at several), unpaired;
+//                        and stale -- paired, but the fall-through decoded at another width that
+//                        its decode depends on (grm-9nxj.5.5)
 //
 // NO ROM BYTES ARE EVER EMITTED; addresses and counts only. Every list is sorted and every
 // sample capped, as in SnesRealRomDump, so the golden is deterministic and bounded.
@@ -103,6 +107,7 @@ public class W65816WidthDump extends GhidraScript {
 		emitWidthConflicts();
 		emitExitWidths();
 		emitComputed();
+		emitPlp();
 		out.end();
 	}
 
@@ -332,7 +337,8 @@ public class W65816WidthDump extends GhidraScript {
 	/**
 	 * Walks a routine from its entry over fall-through and jump flows, summarizing direct calls
 	 * recursively (a call already on the walk stack counts as neutral), tracking each flag as inherited, set by
-	 * REP/SEP, or unknown (PLP, RTI, XCE). Records whether a LENGTH-sensitive instruction -- an
+	 * REP/SEP, restored by a PLP to what its path's matching PHP saved, or unknown (an unmatched
+	 * PLP, RTI, XCE). Records whether a LENGTH-sensitive instruction -- an
 	 * accumulator immediate for M, an index immediate for X -- is reached while the flag is still
 	 * inherited, and the flag's state at every RTS/RTL.
 	 */
@@ -349,14 +355,16 @@ public class W65816WidthDump extends GhidraScript {
 		Set<Integer> exitX = new java.util.TreeSet<>();
 		Set<String> seen = new HashSet<>();
 		java.util.ArrayDeque<Object[]> work = new java.util.ArrayDeque<>();
-		work.add(new Object[] { entry, INH, INH });
+		work.add(new Object[] { entry, INH, INH, "" });
 		int steps = 0;
 		while (!work.isEmpty() && steps++ < WALK_LIMIT) {
 			Object[] w = work.pop();
 			Address a = (Address) w[0];
 			int m = (Integer) w[1];
 			int x = (Integer) w[2];
-			if (!seen.add(a + ":" + m + ":" + x)) {
+			// PHP-saved statuses on this path, innermost first: "m,x/m,x/..."; "!" = too deep.
+			String saved = (String) w[3];
+			if (!seen.add(a + ":" + m + ":" + x + ":" + saved)) {
 				continue;
 			}
 			Instruction in = listing.getInstructionAt(a);
@@ -385,7 +393,24 @@ public class W65816WidthDump extends GhidraScript {
 					x = (bits & 0x10) != 0 ? v : x;
 				}
 			}
-			else if (mn.equals("PLP") || mn.equals("XCE")) {
+			else if (mn.equals("PHP")) {
+				saved = saved.equals("!") || saved.split("/").length >= 4 ? "!"
+						: (m + "," + x) + (saved.isEmpty() ? "" : "/" + saved);
+			}
+			else if (mn.equals("PLP")) {
+				// grm-9nxj.5.5: restores what the matching PHP on this path saved.
+				if (saved.isEmpty() || saved.equals("!")) {
+					m = UNK;
+					x = UNK;
+				}
+				else {
+					String[] top = saved.split("/", 2)[0].split(",");
+					m = Integer.parseInt(top[0]);
+					x = Integer.parseInt(top[1]);
+					saved = saved.contains("/") ? saved.split("/", 2)[1] : "";
+				}
+			}
+			else if (mn.equals("XCE")) {
 				m = UNK;
 				x = UNK;
 			}
@@ -395,6 +420,23 @@ public class W65816WidthDump extends GhidraScript {
 				continue;
 			}
 			FlowType ft = in.getFlowType();
+			if (ft.isCall() && !ft.isComputed() && ft.isTerminal()) {
+				// A tail call (grm-9nxj.5.7): this path exits wherever the callee does.
+				for (Address t : in.getFlows()) {
+					if (walking.contains(t)) {
+						continue;
+					}
+					Effect ce = effect(t);
+					if (ce.m().exit() == NONE) {
+						continue;
+					}
+					needsM |= m == INH && ce.m().needs();
+					needsX |= x == INH && ce.x().needs();
+					exitM.add(ce.m().exit() == INH ? m : (ce.m().exit() == 0 || ce.m().exit() == 1) ? ce.m().exit() : UNK);
+					exitX.add(ce.x().exit() == INH ? x : (ce.x().exit() == 0 || ce.x().exit() == 1) ? ce.x().exit() : UNK);
+				}
+				continue;
+			}
 			if (ft.isTerminal() || (ft.isComputed() && ft.isJump())) {
 				continue;
 			}
@@ -414,12 +456,12 @@ public class W65816WidthDump extends GhidraScript {
 			}
 			if (ft.isJump()) {
 				for (Address t : in.getFlows()) {
-					work.push(new Object[] { t, m, x });
+					work.push(new Object[] { t, m, x, saved });
 				}
 			}
 			Address next = in.getFallThrough();
 			if (next != null) {
-				work.push(new Object[] { next, m, x });
+				work.push(new Object[] { next, m, x, saved });
 			}
 		}
 		Effect e = new Effect(new FlagEffect(needsM, summarize(exitM)),
@@ -507,6 +549,93 @@ public class W65816WidthDump extends GhidraScript {
 		}
 		byMnemonic.forEach((k, c) ->
 			println("REALROM computed " + k + " sites=" + c[0] + " withTargets=" + c[1]));
+	}
+
+	private void emitPlp() {
+		Listing listing = currentProgram.getListing();
+		// PLP address -> the M/X strings of every PHP whose status it pulls.
+		Map<Address, Set<String>> pulls = new TreeMap<>();
+		List<Address> plps = new ArrayList<>();
+		InstructionIterator it = listing.getInstructions(true);
+		while (it.hasNext()) {
+			Instruction instr = it.next();
+			String mn = instr.getMnemonicString().toUpperCase();
+			if (mn.equals("PLP") && !bit(instr, ctxE).equals("1")) {
+				plps.add(instr.getMinAddress());
+			}
+			if (!mn.equals("PHP") || bit(instr, ctxE).equals("1")) {
+				continue;
+			}
+			// Forward over fall-through and jumps; calls are taken as balanced.
+			Set<String> seen = new HashSet<>();
+			java.util.ArrayDeque<Object[]> work = new java.util.ArrayDeque<>();
+			work.push(new Object[] { instr.getFallThrough(), 0 });
+			int steps = 0;
+			while (!work.isEmpty() && steps++ < WALK_LIMIT) {
+				Object[] w = work.pop();
+				Address a = (Address) w[0];
+				int depth = (Integer) w[1];
+				Instruction in = a == null ? null : listing.getInstructionAt(a);
+				if (in == null || !seen.add(a + ":" + depth)) {
+					continue;
+				}
+				String m = in.getMnemonicString().toUpperCase();
+				if (m.equals("PLP")) {
+					if (depth == 0) {
+						pulls.computeIfAbsent(a, k -> new java.util.TreeSet<>()).add(mx(instr));
+						continue;
+					}
+					depth--;
+				}
+				else if (m.equals("PHP")) {
+					depth++;
+				}
+				FlowType ft = in.getFlowType();
+				if (m.equals("RTS") || m.equals("RTL") || ft.isTerminal() ||
+					(ft.isComputed() && ft.isJump())) {
+					continue;
+				}
+				if (ft.isJump()) {
+					for (Address t : in.getFlows()) {
+						work.push(new Object[] { t, depth });
+					}
+				}
+				work.push(new Object[] { in.getFallThrough(), depth });
+			}
+		}
+		int paired = 0;
+		int ambiguous = 0;
+		int stale = 0;
+		List<String> sample = new ArrayList<>();
+		for (Address a : plps) {
+			Set<String> saved = pulls.get(a);
+			if (saved == null) {
+				continue;
+			}
+			if (saved.size() > 1) {
+				ambiguous++;
+				continue;
+			}
+			paired++;
+			Instruction plp = listing.getInstructionAt(a);
+			Address next = plp.getFallThrough();
+			Instruction after = next == null ? null : listing.getInstructionAt(next);
+			if (after == null) {
+				continue;
+			}
+			String want = saved.iterator().next();
+			String have = mx(after);
+			Effect e = effect(next);
+			String which = (e.m().needs() && want.charAt(1) != have.charAt(1) ? "M" : "") +
+				(e.x().needs() && want.charAt(3) != have.charAt(3) ? "X" : "");
+			if (!which.isEmpty()) {
+				stale++;
+				sample.add(a + " PHP=" + want + " continuation=" + have + " needs=" + which);
+			}
+		}
+		println("REALROM plp sites=" + plps.size() + " paired=" + paired + " ambiguous=" +
+			ambiguous + " unpaired=" + (plps.size() - paired - ambiguous) + " stale=" + stale);
+		out.emitSample("plp.stale", sample, SAMPLE);
 	}
 
 	// ------------------------------------------------------------------

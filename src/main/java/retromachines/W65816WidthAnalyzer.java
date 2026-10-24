@@ -72,9 +72,10 @@ import ghidra.util.task.TaskMonitor;
  * flow arrives in, let disassembly consume it), applied to a flow the language cannot see: a
  * return.
  *
- * <p>A continuation is left alone, and only the conflict is logged, when anything else enters it
- * -- a flow reference, an entry point or a function -- because another path may bring the old
- * width there legitimately.
+ * <p>A continuation something else also enters is re-decoded only when every other flow into it
+ * arrives at the corrected width too (grm-9nxj.5.7); one that arrives at the old width makes it
+ * genuinely dual-width, which gets a warning bookmark instead, and an external entry point is
+ * left alone.
  *
  * <p><b>The report.</b> A callee whose decode DEPENDS on an inherited flag (it reaches a
  * length-sensitive immediate before setting it) and is called at both widths cannot be
@@ -82,6 +83,10 @@ import ghidra.util.task.TaskMonitor;
  * callee was decoded at gets a warning bookmark rather than a repair. On the real-ROM rows this
  * was measured at zero (grm-9nxj.5.3's census) -- every naive context mismatch there was a callee
  * that sets its own width first.
+ *
+ * <p><b>After a PLP</b> (grm-9nxj.5.5) the same applies to a flow the language cannot see because
+ * the status comes off the stack: the fall-through is re-decoded at the width the matching
+ * {@code PHP} saved, where that pairing is unambiguous.
  *
  * <p>Applies to any program whose language carries the 65816 {@code ctx_EF}/{@code ctx_MF}/
  * {@code ctx_XF} context: width is a CPU fact, not a SNES one.
@@ -95,9 +100,33 @@ public class W65816WidthAnalyzer extends AbstractAnalyzer {
 			"called at two widths (grm-9nxj.5.3).";
 	static final String BOOKMARK_CATEGORY = "65816 Width";
 
-	/** Continuations already repaired, per program: each is repaired at most once. */
-	private static final Map<Program, Set<Address>> REPAIRED =
+	/**
+	 * Addresses re-decoded so far, per program. A later repair's Clear Flow can wipe an earlier
+	 * one's stamp (CT {@code $C2:2CFF} lost its M=1 when the continuation above it was re-decoded
+	 * once {@code $C2:2B61}'s PHP/PLP bracket summarized, grm-9nxj.5.7), so an address may be
+	 * repaired again -- but at most {@link #MAX_REPAIRS} times, so two repairs that undo each
+	 * other cannot loop.
+	 */
+	private static final Map<Program, Map<Address, Integer>> REPAIRED =
 		Collections.synchronizedMap(new WeakHashMap<>());
+	private static final int MAX_REPAIRS = 3;
+
+	/** Per-program repair counts: {@link #spent} once an address used its last repair. */
+	private static final class Ledger {
+		private final Map<Address, Integer> counts;
+
+		Ledger(Map<Address, Integer> counts) {
+			this.counts = counts;
+		}
+
+		boolean spent(Address a) {
+			return counts.getOrDefault(a, 0) >= MAX_REPAIRS;
+		}
+
+		void record(Address a) {
+			counts.merge(a, 1, Integer::sum);
+		}
+	}
 
 	public W65816WidthAnalyzer() {
 		super(NAME, DESCRIPTION, AnalyzerType.INSTRUCTION_ANALYZER);
@@ -117,8 +146,8 @@ public class W65816WidthAnalyzer extends AbstractAnalyzer {
 			throws CancelledException {
 		W65816WidthEffects effects = new W65816WidthEffects(program);
 		Listing listing = program.getListing();
-		Set<Address> repaired =
-			REPAIRED.computeIfAbsent(program, p -> Collections.synchronizedSet(new LinkedHashSet<>()));
+		Ledger repaired = new Ledger(
+			REPAIRED.computeIfAbsent(program, p -> Collections.synchronizedMap(new LinkedHashMap<>())));
 
 		// Pass 1: every callee reached from the sites in view, judged against ALL its callers.
 		Map<Address, List<Instruction>> callersOf = new LinkedHashMap<>();
@@ -134,7 +163,7 @@ public class W65816WidthAnalyzer extends AbstractAnalyzer {
 		for (Map.Entry<Address, List<Instruction>> c : callersOf.entrySet()) {
 			Address target = c.getKey();
 			Instruction callee = listing.getInstructionAt(target);
-			if (callee == null || effects.emulation(callee) || c.getValue().isEmpty()) {
+			if (callee == null || c.getValue().isEmpty()) {
 				continue;
 			}
 			W65816WidthEffects.Effect e = effects.effect(target);
@@ -154,7 +183,7 @@ public class W65816WidthAnalyzer extends AbstractAnalyzer {
 			}
 			else if (!want.isEmpty()) {
 				untrusted.add(target);
-				if (!repaired.contains(target) && reDecodable(program, target)) {
+				if (!repaired.spent(target) && reDecodable(program, target)) {
 					entryRepairs.put(target, want);
 				}
 				else {
@@ -178,7 +207,7 @@ public class W65816WidthAnalyzer extends AbstractAnalyzer {
 			for (Instruction call : c.getValue()) {
 				monitor.checkCancelled();
 				Address cont = call.getFallThrough();
-				if (cont == null || repaired.contains(cont)) {
+				if (cont == null || repaired.spent(cont)) {
 					continue;
 				}
 				Map<Register, Integer> stamp = contStamp(listing, effects, call, target);
@@ -213,7 +242,7 @@ public class W65816WidthAnalyzer extends AbstractAnalyzer {
 			new CreateFunctionCmd(target).applyTo(program, monitor);
 			AnalyzerCommentRecord.set(program, target, CommentType.EOL,
 				"65816 width " + describe(r.getValue()) + " on entry: every caller passes it");
-			repaired.add(target);
+			repaired.record(target);
 			entries++;
 		}
 
@@ -234,10 +263,7 @@ public class W65816WidthAnalyzer extends AbstractAnalyzer {
 				continue;
 			}
 			r.setValue(fresh);
-			if (!soleEntryIsFallThrough(program, cont)) {
-				AnalyzerLog.info(this, "continuation " + cont + " after the call at " + caller +
-					" is decoded at a stale width " + describe(r.getValue()) +
-					", but something else also enters it; left alone");
+			if (!mergeAgrees(program, effects, cont, caller, fresh, "the call at " + caller)) {
 				continue;
 			}
 			Instruction call = listing.getInstructionAt(caller);
@@ -253,16 +279,160 @@ public class W65816WidthAnalyzer extends AbstractAnalyzer {
 			if (f != null) {
 				CreateFunctionCmd.fixupFunctionBody(program, f, monitor);
 			}
-			repaired.add(cont);
+			repaired.record(cont);
 			conts++;
 		}
+		int plps = repairPlpContinuations(program, effects, set, repaired, monitor);
 		int handlers = repairInterruptEntries(program, effects, set, repaired, monitor);
-		if (entries + conts + handlers > 0 || warned > 0) {
+		if (entries + conts + plps + handlers > 0 || warned > 0) {
 			AnalyzerLog.info(this, "re-decoded " + entries + " callee entr(ies), " + conts +
-				" call continuation(s) and " + handlers + " interrupt handler(s); " + warned +
-				" dual-width call warning(s)");
+				" call continuation(s), " + plps + " PLP continuation(s) and " + handlers +
+				" interrupt handler(s); " + warned + " dual-width call warning(s)");
 		}
 		return true;
+	}
+
+	/**
+	 * Code after a {@code PLP} runs at the width the matching {@code PHP} saved, but the language
+	 * cannot pull a status off the stack, so it decodes the fall-through at the width just BEFORE
+	 * the PLP -- usually whatever the bracket's own REP/SEP set (bead grm-9nxj.5.5). Each PLP is
+	 * paired by {@link #matchingPhps}; where every PHP that reaches it saved the same width, and
+	 * the fall-through was decoded at another one that its decode depends on, the fall-through is
+	 * re-decoded at the saved width. Ambiguous pairings (PHPs at different widths, or a path to
+	 * the PLP with no PHP on it) are left alone.
+	 */
+	private int repairPlpContinuations(Program program, W65816WidthEffects effects,
+			AddressSetView set, Ledger repaired, TaskMonitor monitor)
+			throws CancelledException {
+		Listing listing = program.getListing();
+		List<Instruction> plps = new ArrayList<>();
+		for (Instruction in : listing.getInstructions(set, true)) {
+			if (in.getMnemonicString().equalsIgnoreCase("PLP") && !effects.emulation(in) &&
+				in.getFallThrough() != null && !repaired.spent(in.getFallThrough())) {
+				plps.add(in);
+			}
+		}
+		int done = 0;
+		for (Instruction seen : plps) {
+			monitor.checkCancelled();
+			effects.invalidate();
+			Instruction plp = listing.getInstructionAt(seen.getMinAddress());
+			if (plp == null || !plp.getMnemonicString().equalsIgnoreCase("PLP")) {
+				continue;   // an earlier repair in this pass re-decoded it
+			}
+			Address cont = plp.getFallThrough();
+			Instruction after = cont == null ? null : listing.getInstructionAt(cont);
+			if (after == null || effects.emulation(after)) {
+				continue;
+			}
+			Set<Instruction> phps = matchingPhps(program, plp);
+			if (phps == null || phps.isEmpty()) {
+				continue;
+			}
+			W65816WidthEffects.Effect k = effects.effect(cont);
+			Map<Register, Integer> stamp = new LinkedHashMap<>();
+			for (Register reg : new Register[] { effects.mRegister(), effects.xRegister() }) {
+				boolean needs = reg == effects.mRegister() ? k.m().needs() : k.x().needs();
+				Set<Integer> savedValues = new LinkedHashSet<>();
+				for (Instruction php : phps) {
+					savedValues.add(effects.flag(php, reg));
+				}
+				int v = savedValues.iterator().next();
+				if (needs && savedValues.size() == 1 && (v == 0 || v == 1) &&
+					v != effects.flag(after, reg)) {
+					stamp.put(reg, v);
+				}
+			}
+			if (stamp.isEmpty()) {
+				continue;
+			}
+			if (!mergeAgrees(program, effects, cont, plp.getMinAddress(), stamp,
+				"the PLP at " + plp.getMinAddress())) {
+				continue;
+			}
+			Instruction php = phps.iterator().next();
+			AnalyzerLog.info(this, "PLP continuation " + cont + " re-decoded at " +
+				describe(stamp) + ", the width the PHP at " + php.getMinAddress() + " saved");
+			reDecode(program, plp.getMinAddress(), cont, stamp, monitor);
+			AnalyzerCommentRecord.set(program, cont, CommentType.EOL,
+				"65816 width " + describe(stamp) + " after PLP: restored from the PHP at " +
+					php.getMinAddress());
+			Function f = program.getFunctionManager().getFunctionContaining(plp.getMinAddress());
+			if (f != null) {
+				CreateFunctionCmd.fixupFunctionBody(program, f, monitor);
+			}
+			repaired.record(cont);
+			done++;
+		}
+		return done;
+	}
+
+	/** Bound on (address, depth) pairs a backward PHP search visits. */
+	private static final int PAIR_LIMIT = 2000;
+
+	/**
+	 * The PHPs whose saved status {@code plp} pulls: a backward walk over fall-through and jump
+	 * predecessors, where each PLP passed opens a level and each PHP closes one, and a PHP met
+	 * at level zero is a match. Null when some path reaches the PLP with no PHP on it -- through
+	 * a routine entry, an unreached start, or past the walk bound -- since that path pulls a
+	 * status pushed somewhere this walk cannot see.
+	 */
+	static Set<Instruction> matchingPhps(Program program, Instruction plp) {
+		Listing listing = program.getListing();
+		Set<Instruction> found = new LinkedHashSet<>();
+		Set<Long> seen = new java.util.HashSet<>();
+		java.util.ArrayDeque<Object[]> work = new java.util.ArrayDeque<>();
+		work.push(new Object[] { plp, 0 });
+		int steps = 0;
+		while (!work.isEmpty()) {
+			if (steps++ >= PAIR_LIMIT) {
+				return null;
+			}
+			Object[] w = work.pop();
+			Instruction at = (Instruction) w[0];
+			int depth = (Integer) w[1];
+			// Predecessors of `at`: the instruction falling into it, and every jump to it.
+			List<Instruction> preds = new ArrayList<>();
+			boolean entered = program.getSymbolTable().isExternalEntryPoint(at.getMinAddress());
+			Instruction before = listing.getInstructionBefore(at.getMinAddress());
+			if (before != null && at.getMinAddress().equals(before.getFallThrough())) {
+				preds.add(before);
+			}
+			for (Reference ref : program.getReferenceManager().getReferencesTo(at.getMinAddress())) {
+				if (!ref.getReferenceType().isFlow()) {
+					continue;
+				}
+				if (ref.getReferenceType().isCall()) {
+					entered = true;   // a routine entry: the PHP, if any, is in a caller
+					continue;
+				}
+				Instruction from = listing.getInstructionAt(ref.getFromAddress());
+				if (from != null) {
+					preds.add(from);
+				}
+			}
+			if (entered || preds.isEmpty()) {
+				return null;
+			}
+			for (Instruction p : preds) {
+				String mn = p.getMnemonicString().toUpperCase();
+				int d = depth;
+				if (mn.equals("PHP")) {
+					if (d == 0) {
+						found.add(p);
+						continue;
+					}
+					d--;
+				}
+				else if (mn.equals("PLP") && ++d > 8) {
+					return null;
+				}
+				if (seen.add(p.getMinAddress().getOffset() << 8 | d)) {
+					work.push(new Object[] { p, d });
+				}
+			}
+		}
+		return found;
 	}
 
 	/**
@@ -276,13 +446,13 @@ public class W65816WidthAnalyzer extends AbstractAnalyzer {
 	 * as one in the EOL note; a flag the handler sets before using needs no inference at all.
 	 */
 	private int repairInterruptEntries(Program program, W65816WidthEffects effects,
-			AddressSetView set, Set<Address> repaired, TaskMonitor monitor)
+			AddressSetView set, Ledger repaired, TaskMonitor monitor)
 			throws CancelledException {
 		Listing listing = program.getListing();
 		List<Address> candidates = new ArrayList<>();
 		for (Address entry : DescriptorHints.parseAsyncEntryPoints(program)) {
 			Instruction in = listing.getInstructionAt(entry);
-			if (in != null && set.contains(entry) && !repaired.contains(entry) &&
+			if (in != null && set.contains(entry) && !repaired.spent(entry) &&
 				!effects.emulation(in)) {
 				candidates.add(entry);
 			}
@@ -309,7 +479,7 @@ public class W65816WidthAnalyzer extends AbstractAnalyzer {
 				effects.flag(in, effects.xRegister()) != ambient.get(effects.xRegister())) {
 				want.put(effects.xRegister(), ambient.get(effects.xRegister()));
 			}
-			repaired.add(entry);
+			repaired.record(entry);
 			if (want.isEmpty()) {
 				continue;
 			}
@@ -369,8 +539,15 @@ public class W65816WidthAnalyzer extends AbstractAnalyzer {
 	 */
 	private static Map<Register, Integer> entryWant(W65816WidthEffects effects,
 			Instruction callee, List<Instruction> callers) {
-		W65816WidthEffects.Effect e = effects.effect(callee.getMinAddress());
 		Map<Register, Integer> want = new LinkedHashMap<>();
+		if (effects.emulation(callee)) {
+			// Decoded in emulation mode though only native code calls it: an island disassembled
+			// before any caller reached it, at the pspec default (FF3 $C2:E6E3, three M1X0 JSRs,
+			// decoded E=1 into BRK). Re-decoded at the callers' E/M/X (grm-9nxj.5.7).
+			want.put(effects.eRegister(), 0);
+			return want;
+		}
+		W65816WidthEffects.Effect e = effects.effect(callee.getMinAddress());
 		for (Register reg : new Register[] { effects.mRegister(), effects.xRegister() }) {
 			boolean needs = reg == effects.mRegister() ? e.m().needs() : e.x().needs();
 			if (!needs) {
@@ -426,7 +603,7 @@ public class W65816WidthAnalyzer extends AbstractAnalyzer {
 				continue;
 			}
 			Instruction from = program.getListing().getInstructionAt(ref.getFromAddress());
-			if (from != null && isDirectCall(from) && !effects.emulation(from)) {
+			if (from != null && isDirectEntry(from) && !effects.emulation(from)) {
 				callers.add(from);
 			}
 		}
@@ -459,7 +636,7 @@ public class W65816WidthAnalyzer extends AbstractAnalyzer {
 		Listing listing = program.getListing();
 		Set<Instruction> sites = new LinkedHashSet<>();
 		for (Instruction instr : listing.getInstructions(set, true)) {
-			if (isDirectCall(instr)) {
+			if (isDirectEntry(instr)) {
 				sites.add(instr);
 			}
 		}
@@ -469,7 +646,7 @@ public class W65816WidthAnalyzer extends AbstractAnalyzer {
 			for (Reference ref : refs.getReferencesTo(dests.next())) {
 				if (ref.getReferenceType().isCall()) {
 					Instruction from = listing.getInstructionAt(ref.getFromAddress());
-					if (from != null && isDirectCall(from)) {
+					if (from != null && isDirectEntry(from)) {
 						sites.add(from);
 					}
 				}
@@ -479,22 +656,96 @@ public class W65816WidthAnalyzer extends AbstractAnalyzer {
 	}
 
 	private static boolean isDirectCall(Instruction instr) {
-		FlowType ft = instr.getFlowType();
-		return ft.isCall() && !ft.isComputed() && instr.hasFallthrough();
+		return isDirectEntry(instr) && instr.hasFallthrough();
 	}
 
-	/** Whether nothing but the call's fall-through enters {@code cont}. */
-	private static boolean soleEntryIsFallThrough(Program program, Address cont) {
-		if (program.getSymbolTable().isExternalEntryPoint(cont) ||
-			program.getFunctionManager().getFunctionAt(cont) != null) {
+	/**
+	 * A direct call, or a tail call -- a {@code JMP} Ghidra overrode into a call, with no
+	 * fall-through. Both pass their width into the callee's entry: CT {@code $C2:7B9F} is entered
+	 * only by four such {@code JMP}s at M=1 and was decoded M=0 (grm-9nxj.5.7).
+	 */
+	private static boolean isDirectEntry(Instruction instr) {
+		FlowType ft = instr.getFlowType();
+		return ft.isCall() && !ft.isComputed();
+	}
+
+	/**
+	 * Whether {@code cont}, which {@code from} (a call or a PLP) reaches by fall-through at the
+	 * widths in {@code stamp}, may be re-decoded at them: every OTHER flow into it must arrive at
+	 * the same widths (grm-9nxj.5.7). Flows from code the stale decode itself reaches -- a loop
+	 * back to {@code cont} -- do not count: they are stale for the same reason and are re-decoded
+	 * with it. A flow at the other width makes {@code cont} genuinely dual-width, which one
+	 * address cannot represent; that is reported with a warning bookmark and left alone, as is an
+	 * external entry point (nothing says what width it is entered at).
+	 */
+	private boolean mergeAgrees(Program program, W65816WidthEffects effects, Address cont,
+			Address from, Map<Register, Integer> stamp, String why) {
+		if (program.getSymbolTable().isExternalEntryPoint(cont)) {
+			AnalyzerLog.info(this, "continuation " + cont + " after " + why + " is decoded at a " +
+				"stale width " + describe(stamp) + ", but it is also an entry point; left alone");
 			return false;
 		}
+		Listing listing = program.getListing();
+		Set<Address> downstream = null;
 		for (Reference ref : program.getReferenceManager().getReferencesTo(cont)) {
-			if (ref.getReferenceType().isFlow()) {
+			if (!ref.getReferenceType().isFlow() || ref.getFromAddress().equals(from)) {
+				continue;
+			}
+			if (downstream == null) {
+				downstream = forwardFlow(listing, cont);
+			}
+			if (downstream.contains(ref.getFromAddress())) {
+				continue;
+			}
+			Instruction src = listing.getInstructionAt(ref.getFromAddress());
+			String which = "";
+			for (Map.Entry<Register, Integer> s : stamp.entrySet()) {
+				if (src == null || effects.flag(src, s.getKey()) != s.getValue()) {
+					which += s.getKey() == effects.mRegister() ? "M" : "X";
+				}
+			}
+			if (!which.isEmpty()) {
+				AnalyzerLog.info(this, "continuation " + cont + " after " + why + " wants " +
+					describe(stamp) + ", but the flow from " + ref.getFromAddress() +
+					" brings the other " + which + "; dual-width, left alone");
+				program.getBookmarkManager().setBookmark(cont, BookmarkType.WARNING,
+					BOOKMARK_CATEGORY, "entered at two " + which + " widths: " + why +
+						" leaves " + describe(stamp) + ", the flow from " + ref.getFromAddress() +
+						" does not; one address holds one decode, so one path's view is wrong");
 				return false;
 			}
 		}
 		return true;
+	}
+
+	/** Bound on the instructions {@link #forwardFlow} collects. */
+	private static final int FLOW_LIMIT = 2000;
+
+	/**
+	 * Instructions reachable from {@code start} over fall-through and jumps, not into calls and
+	 * not past a return -- the region a Clear Flow from {@code start} would cover.
+	 */
+	private static Set<Address> forwardFlow(Listing listing, Address start) {
+		Set<Address> seen = new java.util.HashSet<>();
+		java.util.ArrayDeque<Address> work = new java.util.ArrayDeque<>();
+		work.push(start);
+		while (!work.isEmpty() && seen.size() < FLOW_LIMIT) {
+			Address a = work.pop();
+			Instruction in = listing.getInstructionAt(a);
+			if (in == null || !seen.add(a)) {
+				continue;
+			}
+			FlowType ft = in.getFlowType();
+			if (ft.isJump() && !ft.isComputed()) {
+				for (Address t : in.getFlows()) {
+					work.push(t);
+				}
+			}
+			if (in.getFallThrough() != null) {
+				work.push(in.getFallThrough());
+			}
+		}
+		return seen;
 	}
 
 	/**
@@ -541,7 +792,7 @@ public class W65816WidthAnalyzer extends AbstractAnalyzer {
 		StringBuilder sb = new StringBuilder();
 		for (Map.Entry<Register, Integer> s : stamp.entrySet()) {
 			sb.append(sb.length() == 0 ? "" : " ")
-					.append(s.getKey().getName().equals("ctx_MF") ? "M=" : "X=")
+					.append(s.getKey().getName().substring(4, 5)).append("=")
 					.append(s.getValue());
 		}
 		return sb.toString();

@@ -31,13 +31,14 @@ REALROM vector EMU_NMI 0082c3 code=yes ctx=E0M0X0 function=true
 REALROM vector EMU_RESET 008000 code=yes ctx=E1M1X1 function=true
 REALROM vector EMU_IRQBRK 0082c3 code=yes ctx=E0M0X0 function=true
 REALROM calls direct=41 decodedTarget=41 widthDisagree=0 distinctTargets=0
-REALROM widtheffect callees=30 needsM=14 needsX=14
-REALROM widtheffect exitM preserves=9 sets0=0 sets1=12 mixedOrNone=9
-REALROM widtheffect exitX preserves=14 sets0=0 sets1=8 mixedOrNone=8
+REALROM widtheffect callees=30 needsM=14 needsX=15
+REALROM widtheffect exitM preserves=13 sets0=0 sets1=12 mixedOrNone=5
+REALROM widtheffect exitX preserves=18 sets0=0 sets1=8 mixedOrNone=4
 REALROM widthconflict sites=41 entry=0 entryTargets=0 return=0 returnTargets=0
 REALROM exitwidth functions=34 returnsAtOtherWidth=1
 REALROM exitwidth 008079 entry=M1X1 exits=M1X0
 REALROM computed BRK 0xn sites=1 withTargets=1
 REALROM computed JML [!$0x0] sites=1 withTargets=0
 REALROM computed RTI <UNSUPPORTn> sites=2 withTargets=0
+REALROM plp sites=3 paired=3 ambiguous=0 unpaired=0 stale=0
 === REALROM END ===

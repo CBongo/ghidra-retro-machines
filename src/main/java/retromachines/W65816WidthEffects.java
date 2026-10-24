@@ -49,8 +49,11 @@ import ghidra.program.model.symbol.FlowType;
  * <p>The walk follows fall-through and jump flows. A direct call inside the walked code is
  * summarized recursively: what the callee needs counts while the flag is still inherited, and the
  * flag afterwards is what the callee leaves (a call already on the walk stack is taken to preserve
- * both and need neither). {@code PLP}, {@code XCE} and a {@code REP}/{@code SEP} whose operand is not a constant make a
- * flag unknown. Computed jumps end a path. Emulation-mode code (E=1) has both flags forced to 1
+ * both and need neither). A {@code PLP} restores the flags the matching {@code PHP} on its path
+ * saved (grm-9nxj.5.5), so a routine bracketed {@code PHP ... REP/SEP ... PLP} preserves its
+ * caller's width -- CT's {@code $C3:0557}, behind a thunk 30 callers use. A {@code PLP} with no
+ * {@code PHP} on its path, {@code XCE} and a {@code REP}/{@code SEP} whose operand is not a
+ * constant make a flag unknown. Computed jumps end a path. Emulation-mode code (E=1) has both flags forced to 1
  * and is never reported as needing either.
  *
  * <p>{@code tools/banktest/W65816WidthDump.java} computes the same thing independently, as the
@@ -111,6 +114,10 @@ final class W65816WidthEffects {
 			program.getRegister("ctx_XF") != null;
 	}
 
+	Register eRegister() {
+		return ctxE;
+	}
+
 	Register mRegister() {
 		return ctxM;
 	}
@@ -151,14 +158,15 @@ final class W65816WidthEffects {
 		Set<Integer> exitX = new TreeSet<>();
 		Set<Long> seen = new HashSet<>();
 		ArrayDeque<long[]> work = new ArrayDeque<>();
-		work.push(new long[] { entry.getOffset(), INHERITED, INHERITED });
+		work.push(new long[] { entry.getOffset(), INHERITED, INHERITED, 0 });
 		int steps = 0;
 		while (!work.isEmpty() && steps++ < WALK_LIMIT) {
 			long[] w = work.pop();
 			int m = (int) w[1];
 			int x = (int) w[2];
-			// 24-bit address plus two 2-bit states fits a long key.
-			if (!seen.add((w[0] << 8) | ((m + 1) << 4) | (x + 1))) {
+			long stack = w[3];
+			// 24-bit address, the PHP stack and two 2-bit states fit a long key.
+			if (!seen.add((w[0] << 32) | (stack << 8) | ((m + 1) << 4) | (x + 1))) {
 				continue;
 			}
 			Address a = entry.getNewAddress(w[0]);
@@ -183,7 +191,18 @@ final class W65816WidthEffects {
 					x = (bits & 0x10) != 0 ? v : x;
 				}
 			}
-			else if (mn.equals("PLP") || mn.equals("XCE")) {
+			else if (mn.equals("PHP")) {
+				stack = push(stack, m, x);
+			}
+			else if (mn.equals("PLP")) {
+				// Restores what the matching PHP on this path saved; a PLP with none pulls a
+				// status this walk never saw.
+				int[] top = top(stack);
+				m = top == null ? UNKNOWN : top[0];
+				x = top == null ? UNKNOWN : top[1];
+				stack = pop(stack);
+			}
+			else if (mn.equals("XCE")) {
 				m = UNKNOWN;
 				x = UNKNOWN;
 			}
@@ -193,6 +212,20 @@ final class W65816WidthEffects {
 				continue;
 			}
 			FlowType ft = in.getFlowType();
+			if (ft.isCall() && !ft.isComputed() && ft.isTerminal()) {
+				// A tail call: this path returns wherever the callee does, with what it leaves.
+				for (Address t : in.getFlows()) {
+					Effect ce = inProgress.contains(t) ? null : effect(t);
+					if (ce == null || ce.m().exit() == NO_RETURN) {
+						continue;
+					}
+					needsM |= m == INHERITED && ce.m().needs();
+					needsX |= x == INHERITED && ce.x().needs();
+					exitM.add(after(m, ce.m().exit()));
+					exitX.add(after(x, ce.x().exit()));
+				}
+				continue;
+			}
 			if (ft.isTerminal() || (ft.isComputed() && ft.isJump())) {
 				continue;
 			}
@@ -217,12 +250,12 @@ final class W65816WidthEffects {
 			}
 			if (ft.isJump()) {
 				for (Address t : in.getFlows()) {
-					work.push(new long[] { t.getOffset(), m, x });
+					work.push(new long[] { t.getOffset(), m, x, stack });
 				}
 			}
 			Address next = in.getFallThrough();
 			if (next != null) {
-				work.push(new long[] { next.getOffset(), m, x });
+				work.push(new long[] { next.getOffset(), m, x, stack });
 			}
 		}
 		Effect e = new Effect(new Flag(needsM, summarize(exitM)),
@@ -230,6 +263,41 @@ final class W65816WidthEffects {
 		inProgress.remove(entry);
 		cache.put(entry, e);
 		return e;
+	}
+
+	/*
+	 * The statuses PHP saved along a path, as a long: depth in the low 3 bits, then one 4-bit
+	 * (M, X) entry per level, innermost lowest. Deeper than STACK_DEPTH poisons it (depth
+	 * STACK_POISONED), and every later PLP on that path restores UNKNOWN.
+	 */
+	private static final int STACK_DEPTH = 4;
+	private static final int STACK_POISONED = 7;
+
+	private static long push(long stack, int m, int x) {
+		int depth = (int) (stack & 7);
+		if (depth >= STACK_DEPTH) {
+			return STACK_POISONED;
+		}
+		long entries = (stack >>> 3) << 4 | ((m + 1) << 2) | (x + 1);
+		return entries << 3 | (depth + 1);
+	}
+
+	/** The (M, X) the innermost PHP saved, or null when there is none to restore. */
+	private static int[] top(long stack) {
+		int depth = (int) (stack & 7);
+		if (depth == 0 || depth == STACK_POISONED) {
+			return null;
+		}
+		int e = (int) ((stack >>> 3) & 0xf);
+		return new int[] { (e >> 2) - 1, (e & 3) - 1 };
+	}
+
+	private static long pop(long stack) {
+		int depth = (int) (stack & 7);
+		if (depth == 0 || depth == STACK_POISONED) {
+			return stack;
+		}
+		return (stack >>> 7) << 3 | (depth - 1);
 	}
 
 	/** A flag's state after a call, given its state before and the callee's exit summary. */

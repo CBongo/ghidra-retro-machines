@@ -72,10 +72,11 @@ REALROM calls.disagree 03800a E0M1X0 -> 008364 E0M1X1
 REALROM calls.disagree 038d3c E0M0X0 -> 039806 E0M1X0
 REALROM calls.disagree 038d46 E0M0X0 -> 038031 E0M0X1
 REALROM calls.disagree.truncated 40 of 45
-REALROM widtheffect callees=449 needsM=188 needsX=102
-REALROM widtheffect exitM preserves=117 sets0=15 sets1=70 mixedOrNone=247
-REALROM widtheffect exitX preserves=163 sets0=5 sets1=43 mixedOrNone=238
-REALROM widthconflict sites=826 entry=0 entryTargets=0 return=0 returnTargets=0
+REALROM widtheffect callees=449 needsM=196 needsX=113
+REALROM widtheffect exitM preserves=299 sets0=15 sets1=81 mixedOrNone=54
+REALROM widtheffect exitX preserves=362 sets0=7 sets1=47 mixedOrNone=33
+REALROM widthconflict sites=826 entry=0 entryTargets=0 return=1 returnTargets=1
+REALROM widthconflict.return 00b59c -> 00d1f0 returns=M1 continuation=M0X1
 REALROM exitwidth functions=477 returnsAtOtherWidth=83
 REALROM exitwidth 00808c entry=M1X1 exits=M0X1
 REALROM exitwidth 008140 entry=M1X1 exits=M0X0
@@ -123,4 +124,5 @@ REALROM computed JMP (!$0xn) sites=3 withTargets=0
 REALROM computed JMP (!$0xn,X) sites=14 withTargets=14
 REALROM computed JSR (!$0xn,X) sites=3 withTargets=3
 REALROM computed RTI <UNSUPPORTn> sites=1 withTargets=0
+REALROM plp sites=170 paired=166 ambiguous=0 unpaired=4 stale=0
 === REALROM END ===
