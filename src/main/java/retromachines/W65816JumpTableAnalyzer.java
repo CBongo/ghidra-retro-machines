@@ -521,7 +521,11 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 		return new Dispatch(table, targetBank, lo);
 	}
 
-	/** Which pointer byte (0..bytes-1) a plain dp/abs store writes first, or -1. */
+	/**
+	 * Which pointer byte (0..bytes-1) a plain dp/abs store writes first, or -1. A direct-page
+	 * store is matched by its LOW BYTE only, because DP is not tracked: a stand-in until
+	 * grm-9nxj.22 knows DP's value here and can require DP+dp == ptr exactly.
+	 */
 	private static int pointerByte(Instruction st, long ptr, int bytes) {
 		String op = st.getDefaultOperandRepresentation(0);
 		if (op.contains(",") || op.contains("(") || op.contains("[")) {
