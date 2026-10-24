@@ -73,66 +73,28 @@
 //@category RetroMachines
 //@menupath Tools.Retro Machines.Fix Skip Instructions
 
-import java.util.ArrayList;
-import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Set;
 
 import ghidra.app.script.GhidraScript;
-import ghidra.app.util.PseudoDisassembler;
-import ghidra.app.util.PseudoInstruction;
-import ghidra.program.disassemble.Disassembler;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.address.AddressSetView;
-import ghidra.program.model.lang.InsufficientBytesException;
-import ghidra.program.model.lang.UnknownContextException;
-import ghidra.program.model.lang.UnknownInstructionException;
-import ghidra.program.model.listing.Bookmark;
-import ghidra.program.model.listing.BookmarkManager;
-import ghidra.program.model.listing.BookmarkType;
-import ghidra.program.model.listing.Instruction;
-import ghidra.program.model.listing.InstructionIterator;
-import ghidra.program.model.listing.Listing;
-import ghidra.program.model.symbol.Reference;
 
+import retromachines.SkipIdiomRepair;
 import retromachines.TypedAddress;
 
+/**
+ * The reference front-end. Recognition and repair live in {@link SkipIdiomRepair}, shared with the
+ * one-shot {@code SkipIdiomAnalyzer} (grm-9xr); this script only collects arguments, picks the
+ * scope and re-runs analysis.
+ */
 public class FixSkipInstructions extends GhidraScript {
 
 	/** Dialog title for the interactive prompts. */
 	private static final String TITLE = "Fix Skip Instructions";
 
-	/** Bookmark category for provenance, matching upstream FixOffcutInstructionScript's. */
-	private static final String INFO_BOOKMARK_CATEGORY = "Offcut Instruction";
-	private static final String INFO_BOOKMARK_COMMENT = "Fixed skip-idiom offcut instruction";
-
-	/** How confident we are that the hidden bytes are a real entry point. */
-	private enum Confidence {
-		/** A flow reference already lands at the offcut: upstream's own, dispositive, test. */
-		REFERENCED,
-		/** The instruction falling through into the carrier is the hidden one's alternative. */
-		STRONG,
-		/** Structurally valid, uncorroborated. Reported; applied only with weak:true. */
-		WEAK
-	}
-
-	/**
-	 * One recognized skip: {@code carrier} hides an instruction starting at {@code entry}, and
-	 * both streams converge on {@code tail}. The tail is captured at recognition time on
-	 * purpose -- {@code carrier.getMaxAddress()} moves once the length override is applied, so
-	 * after the repair there is no way to recompute it.
-	 */
-	private record Candidate(Instruction carrier, Address entry, Address tail,
-			String hiddenMnemonic, Confidence confidence) {
-	}
-
-	private Listing listing;
-	private BookmarkManager bookmarks;
-	private int alignment;
-
 	// Options, defaulted here and overridden by parseArgs.
-	private Set<String> carriers = new LinkedHashSet<>(List.of("BIT"));
+	private Set<String> carriers = SkipIdiomRepair.Options.defaultCarriers();
 	private boolean applyWeak = false;
 	private boolean dryRun = false;
 	private boolean makeFunction = true;
@@ -162,222 +124,22 @@ public class FixSkipInstructions extends GhidraScript {
 			throw new IllegalArgumentException("FixSkipInstructions: " + argError);
 		}
 
-		listing = currentProgram.getListing();
-		bookmarks = currentProgram.getBookmarkManager();
-		alignment = currentProgram.getLanguage().getInstructionAlignment();
-
 		AddressSetView scope = scanScope();
 		println("SKIPFIX scanning " + scope.getMinAddress() + "-" + scope.getMaxAddress() +
 			" for carriers " + carriers);
 
-		// Two phases on purpose. Applying a fix disassembles new code, which invalidates the
-		// instruction iterator we would still be walking; collecting first also means dryrun
-		// reports exactly the set that a real run would act on, rather than a prefix of it.
-		List<Candidate> candidates = collect(scope);
-
-		int applied = 0;
-		int failed = 0;
-		for (Candidate c : candidates) {
-			boolean act = !dryRun && (c.confidence() != Confidence.WEAK || applyWeak);
-			// One stable, greppable line per candidate, in both environments: the headless
-			// regression fixture asserts on it and a GUI user reads it in the console.
-			println("SKIPFIX candidate " + c.carrier().getMinAddress() + " " +
-				c.carrier().getMnemonicString() + " hides " + c.entry() + " " +
-				c.hiddenMnemonic() + " [" + c.confidence() + "]" + (act ? "" : " (not applied)"));
-			if (!act) {
-				continue;
-			}
-			try {
-				fix(c);
-				applied++;
-			}
-			catch (Exception e) {
-				// A dynamic offcut (one whose repair depends on run-time context) raises here.
-				// Report and keep going: one unrepairable carrier must not cost the rest.
-				printerr("SKIPFIX failed at " + c.carrier().getMinAddress() + ": " + e);
-				failed++;
-			}
-		}
-
-		println("SKIPFIX summary candidates=" + candidates.size() + " referenced=" +
-			count(candidates, Confidence.REFERENCED) + " strong=" +
-			count(candidates, Confidence.STRONG) + " weak=" + count(candidates, Confidence.WEAK) +
-			" applied=" + applied + " failed=" + failed);
+		SkipIdiomRepair.Summary summary = SkipIdiomRepair.run(currentProgram, scope,
+			new SkipIdiomRepair.Options(carriers, applyWeak, dryRun, makeFunction), monitor,
+			this::println, this::printerr);
 
 		// New instructions are not analyzed by the analyzers that already ran -- headless
 		// finishes analyzeAll before postScripts, and in the GUI the change lands after the
 		// analysis pass. Without this the recovered call site exists in the listing but no
 		// bank has been recovered from it, which is the entire point of the exercise.
-		if (applied > 0 && reanalyze) {
+		if (summary.applied() > 0 && reanalyze) {
 			println("SKIPFIX re-analyzing changes");
 			analyzeChanges(currentProgram);
 		}
-	}
-
-	// ------------------------------------------------------------------
-	// Recognition
-	// ------------------------------------------------------------------
-
-	/** Every skip carrier in {@code scope}, classified. Mutates nothing. */
-	private List<Candidate> collect(AddressSetView scope) {
-		List<Candidate> found = new ArrayList<>();
-		PseudoDisassembler pdis = new PseudoDisassembler(currentProgram);
-		InstructionIterator instrs = listing.getInstructions(scope, true);
-		while (instrs.hasNext() && !monitor.isCancelled()) {
-			Instruction carrier = instrs.next();
-			// An instruction already truncated has been dealt with -- by this script on an
-			// earlier run, by upstream's, or by hand. Re-truncating it would be wrong twice
-			// over: the offcut is already exposed, and getMaxAddress no longer means what the
-			// convergence test below assumes.
-			if (carrier.isLengthOverridden() || carrier.getLength() < 2) {
-				continue;
-			}
-			if (!carriers.contains(carrier.getMnemonicString().toUpperCase())) {
-				continue;
-			}
-			Candidate c = classify(pdis, carrier);
-			if (c != null) {
-				found.add(c);
-			}
-		}
-		return found;
-	}
-
-	/**
-	 * Classify {@code carrier} as a skip, or return null. A carrier qualifies when some address
-	 * strictly inside it begins an instruction that ENDS EXACTLY WHERE THE CARRIER ENDS -- the
-	 * two streams converging on a shared tail is what makes this the skip idiom rather than a
-	 * coincidence of bytes -- and that shared tail is itself already disassembled.
-	 */
-	private Candidate classify(PseudoDisassembler pdis, Instruction carrier) {
-		Address carrierStart = carrier.getMinAddress();
-		Address carrierEnd = carrier.getMaxAddress();
-
-		// The shared tail. Both entries exist in order to reach it, so if the byte after the
-		// carrier is not code, whatever this is, it is not a skip.
-		Address tail = carrierEnd.next();
-		if (tail == null || listing.getInstructionAt(tail) == null) {
-			return null;
-		}
-
-		for (int offset = 1; offset < carrier.getLength(); offset++) {
-			Address entry = carrierStart.add(offset);
-			if ((entry.getOffset() % alignment) != 0) {
-				continue;
-			}
-			PseudoInstruction hidden = pseudoDisassemble(pdis, entry);
-			if (hidden == null || !hidden.getMaxAddress().equals(carrierEnd)) {
-				continue;
-			}
-			return new Candidate(carrier, entry, tail, hidden.getMnemonicString(),
-				confidenceOf(carrier, entry, hidden));
-		}
-		return null;
-	}
-
-	/**
-	 * How much corroboration there is that {@code entry} is a real entry point rather than a
-	 * lucky decode of a genuine operand. See the header comment for what each tier means.
-	 */
-	private Confidence confidenceOf(Instruction carrier, Address entry, PseudoInstruction hidden) {
-		for (Reference ref : getReferencesTo(entry)) {
-			if (ref.getReferenceType().isFlow()) {
-				return Confidence.REFERENCED;
-			}
-		}
-		// The alternative-parameter shape: something falls INTO the carrier having just done
-		// the same thing the hidden instruction does, with a different operand. Comparing
-		// mnemonics (not bytes) is deliberate -- LDA #$02 and LDA $02 are both plausible
-		// alternatives to LDA #$03, and both are the idiom.
-		Instruction prev = listing.getInstructionBefore(carrier.getMinAddress());
-		if (prev != null && carrier.getMinAddress().equals(prev.getFallThrough()) &&
-			prev.getMnemonicString().equals(hidden.getMnemonicString())) {
-			return Confidence.STRONG;
-		}
-		return Confidence.WEAK;
-	}
-
-	/**
-	 * The instruction the bytes at {@code at} would form, or null if they form none. Only the
-	 * prototype is needed, which is what makes a pseudo-disassembly the right validity test:
-	 * it answers "could an instruction exist here" without creating one.
-	 */
-	private PseudoInstruction pseudoDisassemble(PseudoDisassembler pdis, Address at) {
-		try {
-			return pdis.disassemble(at);
-		}
-		catch (InsufficientBytesException | UnknownInstructionException
-				| UnknownContextException e) {
-			return null; // not an instruction -- an ordinary, expected answer, not an error
-		}
-	}
-
-	private static int count(List<Candidate> candidates, Confidence confidence) {
-		return (int) candidates.stream().filter(c -> c.confidence() == confidence).count();
-	}
-
-	// ------------------------------------------------------------------
-	// Repair -- upstream FixOffcutInstructionScript's sequence
-	// ------------------------------------------------------------------
-
-	/**
-	 * Truncate the carrier so the hidden bytes are free, disassemble them, and swap the stale
-	 * "conflicting instruction" error bookmark for an informational one. No transaction is
-	 * opened here: GhidraScript.executeNormal wraps run() in start()/end(true), so one is
-	 * already open and a second would only nest a redundant undo entry.
-	 */
-	private void fix(Candidate c) throws Exception {
-		int length = (int) c.entry().subtract(c.carrier().getMinAddress());
-		// The truncated carrier keeps falling through to the SHARED TAIL, not into the bytes it
-		// just exposed -- which is what makes the repair honest for both entry points at once.
-		// This is Ghidra's doing, not ours, and it is worth knowing because the opposite would
-		// be a silent disaster: the visible stream would acquire the hidden instruction's
-		// effect (LDA #$02 "falling through" into LDA #$03, i.e. the wrong bank asserted with
-		// confidence at a real call site). InstructionDB.getDefaultFallThroughOffset returns
-		// the PROTOTYPE's length, so getDefaultFallThrough is unaffected by the override, and
-		// setLengthOverride -> addLengthOverrideFallthroughRef even materializes that as an
-		// explicit FALL_THROUGH reference. Verified in the listing on wizwarr: after the
-		// repair, bc07's fallthrough is bc0a and not bc08. Do NOT "fix" this with
-		// setFallThrough(tail) -- setFallThrough compares against the default and clears the
-		// override, so it is a no-op that only obscures where the behaviour comes from.
-		c.carrier().setLengthOverride(length);
-		Address landed = c.carrier().getFallThrough();
-		if (!c.tail().equals(landed)) {
-			// Cheap standing check on the paragraph above rather than a comment asserting it
-			// once. If a future Ghidra ever does derive the fallthrough from the override, the
-			// visible stream is being corrupted and the user needs to hear about it here.
-			printerr("SKIPFIX carrier " + c.carrier().getMinAddress() + " falls through to " +
-				landed + ", not to the shared tail " + c.tail() +
-				"; the pre-existing stream through this carrier is now WRONG");
-		}
-		disassemble(c.entry());
-		fixBookmark(c.entry());
-		if (makeFunction && listing.getInstructionAt(c.entry()) != null &&
-			getFunctionAt(c.entry()) == null) {
-			// Nothing falls into a recovered offcut entry -- by construction the only way to
-			// arrive there is a jump the analysis could not resolve. Left as a loose
-			// instruction it belongs to no function body, so no dataflow pass ever evaluates
-			// it and the call site stays as invisible as it was before the repair.
-			createFunction(c.entry(), null);
-		}
-		println("SKIPFIX applied " + c.carrier().getMinAddress() + " len=" + length + " entry=" +
-			c.entry());
-	}
-
-	/**
-	 * Replace the "conflicting instruction" ERROR bookmark the failed disassembly left with an
-	 * INFO one. Upstream's caveat applies unchanged: two potentially conflicting context flows
-	 * now exist at this address, and applying this script asserts that the exposed one is the
-	 * interesting reading.
-	 */
-	private void fixBookmark(Address at) {
-		Bookmark bookmark = bookmarks.getBookmark(at, BookmarkType.ERROR,
-			Disassembler.ERROR_BOOKMARK_CATEGORY);
-		if (bookmark != null) {
-			bookmarks.removeBookmark(bookmark);
-		}
-		bookmarks.setBookmark(at, BookmarkType.INFO, INFO_BOOKMARK_CATEGORY,
-			INFO_BOOKMARK_COMMENT);
 	}
 
 	// ------------------------------------------------------------------
@@ -451,7 +213,7 @@ public class FixSkipInstructions extends GhidraScript {
 			String value = kv[1];
 			try {
 				switch (key) {
-					case "carriers" -> carriers = parseCarriers(value);
+					case "carriers" -> carriers = SkipIdiomRepair.parseCarriers(value);
 					case "weak" -> applyWeak = flag(key, value);
 					case "dryrun" -> dryRun = flag(key, value);
 					case "function" -> makeFunction = flag(key, value);
@@ -470,19 +232,6 @@ public class FixSkipInstructions extends GhidraScript {
 			}
 		}
 		return true;
-	}
-
-	private static Set<String> parseCarriers(String value) {
-		Set<String> parsed = new LinkedHashSet<>();
-		for (String mnemonic : value.split(",")) {
-			if (!mnemonic.isEmpty()) {
-				parsed.add(mnemonic.toUpperCase());
-			}
-		}
-		if (parsed.isEmpty()) {
-			throw new IllegalArgumentException("carriers must name at least one mnemonic");
-		}
-		return parsed;
 	}
 
 	/** {@code start-end}, inclusive. Addresses are hex, as everywhere else in Ghidra. */
