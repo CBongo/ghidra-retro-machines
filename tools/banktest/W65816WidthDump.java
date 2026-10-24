@@ -234,6 +234,7 @@ public class W65816WidthDump extends GhidraScript {
 	private static final int WALK_LIMIT = 4000;
 
 	private final Map<Address, Effect> effects = new java.util.HashMap<>();
+	private final Set<Address> walking = new HashSet<>();
 
 	private void emitWidthConflicts() {
 		Listing listing = currentProgram.getListing();
@@ -329,8 +330,8 @@ public class W65816WidthDump extends GhidraScript {
 	}
 
 	/**
-	 * Walks a routine from its entry over fall-through and jump flows (not into calls; a call is
-	 * taken to preserve both flags, the common case), tracking each flag as inherited, set by
+	 * Walks a routine from its entry over fall-through and jump flows, summarizing direct calls
+	 * recursively (a call already on the walk stack counts as neutral), tracking each flag as inherited, set by
 	 * REP/SEP, or unknown (PLP, RTI, XCE). Records whether a LENGTH-sensitive instruction -- an
 	 * accumulator immediate for M, an index immediate for X -- is reached while the flag is still
 	 * inherited, and the flag's state at every RTS/RTL.
@@ -341,6 +342,7 @@ public class W65816WidthDump extends GhidraScript {
 			return cached;
 		}
 		Listing listing = currentProgram.getListing();
+		walking.add(entry);
 		boolean needsM = false;
 		boolean needsX = false;
 		Set<Integer> exitM = new java.util.TreeSet<>();
@@ -396,6 +398,20 @@ public class W65816WidthDump extends GhidraScript {
 			if (ft.isTerminal() || (ft.isComputed() && ft.isJump())) {
 				continue;
 			}
+			if (ft.isCall() && !ft.isComputed()) {
+				// Through a direct call: its needs count while the flag is inherited, and the
+				// flag afterwards is what it leaves. A call already being walked counts as neutral.
+				for (Address t : in.getFlows()) {
+					if (walking.contains(t)) {
+						continue;
+					}
+					Effect ce = effect(t);
+					needsM |= m == INH && ce.m().needs();
+					needsX |= x == INH && ce.x().needs();
+					m = ce.m().exit() == INH ? m : (ce.m().exit() == 0 || ce.m().exit() == 1) ? ce.m().exit() : UNK;
+					x = ce.x().exit() == INH ? x : (ce.x().exit() == 0 || ce.x().exit() == 1) ? ce.x().exit() : UNK;
+				}
+			}
 			if (ft.isJump()) {
 				for (Address t : in.getFlows()) {
 					work.push(new Object[] { t, m, x });
@@ -408,6 +424,7 @@ public class W65816WidthDump extends GhidraScript {
 		}
 		Effect e = new Effect(new FlagEffect(needsM, summarize(exitM)),
 			new FlagEffect(needsX, summarize(exitX)));
+		walking.remove(entry);
 		effects.put(entry, e);
 		return e;
 	}

@@ -1094,6 +1094,9 @@ if selected snes-loader; then
 	# grm-9nxj.19: an interleaved HiROM image; Auto must de-interleave it (header at logical
 	# $FFC0, stored at $7FC0) -- the reset code is at FILE offset 0, shown as fileOffset=0 at C0:8000.
 	run_one snestestinterleaved "$WORK/snes/snestestinterleaved.smc" SnesRomLoader
+	# grm-9nxj.5.3: the code after a JSR to a width-setting helper, and a callee every caller
+	# reaches at 8-bit A, both re-decoded at the width they really run at.
+	run_one sneswidth "$WORK/snes/sneswidth.smc" SnesRomLoader
 fi
 
 if selected nes-text; then

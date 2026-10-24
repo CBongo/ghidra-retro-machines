@@ -1,0 +1,5 @@
+WIDTH 800a LDA #$0x12 len=2 M=1
+WIDTH 800c STA <$0x10 len=2 M=1
+WIDTH 8050 CMP #$0x73 len=2 M=1
+WIDTH eol 8007 65816 width M=1 after the call: 008040 leaves it so on every return
+WIDTH eol 8050 null

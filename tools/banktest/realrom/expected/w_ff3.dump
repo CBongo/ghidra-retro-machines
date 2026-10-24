@@ -74,15 +74,12 @@ REALROM calls.disagree c2600f E0M1X0 -> c24781 E0M1X1
 REALROM calls.disagree c26050 E0M1X0 -> c24781 E0M1X1
 REALROM calls.disagree c260ae E0M1X0 -> c25fd4 E0M1X1
 REALROM calls.disagree.truncated 40 of 64
-REALROM widtheffect callees=524 needsM=275 needsX=222
-REALROM widtheffect exitM preserves=204 sets0=9 sets1=130 mixedOrNone=181
-REALROM widtheffect exitX preserves=347 sets0=25 sets1=3 mixedOrNone=149
-REALROM widthconflict sites=1072 entry=0 entryTargets=0 return=5 returnTargets=2
+REALROM widtheffect callees=524 needsM=282 needsX=234
+REALROM widtheffect exitM preserves=152 sets0=8 sets1=141 mixedOrNone=223
+REALROM widtheffect exitX preserves=303 sets0=24 sets1=3 mixedOrNone=194
+REALROM widthconflict sites=1072 entry=0 entryTargets=0 return=2 returnTargets=1
 REALROM widthconflict.return c0196c -> c01a2a returns=M1 continuation=M0X0
 REALROM widthconflict.return c01ab3 -> c01a2a returns=M1 continuation=M0X0
-REALROM widthconflict.return ee01da -> ee3888 returns=M1 continuation=M0X0
-REALROM widthconflict.return ee95b7 -> ee3888 returns=M1 continuation=M0X0
-REALROM widthconflict.return ee96d6 -> ee3888 returns=M1 continuation=M0X0
 REALROM exitwidth functions=535 returnsAtOtherWidth=72
 REALROM exitwidth c01a2a entry=M0X0 exits=M1X0
 REALROM exitwidth c01a46 entry=M0X0 exits=M1X0

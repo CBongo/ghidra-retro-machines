@@ -1753,6 +1753,46 @@ public class VerifyCbmCriteria extends VerifyBase {
 		return false;
 	}
 
+	/**
+	 * Call-width repair (bead grm-9nxj.5.3), on mksnestest.width_cartridge: the code after
+	 * {@code JSR $8040} (which leaves M=1) and the callee {@code $8050} (reached only at M=1) are
+	 * decoded with an 8-bit accumulator, so {@code LDA #$12} and {@code CMP #$73} are two bytes.
+	 */
+	protected void checkSnesWidth() {
+		String cont = describeWidthSite(0x00800A);
+		String needs = describeWidthSite(0x008050);
+		String after = describeWidthSite(0x00800C);
+		String eolCont = currentProgram.getListing().getComment(CommentType.EOL, addr(0x008007));
+		String eolNeeds = currentProgram.getListing().getComment(CommentType.EOL, addr(0x008050));
+
+		println("=== BANKDUMP BEGIN ===");
+		println("WIDTH 800a " + cont);
+		println("WIDTH 800c " + after);
+		println("WIDTH 8050 " + needs);
+		println("WIDTH eol 8007 " + eolCont);
+		println("WIDTH eol 8050 " + eolNeeds);
+		println("=== BANKDUMP END ===");
+
+		criterion("snes-width-continuation",
+			cont.startsWith("LDA #$0x12 len=2 M=1") && after.startsWith("STA"),
+			"code after JSR $8040 (SEP #$20 / RTS) decodes 8-bit: " + cont);
+		criterion("snes-width-callee-entry", needs.startsWith("CMP #$0x73 len=2 M=1"),
+			"callee $8050, reached only at M=1, decodes 8-bit: " + needs);
+		// $8050 needs no note of its own: Clear Flow from $8007 also clears it (nothing else
+		// reaches it), so the continuation's re-decode lays it down at M=1 directly. The
+		// entry-consensus path is exercised on the real-ROM rows (CT $C1:104E), not here.
+		criterion("snes-width-notes", eolCont != null && eolCont.contains("M=1"),
+			"the re-decoded continuation carries an EOL note saying why");
+	}
+
+	private String describeWidthSite(long offset) {
+		Instruction i = currentProgram.getListing().getInstructionAt(addr(offset));
+		if (i == null) {
+			return "<none>";
+		}
+		return i + " len=" + i.getLength() + " M=" + ctxBit(addr(offset), "ctx_MF");
+	}
+
 	protected int countOverlayBlocks() {
 		int overlays = 0;
 		for (MemoryBlock b : currentProgram.getMemory().getBlocks()) {

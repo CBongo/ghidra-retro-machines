@@ -88,6 +88,41 @@ def cartridge(title):
     return bytes(image)
 
 
+# grm-9nxj.5.3: the code after a call decoded at the width the callee LEAVES, not the caller's.
+WIDTH_SETS8 = 0x8040                 # SEP #$20 / RTS: returns with an 8-bit accumulator
+WIDTH_NEEDS8 = 0x8050                # CMP #$73 / BNE / NOP / NOP / RTS: an 8-bit immediate first
+
+
+def width_reset():
+    """Native, 16-bit A, then two calls. The language flows the CALLER's M=0 into $8007 and
+    $800A, so without the analyzer the continuation's LDA #$12 and the second callee's CMP #$73
+    both decode as 3-byte immediates."""
+    return bytes([
+        0x18,                        # 8000 CLC
+        0xFB,                        # 8001 XCE          ; native
+        0xC2, 0x30,                  # 8002 REP #$30     ; 16-bit A and index
+        0x20, 0x40, 0x80,            # 8004 JSR $8040    ; leaves M=1
+        0x20, 0x50, 0x80,            # 8007 JSR $8050    ; needs M=1 (entry consensus)
+        0xA9, 0x12,                  # 800A LDA #$12     ; 8-bit immediate
+        0x85, 0x10,                  # 800C STA $10
+        0x80, 0xFE,                  # 800E BRA *
+    ])
+
+
+def width_cartridge(title):
+    image = bytearray(cartridge(title))
+    image[0:0x20] = b"\xEA" * 0x20
+    image[0:len(width_reset())] = width_reset()
+    image[WIDTH_SETS8 - 0x8000:WIDTH_SETS8 - 0x8000 + 3] = bytes([0xE2, 0x20, 0x60])
+    image[WIDTH_NEEDS8 - 0x8000:WIDTH_NEEDS8 - 0x8000 + 7] = bytes(
+        [0xC9, 0x73, 0xD0, 0x02, 0xEA, 0xEA, 0x60])
+    # The shared vector table keeps NMI at $8020 / IRQ_EMU at $8030 (both outside this code).
+    assert image[0:16] == width_reset()
+    assert image[0x40:0x43] == bytes([0xE2, 0x20, 0x60])
+    assert image[0x50:0x57] == bytes([0xC9, 0x73, 0xD0, 0x02, 0xEA, 0xEA, 0x60])
+    return bytes(image)
+
+
 def interleaved_hirom(title):
     """A 128 KiB HiROM image (logical layout), then stored with each 64 KiB unit's halves swapped."""
     size = 0x20000
@@ -131,6 +166,9 @@ def main():
     # at logical $FFC0 (stored at $7FC0, the LoROM position) and de-interleave, so the program
     # is a HiROM one whose reset code is at $C0:8000 -- stored at FILE offset 0.
     bankgen.write_bytes(outdir, "snestestinterleaved.smc", interleaved_hirom("SNESTEST INTERLEAVED"))
+
+    # grm-9nxj.5.3: call-width repair (continuation and callee entry).
+    bankgen.write_bytes(outdir, "sneswidth.smc", width_cartridge("SNESWIDTH"))
 
     print("wrote SNES LoROM fixtures (plain and copier-headered) and an interleaved HiROM one to " + outdir)
 
