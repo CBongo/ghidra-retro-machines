@@ -2,14 +2,14 @@
 REALROM program w_ff3.sfc
 REALROM sha256 10eccc5d2fab81346dd759f6be478dcb682eef981e8d3d662da176e1f9a996bc
 REALROM language 65816:LE:24:retro
-REALROM instrs 29588
-REALROM functions 533
+REALROM instrs 29584
+REALROM functions 535
 REALROM ctx E0M0X0 7279
 REALROM ctx E0M0X1 1897
 REALROM ctx E0M1X0 16465
-REALROM ctx E0M1X1 3810
-REALROM ctx E1M1X1 137
-REALROM desync BRK 5
+REALROM ctx E0M1X1 3812
+REALROM ctx E1M1X1 131
+REALROM desync BRK 4
 REALROM desync COP 1
 REALROM desync STP 0
 REALROM desync WDM 0
@@ -19,13 +19,14 @@ REALROM ops REP 640
 REALROM ops RTI 0
 REALROM ops SEP 625
 REALROM ops XCE 3
-REALROM bookmarks.error 1
+REALROM bookmarks.error 3
+REALROM bookmark      2 Bad Instruction: Disassembly not permitted within mapped memory block (flow from #)
 REALROM bookmark      1 Bad Instruction: Could not follow disassembly flow into non-existing memory at # (flow from #)
 REALROM vector NATIVE_COP 00ffff code=no function=false
 REALROM vector NATIVE_BRK 00ffff code=no function=false
 REALROM vector NATIVE_ABORT 00ffff code=no function=false
-REALROM vector NATIVE_NMI 00ff10 code=no function=false
-REALROM vector NATIVE_IRQ 00ff14 code=no function=false
+REALROM vector NATIVE_NMI 00ff10 code=yes ctx=E0M1X1 function=true
+REALROM vector NATIVE_IRQ 00ff14 code=yes ctx=E0M1X1 function=true
 REALROM vector EMU_COP 00ffff code=no function=false
 REALROM vector EMU_ABORT 00ffff code=no function=false
 REALROM vector EMU_NMI 00ffff code=no function=false
@@ -73,7 +74,7 @@ REALROM calls.disagree c2600f E0M1X0 -> c24781 E0M1X1
 REALROM calls.disagree c26050 E0M1X0 -> c24781 E0M1X1
 REALROM calls.disagree c260ae E0M1X0 -> c25fd4 E0M1X1
 REALROM calls.disagree.truncated 40 of 64
-REALROM exitwidth functions=533 returnsAtOtherWidth=72
+REALROM exitwidth functions=535 returnsAtOtherWidth=72
 REALROM exitwidth c01a2a entry=M0X0 exits=M1X0
 REALROM exitwidth c01a46 entry=M0X0 exits=M1X0
 REALROM exitwidth c0215d entry=M0X0 exits=M1X0
@@ -117,7 +118,7 @@ REALROM exitwidth c260c2 entry=M1X0 exits=M0X0
 REALROM exitwidth.truncated 40 of 72
 REALROM computed BRK 0x0 sites=1 withTargets=1
 REALROM computed BRK 0x1 sites=1 withTargets=1
-REALROM computed BRK 0xn sites=3 withTargets=3
+REALROM computed BRK 0xn sites=2 withTargets=2
 REALROM computed COP 0xn sites=1 withTargets=1
 REALROM computed JML [!$0xn] sites=1 withTargets=0
 REALROM computed JMP (!$0x8,X) sites=1 withTargets=0

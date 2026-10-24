@@ -2,14 +2,14 @@
 REALROM program w_ct.sfc
 REALROM sha256 06d1c2b06b716052c5596aaa0c2e5632a027fee1a9a28439e509f813c30829a9
 REALROM language 65816:LE:24:retro
-REALROM instrs 38346
-REALROM functions 705
+REALROM instrs 38333
+REALROM functions 707
 REALROM ctx E0M0X0 8307
 REALROM ctx E0M0X1 1322
 REALROM ctx E0M1X0 25501
-REALROM ctx E0M1X1 2843
-REALROM ctx E1M1X1 373
-REALROM desync BRK 19
+REALROM ctx E0M1X1 2847
+REALROM ctx E1M1X1 356
+REALROM desync BRK 18
 REALROM desync COP 2
 REALROM desync STP 1
 REALROM desync WDM 0
@@ -19,22 +19,23 @@ REALROM ops REP 918
 REALROM ops RTI 2
 REALROM ops SEP 835
 REALROM ops XCE 2
-REALROM bookmarks.error 9
+REALROM bookmarks.error 11
 REALROM bookmark      5 Bad Instruction: Multiple flows produced inconsistent instruction prototype at # - possibly due to inconsistent context (flow from #)
 REALROM bookmark      2 Bad Instruction: Disassembly not permitted within uninitialized memory block (flow from #)
+REALROM bookmark      2 Bad Instruction: Disassembly not permitted within mapped memory block (flow from #)
 REALROM bookmark      1 Bad Instruction: Failed to disassemble at # due to conflicting instruction at # (flow from #)
 REALROM bookmark      1 Bad Instruction: Could not follow disassembly flow into non-existing memory at # (flow from #)
 REALROM vector NATIVE_COP 00ffff code=no function=false
-REALROM vector NATIVE_BRK 00ff18 code=yes ctx=E1M1X1 function=true
+REALROM vector NATIVE_BRK 00ff18 code=yes ctx=E0M1X1 function=true
 REALROM vector NATIVE_ABORT 00ffff code=no function=false
-REALROM vector NATIVE_NMI 00ff10 code=no function=false
-REALROM vector NATIVE_IRQ 00ff14 code=no function=false
-REALROM vector EMU_COP 00ff18 code=yes ctx=E1M1X1 function=true
+REALROM vector NATIVE_NMI 00ff10 code=yes ctx=E0M1X1 function=true
+REALROM vector NATIVE_IRQ 00ff14 code=yes ctx=E0M1X1 function=true
+REALROM vector EMU_COP 00ff18 code=yes ctx=E0M1X1 function=true
 REALROM vector EMU_ABORT 00ffff code=no function=false
 REALROM vector EMU_NMI 00ffff code=no function=false
 REALROM vector EMU_RESET 00ff00 code=yes ctx=E1M1X1 function=true
 REALROM vector EMU_IRQBRK 00ffff code=no function=false
-REALROM calls direct=1701 decodedTarget=1697 widthDisagree=28 distinctTargets=13
+REALROM calls direct=1699 decodedTarget=1695 widthDisagree=26 distinctTargets=12
 REALROM calls.disagree c08aac E0M1X1 -> c09ad3 E0M1X0
 REALROM calls.disagree c09c8d E0M1X1 -> c09ac8 E0M1X0
 REALROM calls.disagree c09c90 E0M1X1 -> c09ad3 E0M1X0
@@ -61,9 +62,7 @@ REALROM calls.disagree c2d288 E0M1X1 -> c2d296 E0M1X0
 REALROM calls.disagree c2f542 E0M0X0 -> c30002 E0M1X0
 REALROM calls.disagree c707ab E0M0X0 -> c70192 E0M1X0
 REALROM calls.disagree fff84b E0M1X1 -> fff958 E0M1X0
-REALROM calls.disagree ffff24 E1M1X1 -> c70004 E0M1X0
-REALROM calls.disagree ffff39 E1M1X1 -> c70004 E0M1X0
-REALROM exitwidth functions=704 returnsAtOtherWidth=45
+REALROM exitwidth functions=706 returnsAtOtherWidth=45
 REALROM exitwidth c08a9e entry=M0X1 exits=M1X1
 REALROM exitwidth c08ae4 entry=M1X1 exits=M0X1
 REALROM exitwidth c09923 entry=M1X1 exits=M1X0
@@ -109,7 +108,7 @@ REALROM computed BRK 0x0 sites=2 withTargets=2
 REALROM computed BRK 0x3 sites=1 withTargets=1
 REALROM computed BRK 0x4 sites=1 withTargets=1
 REALROM computed BRK 0xa sites=1 withTargets=1
-REALROM computed BRK 0xn sites=14 withTargets=14
+REALROM computed BRK 0xn sites=13 withTargets=13
 REALROM computed JML [!$0xn] sites=1 withTargets=0
 REALROM computed JMP (!$0x0) sites=1 withTargets=0
 REALROM computed JMP (!$0xn,X) sites=3 withTargets=0

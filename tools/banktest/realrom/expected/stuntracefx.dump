@@ -94,9 +94,10 @@ REALROM count blocks.byteMapped 34
 REALROM count blocks.initialized 32
 REALROM count blocks.volatile 3
 REALROM count blocks.mirrorMismatch 0
-REALROM count symbols 120
-REALROM count entryPoints 1
+REALROM count symbols 125
+REALROM count entryPoints 2
 REALROM entry 00fe88
+REALROM entry 00fe90
 REALROM sample.symbol 002100 INIDISP IMPORTED
 REALROM sample.symbol 002101 OBSEL IMPORTED
 REALROM sample.symbol 002102 OAMADDL IMPORTED
@@ -122,5 +123,5 @@ REALROM sample.symbol 002115 VMAIN IMPORTED
 REALROM sample.symbol 002116 VMADDL IMPORTED
 REALROM sample.symbol 002117 VMADDH IMPORTED
 REALROM sample.symbol 002118 VMDATAL IMPORTED
-REALROM sample.symbol.truncated 25 of 120
+REALROM sample.symbol.truncated 25 of 125
 === REALROM END ===

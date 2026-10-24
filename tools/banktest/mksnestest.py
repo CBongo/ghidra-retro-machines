@@ -23,6 +23,9 @@ LOROM_HEADER_AT = 0x7FC0
 BANK_SIZE = 0x8000
 IMAGE_BANKS = 2                      # 64 KiB: two LoROM banks, enough for a mirror pair
 RESET = 0x8000
+NMI = 0x8020                         # native-mode NMI handler (bead grm-9nxj.5.2)
+IRQ_EMU = 0x8030                     # emulation-mode IRQ/BRK stub
+UNUSED = 0xFFFF                      # the usual filler for a vector nothing takes
 
 
 def code():
@@ -39,9 +42,31 @@ def code():
     ])
 
 
+def nmi_handler():
+    """Native NMI: entered with E=0. REP #$30 then a 16-bit immediate, so a handler decoded in
+    the wrong mode is visible in the instruction lengths, not just in the context register."""
+    return bytes([
+        0xC2, 0x30,                  # REP #$30
+        0xA9, 0x34, 0x12,            # LDA #$1234
+        0x40,                        # RTI
+    ])
+
+
+def write_vectors(image, vectors):
+    """The vector table at vectors+$04..$1F (i.e. $FFE4-$FFFF): RESET, the native NMI and the
+    emulation IRQ point at code; every other slot, ABORT included, holds $FFFF."""
+    slots = {0x04: UNUSED, 0x06: UNUSED, 0x08: UNUSED, 0x0A: NMI, 0x0E: UNUSED,
+             0x14: UNUSED, 0x18: UNUSED, 0x1A: UNUSED, 0x1C: RESET, 0x1E: IRQ_EMU}
+    for off, target in slots.items():
+        image[vectors + off] = target & 0xFF
+        image[vectors + off + 1] = (target >> 8) & 0xFF
+
+
 def cartridge(title):
     image = bytearray(b"\xEE" * (BANK_SIZE * IMAGE_BANKS))
     image[RESET - 0x8000:RESET - 0x8000 + len(code())] = code()
+    image[NMI - 0x8000:NMI - 0x8000 + len(nmi_handler())] = nmi_handler()
+    image[IRQ_EMU - 0x8000] = 0x40   # RTI
 
     at = LOROM_HEADER_AT
     image[at:at + 21] = title.ljust(21).encode("ascii")
@@ -58,10 +83,8 @@ def cartridge(title):
     image[at + 0x1E] = checksum & 0xFF
     image[at + 0x1F] = (checksum >> 8) & 0xFF
 
-    # Vector table at $FFE0 (header + 0x20). Only RESET is meaningful here.
-    vectors = at + 0x20
-    image[vectors + 0x1C] = RESET & 0xFF
-    image[vectors + 0x1D] = (RESET >> 8) & 0xFF
+    # Vector table at $FFE0 (header + 0x20).
+    write_vectors(image, at + 0x20)
     return bytes(image)
 
 
@@ -70,6 +93,8 @@ def interleaved_hirom(title):
     size = 0x20000
     logical = bytearray(b"\xEE" * size)
     logical[RESET:RESET + len(code())] = code()      # logical $8000 = mirror of $C0:8000
+    logical[NMI:NMI + len(nmi_handler())] = nmi_handler()
+    logical[IRQ_EMU] = 0x40          # RTI
 
     at = 0xFFC0
     logical[at:at + 21] = title.ljust(21).encode("ascii")
@@ -82,9 +107,7 @@ def interleaved_hirom(title):
     logical[at + 0x1D] = ((checksum ^ 0xFFFF) >> 8) & 0xFF
     logical[at + 0x1E] = checksum & 0xFF
     logical[at + 0x1F] = (checksum >> 8) & 0xFF
-    vectors = at + 0x20
-    logical[vectors + 0x1C] = RESET & 0xFF
-    logical[vectors + 0x1D] = (RESET >> 8) & 0xFF
+    write_vectors(logical, at + 0x20)
 
     stored = bytearray(size)
     for unit in range(0, size, 0x10000):

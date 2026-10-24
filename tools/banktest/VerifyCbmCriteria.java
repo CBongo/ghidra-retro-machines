@@ -1573,6 +1573,7 @@ public class VerifyCbmCriteria extends VerifyBase {
 		boolean ioVolatile = ppuIo != null && ppuIo.isVolatile();
 		boolean ioNamed = hasSymbol(0x002100, "INIDISP") && hasSymbol(0x004200, "NMITIMEN");
 		boolean entry = currentProgram.getSymbolTable().isExternalEntryPoint(addr(0x008000));
+		String vectors = describeSnesVectors();
 
 		println("=== BANKDUMP BEGIN ===");
 		println("FORMAT snes=" + format + " language=" + language + " map=" + mapPath);
@@ -1588,8 +1589,10 @@ public class VerifyCbmCriteria extends VerifyBase {
 		println("IO ppu=" + describeBlock(ppuIo) + " volatile=" + ioVolatile +
 			" named=" + ioNamed);
 		println("ENTRY reset=" + entry);
+		println("VECTORS " + vectors);
 		println("=== BANKDUMP END ===");
 
+		checkSnesVectors(0x008000, vectors);
 		criterion("snes-format-language", format && language,
 			currentProgram.getExecutableFormat() + " / " +
 				currentProgram.getLanguageID().getIdAsString());
@@ -1635,6 +1638,7 @@ public class VerifyCbmCriteria extends VerifyBase {
 		boolean noOverlays = countOverlayBlocks() == 0;
 		boolean wramShape = wram != null && wram.getStart().getOffset() == 0x7e0000;
 		boolean entry = currentProgram.getSymbolTable().isExternalEntryPoint(addr(0x008000));
+		String vectors = describeSnesVectors();
 
 		println("=== BANKDUMP BEGIN ===");
 		println("FORMAT snes=" + format + " language=" + language);
@@ -1648,8 +1652,10 @@ public class VerifyCbmCriteria extends VerifyBase {
 			hx(readByteAt(0x808001)));
 		println("OVERLAYS " + countOverlayBlocks());
 		println("ENTRY reset=" + entry);
+		println("VECTORS " + vectors);
 		println("=== BANKDUMP END ===");
 
+		checkSnesVectors(0x008000, vectors);
 		criterion("snes-il-format-language", format && language,
 			currentProgram.getExecutableFormat());
 		criterion("snes-il-two-blocks-per-unit", twoPerUnit,
@@ -1662,6 +1668,89 @@ public class VerifyCbmCriteria extends VerifyBase {
 		criterion("snes-il-no-overlays", noOverlays, "static map");
 		criterion("snes-il-wram", wramShape, describeBlock(wram));
 		criterion("snes-il-entry-point", entry, "reset vector target $008000 is an entry point");
+	}
+
+	/**
+	 * The vector table and its handlers, as the SNES loader leaves them (bead grm-9nxj.5.2): one
+	 * token per slot naming what the slot is typed as, then one per handler entry with its
+	 * function, decoded instruction and stamped E/M/X context. Shared by every snestest fixture,
+	 * whose vector tables are written by mksnestest.write_vectors.
+	 */
+	protected String describeSnesVectors() {
+		StringBuilder sb = new StringBuilder();
+		for (int slot : new int[] { 0xFFE4, 0xFFE6, 0xFFE8, 0xFFEA, 0xFFEE, 0xFFF4, 0xFFF8,
+			0xFFFA, 0xFFFC, 0xFFFE }) {
+			Data d = currentProgram.getListing().getDefinedDataAt(addr(slot));
+			sb.append(String.format("%04x=%s ", slot, d == null ? "<none>"
+					: d.getDataType().getName() + "/" + d.getLength()));
+		}
+		for (long target : new long[] { 0x008000, 0x008020, 0x008030 }) {
+			sb.append(String.format("| %06x %s ", target, describeSnesHandler(target)));
+		}
+		sb.append("| vectorTableCode=" +
+			(currentProgram.getListing().getInstructions(
+				new ghidra.program.model.address.AddressSet(addr(0xFFE0), addr(0xFFFF)), true)
+				.hasNext()));
+		sb.append(" async=").append(currentProgram.getOptions(Program.PROGRAM_INFO)
+			.getString("Retro Machines.Async Entry Points", "<none>"));
+		return sb.toString();
+	}
+
+	private String describeSnesHandler(long target) {
+		Address a = addr(target);
+		Function f = currentProgram.getFunctionManager().getFunctionAt(a);
+		Instruction i = currentProgram.getListing().getInstructionAt(a);
+		return "fn=" + (f == null ? "<none>" : f.getName()) +
+			" entry=" + currentProgram.getSymbolTable().isExternalEntryPoint(a) +
+			" instr=" + (i == null ? "<none>" : i.toString().replace(' ', '_')) +
+			" ctx=E" + ctxBit(a, "ctx_EF") + "M" + ctxBit(a, "ctx_MF") + "X" + ctxBit(a, "ctx_XF");
+	}
+
+	private String ctxBit(Address a, String name) {
+		java.math.BigInteger v = currentProgram.getProgramContext()
+			.getValue(currentProgram.getRegister(name), a, false);
+		return v == null ? "?" : v.toString();
+	}
+
+	/**
+	 * The vector criteria (bead grm-9nxj.5.2): every slot typed as a 2-byte pointer, so the
+	 * table is never decoded as code; RESET, the native NMI and the emulation IRQ each a
+	 * function and entry point decoded in its own mode; the $FFFF-filled slots seeding nothing;
+	 * NMI and the emulation IRQ published as asynchronous entries.
+	 */
+	protected void checkSnesVectors(long reset, String vectors) {
+		boolean slotsTyped = !vectors.contains("<none>/") &&
+			vectors.split("=pointer16/2 ", -1).length == 11;
+		boolean noTableCode = vectors.contains("vectorTableCode=false");
+		criterion("snes-vector-slots-typed", slotsTyped && noTableCode,
+			"all ten slots pointer16/2, no instruction in $FFE0-$FFFF");
+		criterion("snes-vector-reset-handler",
+			vectors.contains(String.format("%06x fn=RESET entry=true instr=SEI", reset)) ||
+				vectors.contains(String.format("%06x fn=RESET entry=true instr=CLC", reset)),
+			"RESET is a function, an entry point, and decoded");
+		criterion("snes-vector-native-nmi",
+			vectors.contains("008020 fn=NMI entry=true instr=REP_#$0x30 ctx=E0M1X1"),
+			"native NMI at $8020 is a function decoded in native mode (E=0)");
+		criterion("snes-vector-emulation-irq",
+			vectors.contains("008030 fn=IRQ_EMU entry=true instr=RTI ctx=E1M1X1"),
+			"emulation IRQ at $8030 is a function decoded in emulation mode (E=1)");
+		criterion("snes-vector-unused-skipped",
+			!hasFunctionNamed("COP") && !hasFunctionNamed("BRK") && !hasFunctionNamed("COP_EMU") &&
+				!hasFunctionNamed("NMI_EMU"),
+			"$FFFF-filled vectors (into the vector area) seed nothing");
+		String async = vectors.substring(vectors.indexOf(" async=") + 7);
+		criterion("snes-vector-async", async.contains("008020") && async.contains("008030") &&
+			async.trim().split(" ").length == 2,
+			"NMI and IRQ_EMU targets published as asynchronous entry points");
+	}
+
+	private boolean hasFunctionNamed(String name) {
+		for (Function f : currentProgram.getFunctionManager().getFunctions(true)) {
+			if (f.getName().equals(name)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	protected int countOverlayBlocks() {

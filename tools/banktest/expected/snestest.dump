@@ -6,3 +6,4 @@ WRAM WRAM 7e0000-7fffff overlay=false
 LOWRAM_MIRROR LOWRAM_00 0000-1fff overlay=false byteMapped=true
 IO ppu=PPU_APU_IO 2100-21ff overlay=false volatile=true named=true
 ENTRY reset=true
+VECTORS ffe4=pointer16/2 ffe6=pointer16/2 ffe8=pointer16/2 ffea=pointer16/2 ffee=pointer16/2 fff4=pointer16/2 fff8=pointer16/2 fffa=pointer16/2 fffc=pointer16/2 fffe=pointer16/2 | 008000 fn=RESET entry=true instr=CLC ctx=E1M1X1 | 008020 fn=NMI entry=true instr=REP_#$0x30 ctx=E0M1X1 | 008030 fn=IRQ_EMU entry=true instr=RTI ctx=E1M1X1 | vectorTableCode=false async=008030 008020

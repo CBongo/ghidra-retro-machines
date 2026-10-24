@@ -2,38 +2,38 @@
 REALROM program w_smw.sfc
 REALROM sha256 0838e531fe22c077528febe14cb3ff7c492f1f5fa8de354192bdff7137c27f5b
 REALROM language 65816:LE:24:retro
-REALROM instrs 226
-REALROM functions 9
-REALROM ctx E0M0X0 59
-REALROM ctx E0M1X0 47
-REALROM ctx E0M1X1 100
-REALROM ctx E1M1X1 20
-REALROM desync BRK 2
+REALROM instrs 1367
+REALROM functions 34
+REALROM ctx E0M0X0 125
+REALROM ctx E0M0X1 221
+REALROM ctx E0M1X0 115
+REALROM ctx E0M1X1 894
+REALROM ctx E1M1X1 12
+REALROM desync BRK 1
 REALROM desync COP 0
 REALROM desync STP 0
 REALROM desync WDM 0
-REALROM ops PHP 1
-REALROM ops PLP 1
-REALROM ops REP 7
-REALROM ops RTI 1
-REALROM ops SEP 7
+REALROM ops PHP 3
+REALROM ops PLP 3
+REALROM ops REP 25
+REALROM ops RTI 2
+REALROM ops SEP 24
 REALROM ops XCE 1
-REALROM bookmarks.error 1
-REALROM bookmark      1 Bad Instruction: Not enough bytes available for instruction
-REALROM vector NATIVE_COP 0082c3 code=yes ctx=E1M1X1 function=false
+REALROM bookmarks.error 0
+REALROM vector NATIVE_COP 0082c3 code=yes ctx=E0M0X0 function=true
 REALROM vector NATIVE_BRK 00ffff code=no function=false
-REALROM vector NATIVE_ABORT 0082c3 code=yes ctx=E1M1X1 function=false
-REALROM vector NATIVE_NMI 00816a code=no function=false
-REALROM vector NATIVE_IRQ 008374 code=no function=false
-REALROM vector EMU_COP 0082c3 code=yes ctx=E1M1X1 function=false
-REALROM vector EMU_ABORT 0082c3 code=yes ctx=E1M1X1 function=false
-REALROM vector EMU_NMI 0082c3 code=yes ctx=E1M1X1 function=false
+REALROM vector NATIVE_ABORT 0082c3 code=yes ctx=E0M0X0 function=true
+REALROM vector NATIVE_NMI 00816a code=yes ctx=E0M1X1 function=true
+REALROM vector NATIVE_IRQ 008374 code=yes ctx=E0M1X1 function=true
+REALROM vector EMU_COP 0082c3 code=yes ctx=E0M0X0 function=true
+REALROM vector EMU_ABORT 0082c3 code=yes ctx=E0M0X0 function=true
+REALROM vector EMU_NMI 0082c3 code=yes ctx=E0M0X0 function=true
 REALROM vector EMU_RESET 008000 code=yes ctx=E1M1X1 function=true
-REALROM vector EMU_IRQBRK 0082c3 code=yes ctx=E1M1X1 function=false
-REALROM calls direct=8 decodedTarget=8 widthDisagree=0 distinctTargets=0
-REALROM exitwidth functions=9 returnsAtOtherWidth=1
+REALROM vector EMU_IRQBRK 0082c3 code=yes ctx=E0M0X0 function=true
+REALROM calls direct=41 decodedTarget=41 widthDisagree=0 distinctTargets=0
+REALROM exitwidth functions=34 returnsAtOtherWidth=1
 REALROM exitwidth 008079 entry=M1X1 exits=M1X0
-REALROM computed BRK 0xn sites=2 withTargets=2
+REALROM computed BRK 0xn sites=1 withTargets=1
 REALROM computed JML [!$0x0] sites=1 withTargets=0
-REALROM computed RTI <UNSUPPORTn> sites=1 withTargets=0
+REALROM computed RTI <UNSUPPORTn> sites=2 withTargets=0
 === REALROM END ===

@@ -16,9 +16,14 @@
 package retromachines;
 
 import java.io.IOException;
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -37,8 +42,13 @@ import ghidra.program.database.mem.FileBytes;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressOverflowException;
 import ghidra.program.model.address.AddressSpace;
+import ghidra.program.model.data.DataUtilities;
+import ghidra.program.model.data.DataUtilities.ClearDataMode;
+import ghidra.program.model.data.Pointer16DataType;
 import ghidra.program.model.lang.LanguageCompilerSpecPair;
+import ghidra.program.model.listing.ContextChangeException;
 import ghidra.program.model.listing.Program;
+import ghidra.program.model.listing.ProgramContext;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.symbol.SourceType;
 import ghidra.util.exception.CancelledException;
@@ -492,29 +502,137 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 	}
 
 	/**
-	 * The CPU vectors as labels, and the reset vector's target as the program's entry point.
-	 * The vectors' own addresses are labelled from the descriptor; the RESET target is what
-	 * gives analysis somewhere to start.
+	 * One CPU vector: its slot name (as {@link SnesRomHeader#vectors()} keys it), the label its
+	 * handler gets, whether the CPU takes it in native mode, and whether it fires from
+	 * arbitrary mainline context (NMI/IRQ; see {@link DescriptorHints#ASYNC_ENTRY_POINTS_PROPERTY}).
+	 */
+	private record Vector(String slot, String handler, boolean nativeMode,
+			boolean async) {}
+
+	// Emulation first, native last: when one stub serves both modes, the native stamp wins,
+	// because after boot a SNES game runs native and that is the mode the stub really sees.
+	// ABORT is absent: the SNES does not wire the ABORT pin, so neither ABORT vector can fire
+	// and whatever its slot holds is not code anyone runs. Its slot is still typed.
+	private static final List<Vector> VECTORS = List.of(
+		new Vector("VEC_RESET_EMULATION", "RESET", false, false),
+		new Vector("VEC_NMI_EMULATION", "NMI_EMU", false, true),
+		new Vector("VEC_IRQ_EMULATION", "IRQ_EMU", false, true),
+		new Vector("VEC_COP_EMULATION", "COP_EMU", false, false),
+		new Vector("VEC_NMI_NATIVE", "NMI", true, true),
+		new Vector("VEC_IRQ_NATIVE", "IRQ", true, true),
+		new Vector("VEC_COP_NATIVE", "COP", true, false),
+		new Vector("VEC_BRK_NATIVE", "BRK", true, false));
+
+	/** Every vector slot, ABORT included, for typing the table as data. */
+	private static final int[] VECTOR_SLOTS =
+		{ 0xFFE4, 0xFFE6, 0xFFE8, 0xFFEA, 0xFFEE, 0xFFF4, 0xFFF8, 0xFFFA, 0xFFFC, 0xFFFE };
+
+	/**
+	 * The CPU vector table, and every vector handler as an entry point (bead grm-9nxj.5.2).
+	 *
+	 * <p>Three things, each fixing a measured failure on real cartridges:
+	 * <ol>
+	 * <li><b>Each slot is typed as a 16-bit pointer.</b> The descriptor labels the slots, and a
+	 * label in executable ROM is a code label to {@code EntryPointAnalyzer}: FF2's vector table
+	 * was disassembled as {@code SBC long,X ... BRK}. Defined data keeps it a table.</li>
+	 * <li><b>Each handler is a FUNCTION, not just an entry point.</b> {@code EntryPointAnalyzer}
+	 * queues an external entry point directly only while its primary symbol is DEFAULT; the
+	 * {@code RESET} label makes it IMPORTED, so the entry fell to the code-label path, which
+	 * validates it with the {@code PseudoDisassembler} at the language's DEFAULT context
+	 * (emulation, 8-bit). Real reset code switches to native and widens the index registers
+	 * within a few bytes, so that check can reject it: FF2's reset was dropped and the whole
+	 * program held 7 instructions. A function entry is disassembled unconditionally
+	 * ({@code findDummyFunctions}) -- the same route {@link NesRomLoader} uses.</li>
+	 * <li><b>The native vectors are seeded at all, in native context.</b> Before this only RESET
+	 * was, and no real row ever decoded its native NMI or IRQ handler -- where a SNES game does
+	 * most of its work. A native-mode handler starts with E=0. Its M/X are whatever the
+	 * interrupted code had (an interrupt does not change them), which no static fact gives us;
+	 * they are stamped 8-bit, matching the reset state, as an ASSUMPTION -- handlers set their
+	 * own width before their first width-sensitive instruction in every case seen so far.</li>
+	 * </ol>
+	 *
+	 * <p>A vector whose target is not ROM is skipped with a message: FF2's native NMI/IRQ point
+	 * at $0200/$0204, trampolines the game writes into RAM at boot, which hold no bytes at
+	 * import. So is a target inside the vector area itself ($FFE0-$FFFF): $FFFF is the usual
+	 * "unused" filler, and nothing at those addresses is a handler.
 	 */
 	private void createVectors(Program program, AddressSpace space, SnesRomHeader header,
 			SnesAddressMap map, MessageLog log) {
 
-		int reset = header.resetVector();
-		long resetAddress = reset;                  // the reset vector runs in bank $00
-		if (map.kindOf(resetAddress) != Kind.ROM) {
-			log.appendMsg(NAME + ": reset vector $" + Integer.toHexString(reset) +
-				" does not point into ROM; no entry point created");
-			return;
+		for (int slot : VECTOR_SLOTS) {
+			try {
+				DataUtilities.createData(program, space.getAddress(slot),
+					Pointer16DataType.dataType, -1,
+					ClearDataMode.CLEAR_ALL_UNDEFINED_CONFLICT_DATA);
+			}
+			catch (Exception e) {
+				log.appendMsg(NAME + ": could not type vector slot $" +
+					Integer.toHexString(slot) + ": " + e.getMessage());
+			}
 		}
+
+		Map<Long, Boolean> nativeAt = new LinkedHashMap<>();
+		Set<Address> asyncEntries = new LinkedHashSet<>();
+		for (Vector v : VECTORS) {
+			Integer value = header.vectors().get(v.slot());
+			long target = value == null ? 0 : value;      // vectors run in bank $00
+			if (value == null || map.kindOf(target) != Kind.ROM) {
+				log.appendMsg(NAME + ": " + v.handler() + " vector $" + Long.toHexString(target) +
+					" does not point into ROM; no entry point created");
+				continue;
+			}
+			if (target >= 0xFFE0) {
+				log.appendMsg(NAME + ": " + v.handler() + " vector $" + Long.toHexString(target) +
+					" points into the vector area (unused); no entry point created");
+				continue;
+			}
+			try {
+				Address entry = space.getAddress(target);
+				program.getSymbolTable().createLabel(entry, v.handler(), SourceType.IMPORTED);
+				program.getSymbolTable().addExternalEntryPoint(entry);
+				markAsFunction(program, v.handler(), entry);
+				nativeAt.merge(target, v.nativeMode(), Boolean::logicalOr);
+				if (v.async()) {
+					asyncEntries.add(entry);
+				}
+				log.appendMsg(NAME + ": " + v.handler() + " entry point at $" +
+					Long.toHexString(target) +
+					(v.nativeMode() ? " (native mode)" : " (emulation mode)"));
+			}
+			catch (Exception e) {
+				log.appendMsg(NAME + ": could not create the " + v.handler() + " entry point: " +
+					e.getMessage());
+			}
+		}
+
+		for (Map.Entry<Long, Boolean> e : nativeAt.entrySet()) {
+			stampModeContext(program, space.getAddress(e.getKey()), e.getValue(), log);
+		}
+		if (!asyncEntries.isEmpty()) {
+			program.getOptions(Program.PROGRAM_INFO).setString(
+				DescriptorHints.ASYNC_ENTRY_POINTS_PROPERTY,
+				DescriptorHints.formatAsyncEntryPoints(asyncEntries));
+		}
+	}
+
+	/**
+	 * Stamps the decode context a vector handler starts in: E from the vector's mode, M and X
+	 * 8-bit (see {@link #createVectors} on why that is an assumption for a native handler).
+	 * Emulation-mode values equal the pspec default, but are written anyway so the handler's
+	 * context does not depend on what the default happens to be.
+	 */
+	private static void stampModeContext(Program program, Address entry, boolean nativeMode,
+			MessageLog log) {
+		ProgramContext context = program.getProgramContext();
 		try {
-			Address entry = space.getAddress(resetAddress);
-			program.getSymbolTable().createLabel(entry, "RESET", SourceType.IMPORTED);
-			program.getSymbolTable().addExternalEntryPoint(entry);
-			log.appendMsg(NAME + ": entry point at $" + Long.toHexString(resetAddress) +
-				" (emulation-mode reset)");
+			context.setValue(program.getRegister("ctx_EF"), entry, entry,
+				nativeMode ? BigInteger.ZERO : BigInteger.ONE);
+			context.setValue(program.getRegister("ctx_MF"), entry, entry, BigInteger.ONE);
+			context.setValue(program.getRegister("ctx_XF"), entry, entry, BigInteger.ONE);
 		}
-		catch (Exception e) {
-			log.appendMsg(NAME + ": could not create the reset entry point: " + e.getMessage());
+		catch (ContextChangeException e) {
+			log.appendMsg(NAME + ": could not stamp the mode context at " + entry + ": " +
+				e.getMessage());
 		}
 	}
 }
