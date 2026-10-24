@@ -46,6 +46,11 @@ REALROM calls.disagree 03c254 E0M1X0 -> 0383b9 E0M0X0
 REALROM calls.disagree 03c27e E0M1X0 -> 0383b9 E0M0X0
 REALROM calls.disagree 03c31d E0M1X0 -> 0383b9 E0M0X0
 REALROM calls.disagree 03cb09 E0M0X0 -> 038486 E0M1X0
+REALROM widtheffect callees=530 needsM=364 needsX=254
+REALROM widtheffect exitM preserves=362 sets0=2 sets1=77 mixedOrNone=89
+REALROM widtheffect exitX preserves=458 sets0=1 sets1=0 mixedOrNone=71
+REALROM widthconflict sites=1308 entry=0 entryTargets=0 return=1 returnTargets=1
+REALROM widthconflict.return 038d91 -> 0383b9 returns=M1 continuation=M0X0
 REALROM exitwidth functions=540 returnsAtOtherWidth=8
 REALROM exitwidth 018383 entry=M0X0 exits=M1X0
 REALROM exitwidth 038009 entry=M1X0 exits=M0X0

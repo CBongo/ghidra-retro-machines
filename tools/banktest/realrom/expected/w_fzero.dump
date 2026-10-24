@@ -31,6 +31,10 @@ REALROM vector EMU_NMI 008138 code=yes ctx=E0M0X0 function=true
 REALROM vector EMU_RESET 008000 code=yes ctx=E1M1X1 function=true
 REALROM vector EMU_IRQBRK 008138 code=yes ctx=E0M0X0 function=true
 REALROM calls direct=41 decodedTarget=41 widthDisagree=0 distinctTargets=0
+REALROM widtheffect callees=29 needsM=12 needsX=10
+REALROM widtheffect exitM preserves=14 sets0=0 sets1=4 mixedOrNone=11
+REALROM widtheffect exitX preserves=15 sets0=0 sets1=4 mixedOrNone=10
+REALROM widthconflict sites=41 entry=0 entryTargets=0 return=0 returnTargets=0
 REALROM exitwidth functions=36 returnsAtOtherWidth=9
 REALROM exitwidth 00808c entry=M1X1 exits=M0X1
 REALROM exitwidth 008140 entry=M1X1 exits=M0X0

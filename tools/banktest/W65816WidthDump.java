@@ -100,6 +100,7 @@ public class W65816WidthDump extends GhidraScript {
 		emitBookmarks();
 		emitVectors();
 		emitCalls();
+		emitWidthConflicts();
 		emitExitWidths();
 		emitComputed();
 		out.end();
@@ -209,6 +210,229 @@ public class W65816WidthDump extends GhidraScript {
 			" widthDisagree=" + disagree + " distinctTargets=" + disagreeTargets.size());
 		Collections.sort(sample);
 		out.emitSample("calls.disagree", sample, SAMPLE);
+	}
+
+	// ------------------------------------------------------------------
+	// Width effects (grm-9nxj.5.3). The naive `calls` line above flags every call whose callee
+	// was decoded under another context, but most such callees start with their own REP/SEP and
+	// do not care (FF2 $03:83b9 is REP #$20 first). A conflict is real only where the decode
+	// actually DEPENDS on the inherited flag. Independent of production by design: this is the
+	// yardstick the production analyzer is judged by.
+	// ------------------------------------------------------------------
+
+	/** Per-flag state along a path: inherited from the caller, set to 0/1 locally, or unknown. */
+	private static final int INH = -1;
+	private static final int UNK = 2;
+
+	/** What a routine does with one flag: whether its decode depends on the inherited value, and
+	 *  what it leaves on return (INH = preserves, 0/1 = sets, UNK = mixed/unknown, NONE). */
+	private record FlagEffect(boolean needs, int exit) {}
+
+	private record Effect(FlagEffect m, FlagEffect x) {}
+
+	private static final int NONE = 3;
+	private static final int WALK_LIMIT = 4000;
+
+	private final Map<Address, Effect> effects = new java.util.HashMap<>();
+
+	private void emitWidthConflicts() {
+		Listing listing = currentProgram.getListing();
+		int sites = 0;
+		int entryConflicts = 0;
+		int returnConflicts = 0;
+		Set<Address> entryTargets = new HashSet<>();
+		Set<Address> returnTargets = new HashSet<>();
+		List<String> entrySample = new ArrayList<>();
+		List<String> returnSample = new ArrayList<>();
+		Set<Address> callees = new HashSet<>();
+		InstructionIterator it = listing.getInstructions(true);
+		while (it.hasNext()) {
+			Instruction call = it.next();
+			FlowType ft = call.getFlowType();
+			if (!ft.isCall() || ft.isComputed()) {
+				continue;
+			}
+			for (Address target : call.getFlows()) {
+				Instruction callee = listing.getInstructionAt(target);
+				if (callee == null) {
+					continue;
+				}
+				sites++;
+				callees.add(target);
+				Effect e = effect(target);
+				String why = "";
+				if (e.m().needs() && flag(call, ctxM) != flag(callee, ctxM)) {
+					why += "M";
+				}
+				if (e.x().needs() && flag(call, ctxX) != flag(callee, ctxX)) {
+					why += "X";
+				}
+				if (!why.isEmpty()) {
+					entryConflicts++;
+					entryTargets.add(target);
+					entrySample.add(RealRomDumpSupport.fmt(call.getMinAddress(), 6) + " " +
+						mx(call) + " -> " + RealRomDumpSupport.fmt(target, 6) + " " + mx(callee) +
+						" needs=" + why);
+				}
+				Address after = call.getFallThrough();
+				Instruction cont = after == null ? null : listing.getInstructionAt(after);
+				if (cont == null) {
+					continue;
+				}
+				// Same test from the continuation's side: a stale width only misdecodes if the code
+				// after the call reaches a length-sensitive immediate before setting the flag.
+				Effect c = effect(after);
+				String ret = "";
+				if ((e.m().exit() == 0 || e.m().exit() == 1) && flag(cont, ctxM) != e.m().exit() &&
+					c.m().needs()) {
+					ret += "M" + e.m().exit();
+				}
+				if ((e.x().exit() == 0 || e.x().exit() == 1) && flag(cont, ctxX) != e.x().exit() &&
+					c.x().needs()) {
+					ret += "X" + e.x().exit();
+				}
+				if (!ret.isEmpty()) {
+					returnConflicts++;
+					returnTargets.add(target);
+					returnSample.add(RealRomDumpSupport.fmt(call.getMinAddress(), 6) + " -> " +
+						RealRomDumpSupport.fmt(target, 6) + " returns=" + ret + " continuation=" +
+						mx(cont));
+				}
+			}
+		}
+		int[] needs = new int[2];
+		int[][] exits = new int[2][4];
+		for (Address callee : callees) {
+			Effect e = effects.get(callee);
+			needs[0] += e.m().needs() ? 1 : 0;
+			needs[1] += e.x().needs() ? 1 : 0;
+			exits[0][exitSlot(e.m().exit())]++;
+			exits[1][exitSlot(e.x().exit())]++;
+		}
+		println("REALROM widtheffect callees=" + callees.size() + " needsM=" + needs[0] +
+			" needsX=" + needs[1]);
+		println("REALROM widtheffect exitM preserves=" + exits[0][0] + " sets0=" + exits[0][1] +
+			" sets1=" + exits[0][2] + " mixedOrNone=" + exits[0][3]);
+		println("REALROM widtheffect exitX preserves=" + exits[1][0] + " sets0=" + exits[1][1] +
+			" sets1=" + exits[1][2] + " mixedOrNone=" + exits[1][3]);
+		println("REALROM widthconflict sites=" + sites + " entry=" + entryConflicts +
+			" entryTargets=" + entryTargets.size() + " return=" + returnConflicts +
+			" returnTargets=" + returnTargets.size());
+		Collections.sort(entrySample);
+		Collections.sort(returnSample);
+		out.emitSample("widthconflict.entry", entrySample, SAMPLE);
+		out.emitSample("widthconflict.return", returnSample, SAMPLE);
+	}
+
+	private static int exitSlot(int exit) {
+		return exit == INH ? 0 : exit == 0 ? 1 : exit == 1 ? 2 : 3;
+	}
+
+	/**
+	 * Walks a routine from its entry over fall-through and jump flows (not into calls; a call is
+	 * taken to preserve both flags, the common case), tracking each flag as inherited, set by
+	 * REP/SEP, or unknown (PLP, RTI, XCE). Records whether a LENGTH-sensitive instruction -- an
+	 * accumulator immediate for M, an index immediate for X -- is reached while the flag is still
+	 * inherited, and the flag's state at every RTS/RTL.
+	 */
+	private Effect effect(Address entry) {
+		Effect cached = effects.get(entry);
+		if (cached != null) {
+			return cached;
+		}
+		Listing listing = currentProgram.getListing();
+		boolean needsM = false;
+		boolean needsX = false;
+		Set<Integer> exitM = new java.util.TreeSet<>();
+		Set<Integer> exitX = new java.util.TreeSet<>();
+		Set<String> seen = new HashSet<>();
+		java.util.ArrayDeque<Object[]> work = new java.util.ArrayDeque<>();
+		work.add(new Object[] { entry, INH, INH });
+		int steps = 0;
+		while (!work.isEmpty() && steps++ < WALK_LIMIT) {
+			Object[] w = work.pop();
+			Address a = (Address) w[0];
+			int m = (Integer) w[1];
+			int x = (Integer) w[2];
+			if (!seen.add(a + ":" + m + ":" + x)) {
+				continue;
+			}
+			Instruction in = listing.getInstructionAt(a);
+			if (in == null) {
+				continue;
+			}
+			String mn = in.getMnemonicString().toUpperCase();
+			boolean imm = in.getNumOperands() > 0 &&
+				in.getDefaultOperandRepresentation(0).startsWith("#");
+			if (imm && m == INH && List.of("LDA", "ADC", "SBC", "CMP", "AND", "ORA", "EOR", "BIT")
+					.contains(mn)) {
+				needsM = true;
+			}
+			if (imm && x == INH && List.of("LDX", "LDY", "CPX", "CPY").contains(mn)) {
+				needsX = true;
+			}
+			if (mn.equals("REP") || mn.equals("SEP")) {
+				int bits = immediate(in);
+				int v = mn.equals("SEP") ? 1 : 0;
+				if (bits < 0) {
+					m = UNK;
+					x = UNK;
+				}
+				else {
+					m = (bits & 0x20) != 0 ? v : m;
+					x = (bits & 0x10) != 0 ? v : x;
+				}
+			}
+			else if (mn.equals("PLP") || mn.equals("XCE")) {
+				m = UNK;
+				x = UNK;
+			}
+			if (mn.equals("RTS") || mn.equals("RTL")) {
+				exitM.add(m);
+				exitX.add(x);
+				continue;
+			}
+			FlowType ft = in.getFlowType();
+			if (ft.isTerminal() || (ft.isComputed() && ft.isJump())) {
+				continue;
+			}
+			if (ft.isJump()) {
+				for (Address t : in.getFlows()) {
+					work.push(new Object[] { t, m, x });
+				}
+			}
+			Address next = in.getFallThrough();
+			if (next != null) {
+				work.push(new Object[] { next, m, x });
+			}
+		}
+		Effect e = new Effect(new FlagEffect(needsM, summarize(exitM)),
+			new FlagEffect(needsX, summarize(exitX)));
+		effects.put(entry, e);
+		return e;
+	}
+
+	private static int summarize(Set<Integer> exits) {
+		if (exits.isEmpty()) {
+			return NONE;
+		}
+		if (exits.size() > 1) {
+			return UNK;
+		}
+		return exits.iterator().next();
+	}
+
+	private static int immediate(Instruction in) {
+		Object[] objs = in.getOpObjects(0);
+		if (objs.length == 1 && objs[0] instanceof ghidra.program.model.scalar.Scalar s) {
+			return (int) s.getUnsignedValue();
+		}
+		return -1;
+	}
+
+	private int flag(Instruction instr, Register reg) {
+		BigInteger v = instr.getValue(reg, false);
+		return v == null ? -9 : v.intValue();
 	}
 
 	private void emitExitWidths() {
