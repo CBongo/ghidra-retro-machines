@@ -1907,6 +1907,64 @@ public class VerifyCbmCriteria extends VerifyBase {
 			"the re-decoded continuation carries an EOL note saying why");
 	}
 
+	protected void checkSnesJumpTables() {
+		long[] masked = { 0x008070, 0x008078, 0x008080, 0x008088 };
+		long[] lowest = { 0x0080A6, 0x0080AC, 0x0080B2 };
+		String decoy = describeWidthSite(0x008090);
+		int maskedRefs = computedFlowRefs(0x00800C);
+		int lowestRefs = computedFlowRefs(0x008013);
+		String maskedTable = dataTypeName(0x008060);
+		String lowestTable = dataTypeName(0x0080A0);
+		String eol = currentProgram.getListing().getComment(CommentType.EOL, addr(0x00800C));
+
+		println("=== BANKDUMP BEGIN ===");
+		for (long a : masked) {
+			println("JTAB " + Long.toHexString(a) + " " + describeWidthSite(a));
+		}
+		println("JTAB decoy 8090 " + decoy);
+		for (long a : lowest) {
+			println("JTAB " + Long.toHexString(a) + " " + describeWidthSite(a));
+		}
+		println("JTAB refs 800c=" + maskedRefs + " 8013=" + lowestRefs);
+		println("JTAB data 8060=" + maskedTable + " 80a0=" + lowestTable);
+		println("JTAB eol 800c " + eol);
+		println("=== BANKDUMP END ===");
+
+		boolean all8 = true;
+		for (long a : masked) {
+			all8 &= describeWidthSite(a).startsWith("LDA #$0x1") && describeWidthSite(a).contains("len=2 M=1");
+		}
+		for (long a : lowest) {
+			all8 &= describeWidthSite(a).startsWith("LDA #$0x2") && describeWidthSite(a).contains("len=2 M=1");
+		}
+		criterion("snes-jtab-targets-decoded", all8,
+			"every table target is decoded, 8-bit as the dispatch passes");
+		criterion("snes-jtab-mask-bound",
+			maskedRefs == 4 && "word[4]".equals(maskedTable) && decoy.equals("<none>"),
+			"AND #$03 caps the JSR table at 4 entries; the decoy fifth word is not taken: " +
+				maskedRefs + " " + maskedTable + " decoy=" + decoy);
+		criterion("snes-jtab-lowest-target-bound",
+			lowestRefs == 3 && "word[3]".equals(lowestTable),
+			"the JMP table ends at its own lowest target: " + lowestRefs + " " + lowestTable);
+		criterion("snes-jtab-note", eol != null && eol.contains("4 entries"),
+			"the dispatch carries an EOL note naming the table");
+	}
+
+	private int computedFlowRefs(long offset) {
+		int n = 0;
+		for (Reference r : currentProgram.getReferenceManager().getReferencesFrom(addr(offset))) {
+			if (r.getReferenceType().isFlow() && r.getReferenceType().isComputed()) {
+				n++;
+			}
+		}
+		return n;
+	}
+
+	private String dataTypeName(long offset) {
+		Data d = currentProgram.getListing().getDataAt(addr(offset));
+		return d == null ? "<none>" : d.getDataType().getName();
+	}
+
 	private String describeWidthSite(long offset) {
 		Instruction i = currentProgram.getListing().getInstructionAt(addr(offset));
 		if (i == null) {

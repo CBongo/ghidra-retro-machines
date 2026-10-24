@@ -1,0 +1,11 @@
+JTAB 8070 LDA #$0x12 len=2 M=1
+JTAB 8078 LDA #$0x13 len=2 M=1
+JTAB 8080 LDA #$0x14 len=2 M=1
+JTAB 8088 LDA #$0x15 len=2 M=1
+JTAB decoy 8090 <none>
+JTAB 80a6 LDA #$0x21 len=2 M=1
+JTAB 80ac LDA #$0x22 len=2 M=1
+JTAB 80b2 LDA #$0x23 len=2 M=1
+JTAB refs 800c=4 8013=3
+JTAB data 8060=word[4] 80a0=word[3]
+JTAB eol 800c 65816 jump table 008060: 4 entries, 4 target(s) decoded at E=0 M=1 X=0 (index reaches 4)

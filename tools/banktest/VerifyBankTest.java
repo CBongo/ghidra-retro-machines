@@ -173,6 +173,7 @@ public class VerifyBankTest extends GhidraScript {
 		focused("snestestcopier", cbm::checkSnes);
 		focused("snestestinterleaved", cbm::checkSnesInterleaved);
 		focused("sneswidth", cbm::checkSnesWidth);
+		focused("snesjtab", cbm::checkSnesJumpTables);
 		focused("snestramp", cbm::checkSnesTramp);
 		focused("snestramp2", cbm::checkSnesTramp2);
 		focused("c128nativebasic7test", cbm::checkC128NativeBasic7);

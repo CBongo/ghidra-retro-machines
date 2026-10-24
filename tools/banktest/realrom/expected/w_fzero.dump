@@ -2,22 +2,22 @@
 REALROM program w_fzero.sfc
 REALROM sha256 bf16c3c867c58e2ab061c70de9295b6930d63f29f81cc986f5ecae03e0ad18d2
 REALROM language 65816:LE:24:retro
-REALROM instrs 925
-REALROM functions 36
-REALROM ctx E0M0X0 83
-REALROM ctx E0M0X1 288
-REALROM ctx E0M1X0 261
-REALROM ctx E0M1X1 290
+REALROM instrs 16498
+REALROM functions 477
+REALROM ctx E0M0X0 1345
+REALROM ctx E0M0X1 3645
+REALROM ctx E0M1X0 1221
+REALROM ctx E0M1X1 10284
 REALROM ctx E1M1X1 3
 REALROM desync BRK 0
 REALROM desync COP 0
 REALROM desync STP 0
 REALROM desync WDM 0
-REALROM ops PHP 10
-REALROM ops PLP 11
-REALROM ops REP 23
+REALROM ops PHP 146
+REALROM ops PLP 170
+REALROM ops REP 330
 REALROM ops RTI 1
-REALROM ops SEP 23
+REALROM ops SEP 391
 REALROM ops XCE 1
 REALROM bookmarks.error 0
 REALROM vector NATIVE_COP 008138 code=yes ctx=E0M0X0 function=true
@@ -30,22 +30,97 @@ REALROM vector EMU_ABORT 008138 code=yes ctx=E0M0X0 function=true
 REALROM vector EMU_NMI 008138 code=yes ctx=E0M0X0 function=true
 REALROM vector EMU_RESET 008000 code=yes ctx=E1M1X1 function=true
 REALROM vector EMU_IRQBRK 008138 code=yes ctx=E0M0X0 function=true
-REALROM calls direct=41 decodedTarget=41 widthDisagree=0 distinctTargets=0
-REALROM widtheffect callees=29 needsM=13 needsX=10
-REALROM widtheffect exitM preserves=14 sets0=0 sets1=4 mixedOrNone=11
-REALROM widtheffect exitX preserves=15 sets0=0 sets1=4 mixedOrNone=10
-REALROM widthconflict sites=41 entry=0 entryTargets=0 return=0 returnTargets=0
-REALROM exitwidth functions=36 returnsAtOtherWidth=9
+REALROM calls direct=826 decodedTarget=826 widthDisagree=45 distinctTargets=29
+REALROM calls.disagree 00890c E0M1X1 -> 00b0c8 E0M0X1
+REALROM calls.disagree 00890f E0M1X1 -> 00b164 E0M0X1
+REALROM calls.disagree 008a3a E0M0X1 -> 009eec E0M1X1
+REALROM calls.disagree 008a3d E0M0X1 -> 00c152 E0M1X1
+REALROM calls.disagree 008be4 E0M1X1 -> 008f43 E0M0X1
+REALROM calls.disagree 008bfd E0M1X1 -> 00b0c8 E0M0X1
+REALROM calls.disagree 008c8e E0M1X1 -> 008f43 E0M0X1
+REALROM calls.disagree 008ced E0M1X1 -> 008f43 E0M0X1
+REALROM calls.disagree 008d84 E0M1X1 -> 008f43 E0M0X1
+REALROM calls.disagree 00ab56 E0M1X0 -> 00ab79 E0M1X1
+REALROM calls.disagree 00ab60 E0M1X0 -> 00ab70 E0M1X1
+REALROM calls.disagree 00ab6a E0M1X0 -> 00ab70 E0M1X1
+REALROM calls.disagree 00b532 E0M0X1 -> 00b0a6 E0M1X1
+REALROM calls.disagree 00c2d8 E0M1X1 -> 00c61c E0M0X1
+REALROM calls.disagree 00c328 E0M0X1 -> 00c339 E0M1X1
+REALROM calls.disagree 00c611 E0M1X1 -> 00c61c E0M0X1
+REALROM calls.disagree 00c9e6 E0M1X1 -> 00f9e5 E0M0X0
+REALROM calls.disagree 00c9f7 E0M1X1 -> 00f9e5 E0M0X0
+REALROM calls.disagree 00ca44 E0M1X1 -> 00b0c8 E0M0X1
+REALROM calls.disagree 00cab6 E0M0X1 -> 0086a9 E0M1X1
+REALROM calls.disagree 00cac4 E0M0X1 -> 00d193 E0M1X1
+REALROM calls.disagree 00cad6 E0M0X1 -> 0086a9 E0M1X1
+REALROM calls.disagree 00cbf2 E0M1X1 -> 00b164 E0M0X1
+REALROM calls.disagree 00ce6b E0M0X1 -> 0086a9 E0M1X1
+REALROM calls.disagree 00cff2 E0M0X1 -> 0086a9 E0M1X1
+REALROM calls.disagree 00cffd E0M0X1 -> 00d193 E0M1X1
+REALROM calls.disagree 00d5ff E0M0X0 -> 00e7a8 E0M0X1
+REALROM calls.disagree 00d602 E0M1X0 -> 00e85e E0M1X1
+REALROM calls.disagree 00da93 E0M0X1 -> 00de07 E0M1X1
+REALROM calls.disagree 00ed48 E0M1X1 -> 00ecc5 E0M0X1
+REALROM calls.disagree 00eeaa E0M1X0 -> 00eed2 E0M1X1
+REALROM calls.disagree 00eeb3 E0M1X0 -> 00eed2 E0M1X1
+REALROM calls.disagree 00f0fd E0M1X1 -> 00d952 E0M0X1
+REALROM calls.disagree 00f410 E0M1X1 -> 00f468 E0M0X1
+REALROM calls.disagree 00f699 E0M1X1 -> 00f67a E0M1X0
+REALROM calls.disagree 00f6b7 E0M1X1 -> 00f778 E0M1X0
+REALROM calls.disagree 02c3c9 E0M1X1 -> 02c5c1 E0M1X0
+REALROM calls.disagree 03800a E0M1X0 -> 008364 E0M1X1
+REALROM calls.disagree 038d3c E0M0X0 -> 039806 E0M1X0
+REALROM calls.disagree 038d46 E0M0X0 -> 038031 E0M0X1
+REALROM calls.disagree.truncated 40 of 45
+REALROM widtheffect callees=449 needsM=188 needsX=102
+REALROM widtheffect exitM preserves=117 sets0=15 sets1=70 mixedOrNone=247
+REALROM widtheffect exitX preserves=163 sets0=5 sets1=43 mixedOrNone=238
+REALROM widthconflict sites=826 entry=0 entryTargets=0 return=0 returnTargets=0
+REALROM exitwidth functions=477 returnsAtOtherWidth=83
 REALROM exitwidth 00808c entry=M1X1 exits=M0X1
 REALROM exitwidth 008140 entry=M1X1 exits=M0X0
 REALROM exitwidth 00824f entry=M1X1 exits=M1X0
 REALROM exitwidth 00829b entry=M1X1 exits=M1X0
 REALROM exitwidth 008364 entry=M1X1 exits=M0X1
 REALROM exitwidth 0084e0 entry=M1X1 exits=M0X1
-REALROM exitwidth 00f806 entry=M1X1 exits=M1X0
-REALROM exitwidth 02c4b1 entry=M0X0 exits=M1X0
-REALROM exitwidth 039680 entry=M0X0 exits=M0X1
-REALROM computed JMP (!$0xn) sites=1 withTargets=0
-REALROM computed JSR (!$0xn,X) sites=1 withTargets=0
+REALROM exitwidth 0086a9 entry=M1X1 exits=M1X0
+REALROM exitwidth 0086df entry=M0X1 exits=M1X0
+REALROM exitwidth 008782 entry=M1X1 exits=M0X1
+REALROM exitwidth 00882f entry=M1X1 exits=M0X1
+REALROM exitwidth 008892 entry=M1X1 exits=M0X0
+REALROM exitwidth 008931 entry=M1X1 exits=M0X1
+REALROM exitwidth 0089c4 entry=M1X1 exits=M0X1
+REALROM exitwidth 008f43 entry=M0X1 exits=M1X1
+REALROM exitwidth 0094f0 entry=M1X1 exits=M0X1
+REALROM exitwidth 0097e3 entry=M1X1 exits=M0X1
+REALROM exitwidth 009bfa entry=M1X1 exits=M0X1
+REALROM exitwidth 00a1c0 entry=M1X1 exits=M0X1
+REALROM exitwidth 00a1e5 entry=M0X1 exits=M1X1
+REALROM exitwidth 00a23d entry=M0X1 exits=M0X0
+REALROM exitwidth 00a48c entry=M1X1 exits=M1X0
+REALROM exitwidth 00a98a entry=M1X1 exits=M0X1
+REALROM exitwidth 00ab03 entry=M1X1 exits=M0X1
+REALROM exitwidth 00ad18 entry=M1X1 exits=M1X0
+REALROM exitwidth 00ad35 entry=M1X1 exits=M1X0
+REALROM exitwidth 00b074 entry=M1X1 exits=M0X1
+REALROM exitwidth 00b0dd entry=M0X1 exits=M1X0
+REALROM exitwidth 00b125 entry=M0X0 exits=M0X1
+REALROM exitwidth 00b164 entry=M0X1 exits=M1X1
+REALROM exitwidth 00c057 entry=M1X1 exits=M0X1
+REALROM exitwidth 00c07e entry=M1X1 exits=M0X1
+REALROM exitwidth 00c095 entry=M1X1 exits=M0X1
+REALROM exitwidth 00c101 entry=M1X1 exits=M0X1
+REALROM exitwidth 00c116 entry=M1X1 exits=M0X1
+REALROM exitwidth 00c2ed entry=M1X1 exits=M0X1
+REALROM exitwidth 00c30d entry=M1X1 exits=M0X1
+REALROM exitwidth 00c916 entry=M1X1 exits=M0X1
+REALROM exitwidth 00d107 entry=M0X1 exits=M1X1
+REALROM exitwidth 00d1d5 entry=M1X1 exits=M1X0
+REALROM exitwidth 00d2cf entry=M1X1 exits=M0X1
+REALROM exitwidth.truncated 40 of 83
+REALROM computed JMP (!$0x0) sites=1 withTargets=0
+REALROM computed JMP (!$0xn) sites=3 withTargets=0
+REALROM computed JMP (!$0xn,X) sites=14 withTargets=14
+REALROM computed JSR (!$0xn,X) sites=3 withTargets=3
 REALROM computed RTI <UNSUPPORTn> sites=1 withTargets=0
 === REALROM END ===

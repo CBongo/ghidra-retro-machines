@@ -236,6 +236,57 @@ def width_cartridge(title):
     return bytes(image)
 
 
+# grm-9nxj.5.4: jump-table targets recovered and decoded at the dispatch's width.
+JTAB_MASKED = 0x8060                 # JSR ($8060,X) table: AND #$03 caps it at 4 entries
+JTAB_HANDLERS = [0x8070, 0x8078, 0x8080, 0x8088]
+JTAB_DECOY = 0x8090                  # a 5th word that LOOKS like an entry, past the mask
+JTAB_LOWEST = 0x80A0                 # JMP ($80A0,X) table: ends at its own lowest target
+JTAB_LOWEST_HANDLERS = [0x80A6, 0x80AC, 0x80B2]
+
+
+def jtab_reset():
+    """Native, 8-bit A and 16-bit index, then two dispatches. Neither table's targets are
+    reached by anything else, so without the analyzer none of them is decoded at all."""
+    return bytes([
+        0x18,                        # 8000 CLC
+        0xFB,                        # 8001 XCE           ; native
+        0xC2, 0x30,                  # 8002 REP #$30
+        0xE2, 0x20,                  # 8004 SEP #$20      ; M=1 X=0
+        0xA5, 0x10,                  # 8006 LDA $10
+        0x29, 0x03,                  # 8008 AND #$03      ; index 0..3
+        0x0A,                        # 800A ASL A
+        0xAA,                        # 800B TAX
+        0xFC, 0x60, 0x80,            # 800C JSR ($8060,X)
+        0xA5, 0x11,                  # 800F LDA $11       ; unbounded index
+        0x0A,                        # 8011 ASL A
+        0xAA,                        # 8012 TAX
+        0x7C, 0xA0, 0x80,            # 8013 JMP ($80A0,X)
+    ])
+
+
+def le16(v):
+    return bytes([v & 0xFF, (v >> 8) & 0xFF])
+
+
+def jtab_cartridge(title):
+    image = bytearray(cartridge(title))
+    image[0:0x20] = b"\xEA" * 0x20
+    image[0:len(jtab_reset())] = jtab_reset()
+    o = JTAB_MASKED - 0x8000
+    image[o:o + 10] = b"".join(le16(h) for h in JTAB_HANDLERS + [JTAB_DECOY])
+    # Each handler starts with an accumulator immediate: two bytes at M=1, three at M=0.
+    for i, h in enumerate(JTAB_HANDLERS + [JTAB_DECOY]):
+        image[h - 0x8000:h - 0x8000 + 5] = bytes([0xA9, 0x12 + i, 0x85, 0x20, 0x60])
+    o = JTAB_LOWEST - 0x8000
+    image[o:o + 6] = b"".join(le16(h) for h in JTAB_LOWEST_HANDLERS)
+    for i, h in enumerate(JTAB_LOWEST_HANDLERS):
+        # LDA #imm / STA $22 / BRA * -- six bytes, so the handlers abut.
+        image[h - 0x8000:h - 0x8000 + 6] = bytes([0xA9, 0x21 + i, 0x85, 0x22, 0x80, 0xFE])
+    assert image[0:len(jtab_reset())] == jtab_reset()
+    assert image[0x20] != 0xEA       # the NMI handler at $8020 is untouched
+    return bytes(image)
+
+
 def interleaved_hirom(title):
     """A 128 KiB HiROM image (logical layout), then stored with each 64 KiB unit's halves swapped."""
     size = 0x20000
@@ -282,6 +333,8 @@ def main():
 
     # grm-9nxj.5.3: call-width repair (continuation and callee entry).
     bankgen.write_bytes(outdir, "sneswidth.smc", width_cartridge("SNESWIDTH"))
+    # grm-9nxj.5.4: JSR/JMP (abs,X) tables recovered, bounded, and decoded at the dispatch width.
+    bankgen.write_bytes(outdir, "snesjtab.smc", jtab_cartridge("SNESJTAB"))
     # grm-9nxj.5.6: the native NMI vector points at RAM ($0108) that the reset code fills with
     # JML $008040; the analyzer must find $8040 from those constant stores and seed it as the NMI handler.
     bankgen.write_bytes(outdir, "snestramp.smc", tramp_cartridge("SNESTEST TRAMP"))
