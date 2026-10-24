@@ -2,15 +2,15 @@
 REALROM program w_ff2.sfc
 REALROM sha256 414bacc05a18a6137c0de060b4094ab6d1b75105342b0bb36a42e45d945a0e4d
 REALROM language 65816:LE:24:retro
-REALROM instrs 22651
+REALROM instrs 22639
 REALROM functions 573
 REALROM ctx E0M0X0 1823
 REALROM ctx E0M1X0 20785
 REALROM ctx E0M1X1 28
-REALROM ctx E1M1X1 15
+REALROM ctx E1M1X1 3
 REALROM desync BRK 0
 REALROM desync COP 0
-REALROM desync STP 1
+REALROM desync STP 0
 REALROM desync WDM 0
 REALROM ops PHP 10
 REALROM ops PLP 10
@@ -66,6 +66,5 @@ REALROM computed JML [!$0xn] sites=5 withTargets=0
 REALROM computed JMP (!$0x2) sites=1 withTargets=0
 REALROM computed JMP (!$0xn) sites=2 withTargets=0
 REALROM computed RTI <UNSUPPORTn> sites=2 withTargets=0
-REALROM computed STP <UNSUPPORTn> sites=1 withTargets=1
 REALROM plp sites=10 paired=10 ambiguous=0 unpaired=0 stale=0
 === REALROM END ===

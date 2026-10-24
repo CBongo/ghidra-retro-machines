@@ -38,6 +38,7 @@ import ghidra.app.util.opinion.Loader;
 import ghidra.app.util.opinion.LoadSpec;
 import ghidra.app.util.opinion.LoaderTier;
 import ghidra.framework.model.DomainObject;
+import ghidra.framework.options.Options;
 import ghidra.program.database.mem.FileBytes;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressOverflowException;
@@ -263,12 +264,37 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 		}
 		applyDescriptor(program, space, log);
 		createVectors(program, space, header, map, log);
+		disablePointerCodeCreation(program, log);
 
 		// Optional per-game .tbl text table (bead grm-s3wo, shared with NES via
 		// TblTableSupport): store the raw text for TblStringAnalyzer. A bad table is logged only.
 		if (settings.options() != null) {
 			TblTableSupport.apply(program, settings.options(), TBL_PREF_KEY, log);
 		}
+	}
+
+	/** The stock analysis options that create code at any address a pointer-shaped value names. */
+	static final List<String> POINTER_CODE_OPTIONS = List.of(
+		"Reference.Subroutine References", "Data Reference.Subroutine References");
+
+	/**
+	 * Turns off "Subroutine References" in Ghidra's two operand-reference analyzers, for this
+	 * program only (bead grm-9nxj.5.9). They disassemble at any address a 16-bit pointer-shaped
+	 * value in code or data names, and a SNES cartridge is dense with 16-bit tables that are
+	 * graphics, text and level data. Nothing has stamped an M/X/E context at such an address, so it
+	 * decodes at the pspec default -- EMULATION mode, a width no routine past boot runs at. Measured
+	 * on the snes-analysis rows: every instruction these options added was E=1 (CT 637, FF3 133,
+	 * FF2 12), and they were the whole source of the decoded-BRK desyncs (CT 22 -> 0, FF3 5 -> 0).
+	 * Code that really is reached through a table is recovered by the 65816 Jump Tables analyzer,
+	 * at the dispatching code's width. Set as a program option so a user can turn it back on.
+	 */
+	private static void disablePointerCodeCreation(Program program, MessageLog log) {
+		Options options = program.getOptions(Program.ANALYSIS_PROPERTIES);
+		for (String name : POINTER_CODE_OPTIONS) {
+			options.setBoolean(name, false);
+		}
+		log.appendMsg(NAME + ": " + String.join(" and ", POINTER_CODE_OPTIONS) + " off for this " +
+			"program (pointer-named code decodes in emulation mode; see grm-9nxj.5.9)");
 	}
 
 	/**

@@ -2,28 +2,27 @@
 REALROM program w_ff3.sfc
 REALROM sha256 10eccc5d2fab81346dd759f6be478dcb682eef981e8d3d662da176e1f9a996bc
 REALROM language 65816:LE:24:retro
-REALROM instrs 81788
-REALROM functions 2726
+REALROM instrs 81655
+REALROM functions 2725
 REALROM ctx E0M0X0 18282
 REALROM ctx E0M0X1 3864
 REALROM ctx E0M1X0 50874
 REALROM ctx E0M1X1 8612
-REALROM ctx E1M1X1 156
-REALROM desync BRK 5
+REALROM ctx E1M1X1 23
+REALROM desync BRK 0
 REALROM desync COP 1
-REALROM desync STP 1
+REALROM desync STP 0
 REALROM desync WDM 0
-REALROM ops PHP 216
+REALROM ops PHP 215
 REALROM ops PLP 209
 REALROM ops REP 1722
-REALROM ops RTI 8
-REALROM ops SEP 1720
+REALROM ops RTI 7
+REALROM ops SEP 1719
 REALROM ops XCE 3
-REALROM bookmarks.error 10
+REALROM bookmarks.error 9
 REALROM bookmark      5 Bad Instruction: Multiple flows produced inconsistent instruction prototype at # - possibly due to inconsistent context (flow from #)
 REALROM bookmark      2 Bad Instruction: Failed to disassemble at # due to conflicting instruction at # (flow from #)
 REALROM bookmark      2 Bad Instruction: Disassembly not permitted within mapped memory block (flow from #)
-REALROM bookmark      1 Bad Instruction: Could not follow disassembly flow into non-existing memory at # (flow from #)
 REALROM vector NATIVE_COP 00ffff code=no function=false
 REALROM vector NATIVE_BRK 00ffff code=no function=false
 REALROM vector NATIVE_ABORT 00ffff code=no function=false
@@ -34,7 +33,7 @@ REALROM vector EMU_ABORT 00ffff code=no function=false
 REALROM vector EMU_NMI 00ffff code=no function=false
 REALROM vector EMU_RESET 00ff00 code=yes ctx=E1M1X1 function=true
 REALROM vector EMU_IRQBRK 00ffff code=no function=false
-REALROM calls direct=6082 decodedTarget=6081 widthDisagree=157 distinctTargets=54
+REALROM calls direct=6080 decodedTarget=6080 widthDisagree=157 distinctTargets=54
 REALROM calls.disagree c0076a E0M1X1 -> c00b6e E0M1X0
 REALROM calls.disagree c007dc E0M1X1 -> c00b6e E0M1X0
 REALROM calls.disagree c0187a E0M1X0 -> c0215d E0M0X0
@@ -76,13 +75,13 @@ REALROM calls.disagree c2303e E0M1X0 -> c22d71 E0M0X0
 REALROM calls.disagree c230e0 E0M1X0 -> c24781 E0M1X1
 REALROM calls.disagree c23298 E0M0X1 -> c26400 E0M1X1
 REALROM calls.disagree.truncated 40 of 157
-REALROM widtheffect callees=1970 needsM=1230 needsX=1248
-REALROM widtheffect exitM preserves=816 sets0=18 sets1=854 mixedOrNone=282
-REALROM widtheffect exitX preserves=1589 sets0=103 sets1=8 mixedOrNone=270
-REALROM widthconflict sites=6081 entry=0 entryTargets=0 return=2 returnTargets=1
+REALROM widtheffect callees=1969 needsM=1230 needsX=1248
+REALROM widtheffect exitM preserves=816 sets0=18 sets1=854 mixedOrNone=281
+REALROM widtheffect exitX preserves=1589 sets0=103 sets1=8 mixedOrNone=269
+REALROM widthconflict sites=6080 entry=0 entryTargets=0 return=2 returnTargets=1
 REALROM widthconflict.return c0196c -> c01a2a returns=M1 continuation=M0X0
 REALROM widthconflict.return c01ab3 -> c01a2a returns=M1 continuation=M0X0
-REALROM exitwidth functions=2726 returnsAtOtherWidth=151
+REALROM exitwidth functions=2725 returnsAtOtherWidth=151
 REALROM exitwidth c01a2a entry=M0X0 exits=M1X0
 REALROM exitwidth c01a46 entry=M0X0 exits=M1X0
 REALROM exitwidth c0215d entry=M0X0 exits=M1X0
@@ -124,16 +123,11 @@ REALROM exitwidth c22b9d entry=M1X1 exits=M0X1
 REALROM exitwidth c22c30 entry=M1X0 exits=M1X1
 REALROM exitwidth c22d71 entry=M0X0 exits=M1X0
 REALROM exitwidth.truncated 40 of 151
-REALROM computed BRK 0x0 sites=1 withTargets=1
-REALROM computed BRK 0x1 sites=1 withTargets=1
-REALROM computed BRK 0xn sites=3 withTargets=3
 REALROM computed COP 0x3 sites=1 withTargets=1
-REALROM computed JML [!$0xn] sites=1 withTargets=0
 REALROM computed JMP (!$0x8,X) sites=1 withTargets=1
-REALROM computed JMP (!$0xn) sites=4 withTargets=0
+REALROM computed JMP (!$0xn) sites=3 withTargets=0
 REALROM computed JMP (!$0xn,X) sites=41 withTargets=39
-REALROM computed JSR (!$0xn,X) sites=37 withTargets=35
-REALROM computed RTI <UNSUPPORTn> sites=8 withTargets=0
-REALROM computed STP <UNSUPPORTn> sites=1 withTargets=1
+REALROM computed JSR (!$0xn,X) sites=36 withTargets=35
+REALROM computed RTI <UNSUPPORTn> sites=7 withTargets=0
 REALROM plp sites=208 paired=204 ambiguous=0 unpaired=4 stale=0
 === REALROM END ===
