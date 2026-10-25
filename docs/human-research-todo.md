@@ -192,6 +192,34 @@ Each is minutes of work and settles something specific. Highest value per unit e
   borrowed-`RTS` stubs (`b4c1`/`bb80`/`af23`, which are dispatch-table entries) still qualify
   under either answer.
 
+  **Evidence gathered (agent, 2026-10-25, pyghidra-mcp on the 12.2 project with the option ON;
+  facts, not a ruling).** This is the music driver: it reads song data through `($6B),Y` and
+  writes `$4015`/`$4004`/`$4005`.
+  - **One `JSR` entry for the whole region:** `WA000_B28::a084 JSR $E34F`. `$E34F` tests
+    `$04F4`/`$04F5`/`$04E4`/`$04E5` and leaves by `JMP $E3EE` (via `E349`), `JMP $E4C5`
+    (`E361`), `BNE $E37B` (`E373`), `BNE $E3EB` → `JMP $E4C5`, or `RTS`. `$E3EE`'s only
+    predecessor is the `E349 JMP`.
+  - **`$E401` has a twin.** `$E37B`–`$E3E8` and `$E401`–`$E489` are the same "start a song"
+    sequence over two table sets: store `$04E5`, clear `$04E4`, look up start/end/loop
+    (`$B52F/$B53B/$B547` vs `$A86C/$A87B/$A88A`), loop on `$04DF`, then load `$6B/$6C` and the
+    channel offsets (`$B3FF`, `$B42D–$B433` vs `$A73F`, `$A76C–$A772`). The `$E37B` copy takes
+    the song number's high nibble (`LSR`×4); the `$E401` copy uses it as is. **`FUN_E37B`
+    already exists in this project** (reached by `E373 BNE` and `E4F4 JMP`), so the question is
+    really whether *both* copies are entries.
+  - **Neither copy is self-contained.** Both continue into a shared init at `$E48C`: `$E37B`
+    via `E3E8 JMP $E48C`, and `$E401` by falling through (`E43B BNE $E45A` → … → `$E48C`). Then
+    comes the per-frame channel tick at `$E4C5`, which `E361` and `E3EB` also jump to.
+  - **`$E4CD` is the note fetch.** `E4C5 DEC $04D4` (duration) → `BEQ $E4CD` fetch, else
+    `JMP $E57A` (skip fetch). A `$FF` byte goes `E522 INC $04FE` → `E525 JMP $E4CD` (skip it,
+    re-read). At stream end it restarts a song: `E4F4 JMP $E37B` / `E51B JMP $E401` (chosen by
+    `$07F5` = 9 or `$A`), or re-enters a set-up loop mid-way: `E4FE JMP $E3A3`,
+    `E518 JMP $E432`.
+  - **Jumps cross the new function boundaries in both directions:** `E3E8`→`E48C`,
+    `E3EB`/`E361`→`E4C5`, `E4FE`→`E3A3`, `E518`→`E432`, `E43B`→`E45A`. None of the split points
+    (`E37B`, `E3EE`, `E401`, `E4CD`) has a pointer or a `JSR` reference.
+  - Not established: the partition with the option OFF on 12.2, beyond the bead's "one function
+    `E3EE`..`E57A`+" (the golden does not sample these addresses).
+
 ### 1.7 dodge bank 3 `$A00A`–`$A2FF`: real code, and how is it reached? (`grm-6m24`)
 
 - [ ] **Question.** On Ghidra 12.1 this range was code: two functions, `FUN_W8000_B3__a00a` and
@@ -208,6 +236,35 @@ Each is minutes of work and settles something specific. Highest value per unit e
   `$A0xx`–`$A2xx`, settles it. What the answer decides: **real, with an identifiable entry** →
   teach the analysis that entry, which recovers the code on 12.2 honestly. **Not reached / not
   code** → 12.2's output is the better one, and dodge is re-blessed.
+
+  **Evidence gathered (agent, 2026-10-25: raw ROM byte scans of the pinned `36fe18ef…` image,
+  plus pyghidra-mcp on the 12.2 project).** There is a static-looking route in, but its first
+  link has no caller:
+  - **Bank 3 opens with a 14-slot `JMP` table at `$8000`.** Slot **`$8003` = `JMP $A28B`**,
+    inside the range (`A288 JMP $A258` is next to it). On 12.2 only some slots are code (`8000`,
+    `8006`, `8012`…); `8003`, `8009` (→`$A600`), `800C` (→`$A64E`) and `800F` (→`$A675`) are
+    not.
+  - **The fixed bank has far-call stubs at `$FA00`–`$FBF1`**: save `$BFF9`, `LDA #bank`,
+    `JSR $FF08` (bank select), `JSR <slot>`, restore. The stub at **`$FB1B` selects bank 3 and
+    `JSR $8003`**:
+    `FB1B LDA $BFF9 / PHA / LDA #$03 / JSR $FF08 / FB24 JSR $8003 / FB27 PLA / JSR $FF08 / RTS`.
+    It is **not disassembled on 12.2**, and **no `JSR`/`JMP` to `$FB1B` exists anywhere in the
+    ROM.** The only raw matches are bare words in bank 5 (`$9514`, `$9724`, `$9744`, `$BCC2`,
+    `$BD76`), with no `$FB1A` (`RTS`-trick) forms. They do not look like a pointer table, but
+    that is unverified. The other raw `JSR $8003` (`FA0B`) selects bank 0.
+  - **The unreached block is bigger than `$A00A`–`$A2FF`.** Bank 3 has no instructions on 12.2
+    from at least `$9D00` up to `$A583`. Raw `JSR`s into the range sit just before it: `9EC9`→`a237`,
+    `9F4D`→`a258`, `9F50`→`a1a6`, `9F5A`→`a181`, `9F6A`→`a00a`, `9F71`→`a258`, `9F81`→`a237`,
+    `9FB8`→`a1cb`, `9FCE`→`a00a`. So "zero refs from outside" means nothing reaches the whole
+    `$9Dxx`–`$A2FF` block, not just the cluster.
+  - Ruled out as entries: there is no `LDA/LDX/LDY #$A0–$A2` + `PHA` (pushed-address dispatch)
+    anywhere. The fixed-bank raw `JSR $A0xx/$A2xx` hits at `d014`, `d839`, `e4e3` and `f9c4`
+    are false matches: a data table, `STA $20 / RTS`, and two `STA $2006` operands.
+
+  **Sharpened question:** is **`$FB1B`** ever executed, and from where? A breakpoint on `$FB1B`
+  (or `$A28B` with bank 3 mapped) answers it. If something calls it, the entry to teach is the
+  stub, or more generally *every stub in a recognised far-call trampoline run*. That rule would
+  recover this block on 12.2 honestly, along with the other unreached slots.
 
 ---
 
