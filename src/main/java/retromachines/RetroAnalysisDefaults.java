@@ -38,6 +38,12 @@ final class RetroAnalysisDefaults {
 	 * stay jumps, the target is absorbed into the caller's function, and bank-helper attribution,
 	 * which is per function, loses the call (smb3 'via FUN_841d'). A conditional tail call into a
 	 * real entry is modelled exactly by CALL_RETURN. Upstream issue drafted on grm-6m24.
+	 *
+	 * <p>The option is broader than that: it makes a conditional branch into ANY function entry a
+	 * tail call. {@link ConditionalTailCallNarrowingAnalyzer} narrows it back to targets that are
+	 * genuine entries (reached by a JSR or a pointer, not only by branches and jumps), per the
+	 * owner's 2026-10-25 ruling that smb3's $E401/$E4CD, reached only by BNE/BEQ and JMP, are
+	 * part of one routine (SndMus_QueueCommon; grm-6m24.1).
 	 */
 	static final String ALLOW_CONDITIONAL_TAIL_CALLS =
 		"Shared Return Calls.Allow Conditional Jumps";
