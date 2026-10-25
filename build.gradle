@@ -860,6 +860,8 @@ optInTest('spc700DisCorpusTest',
 // (grm-c9d.3 increment 10, VectorRunner.DEFAULT_REBUILD_INTERVAL) bounding the per-run growth of
 // AbstractPcodeMachine's thread registry, a full ~256,000-case run is measured reliably passing at
 // 128m and OOMing at 64m, so 512m keeps a 4x margin. (Before the rebuild fix this needed 9g.)
+// On 12.2 the rebuild only bounds anything because rebuildEmulator() also clears
+// PcodeUseropLibrary.SYMBOL_CACHE, which otherwise pins every discarded emulator (grm-vrkk.9).
 optInTest('spc700VectorTest',
 	"Exhaustive SPC700 vector regression (grm-c9d.2); requires GRM_SPC700_VECTORS " +
 		"(refuses loudly otherwise). Not part of `test`/`unit`/`all` -- see build-and-test.sh's " +
