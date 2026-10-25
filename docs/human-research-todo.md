@@ -266,6 +266,28 @@ Each is minutes of work and settles something specific. Highest value per unit e
   stub, or more generally *every stub in a recognised far-call trampoline run*. That rule would
   recover this block on 12.2 honestly, along with the other unreached slots.
 
+### 1.8 Do the loader option tooltips actually show in the 12.2 import dialog? (`grm-vrkk.1`)
+
+- [ ] **Question.** `d86a94e` gave every import option on the NES, SNES and CBM (C64/C128/PET)
+  loaders a one-line description, which 12.2 (GP-6483) renders as the import dialog's tooltip.
+  It was verified only headlessly: `LoaderOptionContractTest` checks every description exists
+  and survives `Option.copy()`, but nothing has looked at the dialog.
+
+  With the extension installed in the GUI, open **File → Import** on an `.nes`, an `.sfc`/`.smc`
+  and a C64 `.prg`, click **Options…**, and hover each option. Check in particular:
+  - **The file-path fields** — `Text Table (.tbl)` (NES/SNES) and the CBM `… ROM path` fields.
+    They use our own `RomFileOption` editor (text field + Browse button), which replaces the stock
+    editor that normally applies the tooltip, so it sets the tooltip itself on the text field
+    only. Is the tooltip there, and is it acceptable that hovering the Browse button shows none?
+  - **The CBM `Apply symbols: …` checkboxes** (group `Symbol sets`) and the NES/SNES text and
+    checkbox options — these use the stock typed editors, so they *should* just work.
+  - **Wording** — are the descriptions readable as tooltips (length, line wrapping), and is the
+    `Headless: -loader-…` suffix useful there or noise?
+
+  What the answer decides: **all present and readable** → nothing to do, retire this item.
+  **Missing on some editor** → a bead naming which option type, since the contract test cannot
+  see Swing rendering. **Wording too long / suffix unwanted** → a small follow-up edit.
+
 ---
 
 ## 2. Def-use passes on untraced titles
