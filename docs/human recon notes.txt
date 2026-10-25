@@ -303,6 +303,11 @@ megaman E:92e4 jump table
 punchout b165:
 b187 is a JSR to aea3 which is an inline dispatch function. the aeb1 store is misdisassembly of the dispatch table that follows the JSR.
 
+smb3 e3ee:
+this is SndMus_QueueCommon in captainsouthbirds disassembly - https://github.com/captainsouthbird/smb3/blob/master/PRG/prg031.asm line 338.  definitely looks like these are all part of the same conceptual "function".  there are no other references to these pseudo-entry points in the disassembly.
+
+
+
   Next session's shortest path
 
   1. bd list --label background-ok → farm out immediately (grm-hhd first; it blocks every parallel agent).

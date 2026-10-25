@@ -160,55 +160,6 @@ Each is minutes of work and settles something specific. Highest value per unit e
   - **FF3 `$C1:0008`**: entry 4 (`950f`, among `00xx`–`02xx`) looks wrong. Where does the real
     table end?
 
-### 1.6 smb3 `$E3EE`–`$E57A`: one routine, or three? (`grm-6m24`)
-
-- [ ] **Question.** Ghidra 12.2's Shared Return Calls change (GP-6976) led us to turn on
-  "Allow Conditional Jumps" for our programs (`RetroAnalysisDefaults`). With it on, smb3's
-  fixed-bank code `$E3EE`–`$E57A` becomes three functions instead of one:
-  - **`$E401`** starts right after the `RTS` at `$E400`. It is reached by `E3F6 BNE E401` and
-    `E51B JMP E401`.
-  - **`$E4CD`** starts right after `E4CA JMP E57A`. It is reached by `E4C8 BEQ E4CD` and
-    `E525 JMP E4CD`.
-
-  Neither has a `JSR` or a pointer reference. Are `$E401` and `$E4CD` **real routine entries**
-  (`$E3EE` conditionally tail-calls `$E401`, and so on), or **loop heads inside one state-machine
-  routine** that jumps back to them?
-
-  What the answer decides: **real entries** → the option stays as is, and smb3 is re-blessed. Its
-  `LDA ($6B),Y` reads resolved into bank 28 (`$A904`) go from {`e4d3`, `e53b`, `e562`} to nine
-  others, a net +6. **Loop heads** → the rule gets narrowed so that a conditional branch counts
-  as a tail call only when its target is a genuine entry (reached by `JSR` or a pointer). The
-  borrowed-`RTS` stubs (`b4c1`/`bb80`/`af23`, which are dispatch-table entries) still qualify
-  under either answer.
-
-  **Evidence gathered (agent, 2026-10-25, pyghidra-mcp on the 12.2 project with the option ON;
-  facts, not a ruling).** This is the music driver: it reads song data through `($6B),Y` and
-  writes `$4015`/`$4004`/`$4005`.
-  - **One `JSR` entry for the whole region:** `WA000_B28::a084 JSR $E34F`. `$E34F` tests
-    `$04F4`/`$04F5`/`$04E4`/`$04E5` and leaves by `JMP $E3EE` (via `E349`), `JMP $E4C5`
-    (`E361`), `BNE $E37B` (`E373`), `BNE $E3EB` → `JMP $E4C5`, or `RTS`. `$E3EE`'s only
-    predecessor is the `E349 JMP`.
-  - **`$E401` has a twin.** `$E37B`–`$E3E8` and `$E401`–`$E489` are the same "start a song"
-    sequence over two table sets: store `$04E5`, clear `$04E4`, look up start/end/loop
-    (`$B52F/$B53B/$B547` vs `$A86C/$A87B/$A88A`), loop on `$04DF`, then load `$6B/$6C` and the
-    channel offsets (`$B3FF`, `$B42D–$B433` vs `$A73F`, `$A76C–$A772`). The `$E37B` copy takes
-    the song number's high nibble (`LSR`×4); the `$E401` copy uses it as is. **`FUN_E37B`
-    already exists in this project** (reached by `E373 BNE` and `E4F4 JMP`), so the question is
-    really whether *both* copies are entries.
-  - **Neither copy is self-contained.** Both continue into a shared init at `$E48C`: `$E37B`
-    via `E3E8 JMP $E48C`, and `$E401` by falling through (`E43B BNE $E45A` → … → `$E48C`). Then
-    comes the per-frame channel tick at `$E4C5`, which `E361` and `E3EB` also jump to.
-  - **`$E4CD` is the note fetch.** `E4C5 DEC $04D4` (duration) → `BEQ $E4CD` fetch, else
-    `JMP $E57A` (skip fetch). A `$FF` byte goes `E522 INC $04FE` → `E525 JMP $E4CD` (skip it,
-    re-read). At stream end it restarts a song: `E4F4 JMP $E37B` / `E51B JMP $E401` (chosen by
-    `$07F5` = 9 or `$A`), or re-enters a set-up loop mid-way: `E4FE JMP $E3A3`,
-    `E518 JMP $E432`.
-  - **Jumps cross the new function boundaries in both directions:** `E3E8`→`E48C`,
-    `E3EB`/`E361`→`E4C5`, `E4FE`→`E3A3`, `E518`→`E432`, `E43B`→`E45A`. None of the split points
-    (`E37B`, `E3EE`, `E401`, `E4CD`) has a pointer or a `JSR` reference.
-  - Not established: the partition with the option OFF on 12.2, beyond the bead's "one function
-    `E3EE`..`E57A`+" (the golden does not sample these addresses).
-
 ### 1.7 dodge bank 3 `$A00A`–`$A2FF`: real code, and how is it reached? (`grm-6m24`)
 
 - [ ] **Question.** On Ghidra 12.1 this range was code: two functions, `FUN_W8000_B3__a00a` and
@@ -586,3 +537,4 @@ Agents don't write into your ROM library or other personal directories.
 | Copy the five GoodNES-USA real-ROM images into an indexed ROM dir? | **Not needed (owner, 2026-10-16): the GoodNES USA dir went straight into `GRM_ROM_DIR` instead**, using grm-3rel's `;`-separated form (`H:/emulators/nes/roms;Z:/nes/db;H:/emulators/nes/ROMs/All NES Roms (GoodNES)/USA` in `.claude/settings.local.json`). `adventure_island`, `punchout`, `deadly_towers`, `cv3` and `dodge` now resolve on a plain `check nes`; all 35 rows ran on 2026-10-15 (grm-dos9.11) with the dir passed positionally. Do not copy the files. | `grm-3rel`, `grm-x4y1.8` |
 | megaman2 `e6b5`: why is a mid-instruction target in the middle of the `92e4` jump table? | **A typo in a dead slot (owner, 2026-10-18).** `92e4` is the bank-14 object AI dispatcher. `$93f0` is an alternate per-object table, consulted only when `game_mode` (`$AA`) is neither 0 nor 4: a 0 there sends the object ID straight into the split table `92f0`/`9370`, anything else is decremented and indexes the handler table `9470`/`947f`. `$93f0` never exceeds 8, so that table is really 8 entries long; entries 8–13 are never selected, and all but entry 10 are `eeb5` (`RTS`, "never used"). The `e6` at `$9489` is a typo or mastering hiccup for `ee`. **No analyzer change**: `grm-8x6f` already keeps it harmlessly. If it ever matters, use a per-game table-length hint (`grm-hb6`), not a rule. | `grm-fnpu` **closed** |
 | punchout `b18c STA $AEB1,X` in `FUN_b165`: a real MMC2 PRG-select write, or the game poking ROM? | **Neither — it is not a store (owner, 2026-10-25).** `b187 JSR $AEA3` calls an inline dispatch function (the `grm-j2kl` "JSR inline jump table" idiom), and the bytes after the JSR are its dispatch table. `b18c STA $AEB1,X` is Ghidra falling through the JSR and decoding table bytes as code, so the "mechanism write with undeterminable value" warning is spurious. **Do not add an MMC2 rule exempting indexed stores into `$A000-$AFFF`** on its account; the fix is teaching `InlineJumpTableDispatch` to recognize `aea3` (`grm-4kgk`). | `grm-bbe7` **closed**; `grm-4kgk` |
+| smb3 `$E3EE`–`$E57A`: one routine, or three (`$E401`/`$E4CD` split out under 12.2 with "Allow Conditional Jumps" on)? | **One (owner, 2026-10-25).** `$E3EE` is `SndMus_QueueCommon` in captainsouthbird's smb3 disassembly (`PRG/prg031.asm` line 338); `$E401` and `$E4CD` are parts of that one function, and the disassembly references them nowhere else. The 12.2 three-way split is an over-split. **Do not re-bless smb3 as is**: narrow the rule so a conditional branch counts as a tail call only when its target is reached by a `JSR` or a pointer (`grm-6m24.1`); the borrowed-`RTS` stubs `b4c1`/`bb80`/`af23` must still qualify. | `grm-6m24`; `grm-6m24.1` |
