@@ -172,7 +172,7 @@ public class BoardBankAnalyzerCacheProgramTest extends AbstractBundledLanguageTe
 		mapField.setAccessible(true);
 		Map<String, Set<ClassFileInfo>> map = new HashMap<>();
 		map.put("BankSwitchStrategy", Set.of(new ClassFileInfo("grm-w3m-test-injected",
-			RegisterWriteBankSwitchStrategy.class.getName(), "BankSwitchStrategy")));
+			RegisterWriteBankSwitchStrategy.class.getName(), "BankSwitchStrategy", "")));
 		mapField.set(null, map);
 		hasSearchedField.set(null, true);
 	}

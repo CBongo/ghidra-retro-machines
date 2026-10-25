@@ -983,7 +983,9 @@ it is never a `run-banktest.sh` chunk (whose `all` would otherwise pull it in).
   records the same, so on a *stock* install `megaman` and `wizwarr` fail with the 12.1.3 signature
   and the banner says why. Goldens blessed on the patched build are reproducible only on it,
   which is the accepted cost of the ruling, stated here so nobody bisects the repo for it. 12.1.4
-  changed no decompiler source, so the patched binary carries over unchanged (grm-rap8); the build
+  changed no decompiler source, so the patched binary carried over unchanged (grm-rap8); 12.2 did
+  change it, so the same patch was rebuilt on the 12.2 tag (grm-75ey) with a fourth hunk lifting
+  12.2's GP-6945 bad-data cap, which otherwise costs banked ROMs real code (grm-6m24); the build
   recipe is in the `ghidra-12-1-3-native-regression-gp6936` bd memory and the known hashes live in
   `grm_decompiler_build_name` (`tools/banktest/lib/common.sh`).
 

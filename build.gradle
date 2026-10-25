@@ -212,6 +212,9 @@ projectDir.listFiles().each { f ->
 		buildExtension.exclude f.name + '/**'
 	}
 }
+// Ghidra 12.2+ (GP-4045) leaves a <lang>.sla.lock beside each .sla it checks or compiles;
+// upstream excludes them from its own distribution build, and we do the same here.
+buildExtension.exclude '**/*.sla.lock'
 
 // Fail loudly if an allowlisted path that must exist on disk has gone missing, so a rename
 // can't quietly turn "shipped" into "excluded by omission". (lib/ is intentionally absent:
@@ -1044,6 +1047,7 @@ task stageExtensionForTests(type: Sync) {
 	from(projectDir) {
 		include 'data/**', 'ghidra_scripts/**', 'Module.manifest', 'README.md', 'LICENSE',
 			'NOTICE'
+		exclude '**/*.sla.lock' // 12.2+ GP-4045 lock files; see buildExtension.exclude above
 	}
 	from(tasks.named('jar')) {
 		into 'lib'

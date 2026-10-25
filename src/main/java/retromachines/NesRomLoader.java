@@ -491,10 +491,17 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 		catch (IOException e) {
 			// leave the default empty; validateOptions/load will complain if it matters
 		}
-		options.add(new Option(BOARD_OPTION_NAME, defaultBoard));
-		options.add(new Option(PLACEMENT_OPTION_NAME, "", String.class, PLACEMENT_CMD_ARG));
-		options.add(new Option(ASSUME_LAYOUT_MODE_OPTION_NAME, Boolean.TRUE, Boolean.class,
-			ASSUME_LAYOUT_MODE_CMD_ARG));
+		// Typed builders, not the deprecated Option ctors: from 12.2 (GP-6483) a plain Option's
+		// parseAndSetValueByType always fails, which silently drops every -loader-* arg.
+		options.add(Option.newString(BOARD_OPTION_NAME).value(defaultBoard).build());
+		options.add(Option.newString(PLACEMENT_OPTION_NAME)
+				.value("")
+				.commandLineArgument(PLACEMENT_CMD_ARG)
+				.build());
+		options.add(Option.newBoolean(ASSUME_LAYOUT_MODE_OPTION_NAME)
+				.value(Boolean.TRUE)
+				.commandLineArgument(ASSUME_LAYOUT_MODE_CMD_ARG)
+				.build());
 		options.add(TblTableSupport.newOption(TBL_PREF_KEY));
 		return options;
 	}
@@ -648,6 +655,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 		}
 
 		GameIdentities.GameIdentity identity = recordFileFacts(program, provider, header, log);
+		RetroAnalysisDefaults.apply(program, log, getName());
 
 		String boardId = OptionUtils.getOption(BOARD_OPTION_NAME, settings.options(), "");
 		NesBoardRegistry.Board board = boardId.isEmpty() ? NesBoardRegistry.forMapper(header.mapper())

@@ -29,7 +29,6 @@ import org.junit.Test;
 import ghidra.app.cmd.function.CreateFunctionCmd;
 import ghidra.app.decompiler.DecompInterface;
 import ghidra.app.decompiler.DecompileResults;
-import ghidra.app.plugin.core.analysis.SwitchAnalysisDecompileConfigurer;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.program.database.ProgramBuilder;
 import ghidra.program.database.ProgramDB;
@@ -115,7 +114,7 @@ public class SearchLoopDispatchProgramTest extends AbstractBundledLanguageTest {
 	private JumpTable decompiledTable(ProgramDB program, Function function) {
 		DecompInterface ifc = new DecompInterface();
 		try {
-			new SwitchAnalysisDecompileConfigurer(program).configure(ifc);
+			JumpTableBoundAnalyzer.configureDecompiler(program, ifc);
 			assertTrue(ifc.openProgram(program));
 			DecompileResults res = ifc.decompileFunction(function, 30, TaskMonitor.DUMMY);
 			assertTrue(res.getErrorMessage(), res.decompileCompleted());

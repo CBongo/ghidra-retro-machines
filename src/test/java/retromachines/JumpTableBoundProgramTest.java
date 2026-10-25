@@ -26,7 +26,6 @@ import ghidra.app.cmd.function.CreateFunctionCmd;
 import ghidra.app.cmd.function.DecompilerSwitchAnalysisCmd;
 import ghidra.app.decompiler.DecompInterface;
 import ghidra.app.decompiler.DecompileResults;
-import ghidra.app.plugin.core.analysis.SwitchAnalysisDecompileConfigurer;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.program.database.ProgramBuilder;
 import ghidra.program.database.ProgramDB;
@@ -138,7 +137,7 @@ public class JumpTableBoundProgramTest extends AbstractBundledLanguageTest {
 	private DecompileResults decompileWithJumpLoads(ProgramDB program, Function function) {
 		DecompInterface ifc = new DecompInterface();
 		try {
-			new SwitchAnalysisDecompileConfigurer(program).configure(ifc);
+			JumpTableBoundAnalyzer.configureDecompiler(program, ifc);
 			assertTrue("decompiler did not open: " + ifc.getLastMessage(),
 				ifc.openProgram(program));
 			return ifc.decompileFunction(function, 30, TaskMonitor.DUMMY);

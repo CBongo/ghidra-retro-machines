@@ -36,6 +36,8 @@ data/screencode.map
 # Compiled sleigh languages — build output of the sleighCompile task (from the committed
 # .slaspec/.sinc sources); regenerated on every build, never committed
 data/languages/*.sla
+# Ghidra 12.2+ (GP-4045) takes a lock file beside each .sla while checking/compiling it
+data/languages/*.sla.lock
 
 # IDE
 .classpath

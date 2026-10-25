@@ -99,7 +99,7 @@ public class FarCallTrampolineAnalyzerTest extends AbstractBundledLanguageTest {
 			RegisterWriteBankSwitchStrategy.class }) {
 			String name = strategy.getName();
 			if (bucket.stream().noneMatch(c -> c.name().equals(name))) {
-				bucket.add(new ClassFileInfo("grm-v60-test-injected", name, "BankSwitchStrategy"));
+				bucket.add(new ClassFileInfo("grm-v60-test-injected", name, "BankSwitchStrategy", ""));
 			}
 		}
 		Map<String, Set<ClassFileInfo>> map = new HashMap<>();

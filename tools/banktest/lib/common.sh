@@ -531,6 +531,14 @@ grm_decompiler_build_name() {
 			echo "12.1.3 stock" ;;
 		ea42e06df2a64f95188a12422a35a36cd48fd4a6f621e62b001e82f1bbbe923b)
 			echo "12.1.4 stock" ;;
+		fddb1ad04e88917b7282e887054d30016bc3659894ec5006258c65eca09c6799)
+			echo "12.2 stock" ;;
+		1c77f04bf901bb88149339b3122bf68a15ebf24ae5d60764d1a5688a8c575bc6)
+			echo "12.2 stock, MinGW rebuild (control arm)" ;;
+		ff1834fcb7f8caed95f1af711212260750045879bb324a97bb557e2454ab0b8d)
+			echo "12.2 + GP-6936 + no bad-data cap local patch (grm-qp5x.3, grm-6m24)" ;;
+		72a0ff7ed2032d3bc69703bf79db8d617197e00ea53519f4c3815d54c10662f0)
+			echo "12.2 + GP-6936 only (superseded: lacks the grm-6m24 bad-data-cap hunk)" ;;
 		1afff91d3130115546cf7904fb8c95047345155049c8b76661b307761e3820a1)
 			echo "12.1.3/12.1.4 + GP-6936 local patch (grm-qp5x.3)" ;;
 		bd0d7c43f04fca8413ae8ddf2ebe6edd661e6ccbf5228b23460e232568b96d9a)

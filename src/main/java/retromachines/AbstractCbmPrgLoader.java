@@ -228,8 +228,12 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 		// descriptor `default:`. Lets the user apply or skip any set at import -- notably to
 		// enable the off-by-default BASIC/KERNAL zero-page and page-2/3 variable labels.
 		for (Map.Entry<String, Boolean> set : symbolSetDefaults().entrySet()) {
-			options.add(new Option(symbolOptionName(set.getKey()), Boolean.class, set.getValue(),
-				symbolOptionArg(set.getKey()), "Symbol sets"));
+			// Typed builder: see NesRomLoader.getDefaultOptions (12.2, GP-6483).
+			options.add(Option.newBoolean(symbolOptionName(set.getKey()))
+					.value(set.getValue())
+					.commandLineArgument(symbolOptionArg(set.getKey()))
+					.group("Symbol sets")
+					.build());
 		}
 		return options;
 	}
@@ -337,6 +341,7 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 			log.appendMsg("Failed to load " + getMapPath() + ": " + e.getMessage());
 			return;
 		}
+		RetroAnalysisDefaults.apply(program, log, getName());
 
 		// --- Open the bundled IO-chip register struct archive ---
 		FileDataTypeManager gdtMgr = null;

@@ -171,6 +171,44 @@ Each is minutes of work and settles something specific. Highest value per unit e
   - **FF3 `$C1:0008`**: entry 4 (`950f`, among `00xx`–`02xx`) looks wrong. Where does the real
     table end?
 
+### 1.6 smb3 `$E3EE`–`$E57A`: one routine, or three? (`grm-6m24`)
+
+- [ ] **Question.** Ghidra 12.2's Shared Return Calls change (GP-6976) led us to turn on
+  "Allow Conditional Jumps" for our programs (`RetroAnalysisDefaults`). With it on, smb3's
+  fixed-bank code `$E3EE`–`$E57A` becomes three functions instead of one:
+  - **`$E401`** starts right after the `RTS` at `$E400`. It is reached by `E3F6 BNE E401` and
+    `E51B JMP E401`.
+  - **`$E4CD`** starts right after `E4CA JMP E57A`. It is reached by `E4C8 BEQ E4CD` and
+    `E525 JMP E4CD`.
+
+  Neither has a `JSR` or a pointer reference. Are `$E401` and `$E4CD` **real routine entries**
+  (`$E3EE` conditionally tail-calls `$E401`, and so on), or **loop heads inside one state-machine
+  routine** that jumps back to them?
+
+  What the answer decides: **real entries** → the option stays as is, and smb3 is re-blessed. Its
+  `LDA ($6B),Y` reads resolved into bank 28 (`$A904`) go from {`e4d3`, `e53b`, `e562`} to nine
+  others, a net +6. **Loop heads** → the rule gets narrowed so that a conditional branch counts
+  as a tail call only when its target is a genuine entry (reached by `JSR` or a pointer). The
+  borrowed-`RTS` stubs (`b4c1`/`bb80`/`af23`, which are dispatch-table entries) still qualify
+  under either answer.
+
+### 1.7 dodge bank 3 `$A00A`–`$A2FF`: real code, and how is it reached? (`grm-6m24`)
+
+- [ ] **Question.** On Ghidra 12.1 this range was code: two functions, `FUN_W8000_B3__a00a` and
+  `FUN_W8000_B3__a226`, which call each other (`a159`/`a22e` → `a00a`;
+  `a024`/`a043`/`a067`/`a087` → `a226`), plus two switches (`a0c0`, 8 cases; `a139`, 3 cases),
+  about 270 instructions in all. On 12.2 none of it is code. `RefsIntoRangeProbe` finds **zero
+  references into the range from outside it, on both versions**. So static analysis never reached
+  it on 12.1 either. It was probably seeded by an over-read jump-table entry whose reference our
+  bound later retracted. 12.2 reads the tables correctly (GP-7003), so nothing plants it.
+
+  Is this real code that the game runs, and if so, what reaches it (a computed pointer, an
+  `RTS`-trick dispatch, an indirect `JMP` we don't resolve)? A breakpoint on `$A00A` with bank 3
+  mapped, or a hand look at what in bank 3 or the fixed bank computes an address in
+  `$A0xx`–`$A2xx`, settles it. What the answer decides: **real, with an identifiable entry** →
+  teach the analysis that entry, which recovers the code on 12.2 honestly. **Not reached / not
+  code** → 12.2's output is the better one, and dodge is re-blessed.
+
 ---
 
 ## 2. Def-use passes on untraced titles
@@ -288,8 +326,10 @@ do not keep "Done" rows here.
 
 | item | state | last activity | yours? |
 |---|---|---|---|
-| [ghidra discussion #9349](https://github.com/NationalSecurityAgency/ghidra/discussions/9349) banked-memory RFC | open, **zero replies** | opened 2026-07-05 | **Deferred:** the addendum post rides with the fall-through issue below |
-| Fall-through-into-overlay issue (`grm-p3dy`) | **not posted**; draft on the bead | deferred 2026-10-04 | **Deferred:** not until a Ghidra release carries GP-7010 (second item below) |
+| 12.2 Shared Return Calls filter issue (`grm-vrkk.7`) | **not posted**; draft on the bead | drafted 2026-10-24 | **Yes:** GP-6976's conditional-target filter applies to every program, and no 12.2 setting restores 12.1. We set "Allow Conditional Jumps" on meanwhile (`grm-6m24`) |
+| 12.2 bad-data cap issue (`grm-vrkk.6`) | **not posted**; draft on the bead | drafted 2026-10-24 | **Yes:** GP-6945's cap of 4 isn't an analysis option, and stock switch analysis loses real code on banked ROMs. The reference install carries a local hunk meanwhile (`grm-6m24`) |
+| Fall-through-into-overlay issue (`grm-p3dy`) | **not posted**; draft on the bead | **un-deferred 2026-10-24**: 12.2 carries GP-7010 and `callReturnFlowOverrideDoesNotRescueIt` still passes on it | **Yes:** the deferral condition is met, so post it (see the item below) |
+| [ghidra discussion #9349](https://github.com/NationalSecurityAgency/ghidra/discussions/9349) banked-memory RFC | open, **zero replies** | opened 2026-07-05 | **Yes, with the fall-through issue:** the addendum post rides with it |
 | [ghidra#9655](https://github.com/NationalSecurityAgency/ghidra/issues/9655) GP-6936 join varnodes + RAM-half fix PR [#9765](https://github.com/NationalSecurityAgency/ghidra/pull/9765) (`grm-qp5x.2`) | issue open, `Status: Triage`, assigned `caheckman`, [correction comment](https://github.com/NationalSecurityAgency/ghidra/issues/9655#issuecomment-6102852548) asks which of two directions for the 6502 half; PR open, `blocked` = awaiting review | 2026-10-10: PR + comment, then the `certification.manifest` line a third party flagged | No, waiting on a maintainer. Do not PR a spacebase fix until they pick a direction |
 | [ghidra#9447](https://github.com/NationalSecurityAgency/ghidra/issues/9447) jump-table over-read + fix PR [#9717](https://github.com/NationalSecurityAgency/ghidra/pull/9717) (`grm-b3m`) | issue open, `Status: Triage`, assigned `caheckman`; PR open, `blocked` = awaiting review | PR opened 2026-10-04 | No, waiting on a maintainer |
 | [ghidra-snes#6](https://github.com/joshleaves/ghidra-snes/pull/6) seven 65816 defects (`grm-9nxj.7`) | open PR, mergeable, no comments or reviews | opened 2026-09-21 | No, waiting on the maintainer |
@@ -308,7 +348,10 @@ licence, MIT added 2026-10-14 (`grm-9nxj.8`); [deity-informant#359](https://gith
 
 - [ ] **Fall-through override into an overlay space is accepted by the listing and fatal to the
   decompiler — ask upstream whether that is deliberate.** (`grm-p3dy`, ruled 2026-09-21: ask
-  first, build nothing.) **DEFERRED 2026-10-04 (owner): do not post until a Ghidra release
+  first, build nothing.) **READY TO POST (2026-10-24, `grm-75ey`):** Ghidra 12.2 carries GP-7010,
+  and on 12.2 `FallThroughIntoOverlayProgramTest` passes all 11 rows, including
+  `callReturnFlowOverrideDoesNotRescueIt`. So the `CallReturn` record does *not* make the question
+  moot, and the draft still stands. History: **DEFERRED 2026-10-04 (owner): do not post until a Ghidra release
   carries GP-7010** (`da5c0f2`, on `master` since July, not in 12.1.4). It moves flow overrides
   into the decompiler as p-code override records, and its `CallReturn` record may turn this
   override's `BRANCH` into a cross-space CALL, which would make the question moot. On that

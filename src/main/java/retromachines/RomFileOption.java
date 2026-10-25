@@ -28,10 +28,11 @@ import javax.swing.event.DocumentListener;
 import docking.widgets.button.BrowseButton;
 import docking.widgets.filechooser.GhidraFileChooser;
 import docking.widgets.filechooser.GhidraFileChooserMode;
-import ghidra.app.util.Option;
+import ghidra.app.util.AddressFactoryService;
+import ghidra.app.util.importer.options.StringOption;
 
 /**
- * A loader {@link Option} for a path to an on-disk file (used by the descriptor-driven
+ * A loader option for a path to an on-disk file (used by the descriptor-driven
  * machine loaders for optional user-supplied ROM dumps). Its value is the path as a
  * {@code String}.
  *
@@ -44,7 +45,7 @@ import ghidra.app.util.Option;
  * <p>The option also carries a command-line argument, so a headless import can set the
  * path without the GUI editor.
  */
-public class RomFileOption extends Option {
+public class RomFileOption extends StringOption {
 
 	/**
 	 * Creates a file-path option with an editable text field and browse button.
@@ -54,13 +55,13 @@ public class RomFileOption extends Option {
 	 * @param arg   the command-line argument for headless imports
 	 */
 	public RomFileOption(String name, String value, String arg) {
-		super(name, value, String.class, arg);
+		super(name, value, arg, null, null, false, null);
 	}
 
 	/** Returns the editable path field and local-file browse button. */
 	@Override
-	public Component getCustomEditorComponent() {
-		String initial = getValue() == null ? "" : getValue().toString();
+	public Component getCustomEditorComponent(AddressFactoryService addressFactoryService) {
+		String initial = getValue() == null ? "" : getValue();
 		JTextField textField = new JTextField(initial);
 		textField.setColumns(24);
 		// Editable: the path can be typed/pasted directly; every edit updates the value.
@@ -107,16 +108,10 @@ public class RomFileOption extends Option {
 		return panel;
 	}
 
-	/** Returns {@link String} because this option stores a filesystem path. */
-	@Override
-	public Class<?> getValueClass() {
-		return String.class;
-	}
-
 	/** Returns an independent copy preserving this option's name, value, and argument. */
 	@Override
-	public Option copy() {
-		String value = getValue() == null ? "" : getValue().toString();
+	public RomFileOption copy() {
+		String value = getValue() == null ? "" : getValue();
 		return new RomFileOption(getName(), value, getArg());
 	}
 }

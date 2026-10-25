@@ -150,8 +150,14 @@ bank-argument recovery on `megaman` and `wizwarr` (`grm-9wl6`); the three-hunk f
 `grm-qp5x.2` ships in no release, so the reference machine's install runs a MinGW build of the
 `Ghidra_12.1.3_build` tag with that patch, and `megaman`/`wizwarr` are blessed on it. 12.1.4
 changed no decompiler source (Java or C++) and still has the bug, so the same patched binary was
-carried over unchanged on the 12.1.4 retarget (`grm-rap8`). The stock binary sits beside it as
-`decompile.exe.stock-12.1.4`. Every runner prints `== decompiler: … ==`
+carried over unchanged on the 12.1.4 retarget (`grm-rap8`). 12.2 still has GP-6936 unchanged
+but ~40 other decompiler C++ commits, so on the 12.2 retarget (`grm-75ey`) the same three hunks were
+re-applied to `Ghidra_12.2_build` and rebuilt, plus a fourth hunk (owner ruling, `grm-6m24`):
+12.2's GP-6945 caps a decompile at 4 bad-data flows, and stock switch analysis then abandons
+functions that flow into unresolved bank windows -- real code lost on tmnt/ff1/cv3/contra. No
+program or tool option reaches that cap, so the local build sets `max_baddata` unlimited
+(`ff1834fc…`, patch on `grm-75ey`). The stock binary sits beside it as
+`decompile.exe.stock-12.2`. Every runner prints `== decompiler: … ==`
 naming the build by sha256 (`grm_decompiler_build_name` in `tools/banktest/lib/common.sh`), and the
 `REALROM STALENESS` stamp records it, so **a `megaman`/`wizwarr` failure whose banner says `12.1.x
 stock` is the missing patch, not a regression**. The candidate cache keys on the same hash, so a

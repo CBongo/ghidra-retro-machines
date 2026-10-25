@@ -147,8 +147,12 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 			DomainObject domainObject, boolean loadIntoProgram, boolean mirrorFsLayout) {
 		List<Option> options = super.getDefaultOptions(provider, loadSpec, domainObject,
 			loadIntoProgram, mirrorFsLayout);
-		options.add(new Option(OPTION_MIRRORS, Boolean.TRUE, Boolean.class, null));
-		options.add(new Option(OPTION_LAYOUT, Mode.AUTO.label(), String.class, LAYOUT_CMD_ARG));
+		// Typed builders: see NesRomLoader.getDefaultOptions (12.2, GP-6483).
+		options.add(Option.newBoolean(OPTION_MIRRORS).value(Boolean.TRUE).build());
+		options.add(Option.newString(OPTION_LAYOUT)
+				.value(Mode.AUTO.label())
+				.commandLineArgument(LAYOUT_CMD_ARG)
+				.build());
 		options.add(TblTableSupport.newOption(TBL_PREF_KEY));
 		return options;
 	}
@@ -265,6 +269,7 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 		applyDescriptor(program, space, log);
 		createVectors(program, space, header, map, log);
 		disablePointerCodeCreation(program, log);
+		RetroAnalysisDefaults.apply(program, log, NAME);
 
 		// Optional per-game .tbl text table (bead grm-s3wo, shared with NES via
 		// TblTableSupport): store the raw text for TblStringAnalyzer. A bad table is logged only.

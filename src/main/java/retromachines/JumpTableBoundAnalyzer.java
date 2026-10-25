@@ -25,6 +25,7 @@ import java.util.Set;
 import ghidra.app.cmd.disassemble.DisassembleCommand;
 import ghidra.app.cmd.function.CreateFunctionCmd;
 import ghidra.app.decompiler.DecompInterface;
+import ghidra.app.decompiler.DecompileOptions;
 import ghidra.app.decompiler.DecompileResults;
 import ghidra.app.plugin.core.analysis.SwitchAnalysisDecompileConfigurer;
 import ghidra.app.plugin.core.clear.ClearFlowAndRepairCmd;
@@ -158,6 +159,23 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 	/** Matches {@code DecompilerSwitchAnalyzer.OPTION_DEFAULT_DECOMPILER_TIMEOUT_SECS}. */
 	private static final int DECOMPILE_TIMEOUT_SECS = 60;
 
+	/**
+	 * Configures {@code ifc} exactly as {@link SwitchAnalysisDecompileConfigurer} does, with one
+	 * deliberate exception: no cap on bad-data sites. Ghidra 12.2 (GP-6945) aborts a whole
+	 * decompile after 4 flows into undecodable or unmapped bytes, and an over-read table -- the
+	 * thing this analyzer exists to bound -- produces exactly those flows (a 3-byte-stride search
+	 * table read as 2-byte entries lands on $0282, $1002, $2003, ...). Under the cap the decompile
+	 * fails and the table is never seen. Set here rather than relying on the reference machine's
+	 * locally patched decompile.exe (which also lifts the cap, grm-6m24) so this analyzer behaves
+	 * the same on a stock 12.2 install (grm-75ey).
+	 */
+	static void configureDecompiler(Program program, DecompInterface ifc) {
+		new SwitchAnalysisDecompileConfigurer(program).configure(ifc);
+		DecompileOptions opts = ifc.getOptions();
+		opts.setMaxBadData(Integer.MAX_VALUE);
+		ifc.setOptions(opts);
+	}
+
 	public JumpTableBoundAnalyzer() {
 		super(NAME, DESCRIPTION, AnalyzerType.INSTRUCTION_ANALYZER);
 		// Must run BEFORE the stock DecompilerSwitchAnalyzer (also CODE_ANALYSIS) so our override
@@ -237,7 +255,7 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		BankContext keepAlive = BankContext.forProgram(program);
 		DecompInterface ifc = new DecompInterface();
 		try {
-			new SwitchAnalysisDecompileConfigurer(program).configure(ifc);
+			configureDecompiler(program, ifc);
 			if (!ifc.openProgram(program)) {
 				AnalyzerLog.warn(this, log, "decompiler failed to open program: " +
 					ifc.getLastMessage());

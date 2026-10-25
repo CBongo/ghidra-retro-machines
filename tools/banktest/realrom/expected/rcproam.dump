@@ -15,7 +15,7 @@ REALROM count instrs.inOverlay 0
 REALROM count bankComments 12
 REALROM count warnings 1
 REALROM count notes 11
-REALROM count symbols 109
+REALROM count symbols 100
 REALROM sample.bankcomment 8011 bank -> mirroring=0,prg_mode=0,prg_bank=0 via FUN_ff89 [switch-value flow]
 REALROM sample.bankcomment 801b bank -> mirroring=0,prg_mode=0,prg_bank=0 via FUN_ffc5 [switch-value flow]
 REALROM sample.bankcomment 9327 bank -> mirroring=0,prg_mode=0,prg_bank=0 via FUN_ff89 [switch-value flow]
@@ -54,16 +54,16 @@ REALROM sample.symbol 884d case_4 USER_DEFINED primary=true
 REALROM sample.symbol 8d61 case_3 USER_DEFINED primary=true
 REALROM sample.symbol 8d85 case_5 USER_DEFINED primary=true
 REALROM sample.symbol 919d case_2 USER_DEFINED primary=true
-REALROM sample.symbol 9829 switch USER_DEFINED primary=true
-REALROM sample.symbol 9861 case_0 USER_DEFINED primary=true
-REALROM sample.symbol 9867 case_3 USER_DEFINED primary=true
-REALROM sample.symbol 986a case_2 USER_DEFINED primary=true
-REALROM sample.symbol 986d case_1 USER_DEFINED primary=true
-REALROM sample.symbol 98be case_4 USER_DEFINED primary=true
-REALROM sample.symbol 98c4 case_7 USER_DEFINED primary=true
-REALROM sample.symbol 98ff case_6 USER_DEFINED primary=true
-REALROM sample.symbol 9902 case_5 USER_DEFINED primary=true
 REALROM sample.symbol 9aab NMI IMPORTED primary=true
 REALROM sample.symbol 9ad4 switch USER_DEFINED primary=true
-REALROM sample.symbol.truncated 25 of 97
+REALROM sample.symbol 9b05 case_1 USER_DEFINED primary=true
+REALROM sample.symbol 9d65 case_9 USER_DEFINED primary=true
+REALROM sample.symbol 9d8e case_10 USER_DEFINED primary=true
+REALROM sample.symbol a16e switch USER_DEFINED primary=true
+REALROM sample.symbol a187 case_10 USER_DEFINED primary=false
+REALROM sample.symbol a187 case_3 USER_DEFINED primary=true
+REALROM sample.symbol a1a8 case_2 USER_DEFINED primary=true
+REALROM sample.symbol a1a8 case_8 USER_DEFINED primary=false
+REALROM sample.symbol a1a8 case_9 USER_DEFINED primary=false
+REALROM sample.symbol.truncated 25 of 88
 === REALROM END ===

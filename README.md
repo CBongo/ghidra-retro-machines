@@ -134,8 +134,8 @@ being re-executed by hand across the community — this extension automates it.
 ## Building
 
 Requires a [Ghidra](https://ghidra-sre.org/) installation (12.x) and a JDK the install
-accepts (21+). Gradle itself comes from the committed wrapper — run `./gradlew` and it fetches
-the pinned version (9.7.1, sha256-verified). Ghidra 12.1.3 accepts Gradle 8.5 and up with no
+accepts (25+ since Ghidra 12.2). Gradle itself comes from the committed wrapper — run `./gradlew` and it fetches
+the pinned version (9.7.1, sha256-verified). Ghidra 12.2 accepts Gradle 9.1 and up with no
 ceiling, but its own `support/buildExtension.gradle` uses an API Gradle **10** removes, so
 stay on 9.x until upstream updates it. Gradle 9 is also what lets the project build and test
 on JDK 25 (8.13 could not).

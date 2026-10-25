@@ -277,12 +277,11 @@ public abstract class MosConstantReferenceAnalyzer extends ConstantPropagationAn
 	 * {@code evaluateReference}, re-apply the same fluent setter chain the stock
 	 * implementation uses, and flow constants exactly as the base class would.
 	 *
-	 * <p>Note {@code setMinStoreLoadOffset} (in {@code ConstantPropagationContextEvaluator})
-	 * is buggy upstream -- it assigns {@code maxSpeculativeOffset} instead of
-	 * {@code minStoreLoadOffset} (tracked as bead grm-6xh). We reproduce the stock chain
-	 * verbatim rather than working around it here, so this analyzer's speculative-offset
-	 * behavior matches every other processor's {@link ConstantPropagationAnalyzer} subclass
-	 * bit for bit, bug included.
+	 * <p>The stock chain is reproduced verbatim so this analyzer's speculative-offset behavior
+	 * matches every other processor's {@link ConstantPropagationAnalyzer} subclass bit for bit.
+	 * Through 12.1.x that included an upstream bug: {@code setMinStoreLoadOffset} assigned
+	 * {@code maxSpeculativeOffset} instead of {@code minStoreLoadOffset}. It was fixed in 12.2
+	 * (GP-7150, our PR #9513, bead grm-6xh), so the setter now does what it says.
 	 */
 	@Override
 	public AddressSetView flowConstants(final Program program, Address flowStart,
