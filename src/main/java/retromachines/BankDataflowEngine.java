@@ -838,7 +838,6 @@ final class BankDataflowEngine {
 				callEffect = applyCallHint(hintTally, callEffect, helper, outState, instr, oracle);
 			}
 			List<CallEffect> forkEffects = null;
-			boolean denied = false;
 			// grm-wul, the call-site twin of the direct case: the caller's argument did not resolve
 			// at this call and nothing says the failure is honest (a second-tier relay, a provably
 			// argument-less helper, a restore entry). Ask along each arm of the join heading the
@@ -879,7 +878,9 @@ final class BankDataflowEngine {
 							forkEffects = values;
 						}
 						else {
-							denied = true;
+							// Denied. armsDenied on the CallSwitch is the report: the adapter turns it
+							// into MULTI_VALUED_AT_MERGE (BoardBankAnalyzer), where the direct case above
+							// has to set that stop itself (grm-9y6w).
 							call.arms(values.stream().map(CallEffect::state).toList(), true);
 						}
 					}
