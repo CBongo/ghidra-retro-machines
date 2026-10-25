@@ -1,0 +1,55 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "grm-local",
+  "description": "Project-local Claude Code plugins for ghidra-retro-machines",
+  "owner": {
+    "name": "ghidra-retro-machines"
+  },
+  "plugins": [
+    {
+      "name": "grm-jdtls",
+      "description": "jdtls for this repo: re-syncs Gradle automatically and ignores a stale GHIDRA_INSTALL_DIR (grm-jwt6)",
+      "version": "1.0.0",
+      "source": "./plugins/grm-jdtls",
+      "category": "development",
+      "strict": false,
+      "lspServers": {
+        "jdtls": {
+          "command": "jdtls",
+          "env": {
+            "GHIDRA_INSTALL_DIR": ""
+          },
+          "extensionToLanguage": {
+            ".java": "java"
+          },
+          "initializationOptions": {
+            "settings": {
+              "java": {
+                "configuration": {
+                  "updateBuildConfiguration": "automatic"
+                },
+                "import": {
+                  "exclusions": [
+                    "**/node_modules/**",
+                    "**/.metadata/**",
+                    "**/archetype-resources/**",
+                    "**/META-INF/maven/**",
+                    "**/.claude/**"
+                  ]
+                }
+              }
+            }
+          },
+          "settings": {
+            "java": {
+              "configuration": {
+                "updateBuildConfiguration": "automatic"
+              }
+            }
+          },
+          "startupTimeout": 120000
+        }
+      }
+    }
+  ]
+}
