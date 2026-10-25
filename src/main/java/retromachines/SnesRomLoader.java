@@ -148,10 +148,18 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 		List<Option> options = super.getDefaultOptions(provider, loadSpec, domainObject,
 			loadIntoProgram, mirrorFsLayout);
 		// Typed builders: see NesRomLoader.getDefaultOptions (12.2, GP-6483).
-		options.add(Option.newBoolean(OPTION_MIRRORS).value(Boolean.TRUE).build());
+		options.add(Option.newBoolean(OPTION_MIRRORS)
+				.value(Boolean.TRUE)
+				.description("Create the hardware mirrors (ROM in the $80-$FF/HiROM banks, " +
+					"low RAM and IO in the system banks) as byte-mapped views of the canonical " +
+					"blocks. Unchecked, mirrored addresses are left unmapped.")
+				.build());
 		options.add(Option.newString(OPTION_LAYOUT)
 				.value(Mode.AUTO.label())
 				.commandLineArgument(LAYOUT_CMD_ARG)
+				.description("How the image is arranged in the file: Auto (detect " +
+					"interleaving), Off (canonical layout only) or Force (always " +
+					"de-interleave). Headless: " + LAYOUT_CMD_ARG + " Off")
 				.build());
 		options.add(TblTableSupport.newOption(TBL_PREF_KEY));
 		return options;
@@ -180,8 +188,12 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 	 */
 	public static final String OPTION_LAYOUT = "ROM layout";
 
-	/** Headless spelling of {@link #OPTION_LAYOUT}: {@code -loader-romLayout Off}. */
-	private static final String LAYOUT_CMD_ARG = "romLayout";
+	/**
+	 * Headless spelling of {@link #OPTION_LAYOUT}: {@code -loader-romLayout Off}. ProgramLoader
+	 * compares the WHOLE flag against the option's arg, so the prefix is part of it; the bare
+	 * {@code "romLayout"} this used to be never matched anything (grm-vrkk.1).
+	 */
+	private static final String LAYOUT_CMD_ARG = Loader.COMMAND_LINE_ARG_PREFIX + "-romLayout";
 
 	/** Loads and validates the SNES cartridge memory map. */
 	@Override

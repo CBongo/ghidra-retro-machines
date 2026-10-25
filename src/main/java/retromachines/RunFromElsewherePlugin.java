@@ -29,6 +29,7 @@ import docking.widgets.checkbox.GCheckBox;
 import docking.widgets.combobox.GComboBox;
 import docking.widgets.label.GLabel;
 import docking.widgets.textfield.IntegerTextField;
+import docking.widgets.textfield.integer.IntegerFormat;
 import ghidra.MiscellaneousPluginPackage;
 import ghidra.app.context.ListingActionContext;
 import ghidra.app.context.ListingContextAction;
@@ -161,7 +162,7 @@ public class RunFromElsewherePlugin extends ProgramPlugin {
 				// routine's operand when they reach for this.
 				srcField.setAddress(contextAddress);
 			}
-			lenField.setDecimalMode();
+			lenField.setFormat(IntegerFormat.DEC);
 
 			addWorkPanel(buildPanel());
 			addOKButton();

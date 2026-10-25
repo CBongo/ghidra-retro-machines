@@ -76,7 +76,9 @@ final class TblTableSupport {
 	static Option newOption(String prefKey) {
 		String saved = SystemUtilities.isInHeadlessMode() ? ""
 				: Preferences.getProperty(prefKey, "", true);
-		return new RomFileOption(OPTION_NAME, saved, CMD_ARG);
+		return new RomFileOption(OPTION_NAME, saved, CMD_ARG,
+			"Optional .tbl text table (byte=character) for decoding the game's custom text " +
+				"encoding into strings. Headless: " + CMD_ARG + " <path>");
 	}
 
 	/**

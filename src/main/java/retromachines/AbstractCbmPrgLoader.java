@@ -218,7 +218,11 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 		try {
 			for (RomSlot slot : romSlots()) {
 			String saved = gui ? Preferences.getProperty(slot.prefKey(), "", true) : "";
-			options.add(new RomFileOption(slot.optionName(), saved, slot.cmdArg()));
+			options.add(new RomFileOption(slot.optionName(), saved, slot.cmdArg(),
+				"Optional " + slot.size() + "-byte " + slot.image().toUpperCase() +
+					" ROM dump; its bytes fill the " + slot.target() +
+					" block, which is otherwise left uninitialized. Headless: " + slot.cmdArg() +
+					" <path>"));
 			}
 		}
 		catch (IOException e) {
@@ -233,6 +237,9 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 					.value(set.getValue())
 					.commandLineArgument(symbolOptionArg(set.getKey()))
 					.group("Symbol sets")
+					.description("Apply the '" + set.getKey() + "' descriptor symbol set " +
+						"(labels for its ROM routines / RAM variables). Headless: " +
+						symbolOptionArg(set.getKey()) + " true|false")
 					.build());
 		}
 		return options;

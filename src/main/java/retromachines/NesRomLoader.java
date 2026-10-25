@@ -493,14 +493,25 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 		}
 		// Typed builders, not the deprecated Option ctors: from 12.2 (GP-6483) a plain Option's
 		// parseAndSetValueByType always fails, which silently drops every -loader-* arg.
-		options.add(Option.newString(BOARD_OPTION_NAME).value(defaultBoard).build());
+		options.add(Option.newString(BOARD_OPTION_NAME)
+				.value(defaultBoard)
+				.description("Board model the PRG banking layout comes from; defaults to the " +
+					"board registered for the iNES header's mapper number.")
+				.build());
 		options.add(Option.newString(PLACEMENT_OPTION_NAME)
 				.value("")
 				.commandLineArgument(PLACEMENT_CMD_ARG)
+				.description("Space-separated window:bank pairs (e.g. W8000:5) pinning a " +
+					"switchable window to a PRG bank where analysis cannot recover it. " +
+					"Headless: " + PLACEMENT_CMD_ARG + " W8000:5")
 				.build());
 		options.add(Option.newBoolean(ASSUME_LAYOUT_MODE_OPTION_NAME)
 				.value(Boolean.TRUE)
 				.commandLineArgument(ASSUME_LAYOUT_MODE_CMD_ARG)
+				.description("Take the board's power-on layout mode (MMC1) as known when " +
+					"nothing else states one, dropping the other modes' overlays. Uncheck for " +
+					"titles that run in, or switch to, another mode. Headless: " +
+					ASSUME_LAYOUT_MODE_CMD_ARG + " false")
 				.build());
 		options.add(TblTableSupport.newOption(TBL_PREF_KEY));
 		return options;

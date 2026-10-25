@@ -53,9 +53,10 @@ public class RomFileOption extends StringOption {
 	 * @param name  the option name shown in the import dialog
 	 * @param value the initial path (empty string = not supplied)
 	 * @param arg   the command-line argument for headless imports
+	 * @param description the import dialog tooltip (12.2, GP-6483)
 	 */
-	public RomFileOption(String name, String value, String arg) {
-		super(name, value, arg, null, null, false, null);
+	public RomFileOption(String name, String value, String arg, String description) {
+		super(name, value, arg, null, null, false, description);
 	}
 
 	/** Returns the editable path field and local-file browse button. */
@@ -64,6 +65,8 @@ public class RomFileOption extends StringOption {
 		String initial = getValue() == null ? "" : getValue();
 		JTextField textField = new JTextField(initial);
 		textField.setColumns(24);
+		// StringOption's own editor sets this; ours replaces that editor, so it must too.
+		textField.setToolTipText(getDescription());
 		// Editable: the path can be typed/pasted directly; every edit updates the value.
 		textField.getDocument().addDocumentListener(new DocumentListener() {
 			private void sync() {
@@ -108,10 +111,10 @@ public class RomFileOption extends StringOption {
 		return panel;
 	}
 
-	/** Returns an independent copy preserving this option's name, value, and argument. */
+	/** Returns an independent copy preserving this option's name, value, argument, and description. */
 	@Override
 	public RomFileOption copy() {
 		String value = getValue() == null ? "" : getValue();
-		return new RomFileOption(getName(), value, getArg());
+		return new RomFileOption(getName(), value, getArg(), getDescription());
 	}
 }
