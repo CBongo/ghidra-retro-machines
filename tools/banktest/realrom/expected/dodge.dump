@@ -18,12 +18,12 @@ REALROM block WC000 c000-ffff overlay=false
 REALROM count blocks.total 13
 REALROM count blocks.overlay 7
 REALROM count refs.intoOverlay.retargeted 31
-REALROM count refs.intoOverlay.intraOverlay 2497
-REALROM count instrs.inOverlay 11366
+REALROM count refs.intoOverlay.intraOverlay 2428
+REALROM count instrs.inOverlay 11098
 REALROM count bankComments 26
 REALROM count warnings 20
 REALROM count notes 28
-REALROM count symbols 189
+REALROM count symbols 166
 REALROM sample.bankcomment c023 bank -> mirroring=0,prg_mode=3,prg_bank=4? via FUN_ff08 [known: prg_bank.0=0,prg_bank.1=0,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment c041 bank -> mirroring=0,prg_mode=3,prg_bank=6? via FUN_ff08 [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment f03b bank -> mirroring=0,prg_mode=3,prg_bank=6? via FUN_ff08 [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
@@ -75,7 +75,7 @@ REALROM sample.ref 8027 -> W8000_B4::91e4 UNCONDITIONAL_JUMP primary=true
 REALROM sample.ref 802a -> W8000_B4::930f UNCONDITIONAL_JUMP primary=true
 REALROM sample.ref 802d -> W8000_B4::96ab UNCONDITIONAL_JUMP primary=true
 REALROM sample.ref 8030 -> W8000_B4::8a60 UNCONDITIONAL_JUMP primary=true
-REALROM sample.ref.truncated 25 of 2528
+REALROM sample.ref.truncated 25 of 2459
 REALROM sample.warn a913 [Bad Instruction] Disassembly not permitted within uninitialized memory block (flow from W8000_B3::a913)
 REALROM sample.warn fa11 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ff08 whose bank argument could not be recovered at this call site
 REALROM sample.warn fa25 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ff08 whose bank argument could not be recovered at this call site
@@ -149,5 +149,5 @@ REALROM sample.symbol 8312 case_23 USER_DEFINED primary=true
 REALROM sample.symbol 831c case_12 USER_DEFINED primary=true
 REALROM sample.symbol 8323 case_13 USER_DEFINED primary=true
 REALROM sample.symbol 8376 case_25 USER_DEFINED primary=true
-REALROM sample.symbol.truncated 25 of 177
+REALROM sample.symbol.truncated 25 of 154
 === REALROM END ===

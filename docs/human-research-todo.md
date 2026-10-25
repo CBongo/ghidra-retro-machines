@@ -160,52 +160,6 @@ Each is minutes of work and settles something specific. Highest value per unit e
   - **FF3 `$C1:0008`**: entry 4 (`950f`, among `00xx`–`02xx`) looks wrong. Where does the real
     table end?
 
-### 1.7 dodge bank 3 `$A00A`–`$A2FF`: real code, and how is it reached? (`grm-6m24`)
-
-- [ ] **Question.** On Ghidra 12.1 this range was code: two functions, `FUN_W8000_B3__a00a` and
-  `FUN_W8000_B3__a226`, which call each other (`a159`/`a22e` → `a00a`;
-  `a024`/`a043`/`a067`/`a087` → `a226`), plus two switches (`a0c0`, 8 cases; `a139`, 3 cases),
-  about 270 instructions in all. On 12.2 none of it is code. `RefsIntoRangeProbe` finds **zero
-  references into the range from outside it, on both versions**. So static analysis never reached
-  it on 12.1 either. It was probably seeded by an over-read jump-table entry whose reference our
-  bound later retracted. 12.2 reads the tables correctly (GP-7003), so nothing plants it.
-
-  Is this real code that the game runs, and if so, what reaches it (a computed pointer, an
-  `RTS`-trick dispatch, an indirect `JMP` we don't resolve)? A breakpoint on `$A00A` with bank 3
-  mapped, or a hand look at what in bank 3 or the fixed bank computes an address in
-  `$A0xx`–`$A2xx`, settles it. What the answer decides: **real, with an identifiable entry** →
-  teach the analysis that entry, which recovers the code on 12.2 honestly. **Not reached / not
-  code** → 12.2's output is the better one, and dodge is re-blessed.
-
-  **Evidence gathered (agent, 2026-10-25: raw ROM byte scans of the pinned `36fe18ef…` image,
-  plus pyghidra-mcp on the 12.2 project).** There is a static-looking route in, but its first
-  link has no caller:
-  - **Bank 3 opens with a 14-slot `JMP` table at `$8000`.** Slot **`$8003` = `JMP $A28B`**,
-    inside the range (`A288 JMP $A258` is next to it). On 12.2 only some slots are code (`8000`,
-    `8006`, `8012`…); `8003`, `8009` (→`$A600`), `800C` (→`$A64E`) and `800F` (→`$A675`) are
-    not.
-  - **The fixed bank has far-call stubs at `$FA00`–`$FBF1`**: save `$BFF9`, `LDA #bank`,
-    `JSR $FF08` (bank select), `JSR <slot>`, restore. The stub at **`$FB1B` selects bank 3 and
-    `JSR $8003`**:
-    `FB1B LDA $BFF9 / PHA / LDA #$03 / JSR $FF08 / FB24 JSR $8003 / FB27 PLA / JSR $FF08 / RTS`.
-    It is **not disassembled on 12.2**, and **no `JSR`/`JMP` to `$FB1B` exists anywhere in the
-    ROM.** The only raw matches are bare words in bank 5 (`$9514`, `$9724`, `$9744`, `$BCC2`,
-    `$BD76`), with no `$FB1A` (`RTS`-trick) forms. They do not look like a pointer table, but
-    that is unverified. The other raw `JSR $8003` (`FA0B`) selects bank 0.
-  - **The unreached block is bigger than `$A00A`–`$A2FF`.** Bank 3 has no instructions on 12.2
-    from at least `$9D00` up to `$A583`. Raw `JSR`s into the range sit just before it: `9EC9`→`a237`,
-    `9F4D`→`a258`, `9F50`→`a1a6`, `9F5A`→`a181`, `9F6A`→`a00a`, `9F71`→`a258`, `9F81`→`a237`,
-    `9FB8`→`a1cb`, `9FCE`→`a00a`. So "zero refs from outside" means nothing reaches the whole
-    `$9Dxx`–`$A2FF` block, not just the cluster.
-  - Ruled out as entries: there is no `LDA/LDX/LDY #$A0–$A2` + `PHA` (pushed-address dispatch)
-    anywhere. The fixed-bank raw `JSR $A0xx/$A2xx` hits at `d014`, `d839`, `e4e3` and `f9c4`
-    are false matches: a data table, `STA $20 / RTS`, and two `STA $2006` operands.
-
-  **Sharpened question:** is **`$FB1B`** ever executed, and from where? A breakpoint on `$FB1B`
-  (or `$A28B` with bank 3 mapped) answers it. If something calls it, the entry to teach is the
-  stub, or more generally *every stub in a recognised far-call trampoline run*. That rule would
-  recover this block on 12.2 honestly, along with the other unreached slots.
-
 ### 1.8 Do the loader option tooltips actually show in the 12.2 import dialog? (`grm-vrkk.1`)
 
 - [ ] **Question.** `d86a94e` gave every import option on the NES, SNES and CBM (C64/C128/PET)
@@ -538,3 +492,4 @@ Agents don't write into your ROM library or other personal directories.
 | megaman2 `e6b5`: why is a mid-instruction target in the middle of the `92e4` jump table? | **A typo in a dead slot (owner, 2026-10-18).** `92e4` is the bank-14 object AI dispatcher. `$93f0` is an alternate per-object table, consulted only when `game_mode` (`$AA`) is neither 0 nor 4: a 0 there sends the object ID straight into the split table `92f0`/`9370`, anything else is decremented and indexes the handler table `9470`/`947f`. `$93f0` never exceeds 8, so that table is really 8 entries long; entries 8–13 are never selected, and all but entry 10 are `eeb5` (`RTS`, "never used"). The `e6` at `$9489` is a typo or mastering hiccup for `ee`. **No analyzer change**: `grm-8x6f` already keeps it harmlessly. If it ever matters, use a per-game table-length hint (`grm-hb6`), not a rule. | `grm-fnpu` **closed** |
 | punchout `b18c STA $AEB1,X` in `FUN_b165`: a real MMC2 PRG-select write, or the game poking ROM? | **Neither — it is not a store (owner, 2026-10-25).** `b187 JSR $AEA3` calls an inline dispatch function (the `grm-j2kl` "JSR inline jump table" idiom), and the bytes after the JSR are its dispatch table. `b18c STA $AEB1,X` is Ghidra falling through the JSR and decoding table bytes as code, so the "mechanism write with undeterminable value" warning is spurious. **Do not add an MMC2 rule exempting indexed stores into `$A000-$AFFF`** on its account; the fix is teaching `InlineJumpTableDispatch` to recognize `aea3` (`grm-4kgk`). | `grm-bbe7` **closed**; `grm-4kgk` |
 | smb3 `$E3EE`–`$E57A`: one routine, or three (`$E401`/`$E4CD` split out under 12.2 with "Allow Conditional Jumps" on)? | **One (owner, 2026-10-25).** `$E3EE` is `SndMus_QueueCommon` in captainsouthbird's smb3 disassembly (`PRG/prg031.asm` line 338); `$E401` and `$E4CD` are parts of that one function, and the disassembly references them nowhere else. The 12.2 three-way split is an over-split. **Do not re-bless smb3 as is**: narrow the rule so a conditional branch counts as a tail call only when its target is reached by a `JSR` or a pointer (`grm-6m24.1`); the borrowed-`RTS` stubs `b4c1`/`bb80`/`af23` must still qualify. | `grm-6m24`; `grm-6m24.1` |
+| dodge bank 3 `$A00A`–`$A2FF` (code on 12.1, data on 12.2, no outside reference): real code, and how is it reached? | **Real code, but no entry was seen (owner, 2026-10-25).** Bank 3 `$9E72`–`$A4AA` is code throughout, apart from a couple of switch tables. Normal play (the first couple of matches, then a game over) never executes `$FB1B`, the far-call stub that selects bank 3 and `JSR $8003` → `JMP $A28B`; it may serve late-game or credits content. With no identifiable entry there is nothing honest to teach, so **12.2's output stands and dodge was re-blessed** (instrs.inOverlay 11366 → 11098, symbols 189 → 166); 12.1 only reached it through an over-read jump-table seed. A heuristic that treats every stub in a far-call trampoline run as an entry is filed as `grm-m06g` (P4, ask before building). Separate owner observation: dodge's table at `82bd` (dispatch `82ba`) is over-read, real length 21 (`grm-uzep`). | `grm-6m24`; `grm-m06g`; `grm-uzep` |

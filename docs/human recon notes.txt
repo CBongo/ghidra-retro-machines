@@ -306,7 +306,8 @@ b187 is a JSR to aea3 which is an inline dispatch function. the aeb1 store is mi
 smb3 e3ee:
 this is SndMus_QueueCommon in captainsouthbirds disassembly - https://github.com/captainsouthbird/smb3/blob/master/PRG/prg031.asm line 338.  definitely looks like these are all part of the same conceptual "function".  there are no other references to these pseudo-entry points in the disassembly.
 
-
+dodge 3:a00a-a2ff:
+this is definitely code from 9e72-a4aa, with only a couple of switch tables interrupting.  normal gameplay does not seem to reach fb1b. it's possible it is used later in the game or in an end credits context, but it is not reached after playing through the first couple of matches and game over. in an unrelated observation, the jump table at 82ba (table 82bd) appears to be overread but not fixed up. the first entry points to 82e9 which immediately follows the table so i would have expected our table shortener to clean it up. actual length is 21.
 
   Next session's shortest path
 
