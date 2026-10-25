@@ -208,6 +208,28 @@ a long gate there is fine and often right.
 If a foreground run genuinely exceeds what one tool call allows, say so in your report and hand
 the orchestrator the command to finish it. Never report a gate result you did not observe.
 
+## Upstream drafts: the bead is the master copy, between `---8<---` markers
+
+Agents draft upstream issues and PRs; the owner posts them (see "Anything needing the user's
+identity" above). **Keep the draft on the owning bead** — its description, or a new comment when
+refreshing one (the last block wins) — so it syncs with `bd dolt push` and survives a fresh clone.
+Never keep the only copy in a file: `docs/drafts/` is gitignored, so it exists on one machine.
+Mark it exactly like this, each marker on its own line:
+
+```
+---8<--- TITLE ---8<---
+One-line title
+---8<--- BODY ---8<---
+Markdown body
+---8<--- END ---8<---
+```
+
+Write the body **one line per paragraph**: GitHub turns every single newline in an issue body into
+a line break, so text wrapped at 100 columns pastes as ragged lines. Re-verify version-specific
+claims against the current target before calling a draft ready. The owner runs
+`python -I tools/upstream-draft.py <bead>`, which writes `docs/drafts/<bead>.md` (a throwaway
+copy) and puts the title, a blank line, then the body on the clipboard.
+
 ## Machine-specific paths belong in local settings, never in a committed file
 
 This is a public repository. Future contributors will not have your directory layout, so **no

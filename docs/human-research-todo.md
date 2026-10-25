@@ -395,6 +395,12 @@ Blocked on judgment, not effort.
 
 Agents can't file these — they need an account and CLA agreement.
 
+**To post a drafted item:** `python -I tools/upstream-draft.py <bead>` puts the draft on your
+clipboard as the title, a blank line, then the body. Paste it into GitHub's body field, then cut
+the first line into the title field. It also writes `docs/drafts/<bead>.md` (gitignored, a
+throwaway copy). The bead stays the master copy: edit drafts there (see `AGENTS.md`, "Upstream
+drafts").
+
 **Current state of everything upstream** — full re-check against GitHub 2026-10-04; `#9655`/`#9765`
 re-checked 2026-10-10; `grm-vrkk.8` row checked 2026-10-25. Re-check before acting on it, and before re-deriving anything a row covers.
 
@@ -408,7 +414,7 @@ do not keep "Done" rows here.
 | 12.2 deprecated `Option` constructors issue (`grm-vrkk.8`) | **not posted**; draft on the bead | drafted 2026-10-25; no existing issue found, `Option.java` unchanged on `master` | **Yes:** in 12.2 an option built with the deprecated constructors silently loses its headless `-loader-*` arg, and one failed arg makes the import run with every option at its default, exit 0. Our loaders are migrated (`grm-75ey`, `grm-vrkk.1`), so this is only a report |
 | 12.2 Shared Return Calls filter issue (`grm-vrkk.7`) | **not posted**; draft on the bead | drafted 2026-10-24 | **Yes:** GP-6976's conditional-target filter applies to every program, and no 12.2 setting restores 12.1. We set "Allow Conditional Jumps" on meanwhile (`grm-6m24`) |
 | 12.2 bad-data cap issue (`grm-vrkk.6`) | **not posted**; draft on the bead | drafted 2026-10-24 | **Yes:** GP-6945's cap of 4 isn't an analysis option, and stock switch analysis loses real code on banked ROMs. The reference install carries a local hunk meanwhile (`grm-6m24`) |
-| Fall-through-into-overlay issue (`grm-p3dy`) | **not posted**; draft on the bead | **un-deferred 2026-10-24**: 12.2 carries GP-7010 and `callReturnFlowOverrideDoesNotRescueIt` still passes on it | **Yes:** the deferral condition is met, so post it (see the item below) |
+| Fall-through-into-overlay issue (`grm-p3dy`) | **not posted**; draft on the bead, **refreshed for 12.2 2026-10-25** (source claims re-verified) | **un-deferred 2026-10-24**: 12.2 carries GP-7010 and `callReturnFlowOverrideDoesNotRescueIt` still passes on it | **Yes:** the deferral condition is met, so post it (see the item below) |
 | [ghidra discussion #9349](https://github.com/NationalSecurityAgency/ghidra/discussions/9349) banked-memory RFC | open, **zero replies** | opened 2026-07-05 | **Yes, with the fall-through issue:** the addendum post rides with it |
 | [ghidra#9655](https://github.com/NationalSecurityAgency/ghidra/issues/9655) GP-6936 join varnodes + RAM-half fix PR [#9765](https://github.com/NationalSecurityAgency/ghidra/pull/9765) (`grm-qp5x.2`) | issue open, `Status: Triage`, assigned `caheckman`, [correction comment](https://github.com/NationalSecurityAgency/ghidra/issues/9655#issuecomment-6102852548) asks which of two directions for the 6502 half; PR open, `blocked` = awaiting review | 2026-10-10: PR + comment, then the `certification.manifest` line a third party flagged | No, waiting on a maintainer. Do not PR a spacebase fix until they pick a direction |
 | [ghidra#9447](https://github.com/NationalSecurityAgency/ghidra/issues/9447) jump-table over-read + fix PR [#9717](https://github.com/NationalSecurityAgency/ghidra/pull/9717) (`grm-b3m`) | issue open, `Status: Triage`, assigned `caheckman`; PR open, `blocked` = awaiting review | PR opened 2026-10-04 | No, waiting on a maintainer |

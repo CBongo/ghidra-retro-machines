@@ -94,3 +94,7 @@ data/descriptor-sources.sha256
 # Runtime lock file dropped at the repo root by the beads tooling (nothing in this repo writes
 # it) -- transient state, never committed
 .beads.gate.lock
+
+# Upstream issue/PR drafts extracted from beads by tools/upstream-draft.py -- throwaway copies,
+# the bead is the master (see AGENTS.md "Upstream drafts")
+docs/drafts/
