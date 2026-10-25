@@ -396,7 +396,7 @@ Blocked on judgment, not effort.
 Agents can't file these — they need an account and CLA agreement.
 
 **Current state of everything upstream** — full re-check against GitHub 2026-10-04; `#9655`/`#9765`
-re-checked 2026-10-10. Re-check before acting on it, and before re-deriving anything a row covers.
+re-checked 2026-10-10; `grm-vrkk.8` row checked 2026-10-25. Re-check before acting on it, and before re-deriving anything a row covers.
 
 **Ordering rule:** rows that need you come first, then your deliberately deferred items, then rows
 waiting on someone else (most recent activity first). A row whose upstream item is **merged or
@@ -405,6 +405,7 @@ do not keep "Done" rows here.
 
 | item | state | last activity | yours? |
 |---|---|---|---|
+| 12.2 deprecated `Option` constructors issue (`grm-vrkk.8`) | **not posted**; draft on the bead | drafted 2026-10-25; no existing issue found, `Option.java` unchanged on `master` | **Yes:** in 12.2 an option built with the deprecated constructors silently loses its headless `-loader-*` arg, and one failed arg makes the import run with every option at its default, exit 0. Our loaders are migrated (`grm-75ey`, `grm-vrkk.1`), so this is only a report |
 | 12.2 Shared Return Calls filter issue (`grm-vrkk.7`) | **not posted**; draft on the bead | drafted 2026-10-24 | **Yes:** GP-6976's conditional-target filter applies to every program, and no 12.2 setting restores 12.1. We set "Allow Conditional Jumps" on meanwhile (`grm-6m24`) |
 | 12.2 bad-data cap issue (`grm-vrkk.6`) | **not posted**; draft on the bead | drafted 2026-10-24 | **Yes:** GP-6945's cap of 4 isn't an analysis option, and stock switch analysis loses real code on banked ROMs. The reference install carries a local hunk meanwhile (`grm-6m24`) |
 | Fall-through-into-overlay issue (`grm-p3dy`) | **not posted**; draft on the bead | **un-deferred 2026-10-24**: 12.2 carries GP-7010 and `callReturnFlowOverrideDoesNotRescueIt` still passes on it | **Yes:** the deferral condition is met, so post it (see the item below) |
