@@ -224,8 +224,13 @@ Markdown body
 ---8<--- END ---8<---
 ```
 
-Write the body **one line per paragraph**: GitHub turns every single newline in an issue body into
-a line break, so text wrapped at 100 columns pastes as ragged lines. Re-verify version-specific
+**Never hard-wrap text bound for GitHub — one line per paragraph.** GitHub renders every single
+newline in an issue body, PR description, comment or discussion post as a line break, so prose
+wrapped at 100 columns (this repo's habit for files and beads) posts as ragged half-lines. This
+applies to every draft above and to anything an agent writes through `gh` or the GitHub API.
+Separate paragraphs with a blank line; list items, headings, tables and fenced code keep their
+own lines as usual. The rest of a bead (context, decision notes) can stay wrapped; only the
+text between the markers is what gets pasted. Re-verify version-specific
 claims against the current target before calling a draft ready. The owner runs
 `python -I tools/upstream-draft.py <bead>`, which writes `docs/drafts/<bead>.md` (a throwaway
 copy) and puts the title, a blank line, then the body on the clipboard.
