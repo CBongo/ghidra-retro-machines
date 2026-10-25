@@ -39,6 +39,13 @@ bash tools/ghidra-mcp/serve.sh stop
 
 (`Scripts/` is the Windows venv layout; elsewhere it is `bin/`.)
 
+**Verified versions.** pyghidra-mcp 0.2.7 was accepted on Ghidra 12.1.x (`grm-haj3`) and
+re-verified on 12.2 (`grm-6sv7`, 2026-10-25: server start, `disassemble`, `decompile_function`
+and `closure6502.py` on blmaster). The venv takes `pyghidra` from PyPI (3.1.0 at that check),
+not the 3.2.0 wheel 12.2 bundles under `Ghidra/Features/PyGhidra/pypkg/dist`. The mismatch is
+harmless: `pyghidra` only launches the JVM against `GHIDRA_INSTALL_DIR`. Bump
+`PYGHIDRA_MCP_VERSION` only when a retarget actually breaks one of those four checks.
+
 ## Things that fail silently, and how `serve.sh` handles them
 
 - **Wrong extension or decompiler.** `serve.sh` prints the decompiler build (by sha256) and the
