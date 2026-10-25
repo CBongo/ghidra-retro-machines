@@ -12,7 +12,8 @@ Usage:
                     e.g. o3c000@8000 is MMC3 8K bank 30 at $8000, o34000@a000 bank 26 at $A000
 
 --find matches the row's sha256 from tools/banktest/realrom/manifest*.tsv against every
-.nes file (depth 1) in the space-separated dirs of $GRM_ROM_DIR. Run from the repo root.
+.nes file (depth 1) in the dirs of $GRM_ROM_DIR (';'-separated if the value contains a ';',
+else space-separated, as realrom-test.sh reads it). Run from the repo root.
 
 Why this exists: a listing quoted in a bead, or a golden's sample, is not ground truth --
 decode the image (see the disassemble-the-pinned-rom-before-trusting-a-listing bd memory).
@@ -93,7 +94,11 @@ def find(row_id):
                 sha = f[2]
     if sha is None:
         sys.exit('no manifest row ' + row_id)
-    for d in os.environ.get('GRM_ROM_DIR', '').split():
+    # Same rule as realrom-test.sh (grm-3rel): a value containing ';' splits on ';' only (so a
+    # dir name may contain spaces), otherwise on any whitespace.
+    dirs = os.environ.get('GRM_ROM_DIR', '')
+    dirs = [d.strip() for d in dirs.split(';')] if ';' in dirs else dirs.split()
+    for d in filter(None, dirs):
         for p in glob.glob(os.path.join(d, '*')):
             if p.lower().endswith('.nes') and \
                     hashlib.sha256(open(p, 'rb').read()).hexdigest() == sha:

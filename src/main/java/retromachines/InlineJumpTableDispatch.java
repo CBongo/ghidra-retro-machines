@@ -55,7 +55,8 @@ import ghidra.program.model.symbol.ReferenceManager;
  * <li>terminates with {@code JMP (p)} -- the actual dispatch.</li>
  * </ol>
  * Harmless register-save/restore noise (a {@code STY}/{@code STX} before the index is captured,
- * a restoring {@code LDY} after both loads, as in the db3 shape) is tolerated; anything else --
+ * a restoring {@code LDY} after both loads, as in the db3 shape; or an ABSOLUTE save into a RAM
+ * cell that the {@code LDY} reads back, as in punchout's aea3, grm-4kgk) is tolerated; anything else --
  * in particular a conditional branch, or an inline-ARGUMENT routine that pops, modifies and
  * re-pushes its return address before an {@code RTS} -- is declined.
  *
@@ -99,6 +100,9 @@ final class InlineJumpTableDispatch {
 		// stored at hiVectorAddr, awaiting the balancing PLA; 3 = PLA'd and stored, vector complete.
 		int parkState = 0;
 		Address hiVectorAddr = null;
+		// An ABSOLUTE register save (punchout aea3: STY $04c9 ... LDY $04c9, grm-4kgk): the RAM
+		// cell it wrote, which the restore must read back.
+		Address absoluteSave = null;
 
 		// What the NEXT instruction is required to be, set by PLA / the indirect-Y load.
 		final int PENDING_NONE = 0;
@@ -165,7 +169,7 @@ final class InlineJumpTableDispatch {
 				// The Y restore may also sit BETWEEN the high-byte load and its store (tmnt's
 				// c702: LDA ($00),Y; LDY $03; STA $03; JMP ($0002), grm-qa5z) -- harmless there
 				// too, since LDY leaves A alone and Y is not read again.
-				if (loadCount == 1 && directZeroPageLoadAddress(instr) != null) {
+				if (loadCount == 1 && isYRestore(instr, absoluteSave)) {
 					pc = instr.getFallThrough();
 					continue;
 				}
@@ -271,15 +275,23 @@ final class InlineJumpTableDispatch {
 				}
 				case "STY":
 				case "STX": {
-					// Harmless register-save noise, only before the index is captured.
-					if (ySet || directZeroPageStoreAddress(instr) == null) {
+					// Harmless register-save noise, only before the index is captured: to zero page,
+					// or to an absolute RAM cell (never a mechanism register -- that is a bank switch).
+					if (ySet) {
 						return Boolean.FALSE;
+					}
+					if (directZeroPageStoreAddress(instr) == null) {
+						Address cell = absoluteRamRegisterSave(program, instr);
+						if (cell == null || absoluteSave != null) {
+							return Boolean.FALSE;
+						}
+						absoluteSave = cell;
 					}
 					break;
 				}
 				case "LDY": {
 					// Harmless restore, only after both loads are done.
-					if (loadCount != 2 || directZeroPageLoadAddress(instr) == null) {
+					if (loadCount != 2 || !isYRestore(instr, absoluteSave)) {
 						return Boolean.FALSE;
 					}
 					break;
@@ -649,6 +661,39 @@ final class InlineJumpTableDispatch {
 			return null;
 		}
 		return zeroPageOperand(instr);
+	}
+
+	/**
+	 * {@code STY $nnnn} / {@code STX $nnnn} (absolute, opcodes {@code 0x8c}/{@code 0x8e}) into a
+	 * RAM cell -- the cell, or null. RAM here means a non-volatile block that is writable or has no
+	 * bytes behind it; a store into ROM (an NES mapper register) or IO is a mechanism write, never
+	 * save noise.
+	 */
+	private static Address absoluteRamRegisterSave(Program program, Instruction instr) {
+		int op = opcodeByte(instr);
+		String mn = instr.getMnemonicString();
+		if (!("STY".equals(mn) && op == 0x8c) && !("STX".equals(mn) && op == 0x8e)) {
+			return null;
+		}
+		Address cell = absoluteOperand(instr);
+		if (cell == null) {
+			return null;
+		}
+		MemoryBlock block = program.getMemory().getBlock(cell);
+		if (block == null || block.isVolatile() || (block.isInitialized() && !block.isWrite())) {
+			return null;
+		}
+		return cell;
+	}
+
+	/** The Y restore: {@code LDY $nn}, or {@code LDY $nnnn} (opcode {@code 0xac}) reading back the
+	 *  cell an absolute save wrote ({@code absoluteSave}, null when there was none). */
+	private static boolean isYRestore(Instruction instr, Address absoluteSave) {
+		if (directZeroPageLoadAddress(instr) != null) {
+			return true;
+		}
+		return absoluteSave != null && "LDY".equals(instr.getMnemonicString()) &&
+			opcodeByte(instr) == 0xac && absoluteSave.equals(absoluteOperand(instr));
 	}
 
 	/** {@code LDA ($nn),Y} (indirect indexed, opcode {@code 0xb1}) -- the zero-page base address

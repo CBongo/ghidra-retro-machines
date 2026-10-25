@@ -27,10 +27,10 @@ REALROM block WE000 e000-ffff overlay=false
 REALROM count blocks.total 22
 REALROM count blocks.overlay 15
 REALROM count refs.intoOverlay.retargeted 45
-REALROM count refs.intoOverlay.intraOverlay 914
-REALROM count instrs.inOverlay 3776
+REALROM count refs.intoOverlay.intraOverlay 983
+REALROM count instrs.inOverlay 4103
 REALROM count bankComments 38
-REALROM count warnings 18
+REALROM count warnings 16
 REALROM count notes 12
 REALROM count symbols 18
 REALROM sample.bankcomment a02e bank -> 8 (prg_bank=8) via FUN_aa0f
@@ -96,10 +96,9 @@ REALROM sample.ref 801f -> W8000_B10::8181 DATA primary=true
 REALROM sample.ref 8020 -> W8000_B8::807b CONDITIONAL_JUMP primary=true
 REALROM sample.ref 8021 -> W8000_B7::8e1f UNCONDITIONAL_JUMP primary=true
 REALROM sample.ref 8024 -> W8000_B7::8e23 UNCONDITIONAL_JUMP primary=true
-REALROM sample.ref.truncated 25 of 959
+REALROM sample.ref.truncated 25 of 1028
 REALROM sample.warn 8393 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_b252, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
 REALROM sample.warn a665 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_aa17, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
-REALROM sample.warn a671 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_b165, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
 REALROM sample.warn a67a [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_aa17, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
 REALROM sample.warn a68c [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_aa17, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
 REALROM sample.warn a7ed [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_aa17, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
@@ -109,7 +108,6 @@ REALROM sample.warn aa6b [NesBankingAnalyzer] Bank state becomes unknown here: c
 REALROM sample.warn aa74 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_aa17, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
 REALROM sample.warn aac5 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_aa17, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
 REALROM sample.warn abf1 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_aa17, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
-REALROM sample.warn b18c [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn b249 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_aa17, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
 REALROM sample.warn b252 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_aa17, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
 REALROM sample.warn b255 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)

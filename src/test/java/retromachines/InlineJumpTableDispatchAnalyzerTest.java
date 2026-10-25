@@ -124,6 +124,48 @@ public class InlineJumpTableDispatchAnalyzerTest extends AbstractBundledLanguage
 		assertEquals(Boolean.TRUE, InlineJumpTableDispatch.recognizeDispatcher(program, addr(entry)));
 	}
 
+	/** The punchout aea3 shape (grm-4kgk): the megaman3 PHA/PLA vector, with Y saved to and
+	 *  restored from an ABSOLUTE RAM cell rather than zero page. */
+	@Test
+	public void recognizesAbsoluteRamSaveRestoreShape() throws Exception {
+		ProgramDB program = freshProgram();
+		uninitializedRam(builder, ".ram", "0x100", 0x700);
+		long entry = 0xaea3;
+		// STY $04c9; ASL A; TAY; PLA; STA $ee; PLA; STA $ef; INY; LDA ($ee),Y; PHA; INY;
+		// LDA ($ee),Y; STA $ef; PLA; STA $ee; LDY $04c9; JMP ($00ee)
+		builder.setBytes(String.format("0x%x", entry),
+			"8c c9 04 0a a8 68 85 ee 68 85 ef c8 b1 ee 48 c8 b1 ee 85 ef 68 85 ee ac c9 04 6c ee 00",
+			true);
+
+		assertEquals(Boolean.TRUE, InlineJumpTableDispatch.recognizeDispatcher(program, addr(entry)));
+	}
+
+	/** The same shape, but the "save" writes into ROM -- on NES a mapper register, i.e. a bank
+	 *  switch, which is never harmless noise. */
+	@Test
+	public void declinesAbsoluteSaveIntoRom() throws Exception {
+		ProgramDB program = freshProgram();
+		long entry = 0xaea3;
+		builder.setBytes(String.format("0x%x", entry),
+			"8c 00 80 0a a8 68 85 ee 68 85 ef c8 b1 ee 48 c8 b1 ee 85 ef 68 85 ee ac 00 80 6c ee 00",
+			true);
+
+		assertEquals(Boolean.FALSE, InlineJumpTableDispatch.recognizeDispatcher(program, addr(entry)));
+	}
+
+	/** An absolute restore must read back the cell the save wrote. */
+	@Test
+	public void declinesAbsoluteRestoreFromDifferentCell() throws Exception {
+		ProgramDB program = freshProgram();
+		uninitializedRam(builder, ".ram", "0x100", 0x700);
+		long entry = 0xaea3;
+		builder.setBytes(String.format("0x%x", entry),
+			"8c c9 04 0a a8 68 85 ee 68 85 ef c8 b1 ee 48 c8 b1 ee 85 ef 68 85 ee ac ca 04 6c ee 00",
+			true);
+
+		assertEquals(Boolean.FALSE, InlineJumpTableDispatch.recognizeDispatcher(program, addr(entry)));
+	}
+
 	/** An unbalanced PHA: the lo byte is pushed and never popped. */
 	@Test
 	public void declinesPhaWithoutBalancingPla() throws Exception {
