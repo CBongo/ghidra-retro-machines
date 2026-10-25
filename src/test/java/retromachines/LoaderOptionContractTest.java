@@ -21,11 +21,13 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import java.util.List;
+import java.util.Set;
 
 import org.junit.Test;
 
 import ghidra.app.util.Option;
 import ghidra.app.util.bin.ByteArrayProvider;
+import ghidra.app.util.opinion.AbstractProgramLoader;
 import ghidra.app.util.opinion.Loader;
 
 /**
@@ -41,6 +43,10 @@ public class LoaderOptionContractTest extends AbstractBundledLanguageTest {
 			true, false);
 	}
 
+	private static final Set<String> STOCK_OPTIONS =
+		Set.of(AbstractProgramLoader.APPLY_LABELS_OPTION_NAME,
+			AbstractProgramLoader.ANCHOR_LABELS_OPTION_NAME);
+
 	private static void assertContract(Loader loader) {
 		List<Option> options = defaults(loader);
 		assertFalse(loader.getName() + ": no options", options.isEmpty());
@@ -49,6 +55,11 @@ public class LoaderOptionContractTest extends AbstractBundledLanguageTest {
 			String description = option.getDescription();
 			assertNotNull(what + ": no description", description);
 			assertFalse(what + ": blank description", description.isBlank());
+			// Ours only: AbstractProgramLoader's stock label options keep Ghidra's own text.
+			if (!STOCK_OPTIONS.contains(option.getName())) {
+				assertTrue(what + ": description not built by OptionTooltip (one unwrapped line)",
+					description.startsWith("<html>"));
+			}
 			assertEquals(what + ": copy() dropped the description", description,
 				option.copy().getDescription());
 			String arg = option.getArg();

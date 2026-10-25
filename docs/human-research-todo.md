@@ -160,28 +160,6 @@ Each is minutes of work and settles something specific. Highest value per unit e
   - **FF3 `$C1:0008`**: entry 4 (`950f`, among `00xx`–`02xx`) looks wrong. Where does the real
     table end?
 
-### 1.8 Do the loader option tooltips actually show in the 12.2 import dialog? (`grm-vrkk.1`)
-
-- [ ] **Question.** `d86a94e` gave every import option on the NES, SNES and CBM (C64/C128/PET)
-  loaders a one-line description, which 12.2 (GP-6483) renders as the import dialog's tooltip.
-  It was verified only headlessly: `LoaderOptionContractTest` checks every description exists
-  and survives `Option.copy()`, but nothing has looked at the dialog.
-
-  With the extension installed in the GUI, open **File → Import** on an `.nes`, an `.sfc`/`.smc`
-  and a C64 `.prg`, click **Options…**, and hover each option. Check in particular:
-  - **The file-path fields** — `Text Table (.tbl)` (NES/SNES) and the CBM `… ROM path` fields.
-    They use our own `RomFileOption` editor (text field + Browse button), which replaces the stock
-    editor that normally applies the tooltip, so it sets the tooltip itself on the text field
-    only. Is the tooltip there, and is it acceptable that hovering the Browse button shows none?
-  - **The CBM `Apply symbols: …` checkboxes** (group `Symbol sets`) and the NES/SNES text and
-    checkbox options — these use the stock typed editors, so they *should* just work.
-  - **Wording** — are the descriptions readable as tooltips (length, line wrapping), and is the
-    `Headless: -loader-…` suffix useful there or noise?
-
-  What the answer decides: **all present and readable** → nothing to do, retire this item.
-  **Missing on some editor** → a bead naming which option type, since the contract test cannot
-  see Swing rendering. **Wording too long / suffix unwanted** → a small follow-up edit.
-
 ---
 
 ## 2. Def-use passes on untraced titles
@@ -493,3 +471,4 @@ Agents don't write into your ROM library or other personal directories.
 | punchout `b18c STA $AEB1,X` in `FUN_b165`: a real MMC2 PRG-select write, or the game poking ROM? | **Neither — it is not a store (owner, 2026-10-25).** `b187 JSR $AEA3` calls an inline dispatch function (the `grm-j2kl` "JSR inline jump table" idiom), and the bytes after the JSR are its dispatch table. `b18c STA $AEB1,X` is Ghidra falling through the JSR and decoding table bytes as code, so the "mechanism write with undeterminable value" warning is spurious. **Do not add an MMC2 rule exempting indexed stores into `$A000-$AFFF`** on its account; the fix is teaching `InlineJumpTableDispatch` to recognize `aea3` (`grm-4kgk`). | `grm-bbe7` **closed**; `grm-4kgk` |
 | smb3 `$E3EE`–`$E57A`: one routine, or three (`$E401`/`$E4CD` split out under 12.2 with "Allow Conditional Jumps" on)? | **One (owner, 2026-10-25).** `$E3EE` is `SndMus_QueueCommon` in captainsouthbird's smb3 disassembly (`PRG/prg031.asm` line 338); `$E401` and `$E4CD` are parts of that one function, and the disassembly references them nowhere else. The 12.2 three-way split is an over-split. **Do not re-bless smb3 as is**: narrow the rule so a conditional branch counts as a tail call only when its target is reached by a `JSR` or a pointer (`grm-6m24.1`); the borrowed-`RTS` stubs `b4c1`/`bb80`/`af23` must still qualify. | `grm-6m24`; `grm-6m24.1` |
 | dodge bank 3 `$A00A`–`$A2FF` (code on 12.1, data on 12.2, no outside reference): real code, and how is it reached? | **Real code, but no entry was seen (owner, 2026-10-25).** Bank 3 `$9E72`–`$A4AA` is code throughout, apart from a couple of switch tables. Normal play (the first couple of matches, then a game over) never executes `$FB1B`, the far-call stub that selects bank 3 and `JSR $8003` → `JMP $A28B`; it may serve late-game or credits content. With no identifiable entry there is nothing honest to teach, so **12.2's output stands and dodge was re-blessed** (instrs.inOverlay 11366 → 11098, symbols 189 → 166); 12.1 only reached it through an over-read jump-table seed. A heuristic that treats every stub in a far-call trampoline run as an entry is filed as `grm-m06g` (P4, ask before building). Separate owner observation: dodge's table at `82bd` (dispatch `82ba`) is over-read, real length 21 (`grm-uzep`). | `grm-6m24`; `grm-m06g`; `grm-uzep` |
+| Do the loader option tooltips actually show in the 12.2 import dialog (including our `RomFileOption` path fields)? | **Yes, every one (owner, 2026-10-25)** — but each showed as one long line. They are now built by `OptionTooltip`: HTML wrapped at about 70 characters, with the `Headless: -loader-…` usage on its own line, which the owner asked for in particular. `LoaderOptionContractTest` now fails any of our options whose description skips it (Ghidra's two stock label options are exempt). The Browse button having no tooltip was not raised; leave it. | `grm-vrkk.1` |

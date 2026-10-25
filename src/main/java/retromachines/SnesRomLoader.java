@@ -150,16 +150,17 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 		// Typed builders: see NesRomLoader.getDefaultOptions (12.2, GP-6483).
 		options.add(Option.newBoolean(OPTION_MIRRORS)
 				.value(Boolean.TRUE)
-				.description("Create the hardware mirrors (ROM in the $80-$FF/HiROM banks, " +
-					"low RAM and IO in the system banks) as byte-mapped views of the canonical " +
-					"blocks. Unchecked, mirrored addresses are left unmapped.")
+				.description(OptionTooltip.of("Create the hardware mirrors (ROM in the " +
+					"$80-$FF/HiROM banks, low RAM and IO in the system banks) as byte-mapped " +
+					"views of the canonical blocks. Unchecked, mirrored addresses are left " +
+					"unmapped."))
 				.build());
 		options.add(Option.newString(OPTION_LAYOUT)
 				.value(Mode.AUTO.label())
 				.commandLineArgument(LAYOUT_CMD_ARG)
-				.description("How the image is arranged in the file: Auto (detect " +
-					"interleaving), Off (canonical layout only) or Force (always " +
-					"de-interleave). Headless: " + LAYOUT_CMD_ARG + " Off")
+				.description(OptionTooltip.of("How the image is arranged in the file: Auto " +
+					"(detect interleaving), Off (canonical layout only) or Force (always " +
+					"de-interleave).", LAYOUT_CMD_ARG + " Off"))
 				.build());
 		options.add(TblTableSupport.newOption(TBL_PREF_KEY));
 		return options;
