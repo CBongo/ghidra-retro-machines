@@ -30,7 +30,6 @@ import ghidra.pcode.exec.PcodeArithmetic.Purpose;
 import ghidra.pcode.exec.PcodeExecutorState;
 import ghidra.pcode.exec.PcodeExecutorStatePiece.Reason;
 import ghidra.pcode.exec.PcodeProgram;
-import ghidra.pcode.exec.PcodeUseropLibrary;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.lang.Language;
@@ -38,6 +37,7 @@ import ghidra.program.model.lang.Register;
 import ghidra.program.model.lang.RegisterValue;
 import ghidra.program.model.listing.Instruction;
 
+import retromachines.EmulationRecovery;
 import retromachines.vectors.VectorCase.RamByte;
 
 /**
@@ -522,15 +522,10 @@ public final class VectorRunner {
 	 * do that afterward via the normal per-case path.
 	 */
 	private void rebuildEmulator() {
-		// Ghidra 12.2's PcodeUseropLibrary.SYMBOL_CACHE is a WeakHashMap whose SymbolsCache values
-		// hold their own key strongly, so no entry is ever evicted -- and each thread's composed
-		// library reaches that thread, its emulator, and all of the emulator's threads. Without
-		// this every discarded emulator stays live and the rebuild bounds nothing (OOM at 512m on
-		// the exhaustive SPC700 run, grm-vrkk.3). The cache only memoizes symbol maps, so
-		// clearing it is safe; it refills on demand.
-		synchronized (PcodeUseropLibrary.SYMBOL_CACHE) {
-			PcodeUseropLibrary.SYMBOL_CACHE.clear();
-		}
+		// Ghidra 12.2's PcodeUseropLibrary.SYMBOL_CACHE pins every emulator for the JVM's life;
+		// without this the rebuild bounds nothing (OOM at 512m on the exhaustive SPC700 run,
+		// grm-vrkk.3). Same targeted eviction production uses (grm-vrkk.9).
+		EmulationRecovery.releaseUseropSymbols(emulator);
 		emulator = new PcodeEmulator(language, instructionCapture);
 		arithmetic = emulator.getSharedState().getArithmetic();
 		casesSinceRebuild = 0;

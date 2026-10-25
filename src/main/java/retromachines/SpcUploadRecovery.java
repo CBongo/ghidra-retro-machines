@@ -589,6 +589,16 @@ public class SpcUploadRecovery {
 				TaskMonitor monitor) {
 			PcodeEmulator emu = new PcodeEmulator(lang, this);
 			try {
+				return runIn(emu, strategy, uploaderEntry, fuel, wallMillis, monitor);
+			}
+			finally {
+				EmulationRecovery.releaseUseropSymbols(emu);
+			}
+		}
+
+		private Stop runIn(PcodeEmulator emu, Strategy strategy, Address uploaderEntry, long fuel,
+				long wallMillis, TaskMonitor monitor) {
+			try {
 				EmulatorUtilities.loadProgram(emu, program);
 				// loadProgram skips byte-mapped blocks (HiROM's bank-$00 code window is one);
 				// copy them in, but not the LOWRAM views, which alias WRAM (see class doc).

@@ -26,6 +26,10 @@ import java.util.List;
 import org.junit.Before;
 import org.junit.Test;
 
+import ghidra.app.plugin.processors.sleigh.SleighLanguage;
+import ghidra.pcode.emu.PcodeEmulator;
+import ghidra.pcode.emu.PcodeThread;
+import ghidra.pcode.exec.PcodeUseropLibrary;
 import ghidra.program.database.ProgramDB;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.mem.MemoryBlock;
@@ -168,5 +172,38 @@ public class SpcUploadRecoveryProgramTest extends AbstractProgramTest {
 		assertEquals(0, img.writers()[0x200]);
 		assertEquals(1, img.writers()[0x201]);
 		assertFalse(img.written(0x202));
+	}
+
+	/**
+	 * Ghidra 12.2's static {@code SYMBOL_CACHE} never evicts on its own, so each emulator run must
+	 * remove its entries or the whole emulator (and program image) leaks (grm-vrkk.9).
+	 */
+	@Test
+	public void releaseUseropSymbolsEvictsTheEmulatorsCacheEntries() {
+		PcodeEmulator emu = new PcodeEmulator(program.getLanguage());
+		PcodeThread<byte[]> t = emu.newThread();
+		PcodeUseropLibrary<byte[]> lib = t.getUseropLibrary();
+		lib.getSymbols((SleighLanguage) program.getLanguage());
+		synchronized (PcodeUseropLibrary.SYMBOL_CACHE) {
+			assertTrue(PcodeUseropLibrary.SYMBOL_CACHE.containsKey(lib));
+		}
+		EmulationRecovery.releaseUseropSymbols(emu);
+		synchronized (PcodeUseropLibrary.SYMBOL_CACHE) {
+			assertFalse(PcodeUseropLibrary.SYMBOL_CACHE.containsKey(lib));
+		}
+	}
+
+	@Test
+	public void recoverLeavesNoSymbolCacheEntriesBehind() throws Exception {
+		put(0x8000, compact(UPLOAD));
+		put(0xFFFC, "0080");
+		int before;
+		synchronized (PcodeUseropLibrary.SYMBOL_CACHE) {
+			before = PcodeUseropLibrary.SYMBOL_CACHE.size();
+		}
+		assertTrue(new SpcUploadRecovery(program).recover(null, TaskMonitor.DUMMY).success());
+		synchronized (PcodeUseropLibrary.SYMBOL_CACHE) {
+			assertEquals(before, PcodeUseropLibrary.SYMBOL_CACHE.size());
+		}
 	}
 }

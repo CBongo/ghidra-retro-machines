@@ -15,19 +15,24 @@
  */
 package retromachines;
 
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.NavigableMap;
 import java.util.Objects;
+import java.util.Set;
 import java.util.TreeMap;
 
 import ghidra.pcode.emu.EmulatorUtilities;
 import ghidra.pcode.emu.PcodeEmulationCallbacks;
 import ghidra.pcode.emu.PcodeEmulator;
+import ghidra.pcode.emu.PcodeMachine;
 import ghidra.pcode.emu.PcodeThread;
 import ghidra.pcode.exec.DecodePcodeExecutionException;
 import ghidra.pcode.exec.PcodeExecutionException;
 import ghidra.pcode.exec.PcodeExecutorState;
 import ghidra.pcode.exec.PcodeExecutorStatePiece;
 import ghidra.pcode.exec.PcodeExecutorStatePiece.Reason;
+import ghidra.pcode.exec.PcodeUseropLibrary;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressRange;
 import ghidra.program.model.address.AddressSet;
@@ -113,6 +118,17 @@ public class EmulationRecovery {
 		// and registers are seeded so the initial load does not pollute the dirty set.
 		PcodeEmulator emu = new PcodeEmulator(program.getLanguage(), callbacks);
 		try {
+			return emulate(emu, entry, bounds, mon, dirty, log, callbacks);
+		}
+		finally {
+			releaseUseropSymbols(emu);
+		}
+	}
+
+	/** The body of {@link #recover}: load, seed, step until a stop condition, read back. */
+	private RecoveryResult emulate(PcodeEmulator emu, Address entry, StopConditions bounds,
+			TaskMonitor mon, AddressSet dirty, ProvenanceLog log, RecoveryCallbacks callbacks) {
+		try {
 			EmulatorUtilities.loadProgram(emu, program);
 		}
 		catch (MemoryAccessException e) {
@@ -184,6 +200,32 @@ public class EmulationRecovery {
 
 		NavigableMap<Address, byte[]> recovered = readBack(emu, dirty, log);
 		return new RecoveryResult(dirty, recovered, reason, log, steps);
+	}
+
+	/**
+	 * Evicts {@code emu}'s userop libraries from Ghidra 12.2's static
+	 * {@link PcodeUseropLibrary#SYMBOL_CACHE}. That map is a {@code WeakHashMap} whose values hold
+	 * their own key strongly, so an entry is never evicted -- and each thread's composed library
+	 * reaches the thread, its emulator, and every byte the emulator loaded. Without this, every
+	 * emulator built here (each carrying a full program image) stays live for the JVM's lifetime,
+	 * which a long GUI session that re-runs analysis keeps accumulating (grm-vrkk.9). Only our own
+	 * entries are removed; the cache is a pure memo, so nothing else is affected. Call once the
+	 * emulator is no longer used.
+	 *
+	 * @param emu the emulator being discarded; null is a no-op
+	 */
+	public static void releaseUseropSymbols(PcodeMachine<?> emu) {
+		if (emu == null) {
+			return;
+		}
+		Set<PcodeUseropLibrary<?>> mine = Collections.newSetFromMap(new IdentityHashMap<>());
+		mine.add(emu.getUseropLibrary());
+		for (PcodeThread<?> t : emu.getAllThreads()) {
+			mine.add(t.getUseropLibrary());
+		}
+		synchronized (PcodeUseropLibrary.SYMBOL_CACHE) {
+			PcodeUseropLibrary.SYMBOL_CACHE.keySet().removeIf(mine::contains);
+		}
 	}
 
 	/** Read the post-run bytes for each coalesced dirty range out of shared emulator state. */
