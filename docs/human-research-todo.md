@@ -114,17 +114,6 @@ Each is minutes of work and settles something specific. Highest value per unit e
   the likely cause is a wrong assumption about which bank `e72a JSR $8574` enters (`$80` gives 16K
   bank 0). Say so, and `grm-mej.19` can aim for a full RESTORED note.
 
-### 1.2 punchout `b18c STA $AEB1,X`: a real MMC2 PRG-select write, or the game poking ROM? (`grm-bbe7`)
-
-- [ ] **Question.** `FUN_b165` (called from `a671`) does `STA $AEB1,X` at `b18c`. `$AEB1+X` cannot
-  leave `$A000-$AFFF`, the MMC2 PRG-select range, so the analyzer counts it as a mechanism write
-  and warns "mechanism write with undeterminable value". The stored value comes out of a
-  stream/decompressor loop (`LDA ($3B),Y / AND #$0F / TAX`, then `JSR $AEA3`), so "undeterminable"
-  is honest *if* it is a bank switch at all. One emulator breakpoint on `b18c` settles it: does the
-  bank at `$8000` change after it executes, and does `$AEB1,X` look like a deliberate select or a
-  table write into ROM (a no-op on real hardware)? If it is not a switch, say so and the analyzer
-  should stop counting indexed stores there as mechanism writes for this board.
-
 ### 1.3 kicarus bank 4: what is the record array at `$A180`, and what walks it? (`grm-gipk.6`)
 
 - [ ] **Question.** None of kicarus's bank-4 menu/screen handlers are in the listing. Examples are
@@ -596,3 +585,4 @@ Agents don't write into your ROM library or other personal directories.
 | GP-6936: open the RAM-half PR (fixes #4148) and post the correction on #9655? | **Done (owner, 2026-10-10): [PR #9765](https://github.com/NationalSecurityAgency/ghidra/pull/9765)** from `fix-wrapped-ram-range` (`space.cc` + `datatests/wraprange2.xml`) and the [#9655 correction](https://github.com/NationalSecurityAgency/ghidra/issues/9655#issuecomment-6102852548), which withdraws "exempt spacebase spaces" (it breaks upstream's x86-64 `wraprange.xml`) and asks the maintainer to choose between two directions for the 6502 half. Do not PR a spacebase fix until they answer. Follow-up `certification.manifest` line pushed the same day. | `grm-qp5x.2` |
 | Copy the five GoodNES-USA real-ROM images into an indexed ROM dir? | **Not needed (owner, 2026-10-16): the GoodNES USA dir went straight into `GRM_ROM_DIR` instead**, using grm-3rel's `;`-separated form (`H:/emulators/nes/roms;Z:/nes/db;H:/emulators/nes/ROMs/All NES Roms (GoodNES)/USA` in `.claude/settings.local.json`). `adventure_island`, `punchout`, `deadly_towers`, `cv3` and `dodge` now resolve on a plain `check nes`; all 35 rows ran on 2026-10-15 (grm-dos9.11) with the dir passed positionally. Do not copy the files. | `grm-3rel`, `grm-x4y1.8` |
 | megaman2 `e6b5`: why is a mid-instruction target in the middle of the `92e4` jump table? | **A typo in a dead slot (owner, 2026-10-18).** `92e4` is the bank-14 object AI dispatcher. `$93f0` is an alternate per-object table, consulted only when `game_mode` (`$AA`) is neither 0 nor 4: a 0 there sends the object ID straight into the split table `92f0`/`9370`, anything else is decremented and indexes the handler table `9470`/`947f`. `$93f0` never exceeds 8, so that table is really 8 entries long; entries 8–13 are never selected, and all but entry 10 are `eeb5` (`RTS`, "never used"). The `e6` at `$9489` is a typo or mastering hiccup for `ee`. **No analyzer change**: `grm-8x6f` already keeps it harmlessly. If it ever matters, use a per-game table-length hint (`grm-hb6`), not a rule. | `grm-fnpu` **closed** |
+| punchout `b18c STA $AEB1,X` in `FUN_b165`: a real MMC2 PRG-select write, or the game poking ROM? | **Neither — it is not a store (owner, 2026-10-25).** `b187 JSR $AEA3` calls an inline dispatch function (the `grm-j2kl` "JSR inline jump table" idiom), and the bytes after the JSR are its dispatch table. `b18c STA $AEB1,X` is Ghidra falling through the JSR and decoding table bytes as code, so the "mechanism write with undeterminable value" warning is spurious. **Do not add an MMC2 rule exempting indexed stores into `$A000-$AFFF`** on its account; the fix is teaching `InlineJumpTableDispatch` to recognize `aea3` (`grm-4kgk`). | `grm-bbe7` **closed**; `grm-4kgk` |
