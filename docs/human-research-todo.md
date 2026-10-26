@@ -160,6 +160,20 @@ Each is minutes of work and settles something specific. Highest value per unit e
   - **FF3 `$C1:0008`**: entry 4 (`950f`, among `00xx`–`02xx`) looks wrong. Where does the real
     table end?
 
+### 1.6 ff1 bank 14: what really reaches `a61d`, `a667`, `aadf`, ...? (`grm-vrkk.11`)
+
+- [ ] **Question.** Switch `W8000_B14::a354` was over-read by stock analysis. Its stale cases
+  were the only reference to about 160 instructions of bank-14 code: `a61d`–`a648`, `a667`,
+  `a678`, `a8d3`, `a8e4`, `aadf`–`ab68`, `ad03`. Most of it is well-formed (`LDA $62 / ROR x3 /
+  ... / RTS`, `TYA CLC ADC TAX ... RTS`, `PLA PLA JMP` epilogues). grm-vrkk.11 retracts the
+  over-read, and per the owner's ruling that code leaves the listing.
+  - What is `a354`'s real table, and where does it end?
+  - Is this code reached some other way: a neighbouring pointer table, a second dispatch, or an
+    RTS trick? If so, which address holds the table, and what is the entry format?
+
+  An answer becomes an agent bead to recover the true reference, so the code comes back as
+  reached code rather than through the over-read.
+
 ---
 
 ## 2. Def-use passes on untraced titles
