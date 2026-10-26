@@ -332,7 +332,7 @@ cp -rf source dest          # NOT: cp -r source dest
 
 ## Shell scripts: run ShellCheck on what you edit
 
-Run `shellcheck <file>` on any `.sh` you edit (`shellcheck tools/banktest/*.sh tools/banktest/lib/*.sh` must exit 0; config in `.shellcheckrc`). A new finding is fixed or justified with a narrow `# shellcheck disable=SCxxxx # reason`, never left (bead `grm-rszf`).
+Run `shellcheck <file>` on any `.sh` you edit (`shellcheck $(git ls-files '*.sh')` must exit 0; config in `.shellcheckrc`). A new finding is fixed or justified with a narrow `# shellcheck disable=SCxxxx # reason`, never left (bead `grm-rszf`).
 
 ## Java: keep javac lint at zero warnings
 

@@ -109,7 +109,8 @@ grm_installed_extension_note "$snap_id" \
 	"(snapshot; $snap_match. The server holds THESE jars, not the staged ones.)"
 
 snap_native="$(native "$SNAP")"
-export GHIDRA_INSTALL_DIR="$(native "$GRM_GHIDRA_INSTALL")"
+GHIDRA_INSTALL_DIR="$(native "$GRM_GHIDRA_INSTALL")"
+export GHIDRA_INSTALL_DIR
 export JAVA_TOOL_OPTIONS="-Dapplication.settingsdir=$snap_native -Dapplication.cachedir=$snap_native/cache"
 # Default thread pool, as the runners use since grm-uioc; GRM_THREAD_PIN=1 pins it as they do.
 if [ "${GRM_THREAD_PIN:-0}" = 1 ]; then

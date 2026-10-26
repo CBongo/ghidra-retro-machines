@@ -831,7 +831,7 @@ grm_headless_timeout_init() {
 			TIMEOUT_BANNER="${GRM_HEADLESS_TIMEOUT}s flat per headless run (GRM_HEADLESS_TIMEOUT)"
 		fi
 	else
-		# shellcheck disable=SC2034 # documented banner text; no runner prints it yet (read by callers, if any)
+		# shellcheck disable=SC2034 # read by the sourcing runners' banners (run-banktest.sh, realrom-test.sh)
 		TIMEOUT_BANNER="${GRM_HEADLESS_TIMEOUT_BASE}s + ${GRM_HEADLESS_TIMEOUT_PER_PROGRAM}s/program"
 	fi
 }
