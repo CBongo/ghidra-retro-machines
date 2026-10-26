@@ -124,12 +124,14 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 
 	/** What {@link #LAST_COMPLETED} remembers. {@code wrapped} is carried for documentation
 	 * parity with the analyzer's real input set even though only {@code false} ever reaches
-	 * the comparison site (a wrapped PRG returns before this stamp is built). */
-	/** Fingerprint of the inputs a completed run consumed, for the redundant-re-run gate.
+	 * the comparison site (a wrapped PRG returns before this stamp is built).
+	 * <p>
+	 * Fingerprint of the inputs a completed run consumed, for the redundant-re-run gate.
 	 *  Carries the slice list and not the load address / payload length / wrap flag,
 	 *  because those are pure functions of the slices (grm-hap item 4): including them
 	 *  could not change when two stamps compare equal, only give the same fact three more
-	 *  chances to be recorded inconsistently. */
+	 *  chances to be recorded inconsistently.
+	 */
 	private record RunStamp(String mapPath,
 			List<AbstractCbmPrgLoader.LoadedSlice> loadedSlices) {
 	}

@@ -1147,7 +1147,7 @@ final class HelperArgumentRecovery {
 		return wanted.isEmpty();
 	}
 
-	/**
+	/*
 	 * Whether a value the CALLER left in {@code reg} is still there when the helper's first
 	 * recognized switch site reads it -- the soundness precondition for
 	 * {@link #recoverCallArgument} handing that value to a strategy that takes it at face
@@ -1551,7 +1551,7 @@ final class HelperArgumentRecovery {
 		return false;
 	}
 
-	/**
+	/*
 	 * Whether control can leave {@code [entry, end]} at {@code instr}: a flow target outside
 	 * it, or a computed jump whose target is not known (bead grm-lb54). A plain terminator
 	 * ({@code RTS}) has no flows and leaves to the caller, which is not helper code.

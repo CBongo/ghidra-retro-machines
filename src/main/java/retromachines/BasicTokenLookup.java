@@ -24,9 +24,11 @@ interface BasicTokenLookup {
 
 	/** A token or raw unit. {@code name} is null for a complete but unrecognized configured
 	 *  prefix pair, or for a configured prefix truncated by the end of the line (one byte);
-	 *  callers render all {@code bytesConsumed} bytes literally. */
-	/** {@code tokenEnum} types a one-byte token; {@code pageEnum} types the selector byte of
-	 *  a two-byte prefix pair (its first byte stays a plain byte). Either may be null. */
+	 *  callers render all {@code bytesConsumed} bytes literally.
+	 * <p>
+	 * {@code tokenEnum} types a one-byte token; {@code pageEnum} types the selector byte of
+	 *  a two-byte prefix pair (its first byte stays a plain byte). Either may be null.
+	 */
 	record Match(int bytesConsumed, String name, ghidra.program.model.data.Enum tokenEnum,
 			ghidra.program.model.data.Enum pageEnum) {
 		/** A match carrying no enum (name only). */

@@ -1758,7 +1758,7 @@ final class HelperDiscovery {
 		return model.atMidBodyEntry(entry);
 	}
 
-	/**
+	/*
 	 * A helper function's modeled effect: a constant state, or null = caller-supplied. For
 	 * caller-supplied helpers, {@code argReg} is the register (A/X/Y) the helper stores into
 	 * its mechanism -- i.e. the register by which the caller passes the bank field -- or null

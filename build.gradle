@@ -151,6 +151,20 @@ dependencies {
 	implementation 'org.yaml:snakeyaml:2.2'
 }
 
+// javac lint (bead grm-uv3l): every JavaCompile task in this build (main, test, and the build-only
+// source sets) reports all -Xlint categories. Appended, never assigned: the applied
+// support/buildExtension.gradle sets no compilerArgs today, and += keeps it that way if a future
+// Ghidra adds some. -Xmaxwarns lifts javac's default cap of 100, so the count is the real count.
+// Two categories are excluded project-wide, because neither can be fixed in this repo:
+//   -classfile    Ghidra's bundled gson jar refers to Error Prone annotations (InlineMe) that
+//                 are not on Ghidra's classpath. The warning is about Ghidra's jar, not our code.
+//   -this-escape  Ghidra's API sets an analyzer's priority and options (setPriority,
+//                 setSupportsOneTimeAnalysis) and a plugin's actions from the constructor. Every
+//                 analyzer here follows that required idiom, so the warning carries no signal.
+tasks.withType(JavaCompile).configureEach {
+	options.compilerArgs += ['-Xlint:all,-classfile,-this-escape', '-Xmaxwarns', '10000']
+}
+
 //----------------------------------------------------------------------------------
 // What ships in the extension zip (bead grm-6gl).
 //

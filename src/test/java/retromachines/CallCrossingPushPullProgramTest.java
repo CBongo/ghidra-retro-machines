@@ -96,7 +96,7 @@ public class CallCrossingPushPullProgramTest extends AbstractProgramTest {
 		return strategy;
 	}
 
-	/** The {@link PartialByte} form, for a scanned register value. */
+	/* The {@link PartialByte} form, for a scanned register value. */
 
 	/**
 	 * Hooks with a state AVAILABLE at every address -- wholly unknown, but non-null. This is

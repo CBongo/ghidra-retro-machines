@@ -86,6 +86,7 @@ final class SaveSlotForwarding {
 	/** Thrown internally by the save-slot search and census to abandon the WHOLE proof from any
 	 *  recursion depth; caught only at the top. Stateless, no stack trace -- pure control flow. */
 	private static final class SlotAbandon extends RuntimeException {
+		private static final long serialVersionUID = 1L; // never serialized; quiets -Xlint:serial
 		static final SlotAbandon INSTANCE = new SlotAbandon();
 
 		private SlotAbandon() {

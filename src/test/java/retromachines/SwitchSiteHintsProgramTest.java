@@ -23,6 +23,7 @@ import static org.junit.Assert.assertTrue;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -84,11 +85,11 @@ public class SwitchSiteHintsProgramTest extends AbstractProgramTest {
 	}
 
 	private List<Address> materialize(MessageLog log) {
-		List<Address>[] out = new List[1];
+		AtomicReference<List<Address>> out = new AtomicReference<>();
 		inTx(program, "materialize", () -> {
-			out[0] = SwitchSiteHints.materialize(program, TaskMonitor.DUMMY, log);
+			out.set(SwitchSiteHints.materialize(program, TaskMonitor.DUMMY, log));
 		});
-		return out[0];
+		return out.get();
 	}
 
 	private BoardDescriptorModel.BoardModel board() {

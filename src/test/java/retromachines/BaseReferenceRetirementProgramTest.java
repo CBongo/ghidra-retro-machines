@@ -361,7 +361,7 @@ public class BaseReferenceRetirementProgramTest extends AbstractBundledLanguageT
 		assertTrue(baseRefsTo(TARGET).get(0).isPrimary());
 	}
 
-	/**
+	/*
 	 * The analyzer re-runs to a whole-program fixpoint, so every site is visited again on a
 	 * settled program. The second pass must confirm the overlay reference (it is reused, not
 	 * duplicated) and find nothing left to retire -- a nonzero {@code retired} on a settled

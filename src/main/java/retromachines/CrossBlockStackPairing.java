@@ -323,6 +323,7 @@ final class CrossBlockStackPairing {
 	 * from arbitrary recursion depth; caught only at the top level. Stateless and carries no
 	 * message or stack trace -- it is pure control flow within one bounded search. */
 	private static final class CrossBlockAbandon extends RuntimeException {
+		private static final long serialVersionUID = 1L; // never serialized; quiets -Xlint:serial
 		static final CrossBlockAbandon INSTANCE = new CrossBlockAbandon();
 
 		private CrossBlockAbandon() {

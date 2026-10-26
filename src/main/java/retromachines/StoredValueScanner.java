@@ -426,9 +426,11 @@ final class StoredValueScanner {
 	}
 
 	/** {@link ProofMemo} key for a callee-closure census: the callee entry and the slot's
-	 *  physical offset. */
-	/** A census memo key. {@code x}/{@code y} are the index registers the CALL SITE proves on
-	 *  entry ({@link SaveSlotForwarding#callCensus}, bead grm-mej.25), {@code null} when not a provable constant. */
+	 *  physical offset.
+	 * <p>
+	 * A census memo key. {@code x}/{@code y} are the index registers the CALL SITE proves on
+	 *  entry ({@link SaveSlotForwarding#callCensus}, bead grm-mej.25), {@code null} when not a provable constant.
+	 */
 	record CensusKey(Address entry, long cellOffset, Integer x, Integer y) {}
 
 	/** A callee-closure census: {@code clean} when no instruction reachable from the entry may
@@ -1527,6 +1529,8 @@ final class StoredValueScanner {
 	}
 
 	/**
+	 * The propagated value of {@code instr}'s index register, or {@code null}.
+	 * <p>
 	 * The index register's value on entry to an indexed store, when it is a PROVABLE constant
 	 * (bead grm-zsxz Z2, owner ruling 2026-10-05): {@link #constantRegisterValue}'s
 	 * all-or-nothing straight-line walk, so a redefinition it cannot evaluate ({@code INX} of an
@@ -1535,7 +1539,6 @@ final class StoredValueScanner {
 	 * {@link Hooks#INERT} and {@link RegisterEnv#NONE}, with a fresh budget. Blaster Master's
 	 * {@code ea3a} ({@code LDX #$7A / ... / STA $00,X / STA $01,X}) is the measured case.
 	 */
-	/** The propagated value of {@code instr}'s index register, or {@code null}. */
 	private static Integer knownIndex(Instruction instr, IndexRegs known) {
 		Register idx = LoopIdioms.indexReg(instr);
 		if (idx == null) {
@@ -1606,7 +1609,7 @@ final class StoredValueScanner {
 			a.getAddressSpace().getPhysicalSpace().equals(cell.getAddressSpace().getPhysicalSpace());
 	}
 
-	/**
+	/*
 	 * Finds the {@code PHA} whose pushed byte a STACK-RELATIVE RELOAD reads: a load shaped
 	 * {@code LD<reg> $01nn,X} following a {@code TSX}, which reads a byte saved earlier on the
 	 * stack <em>without popping it</em> -- the idiom 6502 code uses when a stack-passed value is

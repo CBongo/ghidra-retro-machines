@@ -90,9 +90,11 @@ public class StoreForwardingProgramTest extends AbstractProgramTest {
 		return strategy;
 	}
 
-	/** The {@link MechanismState} form, for a mechanism's field-local result. */
+	/* The {@link MechanismState} form, for a mechanism's field-local result. */
 
 	/**
+	 * A resolved, fully-known {@code cell} value reduced to {@code mask}.
+	 * <p>
 	 * Hooks that answer neither question: no instruction is a mechanism write, and no load
 	 * resolves beyond forwarding. The exact shape of {@code BoardBankAnalyzer}'s own
 	 * {@code NO_HOOKS}, reproduced here rather than exposed, since
@@ -102,7 +104,6 @@ public class StoreForwardingProgramTest extends AbstractProgramTest {
 	 * resolution has nothing to say about a cell the caller is merely setting up ahead of the
 	 * call.
 	 */
-	/** A resolved, fully-known {@code cell} value reduced to {@code mask}. */
 	private void assertCellValue(int expectedKnownMask, int expectedBits, PartialByte actual) {
 		assertEquals("tracked bits not fully known: " + actual, expectedKnownMask,
 			actual.knownMask());

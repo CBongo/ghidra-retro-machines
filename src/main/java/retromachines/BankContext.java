@@ -70,10 +70,15 @@ final class BankContext {
 	 * held value in a {@link WeakHashMap} that reaches its own key pins the key forever, which
 	 * would keep every program of a batched headless JVM alive. With a weak value the entry
 	 * lives only while some caller holds the context (the jump-table analyzer holds one across
-	 * a pass) and is simply rebuilt otherwise.
+	 * a pass) and is simply rebuilt otherwise. The reference is to the context itself, not to a
+	 * wrapper callers never see: until grm-uv3l it held an {@code Optional}, which nothing
+	 * outside this method kept reachable, so every GC emptied the cache. A program with no
+	 * context is remembered in {@link #NO_CONTEXT} instead, which references nothing of the
+	 * program's.
 	 */
-	private static final Map<Program, java.lang.ref.WeakReference<java.util.Optional<BankContext>>> CACHE =
+	private static final Map<Program, java.lang.ref.WeakReference<BankContext>> CACHE =
 		new WeakHashMap<>();
+	private static final Map<Program, Boolean> NO_CONTEXT = new WeakHashMap<>();
 
 	private final Program program;
 	private final BoardModel board;
@@ -101,13 +106,21 @@ final class BankContext {
 	 */
 	static BankContext forProgram(Program program) {
 		synchronized (CACHE) {
-			java.lang.ref.WeakReference<java.util.Optional<BankContext>> ref = CACHE.get(program);
-			java.util.Optional<BankContext> cached = ref == null ? null : ref.get();
-			if (cached == null) {
-				cached = java.util.Optional.ofNullable(build(program));
-				CACHE.put(program, new java.lang.ref.WeakReference<>(cached));
+			if (NO_CONTEXT.containsKey(program)) {
+				return null;
 			}
-			return cached.orElse(null);
+			java.lang.ref.WeakReference<BankContext> ref = CACHE.get(program);
+			BankContext cached = ref == null ? null : ref.get();
+			if (cached == null) {
+				cached = build(program);
+				if (cached == null) {
+					NO_CONTEXT.put(program, Boolean.TRUE);
+				}
+				else {
+					CACHE.put(program, new java.lang.ref.WeakReference<>(cached));
+				}
+			}
+			return cached;
 		}
 	}
 

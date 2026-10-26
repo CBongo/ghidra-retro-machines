@@ -347,6 +347,8 @@ public class SerialShiftBankSwitchStrategy extends AbstractRangeBankSwitchStrate
 	}
 
 	/**
+	 * Classifies an unresolved serial-shift operation in a helper body.
+	 * <p>
 	 * Increment 3 (bead {@code grm-3ou} part 1): whether an unresolved value here is this
 	 * helper's ARGUMENT. This strategy has TWO register scans, at opposite ends of a chain, and
 	 * they fail for different reasons -- so this walks the same forks
@@ -366,7 +368,6 @@ public class SerialShiftBankSwitchStrategy extends AbstractRangeBankSwitchStrate
 	 * is a shape this mechanism does not model; a broken or short chain is a failed structural
 	 * match. None of those can be resolved by knowing the caller, so none is honest.
 	 */
-	/** Classifies an unresolved serial-shift operation in a helper body. */
 	@Override
 	public ValueStop classifyHelperBodyGap(Program program, Instruction switchSite,
 			MechanismState inState, Address helperEntry) {
@@ -556,6 +557,8 @@ public class SerialShiftBankSwitchStrategy extends AbstractRangeBankSwitchStrate
 	}
 
 	/**
+	 * Returns whether the strategy's effect depends on prior state in general.
+	 * <p>
 	 * {@code false}: none of the four branches above decide a VALUE by consulting
 	 * {@code inState}. The position-5 COMMIT comes from a backward value-scan of the
 	 * pre-chain accumulator load ({@code chain.chainStart()}), never from tracked state; the
@@ -575,13 +578,14 @@ public class SerialShiftBankSwitchStrategy extends AbstractRangeBankSwitchStrate
 	 * every site that does not read a mirror, which on a real cartridge is nearly all of them --
 	 * and the per-site overload below answers the sites where it is not.
 	 */
-	/** Returns whether the strategy's effect depends on prior state in general. */
 	@Override
 	public boolean effectDependsOnPriorState() {
 		return false;
 	}
 
 	/**
+	 * Returns whether this site actually consulted prior bank state.
+	 * <p>
 	 * The per-site question (grm-mej.2 §2d), answered by re-running this site's own value scan
 	 * under an instrumented hook and reporting whether a MIRROR load was actually resolved.
 	 * <p>
@@ -597,7 +601,6 @@ public class SerialShiftBankSwitchStrategy extends AbstractRangeBankSwitchStrate
 	 * probe short-circuits there. Called once per site in the analyzer's phase 3, never inside the
 	 * fixpoint.
 	 */
-	/** Returns whether this site actually consulted prior bank state. */
 	@Override
 	public boolean effectDependsOnPriorState(Program program, Instruction site,
 			MechanismState siteInState) {
@@ -658,7 +661,7 @@ public class SerialShiftBankSwitchStrategy extends AbstractRangeBankSwitchStrate
 		return loop == null ? null : loop.counterInit();
 	}
 
-	/**
+	/*
 	 * Converts a helper call site's recovered argument byte into this mechanism's
 	 * field-local deposit: serial-shift is the one shipped mechanism whose single switch
 	 * instruction shape (the unrolled chain's write-5 STA, or a counted loop's closing BNE)
@@ -877,6 +880,8 @@ public class SerialShiftBankSwitchStrategy extends AbstractRangeBankSwitchStrate
 	}
 
 	/**
+	 * Computes a caller-independent helper deposit when the chain permits one.
+	 * <p>
 	 * The caller-independent half of {@code grm-5l14}: a self-modifying RMW reset write has no
 	 * argument register ({@link MosOperands#storeRegister} never recognizes an
 	 * {@code INC}/{@code DEC} as a store), which -- before this override existed -- sent every
@@ -905,7 +910,6 @@ public class SerialShiftBankSwitchStrategy extends AbstractRangeBankSwitchStrate
 	 * shape, or an RMW this strategy cannot resolve -- for every other write, which leaves the
 	 * caller on the historical degrade path unchanged.
 	 */
-	/** Computes a caller-independent helper deposit when the chain permits one. */
 	@Override
 	public BankSwitchStrategy.HelperDeposit callerIndependentDeposit(Program program,
 			Instruction switchSite) {

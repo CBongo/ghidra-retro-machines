@@ -629,6 +629,8 @@ public class MemoryLatchBankSwitchStrategy extends AbstractRangeBankSwitchStrate
 	}
 
 	/**
+	 * Recovers a helper's latch write using the caller's register environment.
+	 * <p>
 	 * <b>Mini-inlines the helper</b> (grm-hum increment 2): re-runs this latch's real switch
 	 * semantics at {@code switchSite} under the calling site's registers, rather than accepting
 	 * {@code argValue}'s convention that the helper's argument register already holds the
@@ -724,7 +726,6 @@ public class MemoryLatchBankSwitchStrategy extends AbstractRangeBankSwitchStrate
 	 * env-bearing evaluation exists at all. The result is used for this one call site's
 	 * {@code CallEffect} and is never attributed to {@code switchSite}.
 	 */
-	/** Recovers a helper's latch write using the caller's register environment. */
 	@Override
 	public HelperDeposit depositHelperArgument(Program program, Instruction switchSite,
 			PartialByte argValue, MechanismState inState, int stateMask, RegisterEnv callerRegs) {
@@ -746,7 +747,7 @@ public class MemoryLatchBankSwitchStrategy extends AbstractRangeBankSwitchStrate
 			readBack);
 	}
 
-	/**
+	/*
 	 * {@code false}: the override above ignores {@code argValue} entirely, so this strategy is
 	 * immune to the stale-argument hazard {@code HelperArgumentRecovery}'s prologue guard exists for
 	 * -- and must be exempted from it, because the guard would otherwise forfeit the answers
@@ -788,6 +789,8 @@ public class MemoryLatchBankSwitchStrategy extends AbstractRangeBankSwitchStrate
 	}
 
 	/**
+	 * Reports whether this site actually depends on the incoming bank state.
+	 * <p>
 	 * <b>The guard that makes {@link #cacheable()}{@code == false} landable</b> (grm-mej.2 §2d).
 	 * <p>
 	 * {@code BankAnnotationAdapter.annotateBankRequirementViolations} counts a switch site as imposing
@@ -815,7 +818,6 @@ public class MemoryLatchBankSwitchStrategy extends AbstractRangeBankSwitchStrate
 	 * Called once per site in the analyzer's phase 3, never inside the fixpoint, so re-running the
 	 * evaluation here is not on any hot path.
 	 */
-	/** Reports whether this site actually depends on the incoming bank state. */
 	@Override
 	public boolean effectDependsOnPriorState(Program program, Instruction site,
 			MechanismState siteInState) {

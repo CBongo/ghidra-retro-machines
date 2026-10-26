@@ -114,6 +114,13 @@ import retromachines.HelperDiscovery.HelperModel;
 public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 
 	/**
+	 * How many retracted addresses the sweep names in its log line before summarising the rest
+	 * (bead grm-3mg0). Enough to identify the movement on any realistic program -- the whole
+	 * 33-row real-ROM corpus produced ONE retraction in total -- without risking a wall of text.
+	 */
+	private static final int RETRACTION_LOG_LIMIT = 10;
+
+	/**
 	 * Modification stamp of the last <em>completed</em> {@link #added} run per program
 	 * (grm-5tl.13.3, hardened by grm-w3m). Phase 2's overlay retargeting disassembles
 	 * cross-bank targets, and the framework answers each batch of new code by
@@ -155,13 +162,6 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * Keyed weakly by {@link Program} identity so closed programs drop out; synchronized
 	 * because distinct programs may be analyzed on distinct threads.
 	 */
-	/**
-	 * How many retracted addresses the sweep names in its log line before summarising the rest
-	 * (bead grm-3mg0). Enough to identify the movement on any realistic program -- the whole
-	 * 33-row real-ROM corpus produced ONE retraction in total -- without risking a wall of text.
-	 */
-	private static final int RETRACTION_LOG_LIMIT = 10;
-
 	private static final Map<Program, RunStamp> LAST_COMPLETED =
 		Collections.synchronizedMap(new WeakHashMap<>());
 
@@ -206,9 +206,9 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 
 	/**
 	 * The option name both {@link NesBankingAnalyzer} and {@link C64BankingAnalyzer} register
-	 * {@link ConstantSemanticsMode} under (bead grm-4wqd).
+	 * {@link ConstantSemanticsMode} under (bead grm-4wqd). Package-visible so tests can set the
+	 * option directly without an {@code AutoAnalysisManager}.
 	 */
-	/** Package-visible so tests can set the option directly without an {@code AutoAnalysisManager}. */
 	static final String CONSTANT_SEMANTICS_OPTION = "Constant Evaluator";
 
 	/**

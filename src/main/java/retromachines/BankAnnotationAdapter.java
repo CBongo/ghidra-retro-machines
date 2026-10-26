@@ -2000,7 +2000,7 @@ final class BankAnnotationAdapter {
 			List.of(inState), placementOverride, monitor, log, provenance, refProvenance);
 	}
 
-	/**
+	/*
 	 * One arm of {@link #retargetReferences}: places overlay references for {@code inState} and
 	 * records, per base-space reference, whether a fully-known state {@code replaced} it with an
 	 * overlay reference and whether this state says to {@code keepBase} (it resolves to home, or

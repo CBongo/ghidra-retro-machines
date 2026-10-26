@@ -292,6 +292,8 @@ public class SelectDataBankSwitchStrategy extends AbstractRangeBankSwitchStrateg
 	}
 
 	/**
+	 * Returns whether the strategy's effect depends on prior state in general.
+	 * <p>
 	 * <b>No site of this mechanism imposes a bank-known-on-entry requirement that the
 	 * requirement derivation is able to express</b> (grm-vgod). This is the same defect
 	 * grm-mej.2 §2d fixed on {@link MemoryLatchBankSwitchStrategy}, recurring here because
@@ -365,13 +367,14 @@ public class SelectDataBankSwitchStrategy extends AbstractRangeBankSwitchStrateg
 	 * probe reporting a real mirror-derived requirement) and MM14 (the probe staying silent for
 	 * an unrelated failure with the mirror set non-empty) guard the overload below.
 	 */
-	/** Returns whether the strategy's effect depends on prior state in general. */
 	@Override
 	public boolean effectDependsOnPriorState() {
 		return false;
 	}
 
 	/**
+	 * Returns whether this switch site consulted prior bank state.
+	 * <p>
 	 * The per-site question (grm-mej.2 §2d), answered by re-running this site's own value scan
 	 * under an instrumented hook and reporting whether a MIRROR load was actually resolved
 	 * (bead grm-sen5). Same shape as {@code SerialShiftBankSwitchStrategy}'s override and for
@@ -396,7 +399,6 @@ public class SelectDataBankSwitchStrategy extends AbstractRangeBankSwitchStrateg
 	 * construction -- the mirror set is empty on every board without one and the whole probe
 	 * short-circuits. Called once per site in phase 3, never inside the fixpoint.
 	 */
-	/** Returns whether this switch site consulted prior bank state. */
 	@Override
 	public boolean effectDependsOnPriorState(Program program, Instruction site,
 			MechanismState siteInState) {
@@ -459,6 +461,8 @@ public class SelectDataBankSwitchStrategy extends AbstractRangeBankSwitchStrateg
 	}
 
 	/**
+	 * Classifies an unresolved select/data write in a helper body.
+	 * <p>
 	 * Increment 3 (bead {@code grm-3ou} part 1): whether an unresolved value here is this
 	 * helper's ARGUMENT. Mirrors {@link #computeSwitchOutcomeValue}'s fork, because which
 	 * register scan
@@ -477,7 +481,6 @@ public class SelectDataBankSwitchStrategy extends AbstractRangeBankSwitchStrateg
 	 * branch returns {@code inState} verbatim and never warns -- so it cannot reach here, and
 	 * answering {@code ANALYZER_LIMIT} for it is inert either way.
 	 */
-	/** Classifies an unresolved select/data write in a helper body. */
 	@Override
 	public ValueStop classifyHelperBodyGap(Program program, Instruction switchSite,
 			MechanismState inState, Address helperEntry) {
@@ -594,7 +597,7 @@ public class SelectDataBankSwitchStrategy extends AbstractRangeBankSwitchStrateg
 				.withDepositMask(target.positionedMask());
 	}
 
-	/**
+	/*
 	 * Converts a bare helper call site's recovered data-argument byte into this mechanism's
 	 * field-local deposit, routing it by the CALLER'S TRACKED SELECT VALUE rather than by
 	 * {@code switchSite}'s own address -- select-data's mirror image of
@@ -637,6 +640,8 @@ public class SelectDataBankSwitchStrategy extends AbstractRangeBankSwitchStrateg
 	 * </ul>
 	 */
 	/**
+	 * Returns whether deposits are evaluated independently for each site.
+	 * <p>
 	 * {@code true}: this mechanism's writes are independent deposits, not instalments of one
 	 * (bead grm-4bgh.5). Each recognized site of a select-data helper routes ITSELF -- an even
 	 * address deposits the select (and mode) field, an odd one deposits whichever target
@@ -648,7 +653,6 @@ public class SelectDataBankSwitchStrategy extends AbstractRangeBankSwitchStrateg
 	 * Contrast {@link SerialShiftBankSwitchStrategy}, which keeps the default {@code false}
 	 * because its five writes ARE one value -- see {@link BankSwitchStrategy#depositsPerSite}.
 	 */
-	/** Returns whether deposits are evaluated independently for each site. */
 	@Override
 	public boolean depositsPerSite() {
 		return true;
@@ -953,6 +957,8 @@ public class SelectDataBankSwitchStrategy extends AbstractRangeBankSwitchStrateg
 	}
 
 	/**
+	 * Supplies a helper value at its first recognized site when applicable.
+	 * <p>
 	 * {@code false}: read the helper's own supplied value at {@code switchSite}, not
 	 * {@code firstSite} (bead grm-67g). Unique to this strategy among those shipped, because it
 	 * is the only one whose helper can carry TWO mechanism writes holding DIFFERENT values --
@@ -960,7 +966,6 @@ public class SelectDataBankSwitchStrategy extends AbstractRangeBankSwitchStrateg
 	 * javadoc for smb3's {@code FUN_ffc2}, the case where reading {@code firstSite} deposited the
 	 * select byte into a bank field.
 	 */
-	/** Supplies a helper value at its first recognized site when applicable. */
 	@Override
 	public boolean suppliesHelperValueAtFirstSite() {
 		return false;
