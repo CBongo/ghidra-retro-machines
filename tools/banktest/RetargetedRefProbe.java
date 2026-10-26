@@ -18,6 +18,10 @@
 // the same population RealRomDump counts as refs.intoOverlay.retargeted but only samples. When
 // that count moves between two runs, diff these lines to name the references that moved. Run as
 // REALROM_EXTRA_POSTSCRIPT. Read-only; no ROM bytes.
+//
+// GRM_INTRAREF=1 also prints the other half of refs.intoOverlay, one `INTRAREF ...` line per
+// reference from an overlay instruction into an overlay space (refs.intoOverlay.intraOverlay),
+// for naming the references behind a moved intraOverlay count (grm-deve).
 
 import ghidra.app.script.GhidraScript;
 import ghidra.program.model.address.Address;
@@ -29,22 +33,34 @@ public class RetargetedRefProbe extends GhidraScript {
 
 	@Override
 	protected void run() throws Exception {
+		boolean intra = "1".equals(System.getenv("GRM_INTRAREF"));
 		InstructionIterator it = currentProgram.getListing().getInstructions(true);
 		int n = 0;
+		int nIntra = 0;
 		while (it.hasNext()) {
 			Instruction instr = it.next();
-			if (instr.getMinAddress().getAddressSpace().isOverlaySpace()) {
+			boolean fromOverlay = instr.getMinAddress().getAddressSpace().isOverlaySpace();
+			if (fromOverlay && !intra) {
 				continue;
 			}
 			for (Reference r : instr.getReferencesFrom()) {
 				if (r.getToAddress().getAddressSpace().isOverlaySpace()) {
-					n++;
-					println("RETREF " + fmt(instr.getMinAddress()) + " -> " + fmt(r.getToAddress()) +
+					String tag = fromOverlay ? "INTRAREF " : "RETREF ";
+					if (fromOverlay) {
+						nIntra++;
+					}
+					else {
+						n++;
+					}
+					println(tag + fmt(instr.getMinAddress()) + " -> " + fmt(r.getToAddress()) +
 						" " + r.getReferenceType() + " " + instr.getMnemonicString());
 				}
 			}
 		}
 		println("RETREF total " + n);
+		if (intra) {
+			println("INTRAREF total " + nIntra);
+		}
 	}
 
 	private static String fmt(Address a) {
