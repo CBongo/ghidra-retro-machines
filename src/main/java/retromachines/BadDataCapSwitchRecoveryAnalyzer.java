@@ -15,10 +15,12 @@
  */
 package retromachines;
 
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
 import ghidra.app.cmd.function.DecompilerSwitchAnalysisCmd;
+import ghidra.app.cmd.label.AddLabelCmd;
 import ghidra.app.decompiler.DecompInterface;
 import ghidra.app.decompiler.DecompileResults;
 import ghidra.app.plugin.core.analysis.SwitchAnalysisDecompileConfigurer;
@@ -26,6 +28,7 @@ import ghidra.app.services.AbstractAnalyzer;
 import ghidra.app.services.AnalysisPriority;
 import ghidra.app.services.AnalyzerType;
 import ghidra.app.util.importer.MessageLog;
+import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSetView;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Instruction;
@@ -33,9 +36,15 @@ import ghidra.program.model.listing.InstructionIterator;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.pcode.JumpTable;
 import ghidra.program.model.symbol.FlowType;
+import ghidra.program.model.symbol.Namespace;
 import ghidra.program.model.symbol.Reference;
+import ghidra.program.model.symbol.SourceType;
+import ghidra.program.model.symbol.Symbol;
+import ghidra.program.model.symbol.SymbolTable;
 import ghidra.util.UndefinedFunction;
 import ghidra.util.exception.CancelledException;
+import ghidra.util.exception.DuplicateNameException;
+import ghidra.util.exception.InvalidInputException;
 import ghidra.util.task.TaskMonitor;
 
 /**
@@ -71,7 +80,8 @@ import ghidra.util.task.TaskMonitor;
  * the decompiler's reading, and {@link JumpTableBoundAnalyzer} pins some switches to targets that
  * reading cannot produce (a cross-bank table points into the switched-in bank). Without the rule
  * the command overwrote the pin, the next pass re-pinned it, and deadly_towers went round about
- * 2,000 times.
+ * 2,000 times. Such a switch still gets stock's {@code switchD_}/{@code caseD_} labels, on the
+ * targets it already references only (grm-vrkk.10, {@link #labelPinnedSwitch}).
  */
 public class BadDataCapSwitchRecoveryAnalyzer extends AbstractAnalyzer {
 
@@ -168,8 +178,11 @@ public class BadDataCapSwitchRecoveryAnalyzer extends AbstractAnalyzer {
 					public boolean hasAllReferences(TaskMonitor m, JumpTable table,
 							Instruction instr, Function containingFunction)
 							throws CancelledException {
-						return hasComputedReference(instr) ||
-							super.hasAllReferences(m, table, instr, containingFunction);
+						if (hasComputedReference(instr)) {
+							labelPinnedSwitch(program, table, instr);
+							return true;
+						}
+						return super.hasAllReferences(m, table, instr, containingFunction);
 					}
 				}.applyTo(program, monitor);
 				recovered++;
@@ -196,6 +209,61 @@ public class BadDataCapSwitchRecoveryAnalyzer extends AbstractAnalyzer {
 		String msg = results.getErrorMessage();
 		return msg != null && msg.contains(BAD_DATA_CAP_MESSAGE);
 	}
+
+	/**
+	 * Labels a switch that already carries computed references (in practice a {@link
+	 * JumpTableBoundAnalyzer} pin) the way stock {@code DecompilerSwitchAnalysisCmd.labelSwitch}
+	 * would, restricted to the cases whose target the switch already references (grm-vrkk.10).
+	 *
+	 * <p>On an uncapped decompiler the stock analyzer decompiles this function, finds that the pin
+	 * does not cover its over-read, rewrites the switch and labels it {@code switchD_}/{@code
+	 * caseD_} -- the labels that are then in place, and primary, when {@link JumpTableBoundAnalyzer}
+	 * writes its late override. Here the stock analyzer abandoned the function at the cap, and the
+	 * pin must not be rewritten (see the class javadoc), so without this the switch got no stock
+	 * labels at all and the override's {@code switch}/{@code case_N} labels became primary instead
+	 * (contra 849f, megaman2 92e4). Only targets the pin already references are labelled: an
+	 * over-read case is exactly what the pin exists to keep out of the listing. Idempotent: it does
+	 * nothing once a {@code switchD} label is at the switch, the stock command's own rule.
+	 */
+	private static void labelPinnedSwitch(Program program, JumpTable table, Instruction instr) {
+		Address switchAddr = table.getSwitchAddress();
+		SymbolTable symtab = program.getSymbolTable();
+		for (Symbol sym : symtab.getSymbols(switchAddr)) {
+			if (sym.getName(false).startsWith("switchD")) {
+				return;
+			}
+		}
+		Set<Address> pinned = new HashSet<>();
+		for (Reference ref : instr.getReferencesFrom()) {
+			if (ref.getReferenceType().isComputed()) {
+				pinned.add(ref.getToAddress());
+			}
+		}
+		Address[] cases = table.getCases();
+		Integer[] values = table.getLabelValues();
+		String switchName = "switchD_" + switchAddr;
+		Namespace space = null;
+		try {
+			space = symtab.createNameSpace(null, switchName, SourceType.ANALYSIS);
+		}
+		catch (DuplicateNameException e) {
+			space = symtab.getNamespace(switchName, null);
+		}
+		catch (InvalidInputException e) {
+			// default space, as the stock command does
+		}
+		new AddLabelCmd(switchAddr, "switchD", space, SourceType.ANALYSIS).applyTo(program);
+		for (int i = 0; i < cases.length && i < values.length; i++) {
+			if (values[i] == DEFAULT_CASE_VALUE || !pinned.contains(cases[i])) {
+				continue;
+			}
+			new AddLabelCmd(cases[i], "caseD_" + Integer.toHexString(values[i]), space,
+				SourceType.ANALYSIS).applyTo(program);
+		}
+	}
+
+	/** Mirrors {@code DecompilerSwitchAnalysisCmd.DEFAULT_CASE_VALUE}; that class isn't public. */
+	private static final int DEFAULT_CASE_VALUE = 0xbad1abe1;
 
 	private static boolean hasComputedReference(Instruction instr) {
 		for (Reference ref : instr.getReferencesFrom()) {
