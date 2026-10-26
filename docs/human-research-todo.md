@@ -321,7 +321,16 @@ licence, MIT added 2026-10-14 (`grm-9nxj.8`); [deity-informant#359](https://gith
 
 Agents don't write into your ROM library or other personal directories.
 
-(No open items.)
+### 6.1 Install ruff, the Python linter (`grm-o8id`, unblocks `grm-l9s7`)
+
+- [ ] **Install.** `winget install --id astral-sh.ruff` (0.17.1 on winget as of 2026-10-26).
+  Confirm `ruff --version` in git bash, then close `grm-o8id`.
+
+### 6.2 Install PSScriptAnalyzer, the PowerShell linter (`grm-76hw`, unblocks `grm-kk77`)
+
+- [ ] **Install.** In pwsh: `Install-Module PSScriptAnalyzer -Scope CurrentUser`. Confirm with
+  `Get-Module -ListAvailable PSScriptAnalyzer`, then close `grm-76hw`. Low priority: it covers
+  three `.ps1` files.
 
 ---
 
