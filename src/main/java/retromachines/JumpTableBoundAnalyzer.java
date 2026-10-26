@@ -444,10 +444,18 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		// equality alone left 32 tables unbounded corpus-wide (megaman, ff1, etc.) despite the
 		// mechanism otherwise working -- this is the fix for that gap, not a loosening of intent.
 		AddressSpace targetSpace = realCases.get(0).getAddressSpace();
+		// grm-uzep: a case list deduplicated by target (and over-read into other spaces) is bounded
+		// from the table's own words: instead of the shape checks when the case list mixes spaces
+		// (they decline it outright), else only once every other rule has declined.
+		JumpTableBound.Result deduped = boundDistinctWords(program, table, realCases);
+		boolean mixed = false;
 		List<Long> targets = new ArrayList<>(realCases.size());
 		for (Address a : realCases) {
 			if (!sameMemory(a.getAddressSpace(), targetSpace)) {
-				return false; // mixed-space case list; shape not understood, decline
+				if (deduped == null) {
+					return false; // mixed-space case list; shape not understood, decline
+				}
+				mixed = true;
 			}
 			targets.add(a.getOffset());
 		}
@@ -483,7 +491,7 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		// grm-pwuh: the dispatch may read its table from a DIFFERENT bank than the decompiler did
 		// (the code switches banks first, then reads). Re-read it from the switched-in bank.
 		CrossBank crossBank = null;
-		if (lowestMovingTableAddr != null) {
+		if (lowestMovingTableAddr != null && !mixed) {
 			crossBank = crossBankTable(program, listing, switchAddr, table, lowestMovingTableAddr,
 				targets);
 		}
@@ -527,7 +535,7 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		// grm-jt7s: a keyed linear search leaves the index in a value set the code itself states;
 		// read the cases from it exactly, ahead of every extent rule (none can cut every third case).
 		List<Address> searched = null;
-		if (!isCrossBank) {
+		if (!isCrossBank && !mixed) {
 			Instruction switchInstr = listing.getInstructionAt(switchAddr);
 			searched = switchInstr == null ? null
 					: SearchLoopDispatch.cases(program, switchInstr, realCases);
@@ -539,6 +547,9 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 				lowest = Math.min(lowest, a.getOffset());
 			}
 			result = JumpTableBound.boundBySearchLoop(searched.size(), lowest);
+		}
+		else if (mixed) {
+			result = deduped;
 		}
 		else {
 			result = JumpTableBound.bound(targets, loadTables, tableBlock);
@@ -573,6 +584,9 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 				}
 			}
 			result = JumpTableBound.boundByKnownCode(targets, loadTables, codeStarts, inCode);
+		}
+		if (!result.isBounded() && deduped != null) {
+			result = deduped; // grm-uzep: nothing else could read this case list
 		}
 		boolean shrinks = result.isBounded() && result.count() < realCases.size();
 		if (!shrinks && !isCrossBank) {
@@ -676,6 +690,10 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		else if (result.rule() == JumpTableBound.Rule.SEARCH_LOOP) {
 			why = "index from a keyed search loop"; // grm-jt7s
 		}
+		else if (result.rule() == JumpTableBound.Rule.DISTINCT_WORDS) {
+			why = "lowest target " + Long.toHexString(result.lowestTarget()) +
+				", cases deduplicated by target"; // grm-uzep
+		}
 		else {
 			why = "lowest target " + Long.toHexString(result.lowestTarget());
 		}
@@ -700,6 +718,45 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		// text itself as the idempotence marker. Recorded for the exporter (grm-hb6.18).
 		AnalyzerCommentRecord.append(program, switchAddr, CommentType.EOL, text, text);
 		return true;
+	}
+
+	/**
+	 * grm-uzep: bounds a table whose decompiler case list is deduplicated by target (see
+	 * {@link JumpTableBound#boundByDistinctWords}). The shape: exactly one moving load table, one
+	 * byte wide, of an even length that holds more words than the decompiler has cases. Reads the
+	 * table's words from memory. Returns null when it is not that shape.
+	 */
+	private static JumpTableBound.Result boundDistinctWords(Program program, JumpTable table,
+			List<Address> realCases) {
+		JumpTable.LoadTable found = null;
+		for (JumpTable.LoadTable lt : table.getLoadTables()) {
+			if (lt.getNum() <= 1) {
+				continue;
+			}
+			if (found != null) {
+				return null;
+			}
+			found = lt;
+		}
+		if (found == null || found.getSize() != 1 || found.getNum() % 2 != 0 ||
+			found.getNum() / 2 <= realCases.size()) {
+			return null;
+		}
+		byte[] bytes = bytesAt(program, found.getAddress(), found.getNum());
+		if (bytes.length != found.getNum()) {
+			return null;
+		}
+		List<Long> words = new ArrayList<>(bytes.length / 2);
+		for (int i = 0; i < bytes.length; i += 2) {
+			words.add((long) ((bytes[i] & 0xff) | (bytes[i + 1] & 0xff) << 8));
+		}
+		List<Long> caseTargets = new ArrayList<>(realCases.size());
+		for (Address a : realCases) {
+			caseTargets.add(a.getOffset());
+		}
+		JumpTableBound.Result r = JumpTableBound.boundByDistinctWords(words,
+			found.getAddress().getOffset(), caseTargets);
+		return r.isBounded() ? r : null;
 	}
 
 	/** The jump table as read from the switched-in bank: its table address and case targets there. */

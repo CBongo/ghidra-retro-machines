@@ -823,6 +823,30 @@ public class JumpTableBoundTest {
 		return b;
 	}
 
+	/** dodge 82ba (grm-uzep): table 82bd, 22 words whose lowest target 82e9 is the byte right after
+	 *  it; the decompiler's case list is deduplicated (9 distinct, then over-read words). */
+	@Test
+	public void distinctWordsBoundAtTheLowestTarget() {
+		long[] real = { 0x82e9, 0x834b, 0x834b, 0x836e, 0x82e9, 0x8391, 0x834b, 0x834b, 0x83ae,
+			0x8431, 0x84ed, 0x84f5, 0x834b, 0x834b, 0x834b, 0x8532, 0x834b, 0x834b, 0x834b,
+			0x834b, 0x834b, 0x834b };
+		List<Long> words = new ArrayList<>(targets(real));
+		for (int i = 0; i < 20; i++) {
+			words.add(0x4ba5L + i); // over-read: the bytes of the code after the table
+		}
+		List<Long> cases = targets(0x82e9, 0x834b, 0x836e, 0x8391, 0x83ae, 0x8431, 0x84ed, 0x84f5,
+			0x8532, 0x4ba5, 0xf829, 0x4a4a);
+		Result r = JumpTableBound.boundByDistinctWords(words, 0x82bd, cases);
+		assertTrue(r.isBounded());
+		assertEquals(9, r.count());
+		assertEquals(0x82e9, r.lowestTarget());
+		assertEquals(JumpTableBound.Rule.DISTINCT_WORDS, r.rule());
+		// Cases that are not the words' distinct targets in order: not this shape.
+		assertFalse(JumpTableBound.boundByDistinctWords(words, 0x82bd,
+			targets(0x834b, 0x82e9, 0x836e, 0x8391, 0x83ae, 0x8431, 0x84ed, 0x84f5, 0x8532, 1, 2))
+				.isBounded());
+	}
+
 	/** Every target decodes: nothing to cut. */
 	@Test
 	public void codePrefixKeepsAllWhenEveryTargetDecodes() {

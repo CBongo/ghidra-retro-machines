@@ -823,7 +823,54 @@ public final class JumpTableBound {
 		KNOWN_CODE,
 		/** {@link #boundBySearchLoop}: grm-jt7s -- the index comes from a keyed linear search,
 		 *  whose value set {@link SearchLoopDispatch} reads exactly. */
-		SEARCH_LOOP
+		SEARCH_LOOP,
+		/** {@link #boundByDistinctWords}: grm-uzep -- lowest-target walk over the table's own
+		 *  words, for a decompiler case list deduplicated by target. */
+		DISTINCT_WORDS
+	}
+
+	/**
+	 * grm-uzep: the lowest-target bound for a table whose decompiler case list is DEDUPLICATED --
+	 * one case per distinct target in first-seen order, not one per slot. That is what a
+	 * {@code LDA tbl,X / STA $61 / LDA tbl+1,X / STA $62 / JMP ($0061)} dispatch yields (dodge
+	 * 82ba): the switch is on the loaded pointer value, so a handler shared by many slots appears
+	 * once, and the load table (one size-1 byte table of {@code 2 * words}) divides by no case
+	 * count, so {@link #bound} cannot run. Instead the table's own little-endian words are read and
+	 * walked with the lowest-target rule (the table cannot extend past its own lowest target), and
+	 * the distinct targets of the kept words must be exactly the leading cases, or it declines.
+	 *
+	 * @param words the table's words, in slot order, over the whole load-table extent
+	 * @param tableStart flat offset of the table's first byte
+	 * @param caseTargets the decompiler's case targets, in its order (default excluded)
+	 * @return bounded with the number of kept CASES (distinct targets), or a decline when a word
+	 *         does not lie above the table, the table never reaches its lowest target within
+	 *         {@code words}, or the kept words' distinct targets are not a prefix of the cases
+	 */
+	public static Result boundByDistinctWords(List<Long> words, long tableStart,
+			List<Long> caseTargets) {
+		long minTarget = Long.MAX_VALUE;
+		int slots = 0;
+		List<Long> distinct = new ArrayList<>();
+		for (int i = 0; i < words.size(); i++) {
+			if (tableStart + 2L * (i + 1) > minTarget) {
+				break; // this entry's own bytes would collide with the lowest target so far
+			}
+			long target = words.get(i);
+			if (target <= tableStart) {
+				return Result.decline(); // table does not precede its targets; idiom doesn't apply
+			}
+			minTarget = Math.min(minTarget, target);
+			if (!distinct.contains(target)) {
+				distinct.add(target);
+			}
+			slots = i + 1;
+		}
+		if (slots < 2 || slots == words.size() || distinct.size() < 2 ||
+			distinct.size() >= caseTargets.size() ||
+			!caseTargets.subList(0, distinct.size()).equals(distinct)) {
+			return Result.decline();
+		}
+		return Result.bounded(distinct.size(), minTarget, Rule.DISTINCT_WORDS);
 	}
 
 	/**
