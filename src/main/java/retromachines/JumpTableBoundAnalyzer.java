@@ -941,10 +941,14 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 			}
 		}
 		FlowType flowType = instr.getFlowType();
+		List<Address> stale = List.of();
 		if (flowType.isCall()) {
 			flowType = RefType.COMPUTED_JUMP; // matches DecompilerSwitchAnalysisCmd verbatim
 		}
 		else {
+			// grm-vrkk.11: a pin can land after stock switch analysis over-read the switch; the
+			// references it drops here are that over-read, retracted below once the pin is in.
+			stale = staleCaseTargets(program, switchAddr, keptTargets, false);
 			program.getReferenceManager().removeAllReferencesFrom(instr.getMinAddress());
 		}
 
@@ -978,6 +982,15 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 			DisassembleCommand cmd = new DisassembleCommand(disSetList, null, true);
 			cmd.applyTo(program);
 		}
+		if (!stale.isEmpty()) {
+			int cleared = retractCaseTargets(program, switchAddr, stale, monitor);
+			Function owner = program.getFunctionManager().getFunctionContaining(switchAddr);
+			if (owner != null) {
+				CreateFunctionCmd.fixupFunctionBody(program, owner, monitor);
+			}
+			AnalyzerLog.info(this, "pin retracted " + stale.size() + " over-read case(s) at " +
+				switchAddr + "; cleared flow from " + cleared + " of them");
+		}
 		return true;
 	}
 
@@ -996,30 +1009,64 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 	 * from that target when nothing else reaches it -- the guard and the command
 	 * {@link DecidedBranchAnalyzer} uses for a dead fall-through. A kept case is matched by offset
 	 * alone, so a reference that was retargeted into an overlay copy of a kept target stays. Only
-	 * ever called after {@link JumpTable#writeOverride} succeeded: the pin path replaces every
-	 * reference itself.
+	 * ever called after {@link JumpTable#writeOverride} succeeded; the pin path retracts the
+	 * references it replaces the same way ({@link #pinByReferences}, grm-vrkk.11).
 	 */
 	private void retractStaleCases(Program program, Function function, Address switchAddr,
 			List<Address> keptTargets, TaskMonitor monitor) throws CancelledException {
+		List<Address> stale = staleCaseTargets(program, switchAddr, keptTargets, true);
+		if (stale.isEmpty()) {
+			return;
+		}
+		int cleared = retractCaseTargets(program, switchAddr, stale, monitor);
+		if (!function.isDeleted()) {
+			CreateFunctionCmd.fixupFunctionBody(program, function, monitor);
+		}
+		AnalyzerLog.info(this, "retracted " + stale.size() + " over-read case(s) at " + switchAddr +
+			"; cleared flow from " + cleared + " of them");
+	}
+
+	/** The targets of {@code switchAddr}'s {@code ANALYSIS} computed-jump references that are not
+	 *  kept cases (matched by offset alone, see {@link #retractStaleCases}); deletes those
+	 *  references when {@code delete} is set. */
+	private static List<Address> staleCaseTargets(Program program, Address switchAddr,
+			List<Address> keptTargets, boolean delete) {
 		Set<Long> keptOffsets = new LinkedHashSet<>();
 		for (Address a : keptTargets) {
 			keptOffsets.add(a.getOffset());
 		}
-		SymbolTable symtab = program.getSymbolTable();
-		String switchNamespace = "switchD_" + switchAddr;
 		List<Address> stale = new ArrayList<>();
 		for (Reference ref : program.getReferenceManager().getReferencesFrom(switchAddr)) {
 			if (ref.getReferenceType() == RefType.COMPUTED_JUMP &&
 				ref.getSource() == SourceType.ANALYSIS &&
 				!keptOffsets.contains(ref.getToAddress().getOffset())) {
 				stale.add(ref.getToAddress());
-				program.getReferenceManager().delete(ref);
+				if (delete) {
+					program.getReferenceManager().delete(ref);
+				}
 			}
 		}
-		if (stale.isEmpty()) {
-			return;
-		}
+		return stale;
+	}
+
+	/**
+	 * Removes stock's {@code switchD_<switchAddr>} {@code ANALYSIS} case labels at each of
+	 * {@code stale} (targets the switch no longer references) and clears the code from each one
+	 * nothing else reaches; returns how many it cleared from. Reached means {@link
+	 * DecidedBranchAnalyzer#deadCodeStart}'s rule -- a flow reference, a pointer, an entry point, a
+	 * function or a named label -- or an instruction falling through into the target that stays
+	 * (grm-vrkk.11: an over-read entry can land mid-run in real code, which no reference marks).
+	 * A fall-through from code this same retraction clears does not count: a target whose
+	 * fall-from chain leads back to another cleared target is cleared too. Code reached only
+	 * through an over-read is accidental reach (owner ruling on grm-vrkk.11).
+	 */
+	static int retractCaseTargets(Program program, Address switchAddr, List<Address> stale,
+			TaskMonitor monitor) throws CancelledException {
+		SymbolTable symtab = program.getSymbolTable();
+		String switchNamespace = "switchD_" + switchAddr;
+		Listing listing = program.getListing();
 		AddressSet clearStarts = new AddressSet();
+		List<Address> fallenInto = new ArrayList<>();
 		for (Address target : stale) {
 			monitor.checkCancelled();
 			for (Symbol symbol : symtab.getSymbols(target)) {
@@ -1028,19 +1075,48 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 					symbol.delete();
 				}
 			}
-			if (DecidedBranchAnalyzer.deadCodeStart(program, target)) {
+			Instruction instr = listing.getInstructionAt(target);
+			if (instr == null || !DecidedBranchAnalyzer.deadCodeStart(program, target)) {
+				continue;
+			}
+			if (instr.getFallFrom() == null) {
+				clearStarts.add(target);
+			}
+			else {
+				fallenInto.add(target);
+			}
+		}
+		for (Address target : fallenInto) {
+			if (fallsFromCleared(listing, target, clearStarts)) {
 				clearStarts.add(target);
 			}
 		}
-		if (!clearStarts.isEmpty()) {
-			// Not clearing data: a defined table among the stale targets is someone's claim.
-			new ClearFlowAndRepairCmd(clearStarts, false, false, true).applyTo(program, monitor);
+		if (clearStarts.isEmpty()) {
+			return 0;
 		}
-		if (!function.isDeleted()) {
-			CreateFunctionCmd.fixupFunctionBody(program, function, monitor);
+		// Not clearing data: a defined table among the stale targets is someone's claim.
+		new ClearFlowAndRepairCmd(clearStarts, false, false, true).applyTo(program, monitor);
+		return (int) clearStarts.getNumAddresses();
+	}
+
+	/** Bound on {@link #fallsFromCleared}'s walk back. */
+	private static final int FLOW_WALK_LIMIT = 4096;
+
+	/** Whether {@code target}'s chain of fall-from instructions, walked back, reaches one of
+	 *  {@code clearStarts} -- i.e. it is entered only by falling out of code being cleared. */
+	private static boolean fallsFromCleared(Listing listing, Address target, AddressSet clearStarts) {
+		Instruction instr = listing.getInstructionAt(target);
+		for (int i = 0; instr != null && i < FLOW_WALK_LIMIT; i++) {
+			Address from = instr.getFallFrom();
+			if (from == null) {
+				return false;
+			}
+			if (clearStarts.contains(from)) {
+				return true;
+			}
+			instr = listing.getInstructionAt(from);
 		}
-		AnalyzerLog.info(this, "retracted " + stale.size() + " over-read case(s) at " + switchAddr +
-			"; cleared flow from " + clearStarts.getNumAddresses() + " of them");
+		return false;
 	}
 
 	/** Verbatim port of {@code DecompilerSwitchAnalysisCmd.setSwitchTargetContext}: flows the

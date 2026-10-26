@@ -489,6 +489,122 @@ public class JumpTableBoundProgramTest extends AbstractBundledLanguageTest {
 		assertTrue(!function.getBody().contains(addr(junk)));
 	}
 
+	/** grm-vrkk.11 (contra 849f): the same stock-first order, but the bound lands as a reference
+	 *  PIN (no real function owns the switch yet), which replaces every reference itself. It must
+	 *  still retract stock's over-read: the stale {@code caseD_} label and the garbage only the
+	 *  over-read reached. */
+	@Test
+	public void pinRetractsStockOverReadCases() throws Exception {
+		long junk = 0x8400;
+		ProgramDB program = buildProgram(TABLE, false, junk);
+		Address switchAddr = addr(switchOffset(false));
+		setBytes(program, junk, "01 00 f8 00", false); // ORA ($00,X) / SED / BRK
+		UndefinedFunction undefined = layStockOverRead(program, switchAddr, junk);
+
+		inTx(program, "analyze", () -> {
+			new JumpTableBoundAnalyzer().boundFunctions(program, java.util.Set.of(undefined),
+				TaskMonitor.DUMMY, new MessageLog());
+		});
+
+		assertEquals(realTargets(), targetsOf(program, switchAddr));
+		assertNull("garbage reached only by the over-read is cleared",
+			program.getListing().getInstructionAt(addr(junk)));
+		assertEquals(0, program.getSymbolTable().getSymbols(addr(junk)).length);
+	}
+
+	/** grm-vrkk.11: an over-read target that real code falls through into is reached, though no
+	 *  reference says so. The pin's retraction drops its label but must keep the code. */
+	@Test
+	public void pinRetractionKeepsCodeReachedByFallThrough() throws Exception {
+		long junk = 0x8401;
+		ProgramDB program = buildProgram(TABLE, false, junk);
+		Address switchAddr = addr(switchOffset(false));
+		setBytes(program, 0x8400, "ea 60", true); // NOP / RTS: real code that falls into the target
+		createFunction(program, addr(0x8400));
+		UndefinedFunction undefined = layStockOverRead(program, switchAddr, junk);
+
+		inTx(program, "analyze", () -> {
+			new JumpTableBoundAnalyzer().boundFunctions(program, java.util.Set.of(undefined),
+				TaskMonitor.DUMMY, new MessageLog());
+		});
+
+		assertEquals(realTargets(), targetsOf(program, switchAddr));
+		assertNotNull("code reached by fall-through stays",
+			program.getListing().getInstructionAt(addr(junk)));
+		for (ghidra.program.model.symbol.Symbol s : program.getSymbolTable().getSymbols(addr(junk))) {
+			assertTrue("stale caseD_ label removed: " + s.getName(true),
+				!s.getParentNamespace().getName().startsWith("switchD_"));
+		}
+	}
+
+	/** grm-vrkk.11 (contra 8e53): an over-read target that over-read JUNK falls into is reached
+	 *  only by code the same retraction clears, so it is cleared too -- unlike a target real code
+	 *  falls into ({@link #pinRetractionKeepsCodeReachedByFallThrough}). Entry 9 points at
+	 *  {@code $8402}, which the junk at {@code $8400} (also an over-read target) falls into. */
+	@Test
+	public void pinRetractionClearsJunkFallingIntoJunk() throws Exception {
+		long junk = 0x8400;
+		ProgramDB program = buildProgram(TABLE, false, junk);
+		Address switchAddr = addr(switchOffset(false));
+		setBytes(program, junk, "a9 00 40", false); // LDA #0 / RTI
+		setBytes(program, TABLE + 2 * 9, "02 84", false); // entry 9 -> $8402
+		UndefinedFunction undefined = layStockOverRead(program, switchAddr, junk);
+		assertTrue("control: stock also reached the fallen-into target",
+			targetsOf(program, switchAddr).contains(addr(junk + 2)));
+
+		inTx(program, "analyze", () -> {
+			new JumpTableBoundAnalyzer().boundFunctions(program, java.util.Set.of(undefined),
+				TaskMonitor.DUMMY, new MessageLog());
+		});
+
+		assertEquals(realTargets(), targetsOf(program, switchAddr));
+		assertNull(program.getListing().getInstructionAt(addr(junk)));
+		assertNull("junk falling into junk is cleared",
+			program.getListing().getInstructionAt(addr(junk + 2)));
+	}
+
+	private void setBytes(ProgramDB program, long at, String bytes, boolean disassemble) {
+		inTx(program, "bytes", () -> {
+			try {
+				builder.setBytes(String.format("0x%x", at), bytes, disassemble);
+			}
+			catch (Exception e) {
+				throw new RuntimeException(e);
+			}
+		});
+	}
+
+	/** Runs stock switch analysis on the dispatcher's {@link UndefinedFunction} (no real function
+	 *  exists) and checks the control: the over-read really reached {@code junk}. */
+	private UndefinedFunction layStockOverRead(ProgramDB program, Address switchAddr, long junk) {
+		UndefinedFunction undefined = UndefinedFunction.findFunctionUsingSimpleBlockModel(program,
+			addr(0x8000), TaskMonitor.DUMMY);
+		assertNotNull(undefined);
+		DecompileResults stock = decompileWithJumpLoads(program, undefined);
+		assertTrue(stock.getErrorMessage(), stock.decompileCompleted());
+		inTx(program, "stock", () -> {
+			new DecompilerSwitchAnalysisCmd(stock).applyTo(program, TaskMonitor.DUMMY);
+		});
+		assertNotNull(program.getListing().getInstructionAt(addr(junk)));
+		assertTrue(targetsOf(program, switchAddr).contains(addr(junk)));
+		boolean labelled = false;
+		for (ghidra.program.model.symbol.Symbol s : program.getSymbolTable().getSymbols(addr(junk))) {
+			labelled |= s.getParentNamespace().getName().equals("switchD_" + switchAddr);
+		}
+		assertTrue("control: stock labelled the over-read target", labelled);
+		assertNull("test precondition: still no real function at the switch",
+			program.getFunctionManager().getFunctionContaining(switchAddr));
+		return undefined;
+	}
+
+	private java.util.Set<Address> realTargets() {
+		java.util.Set<Address> expected = new java.util.HashSet<>();
+		for (long t : REAL_TARGETS) {
+			expected.add(addr(t));
+		}
+		return expected;
+	}
+
 	/** The targets of every computed-jump reference on {@code switchAddr}. */
 	private java.util.Set<Address> targetsOf(ProgramDB program, Address switchAddr) {
 		java.util.Set<Address> targets = new java.util.HashSet<>();
