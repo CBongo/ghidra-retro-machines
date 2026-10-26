@@ -274,7 +274,7 @@ throwaway copy). The bead stays the master copy: edit drafts there (see `AGENTS.
 drafts").
 
 **Current state of everything upstream** — full re-check against GitHub 2026-10-04; `#9655`/`#9765`
-re-checked 2026-10-10; `grm-vrkk.8` row checked 2026-10-25; `#10001` (`grm-vrkk.9`) checked 2026-10-25. Re-check before acting on it, and before re-deriving anything a row covers.
+re-checked 2026-10-10; `#10001` and `#10027`-`#10030` rows checked 2026-10-25. Re-check before acting on it, and before re-deriving anything a row covers.
 
 **Ordering rule:** rows that need you come first, then your deliberately deferred items, then rows
 waiting on someone else (most recent activity first). A row whose upstream item is **merged or
@@ -283,11 +283,11 @@ do not keep "Done" rows here.
 
 | item | state | last activity | yours? |
 |---|---|---|---|
-| 12.2 deprecated `Option` constructors issue (`grm-vrkk.8`) | **not posted**; draft on the bead | drafted 2026-10-25; no existing issue found, `Option.java` unchanged on `master` | **Yes:** in 12.2 an option built with the deprecated constructors silently loses its headless `-loader-*` arg, and one failed arg makes the import run with every option at its default, exit 0. Our loaders are migrated (`grm-75ey`, `grm-vrkk.1`), so this is only a report |
-| 12.2 Shared Return Calls filter issue (`grm-vrkk.7`) | **not posted**; draft on the bead | drafted 2026-10-24 | **Yes:** GP-6976's conditional-target filter applies to every program, and no 12.2 setting restores 12.1. We set "Allow Conditional Jumps" on meanwhile (`grm-6m24`) |
-| 12.2 bad-data cap issue (`grm-vrkk.6`) | **not posted**; draft on the bead | drafted 2026-10-24 | **Yes:** GP-6945's cap of 4 isn't an analysis option, and stock switch analysis loses real code on banked ROMs. The reference install carries a local hunk meanwhile (`grm-6m24`) |
-| Fall-through-into-overlay issue (`grm-p3dy`) | **not posted**; draft on the bead, **refreshed for 12.2 2026-10-25** (source claims re-verified) | **un-deferred 2026-10-24**: 12.2 carries GP-7010 and `callReturnFlowOverrideDoesNotRescueIt` still passes on it | **Yes:** the deferral condition is met, so post it (see the item below) |
-| [ghidra discussion #9349](https://github.com/NationalSecurityAgency/ghidra/discussions/9349) banked-memory RFC | open, **zero replies** | opened 2026-07-05 | **Yes, with the fall-through issue:** the addendum post rides with it |
+| [ghidra discussion #9349](https://github.com/NationalSecurityAgency/ghidra/discussions/9349) banked-memory RFC | open, **zero replies** | opened 2026-07-05 | **Yes:** post [#10030](https://github.com/NationalSecurityAgency/ghidra/issues/10030)'s link there with the addendum now in `docs/rfc-banked-memory.md` ("the decompiler has a second wall, independent of resolution"), so the discussion stops claiming Phase 1 needs "no further change" downstream |
+| [ghidra#10030](https://github.com/NationalSecurityAgency/ghidra/issues/10030) fall-through override into an overlay is fatal to the decompiler (`grm-p3dy`) | open, no labels or assignee yet | you opened it 2026-10-26 | No, waiting on a maintainer. The answer decides `grm-p3dy`: "deliberate" -> close it on option (1); "open to it" -> reopen as option (3) with an upstream PR. Do not start a local `flow.cc` patch before the answer |
+| [ghidra#10029](https://github.com/NationalSecurityAgency/ghidra/issues/10029) GP-6945 bad-data cap not configurable for auto-analysis (`grm-vrkk.6`) | open, no labels or assignee yet | you opened it 2026-10-25 | No, waiting on a maintainer. The reference install keeps its local cap hunk meanwhile; `grm-vrkk.6` still owns a stock-compatible answer |
+| [ghidra#10028](https://github.com/NationalSecurityAgency/ghidra/issues/10028) Shared Return Calls conditional-target filter (`grm-vrkk.7`) | open, no labels or assignee yet | you opened it 2026-10-25 | No, waiting on a maintainer. We keep "Allow Conditional Jumps" on meanwhile (`grm-6m24`); revisit that if the filter gets scoped or its own option |
+| [ghidra#10027](https://github.com/NationalSecurityAgency/ghidra/issues/10027) deprecated `Option` constructors lose headless `-loader-*` args (`grm-vrkk.8`) | open, no labels or assignee yet | you opened it 2026-10-25 | No, waiting on a maintainer. Our loaders are migrated (`grm-75ey`, `grm-vrkk.1`), so nothing here depends on the outcome |
 | [ghidra#10001](https://github.com/NationalSecurityAgency/ghidra/issues/10001) 12.2 `PcodeUseropLibrary.SYMBOL_CACHE` emulator leak (`grm-vrkk.9`) | open, filed by a third party (same root cause and workaround as ours, proposes a fix); no linked PR. **Our draft is retired — do not post it** | opened 2026-10-23 | No, waiting on a maintainer. We evict our own emulators' entries after every run (`EmulationRecovery.releaseUseropSymbols`, b6116d9); drop that once a release we target carries the fix. Adding our SPC700 vector-tier OOM as a second repro is optional |
 | [ghidra#9655](https://github.com/NationalSecurityAgency/ghidra/issues/9655) GP-6936 join varnodes + RAM-half fix PR [#9765](https://github.com/NationalSecurityAgency/ghidra/pull/9765) (`grm-qp5x.2`) | issue open, `Status: Triage`, assigned `caheckman`, [correction comment](https://github.com/NationalSecurityAgency/ghidra/issues/9655#issuecomment-6102852548) asks which of two directions for the 6502 half; PR open, `blocked` = awaiting review | 2026-10-10: PR + comment, then the `certification.manifest` line a third party flagged | No, waiting on a maintainer. Do not PR a spacebase fix until they pick a direction |
 | [ghidra#9447](https://github.com/NationalSecurityAgency/ghidra/issues/9447) jump-table over-read + fix PR [#9717](https://github.com/NationalSecurityAgency/ghidra/pull/9717) (`grm-b3m`) | issue open, `Status: Triage`, assigned `caheckman`; PR open, `blocked` = awaiting review | PR opened 2026-10-04 | No, waiting on a maintainer |
@@ -305,36 +305,6 @@ licence, MIT added 2026-10-14 (`grm-9nxj.8`); [deity-informant#359](https://gith
   copy has diverged too far. The bead lists each fix separately. An agent can cut the branches.
   Opening the PRs is yours.
 
-- [ ] **Fall-through override into an overlay space is accepted by the listing and fatal to the
-  decompiler — ask upstream whether that is deliberate.** (`grm-p3dy`, ruled 2026-09-21: ask
-  first, build nothing.) **READY TO POST (2026-10-24, `grm-75ey`):** Ghidra 12.2 carries GP-7010,
-  and on 12.2 `FallThroughIntoOverlayProgramTest` passes all 11 rows, including
-  `callReturnFlowOverrideDoesNotRescueIt`. So the `CallReturn` record does *not* make the question
-  moot, and the draft still stands. History: **DEFERRED 2026-10-04 (owner): do not post until a Ghidra release
-  carries GP-7010** (`da5c0f2`, on `master` since July, not in 12.1.4). It moves flow overrides
-  into the decompiler as p-code override records, and its `CallReturn` record may turn this
-  override's `BRANCH` into a cross-space CALL, which would make the question moot. On that
-  release: retarget, re-run `FallThroughIntoOverlayProgramTest`
-  (`callReturnFlowOverrideDoesNotRescueIt` is the deciding row), and only then decide whether the
-  draft below is still needed. 12.1.4 changed nothing here (re-verified 2026-10-04). The mechanics spike (`FallThroughIntoOverlayProgramTest`, 11 rows)
-  established that `Instruction.setFallThrough(overlayAddr)` lands, `CreateFunctionCmd` ends the
-  base function at the overridden instruction as hoped, but the base function then **fails to
-  decompile outright** — `FlowInfo` bounds flow to the entry's address space (`flow.cc:29`), the
-  override's `BRANCH` into the overlay is out of bounds, and `FlowInfo::target` throws
-  `Could not find op at target address`. `FlowOverride.CALL_RETURN` does not rescue it. Only a
-  CALL crosses spaces. **The issue body is drafted on the bead** (title, 5-instruction repro, the
-  source references, and the ask: admit overlays of the same base space in `FlowInfo`, or
-  reject/warn on cross-space targets in `setFallThrough` so the two halves stop disagreeing
-  silently). Posting it is yours. What the answer decides: "deliberate" → close `grm-p3dy` on
-  option (1), the reference model stays; "open to it" → reopen as option (3) with the upstream
-  PR as the vehicle, then settle Q2–Q4. Do not start a local `flow.cc` patch before the answer.
-  **Two things to do around the filing:** (i) the draft cites
-  [discussion #9349](https://github.com/NationalSecurityAgency/ghidra/discussions/9349) as
-  its context — this is the decompiler half of that RFC's Phase 1, which the RFC wrongly said
-  needed "no further change" downstream; (ii) **update #9349 too**: post the new issue's link
-  there with the addendum now in `docs/rfc-banked-memory.md` ("the decompiler has a second
-  wall, independent of resolution"), so the discussion stops over-claiming and gains a small,
-  reviewable lead-in.
 *Two things learned that the next upstream item should inherit:*
 
 - *`CBongo/ghidra` now exists as a fork, and a separate full clone of it (kept apart from the
@@ -472,3 +442,4 @@ Agents don't write into your ROM library or other personal directories.
 | smb3 `$E3EE`–`$E57A`: one routine, or three (`$E401`/`$E4CD` split out under 12.2 with "Allow Conditional Jumps" on)? | **One (owner, 2026-10-25).** `$E3EE` is `SndMus_QueueCommon` in captainsouthbird's smb3 disassembly (`PRG/prg031.asm` line 338); `$E401` and `$E4CD` are parts of that one function, and the disassembly references them nowhere else. The 12.2 three-way split is an over-split. **Do not re-bless smb3 as is**: narrow the rule so a conditional branch counts as a tail call only when its target is reached by a `JSR` or a pointer (`grm-6m24.1`); the borrowed-`RTS` stubs `b4c1`/`bb80`/`af23` must still qualify. | `grm-6m24`; `grm-6m24.1` |
 | dodge bank 3 `$A00A`–`$A2FF` (code on 12.1, data on 12.2, no outside reference): real code, and how is it reached? | **Real code, but no entry was seen (owner, 2026-10-25).** Bank 3 `$9E72`–`$A4AA` is code throughout, apart from a couple of switch tables. Normal play (the first couple of matches, then a game over) never executes `$FB1B`, the far-call stub that selects bank 3 and `JSR $8003` → `JMP $A28B`; it may serve late-game or credits content. With no identifiable entry there is nothing honest to teach, so **12.2's output stands and dodge was re-blessed** (instrs.inOverlay 11366 → 11098, symbols 189 → 166); 12.1 only reached it through an over-read jump-table seed. A heuristic that treats every stub in a far-call trampoline run as an entry is filed as `grm-m06g` (P4, ask before building). Separate owner observation: dodge's table at `82bd` (dispatch `82ba`) is over-read, real length 21 (`grm-uzep`). | `grm-6m24`; `grm-m06g`; `grm-uzep` |
 | Do the loader option tooltips actually show in the 12.2 import dialog (including our `RomFileOption` path fields)? | **Yes, every one (owner, 2026-10-25)** — but each showed as one long line. They are now built by `OptionTooltip`: HTML wrapped at about 70 characters, with the `Headless: -loader-…` usage on its own line, which the owner asked for in particular. `LoaderOptionContractTest` now fails any of our options whose description skips it (Ghidra's two stock label options are exempt). The Browse button having no tooltip was not raised; leave it. | `grm-vrkk.1` |
+| Post the fall-through-into-overlay issue (`grm-p3dy`) now that 12.2 carries GP-7010? | **Posted 2026-10-26 as [ghidra#10030](https://github.com/NationalSecurityAgency/ghidra/issues/10030).** 12.2 did not make it moot: `callReturnFlowOverrideDoesNotRescueIt` still passes, so a fall-through override into an overlay still makes the function undecompilable. Waiting on a maintainer, tracked in section 5's table; the #9349 addendum post is still yours (also in that table). Do not start a local `flow.cc` patch before the answer | `grm-p3dy` |
