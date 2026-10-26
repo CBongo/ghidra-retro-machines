@@ -3,7 +3,9 @@
 > **STATUS: POSTED** as
 > [NationalSecurityAgency/ghidra discussion #9349](https://github.com/NationalSecurityAgency/ghidra/discussions/9349)
 > (2026-07-05). This file is the source of record for the proposal text; substantive
-> revisions should be mirrored to the discussion. All file/line citations are against the
+> revisions should be mirrored to the discussion. The M3 status update and the 2026-09-21
+> addendum below were mirrored on 2026-10-26, alongside ghidra#10030 (the addendum's issue).
+> All file/line citations are against the
 > Ghidra 12.1.2 source. Tracked as bead `gib.2` / `rrh` in the GME tracker; motivating
 > loader + Phase 0 analyzer live in this repo (CBongo/ghidra-retro-machines).
 
