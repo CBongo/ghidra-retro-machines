@@ -24,6 +24,7 @@ REALROM count bankComments 26
 REALROM count warnings 19
 REALROM count notes 28
 REALROM count symbols 176
+REALROM count jumptable.wordArrays 17
 REALROM sample.bankcomment c023 bank -> mirroring=0,prg_mode=3,prg_bank=4? via FUN_ff08 [known: prg_bank.0=0,prg_bank.1=0,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment c041 bank -> mirroring=0,prg_mode=3,prg_bank=6? via FUN_ff08 [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment f03b bank -> mirroring=0,prg_mode=3,prg_bank=6? via FUN_ff08 [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
@@ -149,4 +150,13 @@ REALROM sample.symbol 8308 case_22 USER_DEFINED primary=true
 REALROM sample.symbol 8312 case_23 USER_DEFINED primary=true
 REALROM sample.symbol 831c case_12 USER_DEFINED primary=true
 REALROM sample.symbol.truncated 25 of 164
+REALROM sample.jumptable W8000_B1::8161 word[27]
+REALROM sample.jumptable W8000_B1::8e19 word[4]
+REALROM sample.jumptable W8000_B1::9193 word[3]
+REALROM sample.jumptable W8000_B1::945e word[3]
+REALROM sample.jumptable W8000_B1::9a8e word[12]
+REALROM sample.jumptable W8000_B1::be9a word[2]
+REALROM sample.jumptable W8000_B3::810d word[7]
+REALROM sample.jumptable W8000_B3::82bd word[22]
+REALROM sample.jumptable.truncated 8 of 17
 === REALROM END ===

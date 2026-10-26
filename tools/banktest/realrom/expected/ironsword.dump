@@ -24,6 +24,7 @@ REALROM count bankComments 4
 REALROM count warnings 5
 REALROM count notes 5
 REALROM count symbols 18
+REALROM count jumptable.wordArrays 0
 REALROM sample.bankcomment d567 bank -> 0 (bank=0) via FUN_d677
 REALROM sample.bankcomment d684 bank -> 0 (bank=0)
 REALROM sample.bankcomment ff94 bank -> 0 (bank=0)

@@ -41,13 +41,18 @@ import java.util.List;
 import ghidra.app.script.GhidraScript;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSpace;
+import ghidra.program.model.data.Array;
+import ghidra.program.model.data.WordDataType;
 import ghidra.program.model.listing.Bookmark;
 import ghidra.program.model.listing.CommentType;
+import ghidra.program.model.listing.Data;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.InstructionIterator;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryBlock;
+import ghidra.program.model.symbol.RefType;
 import ghidra.program.model.symbol.Reference;
+import ghidra.program.model.symbol.SourceType;
 
 public class RealRomDump extends GhidraScript {
 
@@ -78,6 +83,8 @@ public class RealRomDump extends GhidraScript {
 	// every row in the corpus to 18 -- well under the historical cap. Left where it was;
 	// raising it would move nothing.
 	private static final int SAMPLE_SYMBOLS = 25;
+	// Jump-table word arrays (grm-deve), sorted by address; the count line carries the total.
+	private static final int SAMPLE_JUMPTABLES = 8;
 
 	// Program-info property the loader stamps with the user's bank-placement override
 	// (DescriptorHints.PLACEMENT_OVERRIDE_PROPERTY -- kept as a literal here so this script
@@ -239,6 +246,27 @@ public class RealRomDump extends GhidraScript {
 		// Hardware-register symbols are an invariant check (grm-x4y1.6), removed from the sample.
 		symbols = out.requireAndRemove("symbol", symbols, FIXED_SYMBOLS);
 
+		// Jump-table word arrays (grm-deve): JumpTableBoundAnalyzer lays word[n] over a bounded table
+		// with one ANALYSIS data reference per entry. The refs.* counters only see references FROM
+		// instructions, so without this line the arrays are invisible in the golden.
+		List<String> wordArrays = new ArrayList<>();
+		for (Data data : currentProgram.getListing().getDefinedData(true)) {
+			if (!(data.getDataType() instanceof Array arr) ||
+				!(arr.getDataType() instanceof WordDataType)) {
+				continue;
+			}
+			boolean ours = false;
+			for (Reference r : data.getReferencesFrom()) {
+				ours |= RefType.DATA.equals(r.getReferenceType()) &&
+					r.getSource() == SourceType.ANALYSIS;
+			}
+			if (ours) {
+				AddressSpace space = data.getMinAddress().getAddressSpace();
+				wordArrays.add((space.isOverlaySpace() ? space.getName() + "::" : "") +
+					fmt(data.getMinAddress()) + " word[" + arr.getNumElements() + "]");
+			}
+		}
+
 		Collections.sort(blocks);
 		// Fixed-block invariant (grm-x4y1.6): present exactly once, removed from the printed layout.
 		for (String fixed : FIXED_BLOCKS) {
@@ -255,6 +283,7 @@ public class RealRomDump extends GhidraScript {
 		Collections.sort(overlayRefs);
 		Collections.sort(warnings);
 		Collections.sort(notes);
+		Collections.sort(wordArrays);
 
 		String placement = currentProgram.getOptions(Program.PROGRAM_INFO)
 				.getString(PLACEMENT_OVERRIDE_PROPERTY, null);
@@ -280,12 +309,14 @@ public class RealRomDump extends GhidraScript {
 		println("REALROM count warnings " + warningCount);
 		println("REALROM count notes " + noteCount);
 		println("REALROM count symbols " + symbolCount);
+		println("REALROM count jumptable.wordArrays " + wordArrays.size());
 
 		out.emitSample("sample.bankcomment", bankComments, SAMPLE_BANKCOMMENTS);
 		out.emitSample("sample.ref", overlayRefs, SAMPLE_REFS);
 		out.emitSample("sample.warn", warnings, SAMPLE_WARNINGS);
 		out.emitSample("sample.note", notes, SAMPLE_NOTES);
 		out.emitSample("sample.symbol", symbols, SAMPLE_SYMBOLS);
+		out.emitSample("sample.jumptable", wordArrays, SAMPLE_JUMPTABLES);
 
 		out.end();
 	}

@@ -23,6 +23,7 @@ REALROM count bankComments 48
 REALROM count warnings 10
 REALROM count notes 4
 REALROM count symbols 95
+REALROM count jumptable.wordArrays 3
 REALROM sample.bankcomment 8194 bank -> 6 (bank=6) via FUN_c34c
 REALROM sample.bankcomment 8c3b bank -> 3 (bank=3) via FUN_c389
 REALROM sample.bankcomment 912d bank -> 3 (bank=3) via FUN_c389
@@ -137,4 +138,7 @@ REALROM sample.symbol dd6a case_58 USER_DEFINED primary=false
 REALROM sample.symbol dd6a case_59 USER_DEFINED primary=false
 REALROM sample.symbol dd6a case_60 USER_DEFINED primary=false
 REALROM sample.symbol.truncated 25 of 83
+REALROM sample.jumptable d39a word[5]
+REALROM sample.jumptable dcb3 word[64]
+REALROM sample.jumptable ed96 word[5]
 === REALROM END ===

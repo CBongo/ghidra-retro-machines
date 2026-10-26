@@ -848,22 +848,18 @@ public final class JumpTableBound {
 	 */
 	public static Result boundByDistinctWords(List<Long> words, long tableStart,
 			List<Long> caseTargets) {
+		int slots = distinctWordSlots(words, tableStart);
+		if (slots < 0) {
+			return Result.decline(); // table does not precede its targets; idiom doesn't apply
+		}
 		long minTarget = Long.MAX_VALUE;
-		int slots = 0;
 		List<Long> distinct = new ArrayList<>();
-		for (int i = 0; i < words.size(); i++) {
-			if (tableStart + 2L * (i + 1) > minTarget) {
-				break; // this entry's own bytes would collide with the lowest target so far
-			}
+		for (int i = 0; i < slots; i++) {
 			long target = words.get(i);
-			if (target <= tableStart) {
-				return Result.decline(); // table does not precede its targets; idiom doesn't apply
-			}
 			minTarget = Math.min(minTarget, target);
 			if (!distinct.contains(target)) {
 				distinct.add(target);
 			}
-			slots = i + 1;
 		}
 		if (slots < 2 || slots == words.size() || distinct.size() < 2 ||
 			distinct.size() >= caseTargets.size() ||
@@ -871,6 +867,28 @@ public final class JumpTableBound {
 			return Result.decline();
 		}
 		return Result.bounded(distinct.size(), minTarget, Rule.DISTINCT_WORDS);
+	}
+
+	/**
+	 * The number of words (slots) {@link #boundByDistinctWords} keeps: the lowest-target walk over
+	 * the table's own words, stopping where the next entry's bytes would collide with the lowest
+	 * target so far. -1 when a word does not lie above the table.
+	 */
+	public static int distinctWordSlots(List<Long> words, long tableStart) {
+		long minTarget = Long.MAX_VALUE;
+		int slots = 0;
+		for (int i = 0; i < words.size(); i++) {
+			if (tableStart + 2L * (i + 1) > minTarget) {
+				break; // this entry's own bytes would collide with the lowest target so far
+			}
+			long target = words.get(i);
+			if (target <= tableStart) {
+				return -1;
+			}
+			minTarget = Math.min(minTarget, target);
+			slots = i + 1;
+		}
+		return slots;
 	}
 
 	/**

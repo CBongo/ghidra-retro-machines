@@ -81,6 +81,7 @@ REALROM count bankComments 159
 REALROM count warnings 16
 REALROM count notes 13
 REALROM count symbols 31
+REALROM count jumptable.wordArrays 1
 REALROM sample.bankcomment 85b8 bank -> select=7,prg_mode=1,r6=0,r7=12 via FUN_ffc2 [switch-value flow]
 REALROM sample.bankcomment 85f7 bank -> select=7,prg_mode=1,r6=0,r7=12 [switch-value flow]
 REALROM sample.bankcomment 85fc bank -> select=7,prg_mode=1,r6=0,r7=26 [switch-value flow]
@@ -314,4 +315,5 @@ REALROM sample.symbol ff40 RESET IMPORTED primary=true
 REALROM sample.symbol fffa NMI_VEC IMPORTED primary=true
 REALROM sample.symbol fffc RESET_VEC IMPORTED primary=true
 REALROM sample.symbol fffe IRQ_VEC IMPORTED primary=true
+REALROM sample.jumptable WA000_B8::b7d1 word[12]
 === REALROM END ===

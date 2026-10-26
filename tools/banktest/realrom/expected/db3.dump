@@ -23,6 +23,7 @@ REALROM count bankComments 0
 REALROM count warnings 1
 REALROM count notes 16
 REALROM count symbols 135
+REALROM count jumptable.wordArrays 3
 REALROM sample.warn db73 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_db2e, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
 REALROM sample.note c4d2 [CopyLoopAnalyzer] copy-shaped loop RAM:c4f5 -> RAM:0200 (16 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note c585 [CopyLoopAnalyzer] copy-shaped loop RAM:c5af -> RAM:0200 (33 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
@@ -66,4 +67,7 @@ REALROM sample.symbol c6c0 case_16 USER_DEFINED primary=true
 REALROM sample.symbol c6e0 case_17 USER_DEFINED primary=true
 REALROM sample.symbol c705 case_18 USER_DEFINED primary=true
 REALROM sample.symbol.truncated 25 of 123
+REALROM sample.jumptable c2ac word[31]
+REALROM sample.jumptable ca2f word[43]
+REALROM sample.jumptable d041 word[40]
 === REALROM END ===

@@ -18,12 +18,13 @@ REALROM block WC000 c000-ffff overlay=false
 REALROM count blocks.total 13
 REALROM count blocks.overlay 7
 REALROM count refs.intoOverlay.retargeted 72
-REALROM count refs.intoOverlay.intraOverlay 3743
-REALROM count instrs.inOverlay 15099
+REALROM count refs.intoOverlay.intraOverlay 3745
+REALROM count instrs.inOverlay 15098
 REALROM count bankComments 106
 REALROM count warnings 5
 REALROM count notes 12
 REALROM count symbols 110
+REALROM count jumptable.wordArrays 4
 REALROM sample.bankcomment a947 bank -> mirroring=3,prg_mode=3,prg_bank=3 via FUN_ce56 [switch-value flow]
 REALROM sample.bankcomment bf6c bank -> mirroring=3,prg_mode=3,prg_bank=2 via FUN_ce56 [switch-value flow]
 REALROM sample.bankcomment c003 bank -> mirroring=0,prg_mode=3,prg_bank=2? via FUN_cea7 [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=1,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
@@ -155,7 +156,7 @@ REALROM sample.ref 803b -> W8000_B5::8212 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 803b -> W8000_B6::8047 CONDITIONAL_JUMP primary=true
 REALROM sample.ref 8041 -> W8000_B5::803b CONDITIONAL_JUMP primary=true
 REALROM sample.ref 8043 -> W8000_B5::93f0 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref.truncated 25 of 3815
+REALROM sample.ref.truncated 25 of 3817
 REALROM sample.warn 97a5 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn ced2 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_cea7 whose bank argument could not be recovered at this call site
 REALROM sample.warn cf0d [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_cea7 whose bank argument could not be recovered at this call site
@@ -199,4 +200,8 @@ REALROM sample.symbol 8d13 case_8 USER_DEFINED primary=true
 REALROM sample.symbol 8d2e case_11 USER_DEFINED primary=true
 REALROM sample.symbol 8d44 case_12 USER_DEFINED primary=true
 REALROM sample.symbol.truncated 25 of 98
+REALROM sample.jumptable 8fb8 word[6]
+REALROM sample.jumptable W8000_B5::82e3 word[38]
+REALROM sample.jumptable W8000_B5::940a word[45]
+REALROM sample.jumptable W8000_B5::9477 word[23]
 === REALROM END ===

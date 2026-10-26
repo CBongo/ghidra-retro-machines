@@ -626,6 +626,56 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		if (shrinks || cutAtData) {
 			keptOut.addAll(firstN);
 		}
+		// grm-deve: decide now (bytes do not change when the bound lands) whether this table reads as
+		// a word array of exactly the kept targets; a previous array of ours goes BEFORE the pin or
+		// override so its references cannot shield stale targets from the retraction.
+		JumpTableArray.Layout arrayLayout = null;
+		Address arrayAt = null;
+		List<Address> arrayTargets = null;
+		boolean arrayLaid = false;
+		if (shrinks && !isCrossBank && searched == null && result.stride() == 1 &&
+			result.planarGap() == 0 && !firstN.isEmpty()) {
+			boolean distinct = result.rule() == JumpTableBound.Rule.DISTINCT_WORDS;
+			JumpTable.LoadTable only = distinct ? singleMovingByteTable(table) : null;
+			arrayAt = distinct ? (only == null ? null : only.getAddress()) : lowestMovingTableAddr;
+			if (arrayAt != null) {
+				int wordCount = distinct ? only.getNum() / 2 : firstN.size();
+				List<Long> words = wordsAt(program, arrayAt, wordCount);
+				List<Long> keptOffsets = new ArrayList<>(firstN.size());
+				for (Address a : firstN) {
+					keptOffsets.add(a.getOffset());
+				}
+				if (words != null) {
+					arrayLayout = distinct
+							? JumpTableArray.matchDistinct(words, arrayAt.getOffset(), keptOffsets)
+							: JumpTableArray.matchOrdered(words, keptOffsets);
+				}
+				if (arrayLayout != null) {
+					arrayTargets = new ArrayList<>(arrayLayout.count());
+					for (int idx : arrayLayout.caseIndex()) {
+						arrayTargets.add(firstN.get(idx));
+					}
+					// A target inside the table's own bytes is code over the array (tables that
+					// overlap their handlers, deadly_towers ddd0): data there would unmake it.
+					long first = arrayAt.getOffset();
+					long last = first + 2L * arrayLayout.count() - 1;
+					for (Address t : arrayTargets) {
+						if (sameMemory(t.getAddressSpace(), arrayAt.getAddressSpace()) &&
+							t.getOffset() >= first && t.getOffset() <= last) {
+							arrayLayout = null;
+							arrayTargets = null;
+							break;
+						}
+					}
+				}
+				if (arrayLayout != null) {
+					arrayLaid = JumpTableArrays.isLaid(program, arrayAt, arrayTargets);
+				}
+				if (!arrayLaid) {
+					JumpTableArrays.unlay(program, arrayAt);
+				}
+			}
+		}
 		// grm-rsxe: a KNOWN_CODE cut is pinned by references even in a real function. The one
 		// table it exists for (tmnt B5 9474) makes the decompiler reject the override outright
 		// ("Overlapping input varnodes" with 23 cases, clean with its own 128), and a rejected
@@ -659,6 +709,13 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 			retractStaleCases(program, function, switchAddr, firstN, monitor);
 		}
 
+		// grm-deve: the bound has landed and its retraction is done; lay over the kept entries only.
+		boolean arrayNow = arrayLayout != null &&
+			(arrayLaid || JumpTableArrays.layWords(program, arrayAt, arrayTargets));
+		AnalyzerLog.info(this, "jump table array at " + switchAddr + ": " +
+			(arrayLayout == null ? "no word layout"
+					: arrayNow ? "laid word[" + arrayLayout.count() + "] at " + arrayAt
+							: "declined at " + arrayAt));
 		long tableStart = 0;
 		boolean haveStart = false;
 		for (JumpTableBound.LoadTableEntry lt : loadTables) {
@@ -706,6 +763,10 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		}
 		if (shrinks && cutAtData) {
 			why += ", then " + dataCut; // grm-0pen
+		}
+		if (arrayNow) {
+			why += ", laid word[" + arrayLayout.count() + "]" +
+				(arrayLayout.bias() == 1 ? " (RTS-trick: entry = target - 1)" : "");
 		}
 		if (isCrossBank) {
 			why += ", table read from switched-in bank " + targetSpace.getName() + " as " +
@@ -757,6 +818,35 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		JumpTableBound.Result r = JumpTableBound.boundByDistinctWords(words,
 			found.getAddress().getOffset(), caseTargets);
 		return r.isBounded() ? r : null;
+	}
+
+	/** grm-deve: the one moving load table of a deduplicated-case-list switch, when it is a byte
+	 *  table of an even length (the shape {@link #boundDistinctWords} reads); else null. */
+	private static JumpTable.LoadTable singleMovingByteTable(JumpTable table) {
+		JumpTable.LoadTable found = null;
+		for (JumpTable.LoadTable lt : table.getLoadTables()) {
+			if (lt.getNum() <= 1) {
+				continue;
+			}
+			if (found != null) {
+				return null;
+			}
+			found = lt;
+		}
+		return found == null || found.getSize() != 1 || found.getNum() % 2 != 0 ? null : found;
+	}
+
+	/** {@code count} little-endian words at {@code a}, or null when memory does not hold them all. */
+	private static List<Long> wordsAt(Program program, Address a, int count) {
+		byte[] bytes = bytesAt(program, a, 2 * count);
+		if (bytes.length != 2 * count) {
+			return null;
+		}
+		List<Long> words = new ArrayList<>(count);
+		for (int i = 0; i < bytes.length; i += 2) {
+			words.add((long) ((bytes[i] & 0xff) | (bytes[i + 1] & 0xff) << 8));
+		}
+		return words;
 	}
 
 	/** The jump table as read from the switched-in bank: its table address and case targets there. */

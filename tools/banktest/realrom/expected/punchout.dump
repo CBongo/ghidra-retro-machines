@@ -33,6 +33,7 @@ REALROM count bankComments 38
 REALROM count warnings 16
 REALROM count notes 12
 REALROM count symbols 18
+REALROM count jumptable.wordArrays 0
 REALROM sample.bankcomment a02e bank -> 8 (prg_bank=8) via FUN_aa0f
 REALROM sample.bankcomment a1e2 bank -> 7 (prg_bank=7) via FUN_aa23
 REALROM sample.bankcomment a293 bank -> 6 (prg_bank=6) via FUN_aa1f

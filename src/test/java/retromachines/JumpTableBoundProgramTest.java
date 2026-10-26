@@ -422,7 +422,7 @@ public class JumpTableBoundProgramTest extends AbstractBundledLanguageTest {
 		String comment = program.getListing()
 				.getComment(CommentType.EOL, addr(switchOffset(false)));
 		assertNotNull(comment);
-		assertTrue(comment, comment.contains("-> 8 entries (targets between switch and table)"));
+		assertTrue(comment, comment.contains("-> 8 entries (targets between switch and table, laid word[8])"));
 	}
 
 	/** Negative: a table stored ABOVE its targets whose over-read stays INSIDE the switch window
@@ -561,6 +561,181 @@ public class JumpTableBoundProgramTest extends AbstractBundledLanguageTest {
 		assertNull(program.getListing().getInstructionAt(addr(junk)));
 		assertNull("junk falling into junk is cleared",
 			program.getListing().getInstructionAt(addr(junk + 2)));
+	}
+
+	/** grm-deve: the bounded table reads as word[8] with one DATA reference per entry to its case
+	 *  target, and nothing is laid over the over-read entries (their bytes are the table's tail and
+	 *  beyond, which hold the targets' own code region here). */
+	@Test
+	public void overrideLaysWordArrayOverKeptEntriesOnly() throws Exception {
+		ProgramDB program = buildProgram(TABLE, false);
+		Function function = createFunction(program, addr(0x8000));
+		inTx(program, "analyze", () -> {
+			new JumpTableBoundAnalyzer().added(program, new AddressSet(function.getBody()),
+				TaskMonitor.DUMMY, new MessageLog());
+		});
+		assertWordArrayWithRefs(program, 8);
+		String comment = program.getListing().getComment(CommentType.EOL, addr(switchOffset(false)));
+		assertNotNull(comment);
+		assertTrue(comment, comment.contains(", laid word[8]"));
+	}
+
+	/** grm-deve plus grm-vrkk.11: pin path after stock over-read. The array must not shield the
+	 *  retraction: the junk reached only by over-read entries is still cleared. */
+	@Test
+	public void pinLaysWordArrayAndStillRetractsOverRead() throws Exception {
+		long junk = 0x8400;
+		ProgramDB program = buildProgram(TABLE, false, junk);
+		Address switchAddr = addr(switchOffset(false));
+		setBytes(program, junk, "01 00 f8 00", false);
+		UndefinedFunction undefined = layStockOverRead(program, switchAddr, junk);
+
+		inTx(program, "analyze", () -> {
+			new JumpTableBoundAnalyzer().boundFunctions(program, java.util.Set.of(undefined),
+				TaskMonitor.DUMMY, new MessageLog());
+		});
+
+		assertEquals(realTargets(), targetsOf(program, switchAddr));
+		assertNull("garbage reached only by the over-read is cleared",
+			program.getListing().getInstructionAt(addr(junk)));
+		assertWordArrayWithRefs(program, 8);
+		for (Reference r : program.getReferenceManager().getReferencesTo(addr(junk))) {
+			assertTrue("no reference into over-read junk: " + r, false);
+		}
+	}
+
+	/** grm-deve: a pass over an already-bounded, already-laid table changes nothing. */
+	@Test
+	public void layingIsIdempotent() throws Exception {
+		ProgramDB program = buildProgram(TABLE, false);
+		Function function = createFunction(program, addr(0x8000));
+		JumpTableBoundAnalyzer analyzer = new JumpTableBoundAnalyzer();
+		inTx(program, "analyze", () -> {
+			analyzer.added(program, new AddressSet(function.getBody()), TaskMonitor.DUMMY,
+				new MessageLog());
+		});
+		long modified = program.getModificationNumber();
+		inTx(program, "again", () -> {
+			analyzer.added(program, new AddressSet(function.getBody()), TaskMonitor.DUMMY,
+				new MessageLog());
+		});
+		assertWordArrayWithRefs(program, 8);
+		assertEquals(modified, program.getModificationNumber());
+	}
+
+	/** grm-deve decline: someone else's defined data at the table start is a claim we leave alone;
+	 *  the bound itself still lands as before, with no array and no data references. */
+	@Test
+	public void foreignDataAtTableStartDeclinesTheArray() throws Exception {
+		ProgramDB program = buildProgram(TABLE, false);
+		Function function = createFunction(program, addr(0x8000));
+		inTx(program, "foreign", () -> {
+			try {
+				program.getListing().createData(addr(TABLE),
+					ghidra.program.model.data.DWordDataType.dataType);
+			}
+			catch (Exception e) {
+				throw new RuntimeException(e);
+			}
+		});
+		inTx(program, "analyze", () -> {
+			new JumpTableBoundAnalyzer().added(program, new AddressSet(function.getBody()),
+				TaskMonitor.DUMMY, new MessageLog());
+		});
+		assertTrue("dword".equalsIgnoreCase(program.getListing().getDefinedDataAt(addr(TABLE)).getDataType()
+				.getName()));
+		assertEquals(0, dataRefsFrom(program, TABLE, TABLE + 0x20).size());
+		String comment = program.getListing().getComment(CommentType.EOL, addr(switchOffset(false)));
+		assertNotNull(comment);
+		assertTrue(comment, comment.contains("-> 8 entries"));
+		assertTrue(comment, !comment.contains("laid"));
+	}
+
+	/** grm-deve: the layer clears stock's byte array (tail included), refuses over instructions,
+	 *  and {@code unlay} takes back its own array and references. */
+	@Test
+	public void layerClearsStockBytesDeclinesOverCodeAndUnlays() throws Exception {
+		ProgramDB program = buildProgram(TABLE, false);
+		java.util.List<Address> targets = java.util.List.of(addr(0x8210), addr(0x8230));
+		inTx(program, "stock-like", () -> {
+			try {
+				program.getListing().createData(addr(TABLE),
+					new ghidra.program.model.data.ArrayDataType(
+						ghidra.program.model.data.ByteDataType.dataType, 64, 1));
+			}
+			catch (Exception e) {
+				throw new RuntimeException(e);
+			}
+		});
+		inTx(program, "lay", () -> assertTrue(JumpTableArrays.layWords(program, addr(TABLE), targets)));
+		assertWordArrayWithRefs(program, 2);
+		assertNull("stock's over-read tail is gone",
+			program.getListing().getDefinedDataAt(addr(TABLE + 4)));
+		assertTrue(JumpTableArrays.isLaid(program, addr(TABLE), targets));
+		inTx(program, "unlay", () -> assertTrue(JumpTableArrays.unlay(program, addr(TABLE))));
+		assertNull(program.getListing().getDefinedDataAt(addr(TABLE)));
+		assertEquals(0, dataRefsFrom(program, TABLE, TABLE + 0x20).size());
+
+		setBytes(program, 0x8300, "ea ea ea ea", true);
+		inTx(program, "decline", () -> assertTrue(
+			!JumpTableArrays.layWords(program, addr(0x82fe), targets)));
+		assertNull(program.getListing().getDefinedDataAt(addr(0x82fe)));
+	}
+
+	/** grm-deve: an RTS-trick style table (entry = target - 1, the dispatch adds the one back) is
+	 *  laid the same way, each entry referring to its real target, never to word + 0. */
+	@Test
+	public void targetMinusOneTableIsLaidWithReferencesToTheTargets() throws Exception {
+		ProgramDB program = buildProgram(TABLE, false);
+		StringBuilder table = new StringBuilder();
+		for (long target : REAL_TARGETS) {
+			table.append(String.format("%02x %02x ", (target - 1) & 0xff, ((target - 1) >> 8) & 0xff));
+		}
+		inTx(program, "clear", () -> program.getListing().clearCodeUnits(addr(0x8000), addr(0x8020),
+			false));
+		setBytes(program, TABLE, table.toString().trim(), false);
+		// ASL A / TAY / LDA tbl,Y / CLC / ADC #1 / STA $04 / LDA tbl+1,Y / ADC #0 / STA $05 / JMP ($0004)
+		setBytes(program, 0x8000, "0a a8 b9 00 82 18 69 01 85 04 b9 01 82 69 00 85 05 6c 04 00",
+			true);
+		Function function = createFunction(program, addr(0x8000));
+		inTx(program, "analyze", () -> {
+			new JumpTableBoundAnalyzer().added(program, new AddressSet(function.getBody()),
+				TaskMonitor.DUMMY, new MessageLog());
+		});
+		assertWordArrayWithRefs(program, 8);
+		long switchAt = 0x8000 + 0x11;
+		String comment = program.getListing().getComment(CommentType.EOL, addr(switchAt));
+		assertNotNull(comment);
+		assertTrue(comment, comment.contains("laid word[8] (RTS-trick: entry = target - 1)"));
+	}
+
+	/** word[count] at the table, entry i referring to REAL_TARGETS[i] by a DATA reference, and no
+	 *  data reference from anywhere else in the table's neighbourhood. */
+	private void assertWordArrayWithRefs(ProgramDB program, int count) {
+		ghidra.program.model.listing.Data d = program.getListing().getDefinedDataAt(addr(TABLE));
+		assertNotNull("expected an array at the table", d);
+		assertEquals("word[" + count + "]",
+			((ghidra.program.model.data.Array) d.getDataType()).getDataType().getName() + "[" +
+				((ghidra.program.model.data.Array) d.getDataType()).getNumElements() + "]");
+		java.util.List<Reference> refs = dataRefsFrom(program, TABLE - 0x100, TABLE + 0x400);
+		assertEquals(count, refs.size());
+		for (Reference r : refs) {
+			int i = (int) (r.getFromAddress().getOffset() - TABLE) / 2;
+			assertEquals(addr(REAL_TARGETS[i]), r.getToAddress());
+			assertEquals(SourceType.ANALYSIS, r.getSource());
+		}
+	}
+
+	private java.util.List<Reference> dataRefsFrom(ProgramDB program, long from, long to) {
+		java.util.List<Reference> out = new java.util.ArrayList<>();
+		for (long a = from; a <= to; a++) {
+			for (Reference r : program.getReferenceManager().getReferencesFrom(addr(a))) {
+				if (RefType.DATA.equals(r.getReferenceType())) {
+					out.add(r);
+				}
+			}
+		}
+		return out;
 	}
 
 	private void setBytes(ProgramDB program, long at, String bytes, boolean disassemble) {

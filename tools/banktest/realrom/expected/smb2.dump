@@ -66,6 +66,7 @@ REALROM count bankComments 36
 REALROM count warnings 4
 REALROM count notes 30
 REALROM count symbols 18
+REALROM count jumptable.wordArrays 0
 REALROM sample.bankcomment e237 bank -> select=7,prg_mode=0,r6=10,r7=1? via FUN_ff85 [known: select.0=1,select.1=1,select.2=1,prg_mode=0,r6.0=0,r6.1=1,r6.2=0,r6.3=1,r6.4=0,r6.5=0,r7.0=1; assumed from initial: r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment e27e bank -> select=7,prg_mode=0,r6=10,r7=1? via FUN_ff85 [known: select.0=1,select.1=1,select.2=1,prg_mode=0,r6.0=0,r6.1=1,r6.2=0,r6.3=1,r6.4=0,r6.5=0,r7.0=1; assumed from initial: r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment e298 bank -> select=7,prg_mode=0,r6=10,r7=1? via FUN_ff85 [known: select.0=1,select.1=1,select.2=1,prg_mode=0,r6.0=0,r6.1=1,r6.2=0,r6.3=1,r6.4=0,r6.5=0,r7.0=1; assumed from initial: r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
