@@ -1,3 +1,15 @@
 # Sleigh compiler options (one per line, each starting with '-') applied to every
 # language in this module. The -a option must NOT be listed here (it is passed on the
 # command line by the build's sleighCompile task).
+#
+# Warning flags (grm-4911). The languages were clean under each of these on 2026-10-26, so any
+# output from them is a new finding: fix it or justify it beside the constructor.
+#   -u  unnecessary p-code     -l  pattern conflicts     -c  colliding operands
+#   -e  temporaries must be declared `local`
+# Not enabled, because they report deliberate constructs on every build: -n (the real NOPs), -t (the
+# dummy reads in 6510_illegal.sinc's DOP/TOP NOPs), -f (aaa/cc token fields kept to document
+# the opcode grid). Run them by hand when auditing.
+-u
+-l
+-c
+-e

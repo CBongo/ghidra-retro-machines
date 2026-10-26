@@ -337,6 +337,9 @@ OP3: imm16,X   is bbb=7 & X; imm16  { tmp:2 = imm16 + zext(X); export *:1 tmp; }
 }
 
 # ---- NOP illegals (DOP/TOP): no effect; memory modes still read (NMS p.40) ----
+# The unread `local v` loads are deliberate: they model the dummy read, which matters for I/O
+# registers. sleigh -t reports them as "Temporary is written but not read"; that is expected
+# (grm-4911).
 :NOP           is (op=0x1A | op=0x3A | op=0x5A | op=0x7A | op=0xDA | op=0xFA)  { }
 :NOP "#"imm8   is (op=0x80 | op=0x82 | op=0x89 | op=0xC2 | op=0xE2); imm8      { }
 :NOP imm8      is (op=0x04 | op=0x44 | op=0x64); imm8      { local ea:2 = imm8; local v:1 = *:1 ea; }
