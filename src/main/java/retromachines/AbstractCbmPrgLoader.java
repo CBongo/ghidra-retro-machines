@@ -23,6 +23,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import com.google.gson.Gson;
@@ -184,7 +185,7 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 			JsonObject descriptor = entry.getValue().getAsJsonObject();
 			String optionStem = optionStem(image);
 			result.add(new RomSlot(image, descriptor.get("occupant").getAsString(),
-				image.toUpperCase() + " ROM path",
+				image.toUpperCase(Locale.ROOT) + " ROM path",
 				Loader.COMMAND_LINE_ARG_PREFIX + "-" + optionStem + "Rom",
 				"retromachines." + getMachineId() + "." + optionStem + "RomPath",
 				descriptor.get("size").getAsLong()));
@@ -220,7 +221,7 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 			String saved = gui ? Preferences.getProperty(slot.prefKey(), "", true) : "";
 			options.add(new RomFileOption(slot.optionName(), saved, slot.cmdArg(),
 				OptionTooltip.of("Optional " + slot.size() + "-byte " +
-					slot.image().toUpperCase() + " ROM dump; its bytes fill the " +
+					slot.image().toUpperCase(Locale.ROOT) + " ROM dump; its bytes fill the " +
 					slot.target() + " block, which is otherwise left uninitialized.",
 					slot.cmdArg() + " <path>")));
 			}
@@ -306,7 +307,7 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 		List<LoadSpec> loadSpecs = new ArrayList<>();
 
 		String name = provider.getName();
-		if (name == null || !name.toLowerCase().endsWith(".prg")) {
+		if (name == null || !name.toLowerCase(Locale.ROOT).endsWith(".prg")) {
 			return loadSpecs;
 		}
 		if (provider.length() < 2) {
@@ -423,8 +424,8 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 			// being set. Passing the list straight through removes both the parse and the
 			// swallow; getLoadedSlices stays for callers that legitimately come back to a
 			// saved Program later (the analyzers).
-			List<LoadedSlice> loadedSlices = persistPrgPlacement(program, loadAddr, prgLength,
-				wrapped, prgSlices, placementSpaces);
+			List<LoadedSlice> loadedSlices = persistPrgPlacement(program, prgSlices,
+				placementSpaces);
 			program.getOptions(Program.PROGRAM_INFO).setString(
 				DescriptorHints.MAP_PATH_PROPERTY, getMapPath());
 			afterPrgPlacement(program, prgSlices, log);
@@ -882,9 +883,8 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 	 * in-memory form {@link #resolvePrgAddress} consumes, so {@code load()} can go on using
 	 * them without reading back the JSON it just wrote (grm-hap item 4).
 	 */
-	private static List<LoadedSlice> persistPrgPlacement(Program program, long loadAddr,
-			long length, boolean wrapped, List<PrgSlice> slices,
-			Map<String, AddressSpace> placementSpaces) throws IOException {
+	private static List<LoadedSlice> persistPrgPlacement(Program program,
+			List<PrgSlice> slices, Map<String, AddressSpace> placementSpaces) throws IOException {
 		JsonArray serialized = new JsonArray();
 		List<LoadedSlice> loaded = new ArrayList<>();
 		for (PrgSlice slice : slices) {

@@ -17,6 +17,7 @@ package retromachines;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.function.BiConsumer;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -192,7 +193,7 @@ final class DescriptorApply {
 				continue;
 			}
 			for (CommentType type : CommentType.values()) {
-				String key = type.name().toLowerCase();
+				String key = type.name().toLowerCase(Locale.ROOT);
 				if (entry.has(key)) {
 					String text = entry.get(key).getAsString();
 					if (AnnotationGuard.addComment(program.getListing(), at, type, text, text)) {

@@ -25,6 +25,7 @@ import java.io.File;
 import java.io.FileWriter;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -119,7 +120,7 @@ public class BoardBankAnalyzerCacheProgramTest extends AbstractBundledLanguageTe
 		String moduleDir = System.getProperty(MODULE_DIR_PROPERTY);
 		assertNotNull("grm.moduleDir is not set -- run these tests through Gradle", moduleDir);
 		mapFile = new File(new File(moduleDir, "data/machines"), MAP_NAME);
-		try (FileWriter writer = new FileWriter(mapFile)) {
+		try (FileWriter writer = new FileWriter(mapFile, StandardCharsets.UTF_8)) {
 			writer.write(MAP_JSON);
 		}
 

@@ -148,7 +148,7 @@ final class NesBoardRegistry {
 		for (Board board : boards) {
 			for (Integer mapper : board.mappers()) {
 				Board prior = byMapper.putIfAbsent(mapper, board);
-				if (prior != null && prior != board) {
+				if (prior != null && !prior.equals(board)) {
 					throw new IllegalStateException("iNES mapper " + mapper +
 						" is claimed by both board '" + prior.id() + "' (" + prior.mapPath() +
 						") and board '" + board.id() + "' (" + board.mapPath() + ")");

@@ -252,7 +252,7 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 	@Override
 	public boolean added(Program program, AddressSetView set, TaskMonitor monitor, MessageLog log)
 			throws CancelledException {
-		return analyze(program, set, monitor, log);
+		return analyze(program, monitor, log);
 	}
 
 	/**
@@ -262,8 +262,7 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 	 * because the return value's meaning (this run completed / it reported a failure and is
 	 * worth retrying) is easier to state on its own.
 	 */
-	private boolean analyze(Program program, AddressSetView set, TaskMonitor monitor,
-			MessageLog log) throws CancelledException {
+	private boolean analyze(Program program, TaskMonitor monitor, MessageLog log) throws CancelledException {
 		BasicConfig config;
 		try {
 			config = basicConfig(program);

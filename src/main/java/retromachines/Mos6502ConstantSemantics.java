@@ -15,6 +15,7 @@
  */
 package retromachines;
 
+import java.util.Locale;
 import java.util.Set;
 
 import ghidra.program.model.listing.Instruction;
@@ -240,6 +241,6 @@ final class Mos6502ConstantSemantics implements ConstantSemantics {
 	}
 
 	private static String mnemonic(Instruction instr) {
-		return instr.getMnemonicString().toUpperCase();
+		return instr.getMnemonicString().toUpperCase(Locale.ROOT);
 	}
 }

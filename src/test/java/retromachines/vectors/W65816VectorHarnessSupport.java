@@ -373,7 +373,7 @@ final class W65816VectorHarnessSupport {
 		runner.withContextProvider(c -> contextFor(ctxMf, ctxXf, ctxEf, p, e));
 	}
 
-	/** Derives the per-case decode context from {@link #currentCaseP}/{@link #currentCaseE} --
+	/** Derives the per-case decode context from {@code currentCaseP}/{@code currentCaseE} --
 	 *  see the class doc's CONTEXT section for the emulation-mode forcing decision. */
 	private static RegisterValue contextFor(Register ctxMf, Register ctxXf, Register ctxEf,
 			int p, int e) {

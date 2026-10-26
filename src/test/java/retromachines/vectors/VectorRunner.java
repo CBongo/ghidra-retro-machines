@@ -17,6 +17,7 @@ package retromachines.vectors;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
@@ -573,10 +574,10 @@ public final class VectorRunner {
 			}
 			FlagLayout layout = flagLayouts.get(field);
 			if (layout != null) {
-				mismatches.addAll(layout.diff(field.toUpperCase(), expected, actual));
+				mismatches.addAll(layout.diff(field.toUpperCase(Locale.ROOT), expected, actual));
 			}
 			else {
-				mismatches.add(field.toUpperCase() + " 0x" + Integer.toHexString(actual) +
+				mismatches.add(field.toUpperCase(Locale.ROOT) + " 0x" + Integer.toHexString(actual) +
 					" != 0x" + Integer.toHexString(expected));
 			}
 		}

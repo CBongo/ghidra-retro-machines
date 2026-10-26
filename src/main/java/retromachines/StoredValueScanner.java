@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -890,7 +891,7 @@ final class StoredValueScanner {
 			// additionally consume several more steps from this same budget in one go.
 			i++;
 
-			String mnem = prev.getMnemonicString().toUpperCase();
+			String mnem = prev.getMnemonicString().toUpperCase(Locale.ROOT);
 
 			if (stateBlind && (mnem.equals("AND") || mnem.equals("ORA") || mnem.equals(loadMnemonic))
 					&& !MosOperands.isImmediate(prev)) {
@@ -1018,7 +1019,7 @@ final class StoredValueScanner {
 						&& isAbsoluteIndexed(prev)) {
 					Address idxBase = LoopIdioms.indexedBase(prev);
 					Register idxRegister = LoopIdioms.indexReg(prev);
-					String idxName = idxRegister == null ? null : idxRegister.getName().toUpperCase();
+					String idxName = idxRegister == null ? null : idxRegister.getName().toUpperCase(Locale.ROOT);
 					if (idxBase != null && ("X".equals(idxName) || "Y".equals(idxName))
 							&& depth < MAX_RESOLVE_DEPTH) {
 						char idxChar = idxName.charAt(0);
@@ -1304,7 +1305,7 @@ final class StoredValueScanner {
 	 * BEQ $EC34} is always taken.
 	 */
 	static Boolean knownBranchOutcome(Program program, Instruction branch) {
-		String br = branch.getMnemonicString().toUpperCase();
+		String br = branch.getMnemonicString().toUpperCase(Locale.ROOT);
 		if (!br.equals("BEQ") && !br.equals("BNE") && !br.equals("BMI") && !br.equals("BPL")) {
 			return null;
 		}
@@ -1316,7 +1317,7 @@ final class StoredValueScanner {
 				FlowEdges.isControlFlowJoin(program, after, prev) || prev.getFlowType().isCall()) {
 				return null;
 			}
-			String m = prev.getMnemonicString().toUpperCase();
+			String m = prev.getMnemonicString().toUpperCase(Locale.ROOT);
 			if (NZ_NEUTRAL.contains(m)) {
 				after = prev;
 				continue;
@@ -1408,7 +1409,7 @@ final class StoredValueScanner {
 				prev.getFlowType().isCall() || prev.getFlows().length > 0) {
 				return false;
 			}
-			String m = prev.getMnemonicString().toUpperCase();
+			String m = prev.getMnemonicString().toUpperCase(Locale.ROOT);
 			if (m.equals("PHA") || m.equals("PHP")) {
 				if (++balance > 0) {
 					return true;
@@ -1460,7 +1461,7 @@ final class StoredValueScanner {
 						? SlotWrite.STORES_SLOT : SlotWrite.WRITES_SLOT;
 			}
 		}
-		String mnem = instr.getMnemonicString().toUpperCase();
+		String mnem = instr.getMnemonicString().toUpperCase(Locale.ROOT);
 		boolean writer = (MEMORY_WRITERS.contains(mnem) && !MosOperands.isAccumulatorForm(instr)) ||
 			mnem.equals("STZ") || mnem.equals("TSB") || mnem.equals("TRB");
 		if (!writer) {
@@ -1544,7 +1545,7 @@ final class StoredValueScanner {
 		if (idx == null) {
 			return null;
 		}
-		String name = idx.getName().toUpperCase();
+		String name = idx.getName().toUpperCase(Locale.ROOT);
 		return name.equals("X") ? known.x() : name.equals("Y") ? known.y() : null;
 	}
 
@@ -1553,7 +1554,7 @@ final class StoredValueScanner {
 		if (idx == null) {
 			return null;
 		}
-		String name = idx.getName().toUpperCase();
+		String name = idx.getName().toUpperCase(Locale.ROOT);
 		if (!name.equals("X") && !name.equals("Y")) {
 			return null;
 		}
@@ -1759,7 +1760,7 @@ final class StoredValueScanner {
 				span.crossedMechanismWrite = true;
 			}
 			steps++;
-			String mnem = prev.getMnemonicString().toUpperCase();
+			String mnem = prev.getMnemonicString().toUpperCase(Locale.ROOT);
 			if (mnem.equals("TSX")) {
 				// The terminator: hand off to findMatchingPush, entered AT the TSX, for the
 				// n-th push back from the top of stack it establishes.
@@ -1993,7 +1994,7 @@ final class StoredValueScanner {
 			boolean unresolved = false;
 			List<Address> absIndexedBases = new ArrayList<>();
 			for (Instruction instr : program.getListing().getInstructions(true)) {
-				String mnem = instr.getMnemonicString().toUpperCase();
+				String mnem = instr.getMnemonicString().toUpperCase(Locale.ROOT);
 				if (!(MEMORY_WRITERS.contains(mnem) || mnem.equals("STZ") ||
 					mnem.equals("TSB") || mnem.equals("TRB")) || MosOperands.isAccumulatorForm(instr)) {
 					continue;
@@ -2118,7 +2119,7 @@ final class StoredValueScanner {
 		if (base == null || idx == null) {
 			return null;
 		}
-		String idxName = idx.getName().toUpperCase();
+		String idxName = idx.getName().toUpperCase(Locale.ROOT);
 		if (!idxName.equals("X") && !idxName.equals("Y")) {
 			return null;
 		}
@@ -2385,17 +2386,6 @@ final class StoredValueScanner {
 			case "TAY" -> reg == 'Y' ? 'A' : null;
 			case "TXA" -> reg == 'A' ? 'X' : null;
 			case "TYA" -> reg == 'A' ? 'Y' : null;
-			default -> null;
-		};
-	}
-
-	/** {@code +1}/{@code -1} when {@code mnem} increments or decrements {@code reg}, else null. */
-	private static Integer incDecDelta(String mnem, char reg) {
-		return switch (mnem) {
-			case "INX" -> reg == 'X' ? 1 : null;
-			case "DEX" -> reg == 'X' ? -1 : null;
-			case "INY" -> reg == 'Y' ? 1 : null;
-			case "DEY" -> reg == 'Y' ? -1 : null;
 			default -> null;
 		};
 	}

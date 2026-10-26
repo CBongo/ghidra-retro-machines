@@ -24,6 +24,7 @@ import ghidra.program.model.symbol.Reference;
 
 import retromachines.StoredValueScanner.Budget;
 import retromachines.StoredValueScanner.Hooks;
+import java.util.Locale;
 
 import static retromachines.StoredValueScanner.MAX_BACKWARD_SCAN;
 import static retromachines.StoredValueScanner.MAX_RESOLVE_DEPTH;
@@ -322,7 +323,7 @@ final class LocalStoreForwarding {
 				return true;
 			}
 		}
-		return MEMORY_WRITERS.contains(instr.getMnemonicString().toUpperCase()) &&
+		return MEMORY_WRITERS.contains(instr.getMnemonicString().toUpperCase(Locale.ROOT)) &&
 			!MosOperands.isAccumulatorForm(instr);
 	}
 }

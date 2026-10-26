@@ -21,6 +21,7 @@ import java.util.Deque;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -613,7 +614,9 @@ final class HelperArgumentRecovery {
 		// whose readBackMatchesReload checked it. Every other path (argument surviving to the
 		// site unchanged, the grm-ld68 index-register promotion) commits the byte some other
 		// way, so "re-commits the bank READ BACK" would not be literally true there.
-		if (readBack != null && readBack != reloadVerified &&
+		@SuppressWarnings("ReferenceEquality") // the very ReadBack the reload path verified
+		boolean notReloadVerified = readBack != reloadVerified;
+		if (readBack != null && notReloadVerified &&
 			encodedIdentifyingCell(helper, readBack.cell())) {
 			readBack = null;
 		}
@@ -2011,7 +2014,7 @@ final class HelperArgumentRecovery {
 			if (instr == null || instr.getFlowType().isCall() || instr.getFlows().length > 0) {
 				return null;
 			}
-			String mnem = instr.getMnemonicString().toUpperCase();
+			String mnem = instr.getMnemonicString().toUpperCase(Locale.ROOT);
 			boolean push = mnem.equals("PHA") || mnem.equals("PHP");
 			boolean pull = mnem.equals("PLA") || mnem.equals("PLP");
 			if (!push && mayWriteStackPage(instr)) {
@@ -2540,7 +2543,7 @@ final class HelperArgumentRecovery {
 	 * {@code localIn} -- the call's tracked in-state, already narrowed to {@code helper}'s
 	 * mechanism's field-local space -- threaded down to {@link #survivingScan} so a mirror-aware
 	 * {@link BankSwitchStrategy#callerSideHooks} can answer from real state instead of the
-	 * historical {@link BankState#unknown()}. It is what makes {@link #CallSiteRegKey} need the
+	 * historical {@link BankState#unknown()}. It is what makes {@code CallSiteRegKey} need the
 	 * in-state in its key: this method's result can now differ across two calls at the same
 	 * address under different {@code localIn}.
 	 */
@@ -2600,7 +2603,7 @@ final class HelperArgumentRecovery {
 	 * {@code narrowScan}, run at that same byte mask purely to recover the classification the wide
 	 * scan lost, reproduces that same alignment for X/Y. Its OWN value is never used -- only its
 	 * {@code stop()}/{@code readBack()} -- so the register's tracked {@code BankState} keeps
-	 * coming from {@code wideScan} exactly as {@link #surviving}'s original 0xFF convention
+	 * coming from {@code wideScan} exactly as {@code surviving}'s original 0xFF convention
 	 * requires (narrowing the VALUE would truncate an index genuinely wider than the field).
 	 * {@code wideScan}'s own {@code readBack()} is consulted too, as a fallback, for a kind
 	 * (e.g. {@code WRITE_THROUGH}) whose {@code mirroredByte} answer carries no such artifact and

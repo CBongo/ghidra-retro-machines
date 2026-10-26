@@ -22,6 +22,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -1340,7 +1341,7 @@ final class HelperDiscovery {
 		if (load == null || load.isFallThroughOverridden()) {
 			return null;
 		}
-		String mnem = load.getMnemonicString().toUpperCase();
+		String mnem = load.getMnemonicString().toUpperCase(Locale.ROOT);
 		if (mnem.length() != 3 || !mnem.startsWith("LD") || "AXY".indexOf(mnem.charAt(2)) < 0) {
 			return null;
 		}
@@ -1359,7 +1360,7 @@ final class HelperDiscovery {
 			return null;
 		}
 		FlowType flow = branch.getFlowType();
-		String bm = branch.getMnemonicString().toUpperCase();
+		String bm = branch.getMnemonicString().toUpperCase(Locale.ROOT);
 		Address landingSite;
 		boolean skippable;
 		if (switchResults.containsKey(afterLoad)) {
@@ -1450,11 +1451,11 @@ final class HelperDiscovery {
 				return new StubLanding(pc, a, x, y);
 			}
 			Instruction instr = listing.getInstructionAt(pc);
-			if (instr == null || instr.isFallThroughOverridden() &&
-				!instr.getFlowType().isConditional()) {
+			if (instr == null || (instr.isFallThroughOverridden() &&
+				!instr.getFlowType().isConditional())) {
 				return null;
 			}
-			String mnem = instr.getMnemonicString().toUpperCase();
+			String mnem = instr.getMnemonicString().toUpperCase(Locale.ROOT);
 			FlowType flow = instr.getFlowType();
 			Address next = instr.getFallThrough();
 			if (mnem.equals("LDA") || mnem.equals("LDX") || mnem.equals("LDY")) {

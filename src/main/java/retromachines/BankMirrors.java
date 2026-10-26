@@ -22,6 +22,7 @@ import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -702,7 +703,7 @@ public final class BankMirrors {
 		if (encoding.isIdentity()) {
 			return true;
 		}
-		return (encoding.isAlias() || encoding.isBiased() && encoding.shift() == 0) &&
+		return (encoding.isAlias() || (encoding.isBiased() && encoding.shift() == 0)) &&
 			membershipHint(cell) != null;
 	}
 
@@ -1084,7 +1085,7 @@ public final class BankMirrors {
 	/**
 	 * Accumulates evidence for one candidate cell. Kept separate from the classification rule
 	 * below so that "what did we see" and "is that enough" stay separable questions -- the
-	 * thresholds have already moved once (see {@link #build}).
+	 * thresholds have already moved once (see {@link Discovery#build()}).
 	 */
 	private static final class Cell {
 		/** Distinct {@code ST<r> S} instructions on a path into a mechanism write. */
@@ -1294,7 +1295,7 @@ public final class BankMirrors {
 				if (loadedACell && FlowEdges.isControlFlowJoin(program, cur, prev)) {
 					return;
 				}
-				String mnem = prev.getMnemonicString().toUpperCase();
+				String mnem = prev.getMnemonicString().toUpperCase(Locale.ROOT);
 
 				if (mnem.equals(storeMnem)) {
 					Long offset = writableCellOffset(program, prev);
@@ -1407,7 +1408,7 @@ public final class BankMirrors {
 						prev.getFlowType().isCall()) {
 						break;
 					}
-					String mnem = prev.getMnemonicString().toUpperCase();
+					String mnem = prev.getMnemonicString().toUpperCase(Locale.ROOT);
 					if (mnem.equals(loadMnem)) {
 						if (!MosOperands.isImmediate(prev)) {
 							Long offset = writableCellOffset(program, prev);
@@ -1495,7 +1496,7 @@ public final class BankMirrors {
 			}
 			Listing listing = program.getListing();
 			for (Instruction load : listing.getInstructions(true)) {
-				String mnem = load.getMnemonicString().toUpperCase();
+				String mnem = load.getMnemonicString().toUpperCase(Locale.ROOT);
 				if (mnem.length() != 3 || !mnem.startsWith("LD") ||
 					MosOperands.isImmediate(load)) {
 					continue;
@@ -1528,7 +1529,7 @@ public final class BankMirrors {
 					next.getFlowType().isCall()) {
 					return;
 				}
-				if (next.getMnemonicString().toUpperCase().equals(storeMnem)) {
+				if (next.getMnemonicString().toUpperCase(Locale.ROOT).equals(storeMnem)) {
 					Long offset = writableCellOffset(program, next);
 					if (offset != null) {
 						Cell cell = cells.computeIfAbsent(offset, k -> new Cell());

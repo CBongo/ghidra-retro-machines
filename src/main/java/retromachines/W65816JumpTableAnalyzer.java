@@ -21,7 +21,9 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.WeakHashMap;
 
@@ -390,7 +392,7 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 		if (test == null || hasFlowInto(beq)) {
 			return false;
 		}
-		String mn = test.getMnemonicString().toUpperCase();
+		String mn = test.getMnemonicString().toUpperCase(Locale.ROOT);
 		String op = test.getNumOperands() > 0 ? test.getDefaultOperandRepresentation(0) : "";
 		boolean onA = !(mn.equals("ASL") || mn.equals("LSR") || mn.equals("ROL") ||
 			mn.equals("ROR") || mn.equals("INC") || mn.equals("DEC")) || op.isEmpty() ||
@@ -429,7 +431,7 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 		if (!ft.isComputed() || ft.isCall() || in.getNumOperands() != 1) {
 			return null;
 		}
-		String mn = in.getMnemonicString().toUpperCase();
+		String mn = in.getMnemonicString().toUpperCase(Locale.ROOT);
 		String op = in.getDefaultOperandRepresentation(0);
 		int bytes;
 		if (mn.equals("JMP") && op.startsWith("(") && !op.contains(",")) {
@@ -455,12 +457,12 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 		for (int i = 0; i < POINTER_LOOKBACK && found < bytes; i++) {
 			Instruction prev = listing.getInstructionBefore(cur.getMinAddress());
 			if (prev == null || !cur.getMinAddress().equals(prev.getFallThrough()) ||
-				(cur != in && hasFlowInto(cur))) {
+				(!Objects.equals(cur, in) && hasFlowInto(cur))) {
 				break;
 			}
 			cur = prev;
 			chain.add(0, cur);
-			String m = cur.getMnemonicString().toUpperCase();
+			String m = cur.getMnemonicString().toUpperCase(Locale.ROOT);
 			if (!m.startsWith("ST") || m.equals("STP")) {
 				continue;
 			}
@@ -493,7 +495,7 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 			return null;
 		}
 		List<Instruction> loads = new ArrayList<>(List.of(lo));
-		if (store[1] != store[0]) {
+		if (!Objects.equals(store[1], store[0])) {
 			Instruction hi = loadBefore(listing, store[1]);
 			Address hiTable = hi == null || !isIndexedX(hi) ? null : loadAddress(in, hi);
 			if (hiTable == null || !hiTable.equals(table.add(1))) {
@@ -504,7 +506,7 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 		long targetBank = in.getMinAddress().getOffset() & 0xff0000L;
 		if (bytes == 3) {
 			Instruction bank = loadBefore(listing, store[2]);
-			if (bank == null || store[2] == store[1] ||
+			if (bank == null || Objects.equals(store[2], store[1]) ||
 				!bank.getDefaultOperandRepresentation(0).startsWith("#")) {
 				return null;
 			}
@@ -565,7 +567,7 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 
 	private static boolean writesX(Instruction in) {
 		return Set.of("LDX", "TAX", "INX", "DEX", "PLX", "TYX", "TSX")
-				.contains(in.getMnemonicString().toUpperCase());
+				.contains(in.getMnemonicString().toUpperCase(Locale.ROOT));
 	}
 
 	private static long operandValue(Instruction in) {
@@ -586,7 +588,7 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 		if (!ft.isComputed() || ft.isTerminal() || in.getNumOperands() != 1) {
 			return null;
 		}
-		String mn = in.getMnemonicString().toUpperCase();
+		String mn = in.getMnemonicString().toUpperCase(Locale.ROOT);
 		if (!mn.equals("JMP") && !mn.equals("JSR")) {
 			return null;
 		}
@@ -656,7 +658,7 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 				break;
 			}
 			cur = prev;
-			String mn = cur.getMnemonicString().toUpperCase();
+			String mn = cur.getMnemonicString().toUpperCase(Locale.ROOT);
 			String op = cur.getNumOperands() > 0 ? cur.getDefaultOperandRepresentation(0) : "";
 			if (!sawTax) {
 				if (mn.equals("TAX")) {
@@ -770,7 +772,7 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 			if (in == null) {
 				return false;
 			}
-			String mn = in.getMnemonicString().toUpperCase();
+			String mn = in.getMnemonicString().toUpperCase(Locale.ROOT);
 			if (DESYNC.contains(mn)) {
 				return false;
 			}
@@ -803,7 +805,7 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 				return true;
 			}
 			a = in.getFallThrough();
-			if (a == null || memory.getBlock(a) != block) {
+			if (a == null || !Objects.equals(memory.getBlock(a), block)) {
 				return false;
 			}
 		}

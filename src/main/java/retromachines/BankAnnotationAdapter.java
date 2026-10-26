@@ -878,7 +878,7 @@ final class BankAnnotationAdapter {
 	 * Runs between the two dataflow passes because both halves need pass 1: the code half scans
 	 * back from {@code flow.switchResults()}' recognized mechanism writes, and the argument-cell
 	 * half needs the helper models built from them. It is the same slot, and the same reason,
-	 * that puts {@link #findHelpers} here.
+	 * that puts {@link HelperDiscovery#findHelpers} here.
 	 * <p>
 	 * <b>Only mode-INVARIANT switchable windows are content-scanned.</b> A mode-varying window's
 	 * bank images live under {@code <name>_M<mode>_B<bank>} and its realized-bank set is per
@@ -1093,7 +1093,7 @@ final class BankAnnotationAdapter {
 	 * paired with that register -- the starting points for {@link BankMirrors}' argument-cell
 	 * route (b).
 	 * <p>
-	 * Resolution goes through {@link #calledHelper} rather than through the reference manager so
+	 * Resolution goes through {@link HelperDiscovery#calledHelper} rather than through the reference manager so
 	 * that pass-through wrappers, mid-body entries and relays are followed exactly as the
 	 * dataflow follows them; a discovery pass that resolved calls its own way would nominate
 	 * cells for call sites the engine does not agree are helper calls.
@@ -1527,7 +1527,7 @@ final class BankAnnotationAdapter {
 	 * Phase-1/2 dataflow ({@code flow}), then flags direct call sites that violate a
 	 * callee's {@code requiresOnEntry}: a WARNING bookmark, never a change to the tracked
 	 * state. This is a read-only annotation layer -- nothing computed here is fed back
-	 * into {@code flow} or re-influences {@link #runDataflow}; M3 deliberately excludes
+	 * into {@code flow} or re-influences {@link BankDataflowEngine#runDataflow}; M3 deliberately excludes
 	 * any back-propagation/narrowing of Phase-1 state from these summaries (a mutual-
 	 * fixpoint/termination-risk problem left to M4+, see the module doc / vision doc §9).
 	 * <p>
@@ -1551,7 +1551,7 @@ final class BankAnnotationAdapter {
 	 * <b>requiresOnEntry</b> (M3 scope: known-ness only -- value-level requirements, e.g.
 	 * "select must equal exactly 6", are NOT modeled, only "select must be KNOWN"):
 	 * for each switch site in a function's own body whose matched strategy answers
-	 * {@link BankSwitchStrategy#effectDependsOnPriorState(Program, Instruction, BankState)}
+	 * {@link BankSwitchStrategy#effectDependsOnPriorState(Program, Instruction, MechanismState)}
 	 * {@code true} <em>at that site</em> (i.e. an unknown
 	 * outcome at the site is evidence the dispatch NEEDED a state bit it did not have on
 	 * entry, not merely that {@code computeSwitch} happened to consult {@code inState}),
@@ -1778,6 +1778,7 @@ final class BankAnnotationAdapter {
 	 * populates per function, for anything that wants to consume it wholesale later
 	 * (e.g. M4's UI/persistence).
 	 */
+	@SuppressWarnings("UnusedNestedClass") // documentation-only data model, linked from javadoc
 	private record FunctionBankSummary(BankState exitState, int modifiedMask, int requiresOnEntry) {}
 
 	/** Human-readable rendering of a board state bitmask, by {@code banking.state} field
@@ -1825,7 +1826,7 @@ final class BankAnnotationAdapter {
 
 	/**
 	 * Identity of one base-space reference out of an instruction -- operand index and target
-	 * offset -- for the per-arm bookkeeping below. {@link Reference#equals} also compares the
+	 * offset -- for the per-arm bookkeeping below. {@code Reference.equals} also compares the
 	 * reference type, which the read-modify-write split re-types, so it is not the key.
 	 */
 	private record BaseRefKey(int opIndex, long offset) {
@@ -2124,6 +2125,7 @@ final class BankAnnotationAdapter {
 				// The home occupant already lives in base space at this offset, so any target
 				// that resolves to it needs no overlay reference.
 				String homeOccupant = wr.homeOccupant();
+				@SuppressWarnings("ReferenceEquality") // the board map hands out one instance per window
 				boolean selfWindow = fromBase && findWindow(board.windows(), fromOffset) == window;
 				String readTarget = wr.readTarget();
 				String writeTarget = wr.writeTarget();
@@ -2188,6 +2190,7 @@ final class BankAnnotationAdapter {
 						keepBase.add(key);
 						continue;
 					}
+					@SuppressWarnings("ReferenceEquality") // the board map hands out one instance per window
 					boolean selfWindow =
 						fromBase && findWindow(board.computedWindows(), fromOffset) == computed;
 					if (placeOverlayRef(analyzer, program, refMgr, instr, key,
@@ -2335,6 +2338,7 @@ final class BankAnnotationAdapter {
 	 * into its own window (enumerated, computed, then the active mode's instance by name).
 	 * False when either offset is in no tracked window.
 	 */
+	@SuppressWarnings("ReferenceEquality") // the board map hands out one instance per window
 	static boolean sameWindow(BoardModel board, BankState state, long a, long b) {
 		WindowModel wa = findWindow(board.windows(), a);
 		if (wa != null) {

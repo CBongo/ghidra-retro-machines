@@ -253,8 +253,13 @@ public class GdtBuilder {
 			throw new IllegalArgumentException(
 				"source file has no top-level 'fields:' list: " + sourceFile);
 		}
-		Integer explicitSize = typeDef.containsKey("size") ? intValue(typeDef.get("size"))
-			: (sourceDoc.containsKey("size") ? intValue(sourceDoc.get("size")) : null);
+		Integer explicitSize = null;
+		if (typeDef.containsKey("size")) {
+			explicitSize = intValue(typeDef.get("size"));
+		}
+		else if (sourceDoc.containsKey("size")) {
+			explicitSize = intValue(sourceDoc.get("size"));
+		}
 		return new StructSource(fields, explicitSize);
 	}
 

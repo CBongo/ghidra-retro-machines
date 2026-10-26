@@ -16,6 +16,7 @@
 package retromachines;
 
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.function.Supplier;
 
@@ -613,6 +614,7 @@ final class PcodeConstantSemantics implements ConstantSemantics {
 		 * later per-program override composes without threading a new argument through
 		 * {@link ConstantSemantics.Inputs}.
 		 */
+		@SuppressWarnings("UnusedVariable") // `program` is the documented per-program override seam
 		private static int assumedDecimalFlag(Program program) {
 			return 0;
 		}
@@ -627,7 +629,7 @@ final class PcodeConstantSemantics implements ConstantSemantics {
 		}
 
 		private static Loc locFor(Register r) {
-			return switch (r.getName().toUpperCase()) {
+			return switch (r.getName().toUpperCase(Locale.ROOT)) {
 				case "A" -> Loc.A;
 				case "X" -> Loc.X;
 				case "Y" -> Loc.Y;

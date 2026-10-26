@@ -246,7 +246,7 @@ public class MemoryLatchBankSwitchStrategy extends AbstractRangeBankSwitchStrate
 			return mirroredByte(loadInstr, resolvedTarget, inStateAtStore);
 		}
 
-		/**
+		/*
 		 * Answered from {@link #mirrors} by the same kind test
 		 * {@code HelperArgumentRecovery.OracleHooks} uses (bead grm-rd6h): a DIRECT-site read-back
 		 * of a write-through shadow or ROM-identifying offset is a RESTORE of the live bank just
@@ -260,7 +260,7 @@ public class MemoryLatchBankSwitchStrategy extends AbstractRangeBankSwitchStrate
 			return mirrors.isLiveBankMirror(target);
 		}
 
-		/**
+		/*
 		 * Answers {@code StoredValueScanner}'s identity-table rule (bead grm-ld68) from this
 		 * strategy's own {@link #mirrors} and {@code shift}/{@code mask}/{@code busConflict} --
 		 * see {@link #isIdentityTable} for the check itself. Only this direct-path {@code hooks}

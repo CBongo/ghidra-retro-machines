@@ -21,6 +21,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.function.Predicate;
 
 import com.google.gson.Gson;
@@ -204,8 +205,8 @@ final class GameDescriptorRegistry {
 				path + ": 'game.identity' is missing prg_sha256/file_sha256 -- skipping");
 			return null;
 		}
-		String prg = identity.get("prg_sha256").getAsString().toLowerCase();
-		String file = identity.get("file_sha256").getAsString().toLowerCase();
+		String prg = identity.get("prg_sha256").getAsString().toLowerCase(Locale.ROOT);
+		String file = identity.get("file_sha256").getAsString().toLowerCase(Locale.ROOT);
 		if (!prg.matches("[0-9a-f]{64}") || !file.matches("[0-9a-f]{64}")) {
 			log.appendMsg(path +
 				": game.identity prg_sha256/file_sha256 must each be 64 hex digits -- skipping");

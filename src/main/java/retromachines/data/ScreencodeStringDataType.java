@@ -62,6 +62,7 @@ public class ScreencodeStringDataType extends AbstractStringDataType {
 	 * @return this data type or an equivalent instance owned by {@code dtm}
 	 */
 	@Override
+	@SuppressWarnings("ReferenceEquality") // same manager instance is the contract
 	public DataType clone(DataTypeManager dtm) {
 		if (dtm == getDataTypeManager()) {
 			return this;

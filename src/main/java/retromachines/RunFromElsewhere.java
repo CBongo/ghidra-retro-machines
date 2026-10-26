@@ -240,7 +240,7 @@ public final class RunFromElsewhere {
 				"on the program; a Swing action must submit a BackgroundCommand instead");
 		}
 
-		String rejection = validate(program, request);
+		String rejection = validate(request);
 		if (rejection != null) {
 			log.appendMsg(category, rejection);
 			return new Result(TransferPlacement.SKIPPED, null, false, rejection);
@@ -284,7 +284,7 @@ public final class RunFromElsewhere {
 	 * from real operands -- but a human-driven or descriptor-driven front-end very much does.
 	 * Returns the reason for refusal, or null when the request is worth attempting.
 	 */
-	private static String validate(Program program, Request request) {
+	private static String validate(Request request) {
 		if (request.transform != TransferTransform.IDENTITY) {
 			return "transform " + request.transform + " is not implemented yet (grm-1.7.2)";
 		}

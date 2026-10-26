@@ -18,6 +18,7 @@ package gdtbuilder;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.Writer;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
@@ -143,7 +144,7 @@ public class ScreencodeCompiler {
 		mapDoc.add("encode", encode);
 
 		Gson gson = new GsonBuilder().setPrettyPrinting().create();
-		try (Writer w = new FileWriter(outputMap)) {
+		try (Writer w = new FileWriter(outputMap, StandardCharsets.UTF_8)) {
 			gson.toJson(mapDoc, w);
 		}
 

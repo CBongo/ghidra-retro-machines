@@ -121,6 +121,7 @@ public class StackReloadReadBackProgramTest extends AbstractProgramTest {
 		return new BankMirrors.IdentifyingEncoding(1, 1, Set.of(1, 3, 5, 7), Set.of(1, 3, 5, 7));
 	}
 
+	@SuppressWarnings("UnusedVariable") // mirrors R7; the javadoc below cites R6
 	private static final BoardDescriptorModel.FieldSpec R6 =
 		new BoardDescriptorModel.FieldSpec("r6", 4, 4);
 	private static final BoardDescriptorModel.FieldSpec R7 =

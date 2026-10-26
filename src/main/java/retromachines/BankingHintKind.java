@@ -38,6 +38,7 @@ import ghidra.program.model.listing.Program;
  * The property JSON is {@code {"source": <gmap path>, <arrayKey>: [ <entry>... ]}}; entries are
  * the compiled descriptor's mappings verbatim.
  */
+@SuppressWarnings("ImmutableEnumChecker") // the key lists are List.of copies, unmodifiable
 enum BankingHintKind {
 
 	BANK_IDENTIFYING_OFFSETS("bank_identifying_offsets",
@@ -74,20 +75,20 @@ enum BankingHintKind {
 	/** The array's key inside the property JSON. */
 	final String arrayKey;
 	/** Required keys written as hex addresses by the exporter. */
-	final String[] hexKeys;
+	final List<String> hexKeys;
 	/** Required keys written as recorded (a string or small integer) by the exporter. */
-	final String[] plainKeys;
+	final List<String> plainKeys;
 	/** Keys carried only when present (a boolean only when true), in exporter order. */
-	final String[] optionalKeys;
+	final List<String> optionalKeys;
 
 	BankingHintKind(String yamlKey, String property, String arrayKey, String[] hexKeys,
 			String[] plainKeys, String[] optionalKeys) {
 		this.yamlKey = yamlKey;
 		this.property = property;
 		this.arrayKey = arrayKey;
-		this.hexKeys = hexKeys;
-		this.plainKeys = plainKeys;
-		this.optionalKeys = optionalKeys;
+		this.hexKeys = List.of(hexKeys);
+		this.plainKeys = List.of(plainKeys);
+		this.optionalKeys = List.of(optionalKeys);
 	}
 
 	/** The property value for {@code gameDescriptor}, or null when it states no such list. */

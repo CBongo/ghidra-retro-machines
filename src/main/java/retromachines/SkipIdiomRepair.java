@@ -18,6 +18,7 @@ package retromachines;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.function.Consumer;
 
@@ -105,7 +106,7 @@ public final class SkipIdiomRepair {
 		for (String mnemonic : value.split(",")) {
 			String m = mnemonic.trim();
 			if (!m.isEmpty()) {
-				parsed.add(m.toUpperCase());
+				parsed.add(m.toUpperCase(Locale.ROOT));
 			}
 		}
 		if (parsed.isEmpty()) {
@@ -174,7 +175,7 @@ public final class SkipIdiomRepair {
 			if (carrier.isLengthOverridden() || carrier.getLength() < 2) {
 				continue;
 			}
-			if (!carriers.contains(carrier.getMnemonicString().toUpperCase())) {
+			if (!carriers.contains(carrier.getMnemonicString().toUpperCase(Locale.ROOT))) {
 				continue;
 			}
 			Candidate c = classify(program, listing, alignment, pdis, carrier);

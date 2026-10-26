@@ -128,9 +128,9 @@ public class DescriptorCompositionTest {
 				cycleError.getMessage().contains(" -> "));
 
 		GdtBuilder.validateUniqueTypeNames(List.of(Map.of("name", "ONE")));
+		List<Map<String, Object>> dupTypes = List.of(Map.of("name", "DUP"), Map.of("name", "DUP"));
 		IllegalArgumentException dupError = assertThrows(IllegalArgumentException.class,
-			() -> GdtBuilder.validateUniqueTypeNames(
-				List.of(Map.of("name", "DUP"), Map.of("name", "DUP"))));
+			() -> GdtBuilder.validateUniqueTypeNames(dupTypes));
 		assertTrue("duplicate type-name error was unclear: " + dupError.getMessage(),
 			dupError.getMessage().contains("declared twice"));
 	}

@@ -21,6 +21,7 @@ import java.util.Deque;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -317,7 +318,7 @@ final class IndirectJumpConstantPointer {
 			Varnode out = op.getOutput();
 			Register r = out == null ? null : safeGetRegister(program, out);
 			if (r != null) {
-				written.add(r.getName().toUpperCase());
+				written.add(r.getName().toUpperCase(Locale.ROOT));
 			}
 		}
 		return written;
@@ -1071,7 +1072,7 @@ final class IndirectJumpConstantPointer {
 			if (out != null) {
 				Register r = safeGetRegister(program, out);
 				if (r != null) {
-					switch (r.getName().toUpperCase()) {
+					switch (r.getName().toUpperCase(Locale.ROOT)) {
 						case "A":
 							st.a = null;
 							break;

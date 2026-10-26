@@ -23,6 +23,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 import org.junit.Test;
 
@@ -376,7 +377,7 @@ public class Spc700DisCorpusTest extends AbstractBundledLanguageTest {
 
 	private static String canonical(String text) {
 		StringBuilder out = new StringBuilder();
-		String s = text.toLowerCase().replace('\t', ' ').replaceAll("<[a-z]>", "");
+		String s = text.toLowerCase(Locale.ROOT).replace('\t', ' ').replaceAll("<[a-z]>", "");
 		for (int i = 0; i < s.length();) {
 			char c = s.charAt(i);
 			int radixStart = -1;

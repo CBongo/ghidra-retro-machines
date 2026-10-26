@@ -198,7 +198,7 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 	public boolean added(Program program, AddressSetView set, TaskMonitor monitor, MessageLog log)
 			throws CancelledException {
 		Listing listing = program.getListing();
-		List<Address> locations = findComputedJumpLocations(program, listing, set, monitor);
+		List<Address> locations = findComputedJumpLocations(listing, set, monitor);
 		if (locations.isEmpty()) {
 			return true;
 		}
@@ -327,8 +327,8 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 	 *  {@code DecompilerSwitchAnalyzer.findLocations} uses (a jump whose flow is computed),
 	 *  skipping any that already carry a computed reference -- either the stock analyzer or an
 	 *  earlier round already resolved them, so there is nothing left to over-read. */
-	private List<Address> findComputedJumpLocations(Program program, Listing listing,
-			AddressSetView set, TaskMonitor monitor) throws CancelledException {
+	private List<Address> findComputedJumpLocations(Listing listing, AddressSetView set,
+			TaskMonitor monitor) throws CancelledException {
 		List<Address> locations = new ArrayList<>();
 		InstructionIterator it = listing.getInstructions(set, true);
 		while (it.hasNext()) {
@@ -812,7 +812,7 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		// so read the table where the copy points.
 		long readBase = tableAddr.getOffset();
 		Long shift = ctx.switchedInCopyTableShift(switchInstr, newSpace, readBase,
-			readBase + model.stride() * targets.size());
+			readBase + (long) model.stride() * targets.size());
 		if (shift != null && shift != 0) {
 			readBase += shift;
 			resolved = newSpace.getAddress(readBase);
@@ -1037,7 +1037,7 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		}
 		List<Address> stale = new ArrayList<>();
 		for (Reference ref : program.getReferenceManager().getReferencesFrom(switchAddr)) {
-			if (ref.getReferenceType() == RefType.COMPUTED_JUMP &&
+			if (RefType.COMPUTED_JUMP.equals(ref.getReferenceType()) &&
 				ref.getSource() == SourceType.ANALYSIS &&
 				!keptOffsets.contains(ref.getToAddress().getOffset())) {
 				stale.add(ref.getToAddress());

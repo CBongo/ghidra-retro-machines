@@ -19,6 +19,7 @@ import java.math.BigInteger;
 import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
@@ -174,7 +175,7 @@ final class W65816WidthEffects {
 			if (in == null || emulation(in)) {
 				continue;
 			}
-			String mn = in.getMnemonicString().toUpperCase();
+			String mn = in.getMnemonicString().toUpperCase(Locale.ROOT);
 			boolean imm = in.getNumOperands() > 0 &&
 				in.getDefaultOperandRepresentation(0).startsWith("#");
 			needsM |= imm && m == INHERITED && M_IMMEDIATES.contains(mn);

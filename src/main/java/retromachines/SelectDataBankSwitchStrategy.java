@@ -157,7 +157,7 @@ public class SelectDataBankSwitchStrategy extends AbstractRangeBankSwitchStrateg
 			return mirroredByte(resolvedTarget, inStateAtStore);
 		}
 
-		/**
+		/*
 		 * Answered from {@link #mirrors} by the same kind test
 		 * {@code HelperArgumentRecovery.OracleHooks} uses (bead grm-rd6h): a DIRECT-site
 		 * read-back of a write-through shadow or ROM-identifying offset is a live-bank mirror
@@ -229,7 +229,7 @@ public class SelectDataBankSwitchStrategy extends AbstractRangeBankSwitchStrateg
 	 * Every refusal below is a case where that proof is missing:
 	 * <ul>
 	 * <li>the offset carries no field (a derivation that did not attribute its window);</li>
-	 * <li>the field is not one of this mechanism's {@code targets} by name (a window banked by a
+	 * <li>the field is not one of this mechanism's targets by name (a window banked by a
 	 * register another mechanism owns);</li>
 	 * <li>the field's width disagrees with the target's (a descriptor inconsistency).</li>
 	 * </ul>
@@ -744,7 +744,7 @@ public class SelectDataBankSwitchStrategy extends AbstractRangeBankSwitchStrateg
 	}
 
 	/**
-	 * {@link #depositHelperArgument(Program, Instruction, MechanismState, MechanismState, int)} above, with
+	 * {@link #depositHelperArgument} above, with
 	 * one additive FALLBACK: when {@code argValue} came back with nothing pinned down at all
 	 * ({@code knownMask() == 0}) -- the shape {@code HelperArgumentRecovery} produces for a
 	 * helper whose prologue transforms or clobbers its argument register rather than merely

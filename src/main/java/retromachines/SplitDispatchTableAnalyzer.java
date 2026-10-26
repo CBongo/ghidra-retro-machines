@@ -18,6 +18,7 @@ package retromachines;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 import ghidra.app.cmd.disassemble.DisassembleCommand;
@@ -150,7 +151,7 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 	record Site(Instruction call, Instruction stub, Address table) {
 
 		boolean inline() {
-			return call == stub;
+			return Objects.equals(call, stub);
 		}
 	}
 
@@ -164,7 +165,7 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 			return true;
 		}
 		for (MemoryBlock other : program.getMemory().getBlocks()) {
-			if (other != block && other.isOverlay() &&
+			if (!Objects.equals(other, block) && other.isOverlay() &&
 				other.getStart().getOffset() <= block.getEnd().getOffset() &&
 				other.getEnd().getOffset() >= block.getStart().getOffset()) {
 				return true;

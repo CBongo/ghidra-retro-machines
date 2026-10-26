@@ -30,6 +30,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.stream.Stream;
 
 import org.junit.Test;
@@ -78,7 +79,7 @@ public class SpcIplCorpusTest {
 
 		List<String> tsv = new ArrayList<>();
 		tsv.add("title\trom\tcopier\trank\tfileOffset\tstrippedOffset\tblocks\tpayload\tentry\t" +
-			"score\tblockList");
+			"score\tsuppressedTails\tblockList");
 		for (String title : TITLES) {
 			Path dir = root.resolve(title);
 			Path rom = findRom(dir);
@@ -89,7 +90,7 @@ public class SpcIplCorpusTest {
 			byte[] file = Files.readAllBytes(rom);
 			List<Candidate> cands = SpcIplScanner.scan(file);
 			if (cands.isEmpty()) {
-				tsv.add(String.format("%s\t%s\t\t-\t\t\t0\t0\t\t0\t(none)", title,
+				tsv.add(String.format("%s\t%s\t\t-\t\t\t0\t0\t\t0\t\t(none)", title,
 					rom.getFileName()));
 			}
 			int rank = 0;
@@ -99,7 +100,7 @@ public class SpcIplCorpusTest {
 				for (SpcIplFormat.Block b : c.stream().blocks()) {
 					bl.append(b).append("; ");
 				}
-				tsv.add(String.format("%s\t%s\t%b\t%d\t0x%x\t0x%x\t%d\t%d\t0x%04x\t%d\t%s", title,
+				tsv.add(String.format("%s\t%s\t%b\t%d\t0x%x\t0x%x\t%d\t%d\t0x%04x\t%d\t%s\t%s", title,
 					rom.getFileName(), c.copierHeader(), rank, c.fileOffset(), c.strippedOffset(),
 					c.stream().blocks().size(), c.stream().payloadBytes(), c.stream().entry(),
 					c.score(), c.suppressedTails().stream().map(t -> "0x" + Integer.toHexString(t)).toList(),
@@ -236,7 +237,7 @@ public class SpcIplCorpusTest {
 		}
 		try (Stream<Path> s = Files.list(dir)) {
 			return s.filter(Files::isRegularFile).filter(p -> {
-				String n = p.getFileName().toString().toLowerCase();
+				String n = p.getFileName().toString().toLowerCase(Locale.ROOT);
 				return n.endsWith(".smc") || n.endsWith(".fig") || n.endsWith(".sfc") ||
 					n.endsWith(".swc") || n.endsWith(".rom");
 			}).sorted().findFirst().orElse(null);

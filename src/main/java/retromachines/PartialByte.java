@@ -124,7 +124,7 @@ public record PartialByte(int knownMask, int bits) {
 	 * The value of bit {@code bit}; meaningful only when {@link #isKnown} is true.
 	 *
 	 * @param bit the bit index, 0..7
-	 * @return 1 if the bit is set in {@code bits}, else 0
+	 * @return 1 if the bit is set in the known bit values, else 0
 	 */
 	public int bit(int bit) {
 		return (bits >> bit) & 1;

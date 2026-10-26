@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import ghidra.program.model.listing.Program;
@@ -62,7 +63,7 @@ final class GameIdentities {
 				throw new IllegalArgumentException(
 					"game identity '" + key + "' must be 64 hex digits, got: " + digest);
 			}
-			return digest.toLowerCase();
+			return digest.toLowerCase(Locale.ROOT);
 		}
 
 		/** The {@link DescriptorHints#GAME_IDENTITY_PROPERTY} value: {@code prg:<hex> file:<hex>}. */

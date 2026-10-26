@@ -59,10 +59,11 @@ public class NesBoardRegistryTest {
 
 	@Test
 	public void duplicateMapperNumberFails() {
+		List<NesBoardRegistry.Board> boards = List.of(
+			board("nrom", "machines/nes-nrom.map", 0, 2),
+			board("uxrom", "machines/nes-uxrom.map", 2));
 		IllegalStateException e = assertThrows(IllegalStateException.class,
-			() -> NesBoardRegistry.validateUnique(List.of(
-				board("nrom", "machines/nes-nrom.map", 0, 2),
-				board("uxrom", "machines/nes-uxrom.map", 2))));
+			() -> NesBoardRegistry.validateUnique(boards));
 		assertTrue(e.getMessage().contains("mapper 2"));
 		assertTrue(e.getMessage().contains("nes-nrom.map"));
 		assertTrue(e.getMessage().contains("nes-uxrom.map"));
@@ -70,10 +71,11 @@ public class NesBoardRegistryTest {
 
 	@Test
 	public void duplicateBoardIdFails() {
+		List<NesBoardRegistry.Board> boards = List.of(
+			board("nrom", "machines/nes-nrom.map", 0),
+			board("nrom", "machines/nes-nrom-alt.map", 99));
 		IllegalStateException e = assertThrows(IllegalStateException.class,
-			() -> NesBoardRegistry.validateUnique(List.of(
-				board("nrom", "machines/nes-nrom.map", 0),
-				board("nrom", "machines/nes-nrom-alt.map", 99))));
+			() -> NesBoardRegistry.validateUnique(boards));
 		assertTrue(e.getMessage().contains("nrom"));
 		assertTrue(e.getMessage().contains("nes-nrom.map"));
 		assertTrue(e.getMessage().contains("nes-nrom-alt.map"));

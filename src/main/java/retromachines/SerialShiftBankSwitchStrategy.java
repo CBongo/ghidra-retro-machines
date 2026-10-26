@@ -18,6 +18,7 @@ package retromachines;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -222,7 +223,7 @@ public class SerialShiftBankSwitchStrategy extends AbstractRangeBankSwitchStrate
 			return null;
 		}
 
-		/**
+		/*
 		 * Answered from {@link #mirrors} by the same kind test
 		 * {@code HelperArgumentRecovery.OracleHooks} uses (bead grm-rd6h): a DIRECT-site
 		 * read-back of a write-through shadow or ROM-identifying offset is a live-bank mirror
@@ -836,7 +837,7 @@ public class SerialShiftBankSwitchStrategy extends AbstractRangeBankSwitchStrate
 		if ((original & 0x80) != 0) {
 			return true; // tier A: the first write is the unmodified byte, op-independent
 		}
-		String mnem = instr.getMnemonicString().toUpperCase();
+		String mnem = instr.getMnemonicString().toUpperCase(Locale.ROOT);
 		int modified;
 		if (mnem.equals("INC")) {
 			modified = (original + 1) & 0xFF;
@@ -1006,7 +1007,7 @@ public class SerialShiftBankSwitchStrategy extends AbstractRangeBankSwitchStrate
 		if (dec == null) {
 			return null;
 		}
-		String decMnem = dec.getMnemonicString().toUpperCase();
+		String decMnem = dec.getMnemonicString().toUpperCase(Locale.ROOT);
 		if (!decMnem.equals("DEX") && !decMnem.equals("DEY")) {
 			return null;
 		}

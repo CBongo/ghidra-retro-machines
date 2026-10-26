@@ -22,6 +22,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import org.junit.Before;
@@ -267,7 +268,7 @@ public class ShadowCommitsProgramTest extends AbstractProgramTest {
 		report(plan, result);
 		String w = warning(addr(0xc200));
 		assertTrue(w, w != null && w.contains("premise") &&
-			w.toLowerCase().contains("c300") && w.contains(DESCRIPTOR));
+			w.toLowerCase(Locale.ROOT).contains("c300") && w.contains(DESCRIPTOR));
 	}
 
 	@Test

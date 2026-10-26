@@ -448,7 +448,6 @@ public class SpcUploadRecovery {
 
 	/** Sites of the handshake signature, in address order. */
 	static List<Address> findHandshakeSites(Program program) {
-		AddressSpace space = program.getAddressFactory().getDefaultAddressSpace();
 		List<Address> sites = new ArrayList<>();
 		for (MemoryBlock blk : program.getMemory().getBlocks()) {
 			if (!blk.isInitialized() || blk.isMapped() || blk.isVolatile() ||
@@ -727,7 +726,7 @@ public class SpcUploadRecovery {
 		@Override
 		public void beforeLoad(PcodeThread<byte[]> t, PcodeOp op, AddressSpace space, byte[] offset,
 				int size) {
-			if (space != ram) {
+			if (!ram.equals(space)) {
 				return;
 			}
 			long a0 = t.getArithmetic().toLong(offset, Purpose.LOAD);
@@ -762,7 +761,7 @@ public class SpcUploadRecovery {
 		@Override
 		public void afterStore(PcodeThread<byte[]> t, PcodeOp op, AddressSpace space, byte[] offset,
 				int size, byte[] value) {
-			if (space != ram) {
+			if (!ram.equals(space)) {
 				return;
 			}
 			long a0 = t.getArithmetic().toLong(offset, Purpose.STORE);

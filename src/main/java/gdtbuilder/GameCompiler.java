@@ -19,10 +19,12 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.Writer;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -81,7 +83,7 @@ public class GameCompiler {
 
 		outputGmap.getParentFile().mkdirs();
 		Gson gson = new GsonBuilder().setPrettyPrinting().create();
-		try (Writer w = new FileWriter(outputGmap)) {
+		try (Writer w = new FileWriter(outputGmap, StandardCharsets.UTF_8)) {
 			gson.toJson(gameDoc, w);
 		}
 
@@ -201,7 +203,7 @@ public class GameCompiler {
 			throw new IllegalArgumentException(
 				"game.identity." + key + " must be 64 hex digits, got: " + value);
 		}
-		return value.toLowerCase();
+		return value.toLowerCase(Locale.ROOT);
 	}
 
 	// ---- symbols: the annotation layer (bead grm-hb6.5) ----

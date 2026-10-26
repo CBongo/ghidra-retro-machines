@@ -202,8 +202,8 @@ public class PetsciiMapperTest {
 
 	/** Bytes this verifier independently expects to render as a single known ASCII
 	 *  character: the $20-$3F identity range, the six ASCII-divergence/identity literals
-	 *  ($40,$5B,$5C,$5D,$5E,$5F), and the variant-dependent $41-$5A letter range. */
-	private static boolean isKnownPrintable(int b, Variant variant) {
+	 *  ($40,$5B,$5C,$5D,$5E,$5F), and the $41-$5A letter range. */
+	private static boolean isKnownPrintable(int b) {
 		if (b >= 0x20 && b <= 0x3F) {
 			return true;
 		}
@@ -282,7 +282,7 @@ public class PetsciiMapperTest {
 				// 5. Every byte that is neither a named control code, the 0x0D literal, nor
 				// a printable char, renders exactly "{$xx}" (lowercase 2-hex-digit).
 				boolean isNamedControl = expectedName != null;
-				boolean isPrintableAscii = b >= 0x20 && b < 0x7F && isKnownPrintable(b, variant);
+				boolean isPrintableAscii = b >= 0x20 && b < 0x7F && isKnownPrintable(b);
 				if (!isNamedControl && b != 0x0D && !isPrintableAscii) {
 					Matcher m = HEX_ESCAPE.matcher(s);
 					if (!m.matches()) {

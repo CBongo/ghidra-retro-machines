@@ -165,7 +165,10 @@ public class IndirectJumpSlotTableTest extends AbstractBundledLanguageTest {
 
 		// Task 0's body: installs task 1 in slot 1 through the same create routine, then returns.
 		Asm task = new Asm(TASK0);
-		task.op(0xa9, (int) (TASK1 & 0xff)); // LDA #lo
+		// TASK1's low byte happens to be 0; the expression keeps this valid if the constant moves.
+		@SuppressWarnings("ErroneousBitwiseExpression")
+		int task1Lo = (int) (TASK1 & 0xff);
+		task.op(0xa9, task1Lo); // LDA #lo
 		task.op(0x85, 0x93); // STA $93
 		task.op(0xa9, (int) ((TASK1 >> 8) & 0xff)); // LDA #hi
 		task.op(0x85, 0x94); // STA $94

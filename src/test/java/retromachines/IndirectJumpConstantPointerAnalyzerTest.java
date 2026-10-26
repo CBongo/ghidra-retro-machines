@@ -155,8 +155,12 @@ public class IndirectJumpConstantPointerAnalyzerTest extends AbstractBundledLang
 		asm.op(0x0a); // ASL A
 		asm.op(0x05, 0xf9); // ORA $f9
 		asm.op(0xa8); // TAY
-		asm.op(0xb9, (int) (TABLE & 0xff), (int) ((TABLE >> 8) & 0xff)); // LDA TABLE,Y
-		asm.op(0x99, (int) (TABLE & 0xff), (int) ((TABLE >> 8) & 0xff)); // STA TABLE,Y
+		// TABLE's low byte happens to be 0; the expression keeps this valid if the constant moves.
+		@SuppressWarnings("ErroneousBitwiseExpression")
+		int tableLo = (int) (TABLE & 0xff);
+		int tableHi = (int) ((TABLE >> 8) & 0xff);
+		asm.op(0xb9, tableLo, tableHi); // LDA TABLE,Y
+		asm.op(0x99, tableLo, tableHi); // STA TABLE,Y
 		if (variant == Variant.CLOBBER_BY_CALLEE) {
 			asm.op(0x68); // PLA -- A becomes unknown
 			asm.op(0x85, 0x17); // STA $17 -- clobbers the pointer's low byte with an unknown value

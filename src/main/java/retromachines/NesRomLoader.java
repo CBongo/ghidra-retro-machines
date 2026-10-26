@@ -57,7 +57,7 @@ import ghidra.util.exception.CancelledException;
  * Parses the 16-byte iNES header (magic, PRG/CHR sizes, mapper number, trainer flag),
  * resolves the mapper number to a board descriptor through {@link NesBoardRegistry}
  * (user-overridable via the "NES Board" import option), and builds the CPU-space
- * memory map entirely from the bundled {@code machines/&lt;board&gt;.map} descriptor:
+ * memory map entirely from the bundled {@code machines/<board>.map} descriptor:
  * always-visible regions with MMIO register structs and symbols, plus computed PRG
  * windows placed by evaluating their {@code maps:} expressions against the image size
  * (NROM: {@code PRG[0]} and {@code PRG[last]}, which yields the NROM-128 mirror and
@@ -112,7 +112,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 	private static final String LANGUAGE_ID = "6502:LE:16:default";
 	private static final String COMPILER_SPEC_ID = "default";
 
-	/** {@code LDA #imm} -- the only select-write value form {@link #imageResolvedMode} reads. */
+	/** {@code LDA #imm} -- the only select-write value form {@link #scanImageMode} reads. */
 	private static final int OP_LDA_IMMEDIATE = 0xA9;
 
 	/** {@code STA abs}. */
@@ -120,7 +120,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 
 	/**
 	 * How many {@code LDA #imm / STA <mechanism>} sites the image must show before
-	 * {@link #imageResolvedMode} will believe their verdict. Conservative on purpose: this is a
+	 * {@link #scanImageMode} will believe their verdict. Conservative on purpose: this is a
 	 * RAW BYTE scan, so a handful of matches could in principle be data that happens to look like
 	 * the pattern. Measured site counts on the pinned mapper-4 rows are smb3 69, rcransom 14,
 	 * tmnt3 8, megaman3 4, smb2 2 -- so this floor admits every row whose answer differs from the
@@ -131,7 +131,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 	/**
 	 * The PRG image's raw bytes, or {@code null} if they cannot be read.
 	 * <p>
-	 * {@link #imageResolvedMode} needs bytes rather than the {@link FileBytes} the blocks are
+	 * {@link #scanImageMode} needs bytes rather than the {@link FileBytes} the blocks are
 	 * built from, because it runs BEFORE any block exists and there is no listing to walk yet.
 	 * A failure here is not an import error: the caller simply keeps the descriptor's compiled
 	 * {@code initial_state}, which is exactly the behaviour every board had before grm-3fvj.
@@ -260,8 +260,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 	 * descriptor's compiled default, so the packed state does not change while the mode is
 	 * nonetheless known.
 	 */
-	private static Long applyMode(JsonObject map, Long initialState, int mode, MessageLog log,
-			String mapPath) {
+	private static Long applyMode(JsonObject map, Long initialState, int mode) {
 		if (initialState == null) {
 			return null;
 		}
@@ -933,7 +932,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 		Integer liveMode =
 			scanImageMode(map, readPrgImage(provider, header, log), log, board.mapPath());
 		if (liveMode != null) {
-			initialState = applyMode(map, initialState, liveMode, log, board.mapPath());
+			initialState = applyMode(map, initialState, liveMode);
 		}
 		// A curated hint naming the layout mode field is a KNOWN mode too (bead grm-ic5.1):
 		// a human recorded it against the cartridge. It wins over the scan, the same

@@ -53,6 +53,12 @@
 // application.gradle.version property in <GHIDRA_INSTALL_DIR>/Ghidra/application.properties
 // for the correction version of Gradle to use for the Ghidra installation you specify.
 
+// Error Prone (bead grm-tl0o): see the JavaCompile block below. A plugins {} block must precede
+// every other statement, so it sits here, above the stock section.
+plugins {
+	id 'net.ltgt.errorprone' version '5.1.1'
+}
+
 //----------------------START "DO NOT MODIFY" SECTION------------------------------
 def ghidraInstallDir
 
@@ -149,6 +155,10 @@ dependencies {
 	// source set below uses for the other build-only compilers, so build and runtime cannot
 	// diverge on parser behavior.
 	implementation 'org.yaml:snakeyaml:2.2'
+
+	// Error Prone, build-only (bead grm-tl0o): the errorprone configuration is javac's
+	// annotation-processor path, never runtimeClasspath, so nothing of it reaches lib/.
+	errorprone 'com.google.errorprone:error_prone_core:2.50.0'
 }
 
 // javac lint (bead grm-uv3l): every JavaCompile task in this build (main, test, and the build-only
@@ -163,6 +173,26 @@ dependencies {
 //                 analyzer here follows that required idiom, so the warning carries no signal.
 tasks.withType(JavaCompile).configureEach {
 	options.compilerArgs += ['-Xlint:all,-classfile,-this-escape', '-Xmaxwarns', '10000']
+	// Error Prone (bead grm-tl0o), on the same tasks. ERROR-severity checks are reported as
+	// warnings, so a finding never fails the build. The zero-warning rule in AGENTS.md covers
+	// these warnings too. Disabled project-wide, because each one is style or carries no signal
+	// in this codebase:
+	//   StatementSwitchToExpressionSwitch, PatternMatchingInstanceof, UnnecessaryParentheses,
+	//   StringConcatToTextBlock, RefactorSwitch, UnnecessaryLambda
+	//                 Modernisation suggestions only. None of them flags a defect.
+	//   BooleanLiteral  Flags Boolean.TRUE passed where an Object is expected (contains,
+	//                 assertEquals), which is the correct way to write that call.
+	//   StringSplitter  Its suggested fix is Guava's Splitter. String.split dropping trailing
+	//                 empty strings is the behaviour every split in this repo relies on.
+	//   IntLongMath   Fires on (hi << 8) | lo assigned to a long, which is how this repo builds
+	//                 a 6502 address from two bytes. The int cannot overflow.
+	//   NonApiType    LinkedHashMap in a signature is how the map compiler says that insertion
+	//                 order matters.
+	options.errorprone.allErrorsAsWarnings = true
+	options.errorprone.disable(
+		'StatementSwitchToExpressionSwitch', 'PatternMatchingInstanceof', 'UnnecessaryParentheses',
+		'StringConcatToTextBlock', 'RefactorSwitch', 'UnnecessaryLambda',
+		'BooleanLiteral', 'StringSplitter', 'IntLongMath', 'NonApiType')
 }
 
 //----------------------------------------------------------------------------------

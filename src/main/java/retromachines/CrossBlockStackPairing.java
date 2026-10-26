@@ -19,7 +19,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
@@ -194,7 +196,7 @@ final class CrossBlockStackPairing {
 				span.crossedMechanismWrite = true;
 			}
 			steps++;
-			String mnem = prev.getMnemonicString().toUpperCase();
+			String mnem = prev.getMnemonicString().toUpperCase(Locale.ROOT);
 			switch (mnem) {
 				case "PHA" -> {
 					if (--depth == 0) {
@@ -297,7 +299,8 @@ final class CrossBlockStackPairing {
 			if (listing.getInstructionAt(fromAddr) == null) {
 				return null; // undisassembled predecessor
 			}
-			if (fm.getFunctionContaining(fromAddr) != scope && !admitCrossFunctionJumps) {
+			if (!Objects.equals(fm.getFunctionContaining(fromAddr), scope) &&
+				!admitCrossFunctionJumps) {
 				return null; // from a different function
 			}
 			preds.add(fromAddr);
@@ -324,6 +327,7 @@ final class CrossBlockStackPairing {
 	 * message or stack trace -- it is pure control flow within one bounded search. */
 	private static final class CrossBlockAbandon extends RuntimeException {
 		private static final long serialVersionUID = 1L; // never serialized; quiets -Xlint:serial
+		@SuppressWarnings("StaticAssignmentOfThrowable") // stackless control-flow signal, by design
 		static final CrossBlockAbandon INSTANCE = new CrossBlockAbandon();
 
 		private CrossBlockAbandon() {
@@ -604,7 +608,7 @@ final class CrossBlockStackPairing {
 						predAddr, child.sawMechanismWrite() || mech)));
 				continue;
 			}
-			String mnem = predInstr.getMnemonicString().toUpperCase();
+			String mnem = predInstr.getMnemonicString().toUpperCase(Locale.ROOT);
 			switch (mnem) {
 				case "PHA" -> {
 					int next = depth - 1;

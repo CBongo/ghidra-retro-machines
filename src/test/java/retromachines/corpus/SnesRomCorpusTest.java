@@ -164,7 +164,6 @@ public class SnesRomCorpusTest {
 		List<String> hiddenCopier = new ArrayList<>();
 		// grm-9nxj.19: images the Auto layout policy would de-interleave and/or chunk-swap.
 		List<String> layoutChanged = new ArrayList<>();
-		int autoRefusedButOffAccepted = 0;
 
 		Map<String, Integer> byMapType = new TreeMap<>();
 		Map<String, Integer> byChipset = new TreeMap<>();
@@ -205,7 +204,6 @@ public class SnesRomCorpusTest {
 			// grm-9nxj.19: what would Auto do? Never refuse what Off accepts; list any transform.
 			SnesRomHeader auto = SnesRomHeader.parse(bytes, Mode.AUTO);
 			if (header != null && auto == null) {
-				autoRefusedButOffAccepted++;
 				problems.add(name + ": Auto refused an image Off accepts");
 			}
 			if (auto != null && !auto.layout().isCanonical()) {

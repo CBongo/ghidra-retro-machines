@@ -22,6 +22,7 @@ import static org.junit.Assert.assertTrue;
 import java.io.File;
 import java.nio.file.Files;
 import java.util.List;
+import java.util.Locale;
 
 import org.junit.Rule;
 import org.junit.Test;
@@ -176,7 +177,7 @@ public class GameDescriptorRegistryTest {
 	public void validDocumentParsesWithLowercasedHashes() {
 		JsonObject doc = JsonParser.parseString(
 			"{ \"schema\": 2, \"game\": { \"id\": \"smb3\", \"board\": \"nes_mmc3\", " +
-				"\"identity\": { \"prg_sha256\": \"" + PRG_A.toUpperCase() +
+				"\"identity\": { \"prg_sha256\": \"" + PRG_A.toUpperCase(Locale.ROOT) +
 				"\", \"file_sha256\": \"" + FILE_A + "\" } } }").getAsJsonObject();
 		MessageLog log = new MessageLog();
 		GameDescriptor gd = GameDescriptorRegistry.parse(doc, "games/smb3.gmap", log);

@@ -69,6 +69,7 @@ public final class DisListing {
 	 * whitespace collapsed to single spaces; {@code comment} is everything after the first
 	 * {@code ;}, trimmed, or null when the line carried none.
 	 */
+	@SuppressWarnings("ArrayRecordComponent") // Row equals/hashCode is never used (rows are only iterated)
 	public record Row(int lineNumber, Kind kind, int address, byte[] bytes, String text,
 			String comment) {
 

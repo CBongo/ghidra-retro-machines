@@ -205,7 +205,7 @@ final class Spc700VectorHarnessSupport {
 	private static long nextMnemonicAddr = 0x0200;
 
 	/**
-	 * The mnemonic + full operand text (via {@link Instruction#toString()}) for {@code c}'s own
+	 * The mnemonic + full operand text (via {@code Instruction.toString()}) for {@code c}'s own
 	 * instruction encoding, or {@code "-"} if that cannot be produced for any reason. Bytes come
 	 * from {@code c.initialRam()} at {@code c.initialRegs().get("pc")} -- the contiguous run
 	 * starting there, which is guaranteed to be a valid encoding of the opcode this case tests

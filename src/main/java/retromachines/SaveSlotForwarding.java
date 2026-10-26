@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -87,6 +88,7 @@ final class SaveSlotForwarding {
 	 *  recursion depth; caught only at the top. Stateless, no stack trace -- pure control flow. */
 	private static final class SlotAbandon extends RuntimeException {
 		private static final long serialVersionUID = 1L; // never serialized; quiets -Xlint:serial
+		@SuppressWarnings("StaticAssignmentOfThrowable") // stackless control-flow signal, by design
 		static final SlotAbandon INSTANCE = new SlotAbandon();
 
 		private SlotAbandon() {
@@ -592,7 +594,7 @@ final class SaveSlotForwarding {
 				case NONE -> {
 				}
 			}
-			String mnem = instr.getMnemonicString().toUpperCase();
+			String mnem = instr.getMnemonicString().toUpperCase(Locale.ROOT);
 			if (mnem.equals("BRK")) {
 				return CensusResult.DIRTY;
 			}
@@ -720,7 +722,7 @@ final class SaveSlotForwarding {
 		/** By mnemonic (LDX/TAX/TSX/PLX, LAX and kin) and by Ghidra's own result objects, so an
 		 *  instruction either one says writes the register makes it unknown. */
 		private static boolean writesRegister(Instruction instr, char reg) {
-			String m = instr.getMnemonicString().toUpperCase();
+			String m = instr.getMnemonicString().toUpperCase(Locale.ROOT);
 			boolean byName = reg == 'X'
 					? Set.of("LDX", "TAX", "TSX", "PLX", "INX", "DEX", "LAX", "LAS", "SBX", "AXS")
 							.contains(m)

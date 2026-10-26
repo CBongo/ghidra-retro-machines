@@ -21,6 +21,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -257,7 +258,7 @@ final class BankStackBrackets {
 			if (instr == null) {
 				return null;
 			}
-			String mnem = instr.getMnemonicString().toUpperCase();
+			String mnem = instr.getMnemonicString().toUpperCase(Locale.ROOT);
 			boolean clcBefore = prevClc;
 			prevClc = false;
 			Integer immBefore = lastImmA;
@@ -652,7 +653,7 @@ final class BankStackBrackets {
 		for (String reg : new String[] { "X", "Y" }) {
 			long base = indexedBase(instr, reg);
 			if (base >= 0 && (inSlots(c, base) || inSlots(c, base + 0xFF) ||
-				base <= c.stack().pointer() && c.stack().pointer() <= base + 0xFF)) {
+				(base <= c.stack().pointer() && c.stack().pointer() <= base + 0xFF))) {
 				return true;
 			}
 		}

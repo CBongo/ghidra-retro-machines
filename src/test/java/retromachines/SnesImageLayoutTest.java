@@ -20,6 +20,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
 import org.junit.Test;
@@ -40,7 +41,7 @@ public class SnesImageLayoutTest {
 
 	/** Writes a valid header at logical {@code at} in a canonical, 0xEE-filled image. */
 	private static void header(byte[] img, int at, String title, int mapMode) {
-		byte[] name = String.format("%-21s", title).getBytes();
+		byte[] name = String.format("%-21s", title).getBytes(StandardCharsets.US_ASCII);
 		System.arraycopy(name, 0, img, at, 21);
 		img[at + 0x15] = (byte) mapMode;
 		img[at + 0x16] = 0;

@@ -201,7 +201,7 @@ public class FarCallTrampolineAnalyzerTest extends AbstractBundledLanguageTest {
 		assertNotNull(site);
 		Set<Address> targets = new HashSet<>();
 		for (Reference ref : site.getReferencesFrom()) {
-			if (ref.getReferenceType() == RefType.COMPUTED_CALL) {
+			if (RefType.COMPUTED_CALL.equals(ref.getReferenceType())) {
 				targets.add(ref.getToAddress());
 			}
 		}

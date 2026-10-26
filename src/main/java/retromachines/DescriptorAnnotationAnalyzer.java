@@ -313,8 +313,7 @@ public class DescriptorAnnotationAnalyzer extends AbstractAnalyzer {
 
 	/**
 	 * Applies the {@code symbols:} sets of a compiled game descriptor document -- the testable
-	 * seam. Same guards and idempotence as the machine sets ({@link DescriptorApply#
-	 * applySymbolSet}); entries land as {@code IMPORTED}, never {@code USER_DEFINED}
+	 * seam. Same guards and idempotence as the machine sets ({@link DescriptorApply#applySymbolSet}); entries land as {@code IMPORTED}, never {@code USER_DEFINED}
 	 * (design section 3c.3), so an exported user label returns as an imported one.
 	 */
 	void applyGameSymbols(Program program, JsonObject gameDoc, TaskMonitor monitor,

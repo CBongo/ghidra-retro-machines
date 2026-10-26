@@ -22,6 +22,7 @@ import static org.junit.Assert.assertTrue;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Locale;
 
 import org.junit.Rule;
 import org.junit.Test;
@@ -120,8 +121,8 @@ public class GameCompilerTest {
 
 	@Test
 	public void hashesAreLowercased() throws Exception {
-		String yaml = validYaml().replace(PRG_SHA, PRG_SHA.toUpperCase())
-			.replace(FILE_SHA, FILE_SHA.toUpperCase());
+		String yaml = validYaml().replace(PRG_SHA, PRG_SHA.toUpperCase(Locale.ROOT))
+			.replace(FILE_SHA, FILE_SHA.toUpperCase(Locale.ROOT));
 		JsonObject doc = compile("upper", yaml);
 		JsonObject identity = doc.getAsJsonObject("game").getAsJsonObject("identity");
 		assertEquals(PRG_SHA, identity.get("prg_sha256").getAsString());
@@ -575,9 +576,9 @@ public class GameCompilerTest {
 		Path dir = tmp.getRoot().toPath();
 		Path yamlPath = dir.resolve(name + ".yaml");
 		Files.writeString(yamlPath, yaml);
+		String[] args = { yamlPath.toString(), dir.resolve(name + ".gmap").toString() };
 		IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
-			() -> GameCompiler.main(
-				new String[] { yamlPath.toString(), dir.resolve(name + ".gmap").toString() }));
+			() -> GameCompiler.main(args));
 		assertTrue("expected error containing '" + messagePart + "', got: " + e.getMessage(),
 			e.getMessage().contains(messagePart));
 	}

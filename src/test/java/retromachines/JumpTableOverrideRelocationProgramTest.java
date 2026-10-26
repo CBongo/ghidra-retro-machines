@@ -23,6 +23,7 @@ import static org.junit.Assert.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.StreamSupport;
 
 import org.junit.Test;
 
@@ -128,10 +129,7 @@ public class JumpTableOverrideRelocationProgramTest extends AbstractBundledLangu
 	}
 
 	private static int countSymbols(ProgramDB program, Namespace space) {
-		int n = 0;
-		for (var s : program.getSymbolTable().getSymbols(space)) {
-			n++;
-		}
-		return n;
+		return (int) StreamSupport.stream(
+			program.getSymbolTable().getSymbols(space).spliterator(), false).count();
 	}
 }

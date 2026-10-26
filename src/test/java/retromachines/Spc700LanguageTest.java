@@ -38,7 +38,7 @@ import ghidra.program.model.listing.Listing;
  * covers only what is sound today: mnemonic text, full operand text, and instruction length
  * (disassembly).
  * <p>
- * Full operand text (via {@link Instruction#toString()}) is pinned deliberately, not
+ * Full operand text (via {@code Instruction.toString()}) is pinned deliberately, not
  * incidentally: grm-c9d.3's leading plan restructures the {@code ADDR8}/{@code ADDR16}
  * subtables (splitting them into an address-valued form for data and a dynamic one for jump
  * targets), and those subtables are what supply operand *display*, not just semantics. That

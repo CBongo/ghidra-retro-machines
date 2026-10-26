@@ -222,6 +222,11 @@ public class ModeLockProgramTest extends AbstractProgramTest {
 	 */
 	@Test
 	public void aLaterContradictingWriteRejectsTheLockAndTheRunIsRedone() throws Exception {
+		layRejectedLockScenario();
+	}
+
+	/** The shared body of the rejected-lock tests: lays the program and pins the engine result. */
+	private void layRejectedLockScenario() throws Exception {
 		put(0xc000, "a9 02 8d 00 90 4c 05 c0");
 		makeFunction(0xc000, 0xc007, "RESET", true);
 		layNmi("a9 01 8d 00 90 40"); // LDA #$01 / STA $9000 / RTI
@@ -244,7 +249,7 @@ public class ModeLockProgramTest extends AbstractProgramTest {
 	@Test
 	public void aRejectedLockRaisesAWarningAtTheContradictionAndALaterRoundClearsIt()
 			throws Exception {
-		aLaterContradictingWriteRejectsTheLockAndTheRunIsRedone();
+		layRejectedLockScenario();
 		BankDataflowEngine.DataflowResult result = run();
 		NesBankingAnalyzer analyzer = new NesBankingAnalyzer();
 		String category = analyzer.getBookmarkCategory() + " mode lock";

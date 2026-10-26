@@ -21,6 +21,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
 import org.junit.Test;
@@ -49,7 +50,7 @@ public class SnesRomHeaderTest {
 		Arrays.fill(file, (byte) 0xEE);
 		int at = (copier ? 0x200 : 0) + headerOffset;
 
-		byte[] name = String.format("%-21s", title).getBytes();
+		byte[] name = String.format("%-21s", title).getBytes(StandardCharsets.US_ASCII);
 		System.arraycopy(name, 0, file, at, 21);
 		file[at + 0x15] = (byte) mapMode;
 		file[at + 0x16] = (byte) chipset;
@@ -140,7 +141,7 @@ public class SnesRomHeaderTest {
 	@Test
 	public void checksumPairBeatsAPrintableDecoy() {
 		byte[] file = image(0x80000, 0x7FC0, "REAL HEADER", 0x20, 0x00, 0x09, false);
-		byte[] decoy = String.format("%-21s", "DECOY AT FFC0").getBytes();
+		byte[] decoy = String.format("%-21s", "DECOY AT FFC0").getBytes(StandardCharsets.US_ASCII);
 		System.arraycopy(decoy, 0, file, 0xFFC0, decoy.length);
 
 		SnesRomHeader header = SnesRomHeader.parse(file);

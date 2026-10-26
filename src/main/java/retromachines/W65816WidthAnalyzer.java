@@ -21,6 +21,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
@@ -332,7 +333,7 @@ public class W65816WidthAnalyzer extends AbstractAnalyzer {
 			W65816WidthEffects.Effect k = effects.effect(cont);
 			Map<Register, Integer> stamp = new LinkedHashMap<>();
 			for (Register reg : new Register[] { effects.mRegister(), effects.xRegister() }) {
-				boolean needs = reg == effects.mRegister() ? k.m().needs() : k.x().needs();
+				boolean needs = reg.equals(effects.mRegister()) ? k.m().needs() : k.x().needs();
 				Set<Integer> savedValues = new LinkedHashSet<>();
 				for (Instruction php : phps) {
 					savedValues.add(effects.flag(php, reg));
@@ -415,7 +416,7 @@ public class W65816WidthAnalyzer extends AbstractAnalyzer {
 				return null;
 			}
 			for (Instruction p : preds) {
-				String mn = p.getMnemonicString().toUpperCase();
+				String mn = p.getMnemonicString().toUpperCase(Locale.ROOT);
 				int d = depth;
 				if (mn.equals("PHP")) {
 					if (d == 0) {
@@ -549,7 +550,7 @@ public class W65816WidthAnalyzer extends AbstractAnalyzer {
 		}
 		W65816WidthEffects.Effect e = effects.effect(callee.getMinAddress());
 		for (Register reg : new Register[] { effects.mRegister(), effects.xRegister() }) {
-			boolean needs = reg == effects.mRegister() ? e.m().needs() : e.x().needs();
+			boolean needs = reg.equals(effects.mRegister()) ? e.m().needs() : e.x().needs();
 			if (!needs) {
 				continue;
 			}
@@ -701,7 +702,7 @@ public class W65816WidthAnalyzer extends AbstractAnalyzer {
 			String which = "";
 			for (Map.Entry<Register, Integer> s : stamp.entrySet()) {
 				if (src == null || effects.flag(src, s.getKey()) != s.getValue()) {
-					which += s.getKey() == effects.mRegister() ? "M" : "X";
+					which += s.getKey().equals(effects.mRegister()) ? "M" : "X";
 				}
 			}
 			if (!which.isEmpty()) {

@@ -122,7 +122,7 @@ public class FallThroughIntoOverlayProgramTest extends AbstractBundledLanguageTe
 		override();
 		Reference ft = null;
 		for (Reference r : program.getReferenceManager().getReferencesFrom(commit)) {
-			if (r.getReferenceType() == RefType.FALL_THROUGH) {
+			if (RefType.FALL_THROUGH.equals(r.getReferenceType())) {
 				ft = r;
 			}
 		}
@@ -155,7 +155,7 @@ public class FallThroughIntoOverlayProgramTest extends AbstractBundledLanguageTe
 		assertFalse(instr.isFallThroughOverridden());
 		assertEquals(baseNext, instr.getFallThrough());
 		for (Reference r : program.getReferenceManager().getReferencesFrom(commit)) {
-			assertFalse(r.getReferenceType() == RefType.FALL_THROUGH);
+			assertFalse(RefType.FALL_THROUGH.equals(r.getReferenceType()));
 		}
 	}
 

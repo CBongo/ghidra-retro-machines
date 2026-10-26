@@ -15,6 +15,7 @@
  */
 package retromachines;
 
+import java.util.Locale;
 import java.util.Set;
 
 import ghidra.program.model.address.Address;
@@ -67,7 +68,7 @@ final class MosOperands {
 	 * place and this scanner does not model the resulting value.
 	 */
 	static Character storeRegister(Instruction instr) {
-		String mnem = instr.getMnemonicString().toUpperCase();
+		String mnem = instr.getMnemonicString().toUpperCase(Locale.ROOT);
 		if (mnem.equals("STA") || mnem.equals("STX") || mnem.equals("STY")) {
 			return mnem.charAt(2); // 'A' | 'X' | 'Y'
 		}
@@ -128,7 +129,7 @@ final class MosOperands {
 	 * modifier set, so every walk tests {@code getFlowType().isCall()} separately.
 	 */
 	static boolean modifiesRegister(Instruction instr, char reg) {
-		return modifiesRegister(registerModifiers(reg), instr.getMnemonicString().toUpperCase(),
+		return modifiesRegister(registerModifiers(reg), instr.getMnemonicString().toUpperCase(Locale.ROOT),
 			instr);
 	}
 

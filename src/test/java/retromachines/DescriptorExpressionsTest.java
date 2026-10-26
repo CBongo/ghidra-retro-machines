@@ -237,8 +237,9 @@ public class DescriptorExpressionsTest {
 
 	@Test
 	public void identifierNotInEnvThrows() {
+		Map<String, Long> emptyEnv = Map.of();
 		assertThrows(IllegalArgumentException.class,
-			() -> DescriptorExpressions.evalExpr("other_field", IMAGE_SIZE, WINDOW_SIZE, Map.of()));
+			() -> DescriptorExpressions.evalExpr("other_field", IMAGE_SIZE, WINDOW_SIZE, emptyEnv));
 	}
 
 	@Test

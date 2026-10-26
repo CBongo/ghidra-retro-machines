@@ -19,12 +19,14 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.Writer;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -137,7 +139,7 @@ public class MapCompiler {
 
 		outputMap.getParentFile().mkdirs();
 		Gson gson = new GsonBuilder().setPrettyPrinting().create();
-		try (Writer w = new FileWriter(outputMap)) {
+		try (Writer w = new FileWriter(outputMap, StandardCharsets.UTF_8)) {
 			gson.toJson(mapDoc, w);
 		}
 
@@ -1822,7 +1824,7 @@ public class MapCompiler {
 		if (def instanceof Boolean) {
 			return (Boolean) def;
 		}
-		String s = def.toString().trim().toLowerCase();
+		String s = def.toString().trim().toLowerCase(Locale.ROOT);
 		if ("on".equals(s) || "true".equals(s)) {
 			return true;
 		}
@@ -1876,7 +1878,7 @@ public class MapCompiler {
 			return ((Number) o).intValue();
 		}
 		String s = o.toString().trim();
-		if (s.toLowerCase().startsWith("0x")) {
+		if (s.toLowerCase(Locale.ROOT).startsWith("0x")) {
 			return Integer.parseInt(s.substring(2), 16);
 		}
 		return Integer.parseInt(s);

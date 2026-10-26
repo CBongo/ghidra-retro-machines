@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -169,10 +170,10 @@ public final class GameDescriptorExporter {
 			}
 		}
 		String name = program.getName();
-		String slug = name.toLowerCase().replaceAll("\\.[a-z0-9]{1,4}$", "")
+		String slug = name.toLowerCase(Locale.ROOT).replaceAll("\\.[a-z0-9]{1,4}$", "")
 				.replaceAll("[^a-z0-9]+", "_").replaceAll("^_+|_+$", "");
 		String provenance = "exported from Ghidra program '" + name + "' by " +
-			System.getProperty("user.name", "unknown") + " on " + java.time.LocalDate.now() +
+			System.getProperty("user.name", "unknown") + " on " + java.time.LocalDate.now(java.time.ZoneId.systemDefault()) +
 			" (USER_DEFINED labels and user comments)" +
 			(note == null || note.isBlank() ? "" : "; " + note.strip());
 		return new Request(id != null ? id : slug.isEmpty() ? "exported_game" : slug,
@@ -195,7 +196,7 @@ public final class GameDescriptorExporter {
 				continue;
 			}
 			SymbolType type = sym.getSymbolType();
-			if (type != SymbolType.LABEL && type != SymbolType.FUNCTION) {
+			if (!SymbolType.LABEL.equals(type) && !SymbolType.FUNCTION.equals(type)) {
 				continue;
 			}
 			if (sym.getParentNamespace() == null ||
@@ -232,7 +233,7 @@ public final class GameDescriptorExporter {
 				Map<String, Object> e = new LinkedHashMap<>();
 				e.put("addr", new HexInt(se.getKey()));
 				e.put("name", sym.getName());
-				e.put("kind", sym.getSymbolType() == SymbolType.FUNCTION ? "entry" : "label");
+				e.put("kind", SymbolType.FUNCTION.equals(sym.getSymbolType()) ? "entry" : "label");
 				if (!block.isEmpty()) {
 					e.put("block", block);
 				}
@@ -262,7 +263,7 @@ public final class GameDescriptorExporter {
 			boolean blockResolved = false;
 			boolean unresolvable = false;
 			for (String key : GameCompiler.COMMENT_KEYS) {
-				CommentType t = CommentType.valueOf(key.toUpperCase());
+				CommentType t = CommentType.valueOf(key.toUpperCase(Locale.ROOT));
 				if (t == CommentType.EOL && exportedAddrs.containsKey(a)) {
 					continue;
 				}

@@ -19,6 +19,7 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -246,7 +247,7 @@ final class SaveRestoreTrampolines {
 			}
 
 			boolean modelled = true;
-			switch (instr.getMnemonicString().toUpperCase()) {
+			switch (instr.getMnemonicString().toUpperCase(Locale.ROOT)) {
 				case "PHA" -> saved.push(a);
 				case "PLA" -> {
 					if (saved.isEmpty()) {
@@ -446,7 +447,7 @@ final class SaveRestoreTrampolines {
 			if (instr == null) {
 				return null;
 			}
-			String mnemonic = instr.getMnemonicString().toUpperCase();
+			String mnemonic = instr.getMnemonicString().toUpperCase(Locale.ROOT);
 			if (mnemonic.equals("RTS")) {
 				if (!saved.isEmpty() || lastCommit.isEmpty() || source == null) {
 					return null;
@@ -593,9 +594,9 @@ final class SaveRestoreTrampolines {
 		for (Map.Entry<Integer, Integer> commit : lastCommit.entrySet()) {
 			int field = commit.getKey();
 			int plus = commit.getValue();
-			boolean restores = plus == 0 && field == low.positionedMask() ||
-				plus > 0 && pairings.stream().anyMatch(p -> p.highMask() == field &&
-					p.lowMask() == low.positionedMask() && p.offset() == plus);
+			boolean restores = (plus == 0 && field == low.positionedMask()) ||
+				(plus > 0 && pairings.stream().anyMatch(p -> p.highMask() == field &&
+					p.lowMask() == low.positionedMask() && p.offset() == plus));
 			if (!restores) {
 				return null;
 			}
@@ -687,7 +688,7 @@ final class SaveRestoreTrampolines {
 			if (instr == null) {
 				return false;
 			}
-			String mnemonic = instr.getMnemonicString().toUpperCase();
+			String mnemonic = instr.getMnemonicString().toUpperCase(Locale.ROOT);
 			switch (mnemonic) {
 				case "RTS" -> {
 					return depth == 0;

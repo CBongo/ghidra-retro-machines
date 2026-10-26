@@ -15,6 +15,7 @@
  */
 package retromachines;
 
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -123,13 +124,13 @@ public class BranchAlwaysPairAnalyzer extends AbstractAnalyzer {
 	/** The second branch of an always-taken pair starting at {@code first}, or null. Package
 	 *  access for tests. */
 	static Instruction alwaysTakenSecond(Program program, Instruction first) {
-		String complement = COMPLEMENT.get(first.getMnemonicString().toUpperCase());
+		String complement = COMPLEMENT.get(first.getMnemonicString().toUpperCase(Locale.ROOT));
 		if (complement == null || !first.hasFallthrough()) {
 			return null;
 		}
 		Instruction second = program.getListing().getInstructionAt(first.getFallThrough());
 		if (second == null ||
-			!complement.equals(second.getMnemonicString().toUpperCase()) ||
+			!complement.equals(second.getMnemonicString().toUpperCase(Locale.ROOT)) ||
 			second.isFallThroughOverridden()) {
 			return null;
 		}

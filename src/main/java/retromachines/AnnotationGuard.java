@@ -122,14 +122,14 @@ final class AnnotationGuard {
 	/**
 	 * Guarded append-only comment write, generalising the proven
 	 * "never replace, only append" idiom (see class javadoc) with a caller-supplied
-	 * {@code marker} standing in for the analyzer's hardcoded {@code "bank ->"}.
+	 * marker standing in for the analyzer's hardcoded {@code "bank ->"}.
 	 * <ul>
 	 * <li>No existing comment, or an existing comment that is blank: {@code text} is set
 	 * directly.</li>
-	 * <li>A non-empty existing comment that does not already contain {@code marker}: {@code text}
+	 * <li>A non-empty existing comment that does not already contain the marker: {@code text}
 	 * is appended (separated by {@code "; "}), so whatever was there -- analyzer-written or
 	 * user-written -- survives verbatim.</li>
-	 * <li>A non-empty existing comment that already contains {@code marker}: no-op, so repeated
+	 * <li>A non-empty existing comment that already contains the marker: no-op, so repeated
 	 * calls (e.g. re-running an analyzer) do not stack duplicate annotations.</li>
 	 * </ul>
 	 * Several markers may be given when the caller's annotations form a family whose members

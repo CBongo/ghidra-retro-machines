@@ -21,6 +21,7 @@ import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.io.FileReader;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -51,7 +52,7 @@ public class SnesDescriptorTest extends AbstractGenericTest {
 		assertNotNull("grm.moduleDir is not set -- run through Gradle", moduleDir);
 		File map = new File(new File(moduleDir, "data/machines"), "snes.map");
 		assertTrue("data/machines/snes.map is missing -- run `gradle buildMap`", map.isFile());
-		try (FileReader reader = new FileReader(map)) {
+		try (FileReader reader = new FileReader(map, StandardCharsets.UTF_8)) {
 			return JsonParser.parseReader(reader).getAsJsonObject();
 		}
 	}

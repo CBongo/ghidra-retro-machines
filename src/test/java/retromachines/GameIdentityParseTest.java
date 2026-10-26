@@ -25,6 +25,7 @@ import static org.junit.Assert.assertTrue;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 
 import org.junit.Test;
 
@@ -89,7 +90,7 @@ public class GameIdentityParseTest {
 		// pastes whatever casing the user happened to have. Two identities naming the same
 		// bytes must compare equal regardless, or a descriptor silently fails to match.
 		GameIdentities.GameIdentity upper = GameIdentities.parseGameIdentity(
-			"prg:" + PRG_HEX.toUpperCase() + " file:" + FILE_HEX.toUpperCase());
+			"prg:" + PRG_HEX.toUpperCase(Locale.ROOT) + " file:" + FILE_HEX.toUpperCase(Locale.ROOT));
 		GameIdentities.GameIdentity lower = GameIdentities.parseGameIdentity(
 			"prg:" + PRG_HEX + " file:" + FILE_HEX);
 		assertEquals(lower, upper);
@@ -129,14 +130,16 @@ public class GameIdentityParseTest {
 		// 63 hex digits: one short, which a truncated copy/paste produces.
 		String shortHex = PRG_HEX.substring(1);
 		assertEquals(63, shortHex.length());
-		assertThrows(IllegalArgumentException.class, () -> GameIdentities
-				.parseGameIdentity("prg:" + shortHex + " file:" + FILE_HEX));
+		String shortSpec = "prg:" + shortHex + " file:" + FILE_HEX;
+		assertThrows(IllegalArgumentException.class,
+			() -> GameIdentities.parseGameIdentity(shortSpec));
 
 		// Right length, wrong alphabet -- 'g' is not a hex digit.
 		String notHex = "g" + PRG_HEX.substring(1);
 		assertEquals(64, notHex.length());
-		assertThrows(IllegalArgumentException.class, () -> GameIdentities
-				.parseGameIdentity("prg:" + notHex + " file:" + FILE_HEX));
+		String notHexSpec = "prg:" + notHex + " file:" + FILE_HEX;
+		assertThrows(IllegalArgumentException.class,
+			() -> GameIdentities.parseGameIdentity(notHexSpec));
 	}
 
 	@Test
@@ -163,7 +166,7 @@ public class GameIdentityParseTest {
 
 		// The casing is ours to state, not inherited from a Ghidra internal -- assert it.
 		assertEquals(64, abc.length());
-		assertEquals(abc.toLowerCase(), abc);
+		assertEquals(abc.toLowerCase(Locale.ROOT), abc);
 	}
 
 	@Test

@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.HashSet;
 import java.util.Set;
@@ -557,7 +558,7 @@ final class ShadowCommits {
 	 */
 	private static String relayDetail(Program program, Instruction call, Instruction store,
 			Valid hint) {
-		char reg = switch (store.getMnemonicString().toUpperCase()) {
+		char reg = switch (store.getMnemonicString().toUpperCase(Locale.ROOT)) {
 			case "STA" -> 'A';
 			case "STX" -> 'X';
 			case "STY" -> 'Y';
@@ -650,7 +651,7 @@ final class ShadowCommits {
 	// ------------------------------------------------------------------
 
 	private static String hex(long v) {
-		return "0x" + Long.toHexString(v).toUpperCase();
+		return "0x" + Long.toHexString(v).toUpperCase(Locale.ROOT);
 	}
 
 	/** A default-space address for a 16-bit CPU offset, or null when it is not in program memory. */

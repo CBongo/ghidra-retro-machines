@@ -168,7 +168,7 @@ final class AnalyzerCommentRecord {
 		List<String> recorded = recorded(program, addr, type);
 		String comment = planReplace(recorded, existing, text, ownPrefix);
 		boolean settled = text.equals(existing) ||
-			recorded.contains(text) && BankCommentProvenance.containsSegment(existing, text);
+			(recorded.contains(text) && BankCommentProvenance.containsSegment(existing, text));
 		if (comment == null && !settled) {
 			return false;
 		}

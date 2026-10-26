@@ -852,7 +852,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// added() and unwinds past this point, so `stable` is never reached and the put()
 		// below never executes on a cancelled run.
 		if (stable) {
-			manageNoMechanismWriteDiagnostic(program, mechanisms, flow, log);
+			manageNoMechanismWriteDiagnostic(program, mechanisms, flow);
 			// The snapshot below has to be the LAST of this run's own writes: anything
 			// written after it leaves the stored stamp instantly stale, so the skip gate at
 			// the top of added() misses on the very next invocation. That used to be a live
@@ -1176,7 +1176,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			return null;
 		}
 		HelperModel helper = HelperDiscovery.calledHelper(program, instr, helpers);
-		return helper == null || helper.restoreCell() == null ? null : helper.restoreSkippable();
+		return (helper == null || helper.restoreCell() == null) ? null : helper.restoreSkippable();
 	}
 
 	/**
@@ -1467,7 +1467,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * non-switch-site address) so set and retract target the same one.
 	 */
 	private void manageNoMechanismWriteDiagnostic(Program program,
-			List<ConfiguredMechanism> mechanisms, DataflowResult flow, MessageLog log) {
+			List<ConfiguredMechanism> mechanisms, DataflowResult flow) {
 		BookmarkManager bm = program.getBookmarkManager();
 		Address at = program.getImageBase();
 		boolean observedWrite =

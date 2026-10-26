@@ -609,7 +609,7 @@ public class JumpTableBoundProgramTest extends AbstractBundledLanguageTest {
 	private java.util.Set<Address> targetsOf(ProgramDB program, Address switchAddr) {
 		java.util.Set<Address> targets = new java.util.HashSet<>();
 		for (Reference ref : program.getReferenceManager().getReferencesFrom(switchAddr)) {
-			if (ref.getReferenceType() == RefType.COMPUTED_JUMP) {
+			if (RefType.COMPUTED_JUMP.equals(ref.getReferenceType())) {
 				targets.add(ref.getToAddress());
 			}
 		}

@@ -31,6 +31,7 @@ import ghidra.program.model.symbol.ReferenceManager;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
@@ -55,12 +56,12 @@ final class LoopIdioms {
 	}
 
 	static String mnem(Instruction instr) {
-		return instr.getMnemonicString().toUpperCase();
+		return instr.getMnemonicString().toUpperCase(Locale.ROOT);
 	}
 
 	/** The DEX/DEY mnemonic that decrements index register {@code idx}, or "" if neither. */
 	static String decMnemonic(Register idx) {
-		String n = idx.getName().toUpperCase();
+		String n = idx.getName().toUpperCase(Locale.ROOT);
 		if (n.equals("X")) {
 			return "DEX";
 		}
@@ -516,7 +517,7 @@ final class LoopIdioms {
 		if (idx == null) {
 			return null;
 		}
-		String rn = idx.getName().toUpperCase();
+		String rn = idx.getName().toUpperCase(Locale.ROOT);
 		if (!rn.equals("X") && !rn.equals("Y")) {
 			return null;
 		}

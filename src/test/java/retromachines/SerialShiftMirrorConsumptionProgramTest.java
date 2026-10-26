@@ -35,7 +35,7 @@ import ghidra.program.model.address.AddressSpace;
 /**
  * Pins {@link SerialShiftBankSwitchStrategy}'s CONSUMPTION of a {@link BankMirrors} set
  * (bead grm-mej.2 increment 3): MMC1 commits a 5-bit value through five unrolled
- * {@code STA}/{@code LSR A} writes, and bit 7 of the byte {@link #computeSwitch} reconstructs
+ * {@code STA}/{@code LSR A} writes, and bit 7 of the byte {@link SerialShiftBankSwitchStrategy#computeSwitch} reconstructs
  * for the FIRST of those five is an out-of-band RESET signal on real hardware -- so
  * {@code computeSwitch} refuses to believe any byte whose bit 7 it cannot resolve and poisons
  * every tracked field instead ({@code bit7Known} in the class javadoc's "Chain-walk algorithm").
