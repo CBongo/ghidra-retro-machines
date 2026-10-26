@@ -20,3 +20,10 @@
 # native Windows batch file and wants CRLF regardless of platform.
 /gradlew text eol=lf
 /gradlew.bat text eol=crlf
+
+# Every shell script and ShellCheck's config, repo-wide (grm-rszf). bash rejects CRLF scripts
+# ("$'\r': command not found"), and ShellCheck reports SC1017 on every line of a CRLF script or
+# .shellcheckrc. tools/banktest/.gitattributes already pinned its own *.sh; tools/ghidra-mcp/serve.sh
+# had no rule, so a fresh clone or worktree on Windows checked it out as CRLF.
+*.sh text eol=lf
+.shellcheckrc text eol=lf

@@ -330,6 +330,10 @@ cp -rf source dest          # NOT: cp -r source dest
 - `apt-get` - use `-y` flag
 - `brew` - use `HOMEBREW_NO_AUTO_UPDATE=1` env var
 
+## Shell scripts: run ShellCheck on what you edit
+
+Run `shellcheck <file>` on any `.sh` you edit (`shellcheck tools/banktest/*.sh tools/banktest/lib/*.sh` must exit 0; config in `.shellcheckrc`). A new finding is fixed or justified with a narrow `# shellcheck disable=SCxxxx # reason`, never left (bead `grm-rszf`).
+
 ## Testing
 
 **Read [docs/testing.md](docs/testing.md) before writing or hunting for tests.** Short

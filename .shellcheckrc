@@ -1,0 +1,3 @@
+# Project-wide ShellCheck config (bead grm-rszf).
+source-path=SCRIPTDIR
+external-sources=true

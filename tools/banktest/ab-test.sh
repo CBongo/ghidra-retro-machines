@@ -225,7 +225,7 @@ fi
 N_SIDES="${#SIDE_LABEL[@]}"
 
 if [ -n "$TOOLCHAIN_VERSION" ]; then
-	SIDE_TOOLCHAIN[$((N_SIDES - 1))]=1
+	SIDE_TOOLCHAIN[N_SIDES - 1]=1
 	echo "== --toolchain: last side (${SIDE_LABEL[$((N_SIDES - 1))]}) gets ghidraTargetVersion=$TOOLCHAIN_VERSION =="
 	echo "   Source is expected to be identical across sides under this flag; the identity" \
 		"guard below checks the resolved Ghidra install, not the extension content."
@@ -296,6 +296,7 @@ CREATED_WORKTREES=()
 # or otherwise) is still diagnosable afterward. $AB_BASE itself is never rm -rf'd by this
 # script -- it holds no checkout of its own, only logs/*.dump siblings -- so the user can clean
 # it up by hand once done reading it.
+# shellcheck disable=SC2329 # invoked indirectly: trap cleanup EXIT
 cleanup() {
 	if [ "$KEEP_WORKTREES" -eq 1 ]; then
 		echo "== --keep-worktrees: leaving ${#CREATED_WORKTREES[@]} worktree(s) in place =="
@@ -320,7 +321,7 @@ for i in $(seq 0 $((N_SIDES - 1))); do
 	label="${SIDE_LABEL[$i]}"
 	ref="${SIDE_REF[$i]}"
 	if [ "$DIRTY" -eq 1 ] && [ "$i" -eq 0 ]; then
-		SIDE_ROOT[$i]="$REPO_ROOT"
+		SIDE_ROOT[i]="$REPO_ROOT"
 		echo "== side $label: current working tree, UNTOUCHED ($REPO_ROOT) =="
 	else
 		wt="$AB_BASE/$label"
@@ -330,7 +331,7 @@ for i in $(seq 0 $((N_SIDES - 1))); do
 			exit 1
 		fi
 		CREATED_WORKTREES+=("$wt")
-		SIDE_ROOT[$i]="$wt"
+		SIDE_ROOT[i]="$wt"
 	fi
 
 	if [ "${SIDE_TOOLCHAIN[$i]}" -eq 1 ]; then
@@ -462,8 +463,8 @@ for i in $(seq 0 $((N_SIDES - 1))); do
 		fi
 	done
 
-	SIDE_EXTID[$i]="$side_extid"
-	SIDE_INSTALL[$i]="$side_install"
+	SIDE_EXTID[i]="$side_extid"
+	SIDE_INSTALL[i]="$side_install"
 	echo "== side $label summary: extension identity=${side_extid:-UNKNOWN}" \
 		"ghidra install=${side_install:-UNKNOWN} =="
 done
@@ -543,6 +544,7 @@ for id in "${SORTED_IDS[@]}"; do
 			echo "   $label: no dump (row was SKIP/filtered on this side)"
 			continue
 		fi
+		# shellcheck disable=SC2086 # $hashes is a deliberate whitespace-separated list
 		n_states=$(( $(printf '%s\n' $hashes | wc -l) ))
 		if [ "$n_states" -gt 1 ]; then
 			echo "   $label: NONDETERMINISTIC across $REPEAT repeat(s) -- $n_states distinct" \

@@ -489,6 +489,7 @@ flush_batch() {
 	local imports=()
 	for i in "${!names[@]}"; do imports+=(-import "$(native "${fixes[$i]}")"); done
 	# $extra is intentionally unquoted (multi-token loader options), as in run_one_import.
+	# shellcheck disable=SC2086 # $extra is a deliberate multi-token option list (see above)
 	run_headless_timed "$n" "batch $seq" "$blog" "$(native "$proj")" \
 		"$GHIDRA_HEADLESS" "$(native "$proj")" headless \
 		"${imports[@]}" \
@@ -625,6 +626,7 @@ run_one_import() {
 	# That is also the only workable form: -scriptPath's ';'-separated list
 	# (HeadlessOptions.java:266-269) cannot survive analyzeHeadless.bat, which re-tokenizes its
 	# arguments and splits a quoted "path1;path2" back into two ("Bad argument: <path2>").
+	# shellcheck disable=SC2086 # $extra/$hargs/$pargs are deliberate multi-token lists (see above)
 	run_headless_timed 1 "fixture $name" "$log" "$(native "$proj")" \
 		"$GHIDRA_HEADLESS" "$(native "$proj")" headless \
 		-import "$(native "$fixture")" \
@@ -668,7 +670,7 @@ finish_fixture() {
 	# the SUITE verdict line, which a fresh run used to swallow.
 	grep -E '^(CRITERION |SUITE (PASS|FAIL))' "$stripped" || true
 
-	if [ $status -ne 0 ]; then
+	if [ "$status" -ne 0 ]; then
 		echo "FAIL: analyzeHeadless exited $status for $name (log: $log$lognote)"
 		fail=1
 		return

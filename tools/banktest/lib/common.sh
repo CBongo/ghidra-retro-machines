@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Shared helpers for the tools/banktest/*.sh drivers (bead grm-9mw).
 #
 # NOT executable and NOT a standalone script -- source it:
@@ -342,6 +343,7 @@ grm_prune_work_dirs() {
 	case "$keep_days$keep_n" in *[!0-9]*|"") return 0 ;; esac
 	local -A seen=()
 	# Newest first, so the first keep_n per tag are the ones to protect.
+	# shellcheck disable=SC2010 # ls -t gives the newest-first order this loop needs; grep filters names
 	while IFS= read -r d; do
 		[ -n "$d" ] || continue
 		tag="${d%.*}"
@@ -351,7 +353,7 @@ grm_prune_work_dirs() {
 		[ -n "$(find "$base/$d" -maxdepth 0 -mtime +"$keep_days" 2>/dev/null)" ] || continue
 		sz="$(du -sk "$base/$d" 2>/dev/null | cut -f1)"
 		kb=$((kb + ${sz:-0}))
-		rm -rf "$base/$d" && n_dirs=$((n_dirs + 1))
+		rm -rf "${base:?}/$d" && n_dirs=$((n_dirs + 1))
 	done < <(cd "$base" 2>/dev/null && ls -1dt -- *.???????? 2>/dev/null | grep -E '^[A-Za-z0-9_-]+\.[A-Za-z0-9]{8}$')
 	[ "$n_dirs" -gt 0 ] &&
 		echo "== pruned $n_dirs old work dir(s), $((kb / 1024)) MB, from $base (keep ${keep_n}/tag, ${keep_days}d) =="
@@ -582,6 +584,7 @@ grm_decompiler_hash() {
 	[ -n "$bin" ] || return 0
 	# sha256sum prefixes the line with a backslash when the PATH needed escaping (a Windows
 	# path with backslashes); the hash itself is unaffected, so strip it or the table misses.
+	# shellcheck disable=SC1003 # '\\' is tr's escaped backslash, not a quoting mistake
 	sha256sum "$bin" 2>/dev/null | cut -d' ' -f1 | tr -d '\\'
 }
 
@@ -828,6 +831,7 @@ grm_headless_timeout_init() {
 			TIMEOUT_BANNER="${GRM_HEADLESS_TIMEOUT}s flat per headless run (GRM_HEADLESS_TIMEOUT)"
 		fi
 	else
+		# shellcheck disable=SC2034 # documented banner text; no runner prints it yet (read by callers, if any)
 		TIMEOUT_BANNER="${GRM_HEADLESS_TIMEOUT_BASE}s + ${GRM_HEADLESS_TIMEOUT_PER_PROGRAM}s/program"
 	fi
 }
@@ -938,8 +942,10 @@ sanitize() {
 # headless/unit/opt-in split) and run-banktest.sh (headless runner) both read these.
 # GRM_HEADLESS_CHUNKS run under run-banktest.sh; `unit` is JUnit only; GRM_OPTIN_CHUNKS are
 # the opt-in tiers that `all` does NOT include. Order is the --list-chunks order.
+# shellcheck disable=SC2034 # read by build-and-test.sh and run-banktest.sh, which source this file
 GRM_HEADLESS_CHUNKS=(c64-banking c64-loader c64-recovery basic-petscii basic-dialects pet-loader
 	snes-loader c128-loader nes-banking petscii-strings nes-text descriptors)
+# shellcheck disable=SC2034 # read by build-and-test.sh and run-banktest.sh, which source this file
 GRM_OPTIN_CHUNKS=(spc700-vectors spc700-dis-corpus spc-ipl-corpus snes-rom-corpus
 	w65816-vectors 6502-vectors)
 

@@ -282,7 +282,7 @@ if [ "${1:-}" = "--list-sets" ]; then
 		exit 2
 	}
 	printf '%-14s %-6s %-6s %s\n' SET PLATFORM ROWS DESCRIPTION
-	while IFS=$'\t' read -r set_name set_plat set_manifests set_rows set_desc; do
+	while IFS=$'\t' read -r set_name set_plat _ set_rows set_desc; do
 		case "$set_name" in ""|set|"#"*) continue ;; esac
 		if [ "$set_rows" = '*' ]; then
 			row_count=all
@@ -655,6 +655,7 @@ platform_dirs() {
 	local -n pd_out="$2"
 	pd_out=()
 	[ -n "${PLATFORM_DIRS_OF[$1]:-}" ] || return 0
+	# shellcheck disable=SC2034 # nameref: pd_out writes through to the caller's array
 	mapfile -t pd_out <<<"${PLATFORM_DIRS_OF[$1]}"
 }
 POSITIONAL_DIRS=("$@")
@@ -682,7 +683,8 @@ if [ "$ANY_DIRS" -eq 0 ] && [ "$MODE" != coverage ]; then
 	done
 	echo "REALROM: SKIPPED -- no ROM dirs supplied and none of$envs is set. This tier was" \
 		"NOT run; nothing about real-ROM regressions was checked. Set one (each may hold" \
-		"several dirs, space-separated, or ';'-separated if a name has a space) or pass" 		"romdir arguments." >&2
+		"several dirs, space-separated, or ';'-separated if a name has a space) or pass" \
+		"romdir arguments." >&2
 	echo "$USAGE" >&2
 	exit 2
 fi
@@ -715,7 +717,6 @@ use_platform() {
 		_PLAT_IA[$p]="$ia"
 		_PLAT_EXTS[$p]="$ex"
 	fi
-	ROM_ENV="${_PLAT_ENV[$p]}"
 	ROM_LOADER="${_PLAT_LOADER[$p]}"
 	ROM_DUMP_SCRIPT="${_PLAT_DUMP[$p]}"
 	ROM_COPY_EXT="${_PLAT_COPY[$p]}"
@@ -740,13 +741,13 @@ manifest_rows() {
 # Every manifest named by ANY set, selected or not -- for the questions that are about the
 # repo rather than about this invocation (id uniqueness, "is this ROM already pinned?").
 all_declared_manifests() {
-	local s mf seen=""
+	local s mf seen_mf=""
 	for s in "${ALL_SETS[@]}"; do
 		local old_ifs="$IFS"; IFS=','
 		for mf in $(tsv_field "$SETS_TSV" "$s" manifests); do
 			IFS="$old_ifs"
-			case "$seen" in *" $mf "*) IFS=','; continue ;; esac
-			seen="$seen $mf "
+			case "$seen_mf" in *" $mf "*) IFS=','; continue ;; esac
+			seen_mf="$seen_mf $mf "
 			[ -f "$REALROM_DIR/$mf" ] && printf '%s\n' "$REALROM_DIR/$mf"
 			IFS=','
 		done
@@ -786,6 +787,7 @@ dupe_ids="$(cat "${all_manifests[@]}" | tr -d '\r' \
 	| LC_ALL=C sort | uniq -d)"
 if [ -n "$dupe_ids" ]; then
 	echo "ERROR: id(s) appear in more than one manifest:" >&2
+	# shellcheck disable=SC2086 # deliberate: dupe_ids is a newline-separated id list, one per printf line
 	printf '  %s\n' $dupe_ids >&2
 	echo "       Each id must be unique across ${all_manifests[*]}" >&2
 	exit 2
@@ -861,21 +863,21 @@ if [ "$MODE" = nominate ]; then
 		# including both header-rot cases it handles: NES 2.0's 12-bit mapper, and the
 		# "DiskDude!"-style archaic headers that scribble ASCII into bytes 7-15, where
 		# flags7's high nibble is not a mapper nibble and only the low nibble may be trusted.
-		local h
+		local hdr
 		# shellcheck disable=SC2207
-		h=($(od -An -tu1 -N16 -v "$1" 2>/dev/null)) || return 1
-		[ "${#h[@]}" -eq 16 ] || return 1
+		hdr=($(od -An -tu1 -N16 -v "$1" 2>/dev/null)) || return 1
+		[ "${#hdr[@]}" -eq 16 ] || return 1
 		# "NES\x1a"
-		[ "${h[0]}" -eq 78 ] && [ "${h[1]}" -eq 69 ] &&
-			[ "${h[2]}" -eq 83 ] && [ "${h[3]}" -eq 26 ] || return 1
-		local low=$(( h[6] >> 4 ))
-		if [ $(( h[7] & 0x0C )) -eq 8 ]; then
-			printf '%d' $(( ((h[8] & 0x0F) << 8) | (h[7] & 0xF0) | low ))
-		elif [ "${h[12]}" -ne 0 ] || [ "${h[13]}" -ne 0 ] ||
-			[ "${h[14]}" -ne 0 ] || [ "${h[15]}" -ne 0 ]; then
+		[ "${hdr[0]}" -eq 78 ] && [ "${hdr[1]}" -eq 69 ] &&
+			[ "${hdr[2]}" -eq 83 ] && [ "${hdr[3]}" -eq 26 ] || return 1
+		local low=$(( hdr[6] >> 4 ))
+		if [ $(( hdr[7] & 0x0C )) -eq 8 ]; then
+			printf '%d' $(( ((hdr[8] & 0x0F) << 8) | (hdr[7] & 0xF0) | low ))
+		elif [ "${hdr[12]}" -ne 0 ] || [ "${hdr[13]}" -ne 0 ] ||
+			[ "${hdr[14]}" -ne 0 ] || [ "${hdr[15]}" -ne 0 ]; then
 			printf '%d' "$low"
 		else
-			printf '%d' $(( (h[7] & 0xF0) | low ))
+			printf '%d' $(( (hdr[7] & 0xF0) | low ))
 		fi
 	}
 
@@ -883,12 +885,12 @@ if [ "$MODE" = nominate ]; then
 		# $1 mapper -> board id (the descriptor's `id:`) on stdout, or empty.
 		# Reads the shipped descriptors' `ines_mappers:` directly rather than duplicating
 		# the table, so a newly-shipped board is nominatable the day it lands.
-		local want="$1" f list
+		local want_mapper="$1" f list
 		for f in "$REPO_ROOT"/machines/nes-*.yaml; do
 			list="$(awk -F'ines_mappers:' '/ines_mappers:/{print $2; exit}' "$f" |
 				tr -cd '0-9,' )"
 			case ",$list," in
-				*",$want,"*) awk '/^[[:space:]]*id:/{print $2; exit}' "$f"; return 0 ;;
+				*",$want_mapper,"*) awk '/^[[:space:]]*id:/{print $2; exit}' "$f"; return 0 ;;
 			esac
 		done
 		return 1
@@ -946,6 +948,7 @@ if [ "$MODE" = nominate ]; then
 	c_base=(); c_id=(); c_sha=(); c_mapper=(); c_tier=(); c_pin=(); c_order=()
 	shopt -s nullglob nocaseglob
 	platform_dirs "${PLATFORMS_USED[0]}" nominate_dirs
+	# shellcheck disable=SC2154 # filled via nameref by platform_dirs above
 	for dir in "${nominate_dirs[@]}"; do
 		# Normalize away trailing slashes so the "is it in a per-title subdir?" test below
 		# is an exact path comparison rather than a basename guess.
@@ -954,6 +957,7 @@ if [ "$MODE" = nominate ]; then
 			[ -f "$f" ] || continue
 			base="$(basename "$f" .nes)"
 			if ! mapper="$(ines_mapper "$f")"; then
+				# shellcheck disable=SC2028 # the \\x1a is printed literally (echo turns \\ into one backslash)
 				echo "# NOT an iNES image (no NES\\x1a magic), skipped: $f"
 				n_notines=$((n_notines + 1))
 				continue
@@ -971,7 +975,7 @@ if [ "$MODE" = nominate ]; then
 			esac
 			i=${#c_base[@]}
 			c_base+=("$base")
-			c_id+=("$(printf '%s' "$id_raw" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9' '_' | sed 's/__*/_/g; s/^_//; s/_$//')")
+			c_id+=("$(printf '%s' "$id_raw" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '_' | sed 's/__*/_/g; s/^_//; s/_$//')")
 			c_sha+=("$sha"); c_mapper+=("$mapper"); c_pin+=("$pin")
 			dump_tier "$base"; c_tier+=("$REPLY")
 			title_key "$base"
@@ -1047,14 +1051,14 @@ fi
 # workflow, and the row walk already reports that as a FAIL with a clearer message.
 if [ "$MODE" = check ]; then
 	mismatched=""
-	while IFS=$'\t' read -r g_plat g_id g_title g_sha _ _ g_golden _ _; do
+	while IFS=$'\t' read -r g_plat g_id _ g_sha _ _ g_golden _ _; do
 		case "${g_id:-}" in ""|id|\#*) continue ;; esac
 		g_path="$EXPECTED_DIR/${g_golden:-$g_id.dump}"
 		[ -f "$g_path" ] || continue
 		g_ext="$(tsv_field "$PLATFORMS_TSV" "$g_plat" copy_ext)"
 		g_prog="$(awk '/^REALROM program /{print $3; exit}' "$g_path")"
 		g_gsha="$(awk '/^REALROM sha256 /{print tolower($3); exit}' "$g_path")"
-		g_want="$(printf '%s' "$g_sha" | tr 'A-Z' 'a-z' | tr -d '[:space:]')"
+		g_want="$(printf '%s' "$g_sha" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
 		if [ "$g_prog" != "$g_id$g_ext" ] || [ "$g_gsha" != "$g_want" ]; then
 			mismatched="$mismatched  $g_id: $(basename "$g_path") says program=$g_prog sha=${g_gsha:0:12}...
 "
@@ -1210,12 +1214,12 @@ if [ "$MODE" = coverage ]; then
 		[ -n "${id:-}" ]; do
 		case "${id:-}" in ""|id|\#*) continue ;; esac
 		case "$SET_IDS" in *",$id,"*) ;; *) continue ;; esac
-		if { [ -n "$ONLY_IDS" ] && [ "${ONLY_IDS#*,$id,}" = "$ONLY_IDS" ]; } ||
-			{ [ -n "$EXCEPT_IDS" ] && [ "${EXCEPT_IDS#*,$id,}" != "$EXCEPT_IDS" ]; }; then
+		if { [ -n "$ONLY_IDS" ] && [ "${ONLY_IDS#*,"$id",}" = "$ONLY_IDS" ]; } ||
+			{ [ -n "$EXCEPT_IDS" ] && [ "${EXCEPT_IDS#*,"$id",}" != "$EXCEPT_IDS" ]; }; then
 			continue
 		fi
 		use_platform "$row_plat"
-		sha="$(printf '%s' "$sha" | tr 'A-Z' 'a-z' | tr -d '[:space:]')"
+		sha="$(printf '%s' "$sha" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
 		key="$(realrom_cache_key "$id" "$sha" "${opts:-}")"
 		n_cov_total=$((n_cov_total + 1))
 		if [ -n "$key" ] && [ -f "$CACHE_DIR/$key.dump" ]; then
@@ -1295,6 +1299,7 @@ shopt -s nullglob nocaseglob
 for idx_plat in "${PLATFORMS_USED[@]}"; do
 	use_platform "$idx_plat"
 	platform_dirs "$idx_plat" idx_dirs
+	# shellcheck disable=SC2154 # idx_dirs is filled via nameref by platform_dirs above
 	[ ${#idx_dirs[@]} -gt 0 ] || continue
 	for dir in "${idx_dirs[@]}"; do
 		if [ ! -d "$dir" ]; then
@@ -1322,7 +1327,7 @@ for idx_plat in "${PLATFORMS_USED[@]}"; do
 					{ ix_rest="${ix_old#* }"; [ "${ix_rest%% *}" = "$ix_mt" ]; }; then
 					h="${ix_rest#* }"
 				else
-					h="$(sha256sum "$f" | cut -d' ' -f1 | tr 'A-Z' 'a-z')"
+					h="$(sha256sum "$f" | cut -d' ' -f1 | tr '[:upper:]' '[:lower:]')"
 					idx_dirty=1
 					idx_hashed=$((idx_hashed + 1))
 				fi
@@ -1528,7 +1533,7 @@ finish_row() {
 	# Second-layer hash check: the SHA-256 Ghidra computed on the imported bytes must
 	# equal the manifest pin (belt-and-suspenders over the index match).
 	local dumped_sha
-	dumped_sha="$(sed -n 's/^REALROM sha256 //p' "$out" | head -n1 | tr 'A-Z' 'a-z')"
+	dumped_sha="$(sed -n 's/^REALROM sha256 //p' "$out" | head -n1 | tr '[:upper:]' '[:lower:]')"
 	if [ "$dumped_sha" != "$sha" ]; then
 		ROW_ID+=("$id"); ROW_STATUS+=("FAIL")
 		ROW_DETAIL+=("sha mismatch: dumped=$dumped_sha manifest=$sha")
@@ -1758,6 +1763,7 @@ flush_batch() {
 	use_platform "$saved_plat"
 }
 
+# shellcheck disable=SC2034 # member is the last field: it must exist so opts does not absorb the tail
 while IFS=$'\t' read -r row_plat id title sha mapper board golden opts member ||
 	[ -n "${id:-}" ]; do
 	# Skip blank lines, the bare header row, and comments. The manifest deliberately carries
@@ -1775,8 +1781,8 @@ while IFS=$'\t' read -r row_plat id title sha mapper board golden opts member ||
 
 	# Row selection (--only/--except). Applied before any import work, so a filtered row
 	# costs nothing. Filtered rows are counted but produce no ROW_* entry: they are not results.
-	if { [ -n "$ONLY_IDS" ] && [ "${ONLY_IDS#*,$id,}" = "$ONLY_IDS" ]; } ||
-		{ [ -n "$EXCEPT_IDS" ] && [ "${EXCEPT_IDS#*,$id,}" != "$EXCEPT_IDS" ]; }; then
+	if { [ -n "$ONLY_IDS" ] && [ "${ONLY_IDS#*,"$id",}" = "$ONLY_IDS" ]; } ||
+		{ [ -n "$EXCEPT_IDS" ] && [ "${EXCEPT_IDS#*,"$id",}" != "$EXCEPT_IDS" ]; }; then
 		n_filtered=$((n_filtered + 1))
 		echo "-- $id ($title): filtered out"
 		continue
@@ -1786,7 +1792,7 @@ while IFS=$'\t' read -r row_plat id title sha mapper board golden opts member ||
 	# Installed per row rather than per run, which is what lets one invocation span platforms;
 	# placed after the filters, and memoized, so filtered rows cost nothing (grm-x4y1.4).
 	use_platform "$row_plat"
-	sha="$(printf '%s' "$sha" | tr 'A-Z' 'a-z' | tr -d '[:space:]')"
+	sha="$(printf '%s' "$sha" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
 	golden="${golden:-$id.dump}"
 	opts="${opts:-}"
 	golden_path="$EXPECTED_DIR/$golden"
