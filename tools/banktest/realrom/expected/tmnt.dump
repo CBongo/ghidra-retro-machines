@@ -24,7 +24,7 @@ REALROM count bankComments 106
 REALROM count warnings 5
 REALROM count notes 12
 REALROM count symbols 110
-REALROM count jumptable.wordArrays 4
+REALROM count jumptable.wordArrays 5
 REALROM sample.bankcomment a947 bank -> mirroring=3,prg_mode=3,prg_bank=3 via FUN_ce56 [switch-value flow]
 REALROM sample.bankcomment bf6c bank -> mirroring=3,prg_mode=3,prg_bank=2 via FUN_ce56 [switch-value flow]
 REALROM sample.bankcomment c003 bank -> mirroring=0,prg_mode=3,prg_bank=2? via FUN_cea7 [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=1,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
@@ -201,6 +201,7 @@ REALROM sample.symbol 8d2e case_11 USER_DEFINED primary=true
 REALROM sample.symbol 8d44 case_12 USER_DEFINED primary=true
 REALROM sample.symbol.truncated 25 of 98
 REALROM sample.jumptable 8fb8 word[6]
+REALROM sample.jumptable 8fc4 word[4]
 REALROM sample.jumptable W8000_B5::82e3 word[38]
 REALROM sample.jumptable W8000_B5::940a word[45]
 REALROM sample.jumptable W8000_B5::9477 word[23]

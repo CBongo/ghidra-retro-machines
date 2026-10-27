@@ -113,7 +113,9 @@ import ghidra.util.task.TaskMonitor;
  * command do the labelling itself.</li>
  * </ul>
  * In both cases this analyzer creates no function itself. It is a no-op -- nothing written, no
- * comment left -- whenever the bound doesn't apply or doesn't shrink the table.
+ * comment left -- whenever the bound doesn't apply or doesn't shrink the table, with one
+ * exception (grm-k50b): a bound that keeps every case confirms the decompiler's count, and a
+ * word table of exactly those cases is laid as {@code word[n]} with its references, uncommented.
  *
  * <p><b>Design decisions (grm-eyn):</b>
  * <ul>
@@ -158,6 +160,9 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 
 	/** Matches {@code DecompilerSwitchAnalyzer.OPTION_DEFAULT_DECOMPILER_TIMEOUT_SECS}. */
 	private static final int DECOMPILE_TIMEOUT_SECS = 60;
+
+	/** grm-k50b: a doubled 8-bit index reaches 128 words; a count that large proves no guard. */
+	private static final int CONFIRMED_ARRAY_MAX = 128;
 
 	/**
 	 * Configures {@code ifc} exactly as {@link SwitchAnalysisDecompileConfigurer} does, with one
@@ -590,7 +595,13 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		}
 		boolean shrinks = result.isBounded() && result.count() < realCases.size();
 		if (!shrinks && !isCrossBank) {
-			return false; // decline, or would not shrink the table -- must be a no-op
+			// grm-k50b: a bound that keeps every case confirms the decompiler's own count, so the
+			// table is laid as an array with nothing else written; any other decline stays a no-op.
+			if (result.isBounded() && result.count() == realCases.size() && searched == null &&
+				!mixed && result.stride() == 1 && result.planarGap() == 0) {
+				layConfirmedArray(program, switchAddr, lowestMovingTableAddr, realCases);
+			}
+			return false;
 		}
 		// A cross-bank table is pinned whether or not it could be bounded (grm-pwuh): the
 		// decompiler's own reading is the wrong bank's, so declining would leave its garbage.
@@ -655,17 +666,9 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 					for (int idx : arrayLayout.caseIndex()) {
 						arrayTargets.add(firstN.get(idx));
 					}
-					// A target inside the table's own bytes is code over the array (tables that
-					// overlap their handlers, deadly_towers ddd0): data there would unmake it.
-					long first = arrayAt.getOffset();
-					long last = first + 2L * arrayLayout.count() - 1;
-					for (Address t : arrayTargets) {
-						if (sameMemory(t.getAddressSpace(), arrayAt.getAddressSpace()) &&
-							t.getOffset() >= first && t.getOffset() <= last) {
-							arrayLayout = null;
-							arrayTargets = null;
-							break;
-						}
+					if (targetInsideArray(arrayAt, arrayLayout.count(), arrayTargets)) {
+						arrayLayout = null;
+						arrayTargets = null;
 					}
 				}
 				if (arrayLayout != null) {
@@ -818,6 +821,69 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		JumpTableBound.Result r = JumpTableBound.boundByDistinctWords(words,
 			found.getAddress().getOffset(), caseTargets);
 		return r.isBounded() ? r : null;
+	}
+
+	/**
+	 * grm-k50b: lays {@code word[n]} over a table whose bound confirmed the decompiler's own case
+	 * count, when its words are exactly those cases in order (+0 or RTS-trick +1) and every case
+	 * decodes as code. Writes no comment: nothing was bounded, and the array is its own record.
+	 */
+	private void layConfirmedArray(Program program, Address switchAddr, Address arrayAt,
+			List<Address> cases) {
+		if (arrayAt == null) {
+			return;
+		}
+		int n = cases.size();
+		if (n >= CONFIRMED_ARRAY_MAX) {
+			return; // the whole doubled-byte index: the decompiler had no reason to stop sooner
+		}
+		// The entry after the last case. A bound that keeps every case only says no rule found an
+		// end (a table above its targets "keeps" all 128 over-read entries), so the decompiler's
+		// own stop must be a guard. Unguarded, its 16-bit recovery stops only at a zero word or
+		// unreadable table bytes (JumpBasic::sanityCheck); stopping before a readable, nonzero word
+		// is the guard. A word equal to a case may be a case list deduplicated by target (grm-uzep).
+		List<Long> words = wordsAt(program, arrayAt, n + 1);
+		if (words == null || words.get(n) == 0) {
+			return;
+		}
+		List<Long> offsets = new ArrayList<>(cases.size());
+		List<Boolean> decodes = new ArrayList<>(cases.size());
+		for (Address a : cases) {
+			offsets.add(a.getOffset());
+			decodes.add(InlineJumpTableDispatch.decodesAsCode(program, a, true) &&
+				!JumpTableBound.looksLikeWordTable(bytesAt(program, a, 2 * JumpTableBound.WORD_TABLE_RUN)));
+		}
+		// grm-0pen's cut, as the shrinking path applies it: one it would make leaves the count in doubt.
+		if (JumpTableBound.codePrefix(decodes) < cases.size()) {
+			return;
+		}
+		JumpTableArray.Layout layout = JumpTableArray.matchOrdered(words, offsets);
+		if (layout == null || targetInsideArray(arrayAt, layout.count(), cases) ||
+			offsets.contains((words.get(n) + layout.bias()) & 0xffff)) {
+			return;
+		}
+		if (JumpTableArrays.isLaid(program, arrayAt, cases)) {
+			return;
+		}
+		JumpTableArrays.unlay(program, arrayAt);
+		boolean laid = JumpTableArrays.layWords(program, arrayAt, cases);
+		AnalyzerLog.info(this, "jump table array at " + switchAddr + ": " +
+			(laid ? "laid word[" + layout.count() + "] at " + arrayAt + " (count confirmed)"
+					: "declined at " + arrayAt));
+	}
+
+	/** grm-deve: whether a target lies inside the array's own bytes -- code over the table (tables
+	 *  that overlap their handlers, deadly_towers ddd0), which laying data there would unmake. */
+	private static boolean targetInsideArray(Address arrayAt, int count, List<Address> targets) {
+		long first = arrayAt.getOffset();
+		long last = first + 2L * count - 1;
+		for (Address t : targets) {
+			if (sameMemory(t.getAddressSpace(), arrayAt.getAddressSpace()) &&
+				t.getOffset() >= first && t.getOffset() <= last) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** grm-deve: the one moving load table of a deduplicated-case-list switch, when it is a byte

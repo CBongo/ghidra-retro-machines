@@ -398,6 +398,37 @@ public class JumpTableBoundProgramTest extends AbstractBundledLanguageTest {
 		assertNoOverrideWritten(program, function, true);
 	}
 
+	/** grm-k50b: the same explicitly bounded table. The lowest-target bound keeps all 8 cases,
+	 *  confirming the decompiler's count, so the table is laid as word[8] with its references --
+	 *  and nothing else: no override, no comment. A second pass changes nothing. */
+	@Test
+	public void confirmedCountIsLaidAsWordArrayWithoutComment() throws Exception {
+		ProgramDB program = buildProgram(TABLE, true);
+		Function function = createFunction(program, addr(0x8000));
+		for (int pass = 0; pass < 2; pass++) {
+			inTx(program, "analyze", () -> {
+				new JumpTableBoundAnalyzer().added(program, new AddressSet(function.getBody()),
+					TaskMonitor.DUMMY, new MessageLog());
+			});
+			assertWordArrayWithRefs(program, 8);
+		}
+		assertNoOverrideWritten(program, function, true);
+	}
+
+	/** grm-k50b negative: no guard, but a zero word after the 8 real entries stops the
+	 *  decompiler's recovery there anyway. The 8 cases are right, but nothing proves it, so
+	 *  no array: the stop is the zero word's, not a guard's. */
+	@Test
+	public void zeroWordStopIsNotAConfirmedCount() throws Exception {
+		ProgramDB program = buildProgram(TABLE, false, 0);
+		Function function = createFunction(program, addr(0x8000));
+		inTx(program, "analyze", () -> {
+			new JumpTableBoundAnalyzer().added(program, new AddressSet(function.getBody()),
+				TaskMonitor.DUMMY, new MessageLog());
+		});
+		assertNull(program.getListing().getDefinedDataAt(addr(TABLE)));
+	}
+
 	/** Table AFTER its code (grm-akiv, the megaman e000 layout): the lowest-target rule declines,
 	 *  and the switch window bounds it to the 8 real targets, which all lie between the switch
 	 *  ($800c) and the table ($8500). The fake entries point past the table ($8600). */
@@ -442,6 +473,8 @@ public class JumpTableBoundProgramTest extends AbstractBundledLanguageTest {
 		});
 
 		assertNoOverrideWritten(program, function, false);
+		// grm-k50b: a decline is not a confirmed count; no array either.
+		assertNull(program.getListing().getDefinedDataAt(addr(aboveTable)));
 	}
 
 	/** grm-jt7s (megaman2 92e4): the usual order is stock switch analysis FIRST, laying a
