@@ -42,6 +42,7 @@ import ghidra.app.script.GhidraScript;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.data.Array;
+import ghidra.program.model.data.ByteDataType;
 import ghidra.program.model.data.WordDataType;
 import ghidra.program.model.listing.Bookmark;
 import ghidra.program.model.listing.CommentType;
@@ -267,6 +268,32 @@ public class RealRomDump extends GhidraScript {
 			}
 		}
 
+		// Planar lo/hi arrays (grm-d3tu): byte[n] whose EVERY entry carries one of our ANALYSIS data
+		// references (stock's lone pointer-table-fallback reference on a byte table's first byte is
+		// not enough). The high half carries none and is not listed.
+		List<String> planarArrays = new ArrayList<>();
+		for (Data data : currentProgram.getListing().getDefinedData(true)) {
+			if (!(data.getDataType() instanceof Array arr) ||
+				!(arr.getDataType() instanceof ByteDataType)) {
+				continue;
+			}
+			boolean all = true;
+			for (int i = 0; i < arr.getNumElements() && all; i++) {
+				boolean has = false;
+				for (Reference r : currentProgram.getReferenceManager()
+						.getReferencesFrom(data.getMinAddress().add(i))) {
+					has |= RefType.DATA.equals(r.getReferenceType()) &&
+						r.getSource() == SourceType.ANALYSIS;
+				}
+				all = has;
+			}
+			if (all) {
+				AddressSpace space = data.getMinAddress().getAddressSpace();
+				planarArrays.add((space.isOverlaySpace() ? space.getName() + "::" : "") +
+					fmt(data.getMinAddress()) + " byte[" + arr.getNumElements() + "]");
+			}
+		}
+
 		Collections.sort(blocks);
 		// Fixed-block invariant (grm-x4y1.6): present exactly once, removed from the printed layout.
 		for (String fixed : FIXED_BLOCKS) {
@@ -284,6 +311,7 @@ public class RealRomDump extends GhidraScript {
 		Collections.sort(warnings);
 		Collections.sort(notes);
 		Collections.sort(wordArrays);
+		Collections.sort(planarArrays);
 
 		String placement = currentProgram.getOptions(Program.PROGRAM_INFO)
 				.getString(PLACEMENT_OVERRIDE_PROPERTY, null);
@@ -310,6 +338,7 @@ public class RealRomDump extends GhidraScript {
 		println("REALROM count notes " + noteCount);
 		println("REALROM count symbols " + symbolCount);
 		println("REALROM count jumptable.wordArrays " + wordArrays.size());
+		println("REALROM count jumptable.planarArrays " + planarArrays.size());
 
 		out.emitSample("sample.bankcomment", bankComments, SAMPLE_BANKCOMMENTS);
 		out.emitSample("sample.ref", overlayRefs, SAMPLE_REFS);
@@ -317,6 +346,7 @@ public class RealRomDump extends GhidraScript {
 		out.emitSample("sample.note", notes, SAMPLE_NOTES);
 		out.emitSample("sample.symbol", symbols, SAMPLE_SYMBOLS);
 		out.emitSample("sample.jumptable", wordArrays, SAMPLE_JUMPTABLES);
+		out.emitSample("sample.jumptable.planar", planarArrays, SAMPLE_JUMPTABLES);
 
 		out.end();
 	}

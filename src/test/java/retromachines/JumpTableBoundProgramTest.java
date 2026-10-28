@@ -771,6 +771,160 @@ public class JumpTableBoundProgramTest extends AbstractBundledLanguageTest {
 		assertTrue(comment, comment.contains("laid word[8] (RTS-trick: entry = target - 1)"));
 	}
 
+	/**
+	 * grm-d3tu: a planar lo/hi dispatch ({@code AND #$3F / TAY / LDA lo,Y / STA $04 / LDA hi,Y / STA $05 /
+	 * JMP ($0004)}, the AND giving a bound which makes the decompiler count 64 cases), 8 real entries, halves 8 bytes apart so the high half ends where the code
+	 * begins. Every byte past the real low bytes is the high byte $82 or filler $88 ({@code DEY}),
+	 * so all over-read targets land in mapped code.
+	 */
+	private ProgramDB buildPlanarProgram() throws Exception {
+		builder = newBuilder("Test", LANG);
+		uninitializedRam(builder, ".zp", "0x0", 0x100);
+		builder.createMemory(".text", "0x8000", 0x1000);
+		builder.setBytes("0x8000", "29 3f a8 b9 00 82 85 04 b9 08 82 85 05 6c 04 00", true);
+		StringBuilder table = new StringBuilder();
+		for (long target : REAL_TARGETS) {
+			table.append(String.format("%02x ", target & 0xff));
+		}
+		for (int i = 0; i < 8; i++) {
+			table.append("82 ");
+		}
+		for (int i = 16; i < 80; i++) {
+			table.append("88 ");
+		}
+		builder.setBytes("0x8200", table.toString().trim(), false);
+		StringBuilder code = new StringBuilder();
+		for (int i = 0; i < 0xb0; i++) {
+			code.append("ea "); // NOPs under the handlers past the table
+		}
+		builder.setBytes("0x8250", code.toString().trim(), false);
+		return builder.getProgram();
+	}
+
+	private void analyzePlanar(ProgramDB program, JumpTableBoundAnalyzer analyzer, Function function)
+			throws Exception {
+		inTx(program, "analyze", () -> {
+			analyzer.added(program, new AddressSet(function.getBody()), TaskMonitor.DUMMY,
+				new MessageLog());
+		});
+	}
+
+	/** byte[8] at lo and at lo+8; entry i of the low array refers to REAL_TARGETS[i], nothing else
+	 *  in the neighbourhood carries a data reference (the high half and over-read entries: none). */
+	private void assertPlanarArraysWithRefs(ProgramDB program) {
+		for (long at : new long[] { TABLE, TABLE + 8 }) {
+			ghidra.program.model.listing.Data d = program.getListing().getDefinedDataAt(addr(at));
+			assertNotNull("expected an array at " + Long.toHexString(at), d);
+			ghidra.program.model.data.Array a = (ghidra.program.model.data.Array) d.getDataType();
+			assertEquals("byte[8]", a.getDataType().getName() + "[" + a.getNumElements() + "]");
+		}
+		java.util.List<Reference> refs = dataRefsFrom(program, TABLE - 0x100, TABLE + 0x400);
+		assertEquals(8, refs.size());
+		for (Reference r : refs) {
+			int i = (int) (r.getFromAddress().getOffset() - TABLE);
+			assertTrue("reference from a low entry", i >= 0 && i < 8);
+			assertEquals(addr(REAL_TARGETS[i]), r.getToAddress());
+			assertEquals(SourceType.ANALYSIS, r.getSource());
+		}
+	}
+
+	@Test
+	public void planarTableIsLaidAsTwoByteArraysWithRefsFromLoEntries() throws Exception {
+		ProgramDB program = buildPlanarProgram();
+		Function function = createFunction(program, addr(0x8000));
+		JumpTableBoundAnalyzer analyzer = new JumpTableBoundAnalyzer();
+		analyzePlanar(program, analyzer, function);
+		assertPlanarArraysWithRefs(program);
+		String comment = program.getListing().getComment(CommentType.EOL, addr(0x800d));
+		assertNotNull(comment);
+		assertTrue(comment, comment.contains("planar lo/hi tables 8 apart"));
+		assertTrue(comment, comment.contains("laid byte[8] lo/hi"));
+		long modified = program.getModificationNumber();
+		analyzePlanar(program, analyzer, function);
+		assertPlanarArraysWithRefs(program);
+		assertEquals(modified, program.getModificationNumber());
+	}
+
+	/** grm-d3tu plus grm-vzp2: whatever stock switch analysis does to our pair, the relay pass
+	 *  restores it (or finds it intact). */
+	@Test
+	public void planarPairClearedByStockSwitchAnalysisIsRelaid() throws Exception {
+		ProgramDB program = buildPlanarProgram();
+		Function function = createFunction(program, addr(0x8000));
+		JumpTableBoundAnalyzer analyzer = new JumpTableBoundAnalyzer();
+		analyzePlanar(program, analyzer, function);
+		assertPlanarArraysWithRefs(program);
+		DecompileResults stock = decompileWithJumpLoads(program, function);
+		assertTrue(stock.getErrorMessage(), stock.decompileCompleted());
+		inTx(program, "stock", () -> {
+			new DecompilerSwitchAnalysisCmd(stock).applyTo(program, TaskMonitor.DUMMY);
+		});
+		boolean intact = JumpTableArrays.isLaidPlanar(program, addr(TABLE), 8, realTargetList());
+		// Stock left the pair alone here (observed); relay is then a no-op ...
+		inTx(program, "relay", () -> assertEquals(intact ? 0 : 1, analyzer.relayCleared(program)));
+		assertPlanarArraysWithRefs(program);
+		// ... so force the clobber it could cause: one merged byte array over both halves, as stock lays by load size.
+		inTx(program, "clobber", () -> {
+			try {
+				program.getListing().clearCodeUnits(addr(TABLE), addr(TABLE + 0xf), false);
+				program.getReferenceManager().removeAllReferencesFrom(addr(TABLE), addr(TABLE + 7));
+				program.getListing().createData(addr(TABLE),
+					new ghidra.program.model.data.ArrayDataType(
+						ghidra.program.model.data.ByteDataType.dataType, 16, 1));
+			}
+			catch (Exception e) {
+				throw new RuntimeException(e);
+			}
+		});
+		inTx(program, "relay clobbered", () -> assertEquals(1, analyzer.relayCleared(program)));
+		assertPlanarArraysWithRefs(program);
+	}
+
+	/** grm-d3tu: the layer is all-or-nothing across the halves, absorbs stock's merged byte array,
+	 *  and {@code unlayPlanar} takes back the pair and its references. */
+	@Test
+	public void planarLayerDeclinesOverCodeAbsorbsStockAndUnlays() throws Exception {
+		ProgramDB program = buildPlanarProgram();
+		java.util.List<Address> targets = realTargetList().subList(0, 4);
+		inTx(program, "stock-like", () -> {
+			try {
+				program.getListing().createData(addr(TABLE),
+					new ghidra.program.model.data.ArrayDataType(
+						ghidra.program.model.data.ByteDataType.dataType, 64, 1));
+			}
+			catch (Exception e) {
+				throw new RuntimeException(e);
+			}
+		});
+		inTx(program, "lay", () -> assertTrue(JumpTableArrays.layPlanar(program, addr(TABLE), 8,
+			targets)));
+		assertTrue(JumpTableArrays.isLaidPlanar(program, addr(TABLE), 8, targets));
+		assertNull("stock's merged array tail is gone",
+			program.getListing().getDefinedDataAt(addr(TABLE + 16)));
+		assertEquals(4, dataRefsFrom(program, TABLE - 0x100, TABLE + 0x400).size());
+		inTx(program, "unlay", () -> assertTrue(JumpTableArrays.unlayPlanar(program, addr(TABLE), 8)));
+		assertNull(program.getListing().getDefinedDataAt(addr(TABLE)));
+		assertNull(program.getListing().getDefinedDataAt(addr(TABLE + 8)));
+		assertEquals(0, dataRefsFrom(program, TABLE - 0x100, TABLE + 0x400).size());
+
+		// An instruction over the HIGH half declines, leaving the low half untouched.
+		setBytes(program, TABLE + 0x108, "ea ea", true);
+		inTx(program, "decline", () -> assertTrue(
+			!JumpTableArrays.layPlanar(program, addr(TABLE + 0x100), 8, targets)));
+		assertNull(program.getListing().getDefinedDataAt(addr(TABLE + 0x100)));
+		// Halves that would overlap decline.
+		inTx(program, "overlap", () -> assertTrue(
+			!JumpTableArrays.layPlanar(program, addr(TABLE), 2, targets)));
+	}
+
+	private java.util.List<Address> realTargetList() {
+		java.util.List<Address> out = new java.util.ArrayList<>();
+		for (long t : REAL_TARGETS) {
+			out.add(addr(t));
+		}
+		return out;
+	}
+
 	/** word[count] at the table, entry i referring to REAL_TARGETS[i] by a DATA reference, and no
 	 *  data reference from anywhere else in the table's neighbourhood. */
 	private void assertWordArrayWithRefs(ProgramDB program, int count) {

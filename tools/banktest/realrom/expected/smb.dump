@@ -17,6 +17,7 @@ REALROM count warnings 0
 REALROM count notes 6
 REALROM count symbols 18
 REALROM count jumptable.wordArrays 0
+REALROM count jumptable.planarArrays 0
 REALROM sample.note 8325 [CopyLoopAnalyzer] copy-shaped loop RAM:831d -> RAM:0300 (8 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note 8876 [CopyLoopAnalyzer] copy-shaped loop RAM:87ed -> RAM:0304 (5 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note 90a9 [CopyLoopAnalyzer] copy-shaped loop RAM:8fbc -> RAM:06e4 (15 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.

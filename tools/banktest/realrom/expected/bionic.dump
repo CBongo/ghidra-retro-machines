@@ -33,6 +33,7 @@ REALROM count warnings 0
 REALROM count notes 5
 REALROM count symbols 18
 REALROM count jumptable.wordArrays 0
+REALROM count jumptable.planarArrays 0
 REALROM sample.bankcomment c04b bank -> mirroring=2,prg_mode=3,prg_bank=0? via FUN_dcc3 [known: mirroring.0=0,mirroring.1=1,prg_mode.0=1,prg_mode.1=1; assumed from initial: prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
 REALROM sample.bankcomment c13f bank -> mirroring=2,prg_mode=3,prg_bank=12 via LAB_dcaa (mid-body entry in FUN_dca8) [switch-value flow]
 REALROM sample.bankcomment c14a bank -> mirroring=2,prg_mode=3,prg_bank=12 via LAB_dcaa (mid-body entry in FUN_dca8) [switch-value flow]

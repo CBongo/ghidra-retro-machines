@@ -82,6 +82,7 @@ REALROM count warnings 4
 REALROM count notes 2
 REALROM count symbols 17
 REALROM count jumptable.wordArrays 0
+REALROM count jumptable.planarArrays 0
 REALROM sample.bankcomment 8066 bank -> select=7,prg_mode=1,r6=0,r7=44 (wraps to 12) via FUN_8746 [switch-value flow]
 REALROM sample.bankcomment 808a bank -> select=7,prg_mode=1,r6=0,r7=44 (wraps to 12) via FUN_919e [switch-value flow]
 REALROM sample.bankcomment 80c6 bank -> select=7,prg_mode=1,r6=0,r7=44 (wraps to 12) via FUN_91d1 [switch-value flow]

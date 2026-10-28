@@ -33,6 +33,7 @@ REALROM count warnings 4
 REALROM count notes 38
 REALROM count symbols 33
 REALROM count jumptable.wordArrays 0
+REALROM count jumptable.planarArrays 1
 REALROM sample.bankcomment 802a bank -> mirroring=2,prg_mode=3,prg_bank=14 via FUN_c05d [switch-value flow]
 REALROM sample.bankcomment 814c bank -> mirroring=0,prg_mode=3,prg_bank=13? via FUN_c70c [known: prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment 8451 bank -> mirroring=0,prg_mode=3,prg_bank=13? via FUN_c628 [known: prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
@@ -195,4 +196,5 @@ REALROM sample.symbol ffe0 RESET IMPORTED primary=true
 REALROM sample.symbol fffa NMI_VEC IMPORTED primary=true
 REALROM sample.symbol fffc RESET_VEC IMPORTED primary=true
 REALROM sample.symbol fffe IRQ_VEC IMPORTED primary=true
+REALROM sample.jumptable.planar 9470 byte[14]
 === REALROM END ===

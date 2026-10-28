@@ -19,6 +19,7 @@ REALROM count warnings 1
 REALROM count notes 0
 REALROM count symbols 223
 REALROM count jumptable.wordArrays 13
+REALROM count jumptable.planarArrays 0
 REALROM sample.bankcomment 806b bank -> 0 (bank=0) via FUN_PRG_ALL_B1__fc54
 REALROM sample.bankcomment 8074 bank -> 0 (bank=0) via FUN_PRG_ALL_B3__fc54
 REALROM sample.bankcomment 8081 bank -> 0 (bank=0) via FUN_PRG_ALL_B1__fc54

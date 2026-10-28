@@ -24,6 +24,7 @@ REALROM count warnings 4
 REALROM count notes 1
 REALROM count symbols 26
 REALROM count jumptable.wordArrays 2
+REALROM count jumptable.planarArrays 0
 REALROM sample.bankcomment c094 bank -> 1 (bank=1) via FUN_c139
 REALROM sample.bankcomment c0a2 bank -> 1 (bank=1) via FUN_c139
 REALROM sample.bankcomment c0cb bank -> 1 (bank=1) via FUN_c13f

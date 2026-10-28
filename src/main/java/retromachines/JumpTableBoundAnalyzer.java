@@ -172,7 +172,10 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 	 * defined-data check sees nothing, and its forced {@code CreateDataCmd} clears the whole array.
 	 * That happens whenever stock (re)processes the switch after we laid it.
 	 */
-	private final Map<Address, List<Address>> laidArrays = new LinkedHashMap<>();
+	private final Map<Address, LaidArray> laidArrays = new LinkedHashMap<>();
+
+	/** One recorded array: {@code gap} 0 for a {@code word[n]}, else the grm-d3tu lo/hi pair. */
+	private record LaidArray(int gap, List<Address> targets) {}
 
 	/** Whether a {@link StockClobberRelay} is already queued. */
 	private boolean relayPending;
@@ -273,14 +276,19 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		relayPending = false;
 		int restored = 0;
 		for (var it = laidArrays.entrySet().iterator(); it.hasNext();) {
-			Map.Entry<Address, List<Address>> e = it.next();
-			if (JumpTableArrays.isLaid(program, e.getKey(), e.getValue())) {
+			Map.Entry<Address, LaidArray> e = it.next();
+			LaidArray rec = e.getValue();
+			boolean planar = rec.gap() > 0;
+			if (planar ? JumpTableArrays.isLaidPlanar(program, e.getKey(), rec.gap(), rec.targets())
+					: JumpTableArrays.isLaid(program, e.getKey(), rec.targets())) {
 				continue;
 			}
-			if (JumpTableArrays.layWords(program, e.getKey(), e.getValue())) {
+			if (planar ? JumpTableArrays.layPlanar(program, e.getKey(), rec.gap(), rec.targets())
+					: JumpTableArrays.layWords(program, e.getKey(), rec.targets())) {
 				restored++;
-				AnalyzerLog.info(this, "re-laid word[" + e.getValue().size() + "] at " +
-					e.getKey() + " after stock switch analysis cleared it");
+				AnalyzerLog.info(this, "re-laid " + (planar ? "byte" : "word") + "[" +
+					rec.targets().size() + "] at " + e.getKey() +
+					" after stock switch analysis cleared it");
 			}
 			else {
 				it.remove();
@@ -293,12 +301,30 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 	private boolean layArray(Program program, Address at, List<Address> targets) {
 		boolean laid = JumpTableArrays.layWords(program, at, targets);
 		if (laid) {
-			laidArrays.put(at, List.copyOf(targets));
+			laidArrays.put(at, new LaidArray(0, List.copyOf(targets)));
 		}
 		else {
 			laidArrays.remove(at);
 		}
 		return laid;
+	}
+
+	/** grm-d3tu: {@link JumpTableArrays#layPlanar}, recording the pair for {@link #relayCleared}. */
+	private boolean layPlanarArrays(Program program, Address lo, int gap, List<Address> targets) {
+		boolean laid = JumpTableArrays.layPlanar(program, lo, gap, targets);
+		if (laid) {
+			laidArrays.put(lo, new LaidArray(gap, List.copyOf(targets)));
+		}
+		else {
+			laidArrays.remove(lo);
+		}
+		return laid;
+	}
+
+	/** grm-d3tu: {@link JumpTableArrays#unlayPlanar}, forgetting the pair. */
+	private void unlayPlanarArrays(Program program, Address lo, int gap) {
+		JumpTableArrays.unlayPlanar(program, lo, gap);
+		laidArrays.remove(lo);
 	}
 
 	/** {@link JumpTableArrays#unlay}, forgetting the array. */
@@ -766,6 +792,40 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 				}
 			}
 		}
+		// grm-d3tu: the same for a planar lo/hi table (planarBytesMatch already proved the halves
+		// against the targets): two byte arrays, a reference from each low entry.
+		JumpTableArray.Layout planarLayout = null;
+		Address planarAt = null;
+		List<Address> planarTargets = null;
+		boolean planarLaid = false;
+		int planarGap = result.planarGap();
+		if (shrinks && !isCrossBank && searched == null && planarGap > 0 && !firstN.isEmpty() &&
+			lowestMovingTableAddr != null) {
+			planarAt = lowestMovingTableAddr;
+			int n = firstN.size();
+			List<Long> keptOffsets = new ArrayList<>(n);
+			for (Address a : firstN) {
+				keptOffsets.add(a.getOffset());
+			}
+			if (n <= planarGap) {
+				planarLayout = JumpTableArray.matchPlanar(bytesAt(program, planarAt, n),
+					bytesAt(program, planarAt.add(planarGap), n), keptOffsets);
+			}
+			if (planarLayout != null) {
+				planarTargets = new ArrayList<>(firstN);
+				if (targetInsideBytes(planarAt, n, planarTargets) ||
+					targetInsideBytes(planarAt.add(planarGap), n, planarTargets)) {
+					planarLayout = null;
+					planarTargets = null;
+				}
+			}
+			if (planarLayout != null) {
+				planarLaid = JumpTableArrays.isLaidPlanar(program, planarAt, planarGap, planarTargets);
+			}
+			if (!planarLaid) {
+				unlayPlanarArrays(program, planarAt, planarGap);
+			}
+		}
 		// grm-rsxe: a KNOWN_CODE cut is pinned by references even in a real function. The one
 		// table it exists for (tmnt B5 9474) makes the decompiler reject the override outright
 		// ("Overlapping input varnodes" with 23 cases, clean with its own 128), and a rejected
@@ -806,6 +866,15 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 			(arrayLayout == null ? "no word layout"
 					: arrayNow ? "laid word[" + arrayLayout.count() + "] at " + arrayAt
 							: "declined at " + arrayAt));
+		boolean planarNow = planarLayout != null &&
+			(planarLaid || layPlanarArrays(program, planarAt, planarGap, planarTargets));
+		if (planarAt != null) {
+			AnalyzerLog.info(this, "jump table array at " + switchAddr + ": " +
+				(planarLayout == null ? "no planar layout"
+						: planarNow ? "laid byte[" + planarLayout.count() + "] at " + planarAt + " and " +
+							planarAt.add(planarGap)
+								: "declined at " + planarAt));
+		}
 		long tableStart = 0;
 		boolean haveStart = false;
 		for (JumpTableBound.LoadTableEntry lt : loadTables) {
@@ -857,6 +926,10 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		if (arrayNow) {
 			why += ", laid word[" + arrayLayout.count() + "]" +
 				(arrayLayout.bias() == 1 ? " (RTS-trick: entry = target - 1)" : "");
+		}
+		if (planarNow) {
+			why += ", laid byte[" + planarLayout.count() + "] lo/hi" +
+				(planarLayout.bias() == 1 ? " (RTS-trick: entry = target - 1)" : "");
 		}
 		if (isCrossBank) {
 			why += ", table read from switched-in bank " + targetSpace.getName() + " as " +
@@ -966,6 +1039,19 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		long last = first + 2L * count - 1;
 		for (Address t : targets) {
 			if (sameMemory(t.getAddressSpace(), arrayAt.getAddressSpace()) &&
+				t.getOffset() >= first && t.getOffset() <= last) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** grm-d3tu: {@link #targetInsideArray} for a byte array of {@code count} entries. */
+	private static boolean targetInsideBytes(Address start, int count, List<Address> targets) {
+		long first = start.getOffset();
+		long last = first + count - 1;
+		for (Address t : targets) {
+			if (sameMemory(t.getAddressSpace(), start.getAddressSpace()) &&
 				t.getOffset() >= first && t.getOffset() <= last) {
 				return true;
 			}

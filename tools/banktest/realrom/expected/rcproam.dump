@@ -17,6 +17,7 @@ REALROM count warnings 1
 REALROM count notes 11
 REALROM count symbols 100
 REALROM count jumptable.wordArrays 8
+REALROM count jumptable.planarArrays 0
 REALROM sample.bankcomment 8011 bank -> mirroring=0,prg_mode=0,prg_bank=0 via FUN_ff89 [switch-value flow]
 REALROM sample.bankcomment 801b bank -> mirroring=0,prg_mode=0,prg_bank=0 via FUN_ffc5 [switch-value flow]
 REALROM sample.bankcomment 9327 bank -> mirroring=0,prg_mode=0,prg_bank=0 via FUN_ff89 [switch-value flow]

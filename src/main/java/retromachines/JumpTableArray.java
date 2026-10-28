@@ -102,6 +102,32 @@ final class JumpTableArray {
 		return found;
 	}
 
+	/**
+	 * grm-d3tu: a planar lo/hi table. Entry {@code i} is {@code lo[i] | hi[i] << 8} (or that plus
+	 * one, the RTS-trick, never mixed) and must equal kept target {@code i}, for every kept target.
+	 * Null when fewer than two targets, short byte arrays, or any entry disagrees.
+	 */
+	static Layout matchPlanar(byte[] lo, byte[] hi, List<Long> kept) {
+		int n = kept.size();
+		if (n < 2 || lo.length < n || hi.length < n) {
+			return null;
+		}
+		for (int bias = 0; bias <= 1; bias++) {
+			boolean all = true;
+			for (int i = 0; i < n && all; i++) {
+				all = target((lo[i] & 0xff) | (hi[i] & 0xff) << 8, bias) == kept.get(i);
+			}
+			if (all) {
+				List<Integer> index = new ArrayList<>(n);
+				for (int i = 0; i < n; i++) {
+					index.add(i);
+				}
+				return new Layout(n, bias, index);
+			}
+		}
+		return null;
+	}
+
 	/** The address offset an entry's word designates under {@code bias}, in 16 bits. */
 	private static long target(long word, int bias) {
 		return (word + bias) & 0xffff;

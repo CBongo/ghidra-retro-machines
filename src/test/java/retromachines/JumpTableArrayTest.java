@@ -35,6 +35,24 @@ public class JumpTableArrayTest {
 		assertEquals(0, l.bias());
 	}
 
+	/** grm-d3tu: planar lo/hi halves, plain and RTS-trick, never mixed. */
+	@Test
+	public void planarPlainRtsTrickAndMismatch() {
+		byte[] hi = { (byte) 0x82, (byte) 0x82 };
+		JumpTableArray.Layout plain = JumpTableArray.matchPlanar(new byte[] { 0x10, 0x30 }, hi,
+			List.of(0x8210L, 0x8230L));
+		assertNotNull(plain);
+		assertEquals(0, plain.bias());
+		assertEquals(2, plain.count());
+		JumpTableArray.Layout rts = JumpTableArray.matchPlanar(new byte[] { 0x0f, 0x2f }, hi,
+			List.of(0x8210L, 0x8230L));
+		assertNotNull(rts);
+		assertEquals(1, rts.bias());
+		assertNull(JumpTableArray.matchPlanar(new byte[] { 0x10, 0x2f }, hi,
+			List.of(0x8210L, 0x8230L)));
+		assertNull(JumpTableArray.matchPlanar(new byte[] { 0x10 }, hi, List.of(0x8210L, 0x8230L)));
+	}
+
 	@Test
 	public void orderedRtsTrickTable() {
 		JumpTableArray.Layout l =

@@ -21,10 +21,12 @@ import java.util.List;
 import ghidra.docking.settings.SettingsDefinition;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressOutOfBoundsException;
+import ghidra.program.model.address.AddressRange;
 import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.data.AbstractIntegerDataType;
 import ghidra.program.model.data.Array;
 import ghidra.program.model.data.ArrayDataType;
+import ghidra.program.model.data.ByteDataType;
 import ghidra.program.model.data.CharDataType;
 import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.MutabilitySettingsDefinition;
@@ -94,63 +96,8 @@ final class JumpTableArrays {
 	 * array was laid.
 	 */
 	static boolean layWords(Program program, Address start, List<Address> targets) {
-		Listing listing = program.getListing();
 		int n = targets.size();
-		Address end;
-		try {
-			end = start.add(2L * n - 1);
-		}
-		catch (AddressOutOfBoundsException e) {
-			return false;
-		}
-		AddressSet extent = new AddressSet(start, end);
-		if (listing.getInstructions(extent, true).hasNext() ||
-			listing.getInstructionContaining(start) != null) {
-			return false;
-		}
-		Address clearEnd = end;
-		Data atStart = listing.getDefinedDataAt(start);
-		if (listing.getDataContaining(start) != null && atStart == null &&
-			!Undefined.isUndefined(listing.getDataContaining(start).getDataType())) {
-			return false; // starts inside someone else's data
-		}
-		if (atStart != null) {
-			DataType dt = atStart.getDataType();
-			if (dt instanceof Array a) {
-				if (!isByteLike(a.getDataType())) {
-					return false;
-				}
-				if (atStart.getMaxAddress().compareTo(clearEnd) > 0) {
-					clearEnd = atStart.getMaxAddress(); // stock's over-read tail
-				}
-			}
-			else if (!isByteLike(dt)) {
-				return false;
-			}
-		}
-		for (Data d : listing.getDefinedData(extent, true)) {
-			if (d.getMinAddress().equals(start)) {
-				continue;
-			}
-			if (d.getDataType() instanceof Array || !isByteLike(d.getDataType())) {
-				return false;
-			}
-		}
-		AddressSet cleared = new AddressSet(start, clearEnd);
-		// Stock's reference from the table's first byte (its pointer-table fallback) goes with its data.
-		removeAnalysisDataRefs(program, cleared);
-		listing.clearCodeUnits(start, clearEnd, false);
-		try {
-			Data laid = listing.createData(start, new ArrayDataType(WordDataType.dataType, n, 2));
-			// As stock's markDataAsConstant does: the decompiler folds loads from constant data, and
-			// bank-value recovery reads dispatch tables that way.
-			for (SettingsDefinition def : laid.getDataType().getSettingsDefinitions()) {
-				if (def instanceof MutabilitySettingsDefinition m) {
-					m.setChoice(laid, MutabilitySettingsDefinition.CONSTANT);
-				}
-			}
-		}
-		catch (Exception e) {
+		if (!layRuns(program, List.of(new Run(start, n, 2, WordDataType.dataType)))) {
 			return false;
 		}
 		ReferenceManager refs = program.getReferenceManager();
@@ -159,6 +106,181 @@ final class JumpTableArrays {
 				SourceType.ANALYSIS, 0);
 		}
 		return true;
+	}
+
+	/**
+	 * grm-d3tu: whether {@code lo} and {@code lo+gap} already hold exactly the pair of byte arrays
+	 * {@link #layPlanar} would lay, with the reference from each low-byte entry.
+	 */
+	static boolean isLaidPlanar(Program program, Address lo, int gap, List<Address> targets) {
+		int n = targets.size();
+		Address hi;
+		try {
+			hi = lo.add(gap);
+		}
+		catch (AddressOutOfBoundsException e) {
+			return false;
+		}
+		if (!isByteArray(program.getListing().getDefinedDataAt(lo), n) ||
+			!isByteArray(program.getListing().getDefinedDataAt(hi), n)) {
+			return false;
+		}
+		for (int i = 0; i < n; i++) {
+			if (!hasRef(program, lo.add(i), targets.get(i))) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * grm-d3tu: lays a split lo/hi table as {@code byte[n]} at {@code lo} (low bytes) and at
+	 * {@code lo+gap} (high bytes), with one data reference from each LOW entry to its case target
+	 * (the high bytes carry none: an entry's target is the pair). Same constraints as
+	 * {@link #layWords}, decided for both halves before anything changes; declines when the halves
+	 * would overlap ({@code n > gap}). Stock's byte arrays over either half, or one merged array
+	 * spanning both, are absorbed.
+	 */
+	static boolean layPlanar(Program program, Address lo, int gap, List<Address> targets) {
+		int n = targets.size();
+		if (gap < 1 || n < 1 || n > gap) {
+			return false;
+		}
+		Address hi;
+		try {
+			hi = lo.add(gap);
+		}
+		catch (AddressOutOfBoundsException e) {
+			return false;
+		}
+		if (!layRuns(program, List.of(new Run(lo, n, 1, ByteDataType.dataType),
+			new Run(hi, n, 1, ByteDataType.dataType)))) {
+			return false;
+		}
+		ReferenceManager refs = program.getReferenceManager();
+		for (int i = 0; i < n; i++) {
+			refs.addMemoryReference(lo.add(i), targets.get(i), RefType.DATA, SourceType.ANALYSIS, 0);
+		}
+		return true;
+	}
+
+	/**
+	 * grm-d3tu: removes a previous planar pair of ours ({@code byte[n]} at {@code lo} whose EVERY
+	 * entry carries an {@code ANALYSIS} data reference, and the same-length byte array at
+	 * {@code lo+gap}), references first. Returns whether it did. Every entry, not just the first:
+	 * stock's own byte load table carries an {@code ANALYSIS} data reference on its first byte (its
+	 * pointer-table fallback), and that one must survive a switch we do not lay.
+	 */
+	static boolean unlayPlanar(Program program, Address lo, int gap) {
+		Listing listing = program.getListing();
+		Data d = listing.getDefinedDataAt(lo);
+		if (d == null || !(d.getDataType() instanceof Array a) || !isByteLike(a.getDataType()) ||
+			a.getNumElements() < 2) {
+			return false;
+		}
+		for (int i = 0; i < a.getNumElements(); i++) {
+			if (!hasAnyRef(program, lo.add(i))) {
+				return false;
+			}
+		}
+		removeAnalysisDataRefs(program, new AddressSet(d.getMinAddress(), d.getMaxAddress()));
+		listing.clearCodeUnits(d.getMinAddress(), d.getMaxAddress(), false);
+		try {
+			Data h = listing.getDefinedDataAt(lo.add(gap));
+			if (h != null && h.getDataType() instanceof Array ha && isByteLike(ha.getDataType()) &&
+				ha.getNumElements() == a.getNumElements()) {
+				listing.clearCodeUnits(h.getMinAddress(), h.getMaxAddress(), false);
+			}
+		}
+		catch (AddressOutOfBoundsException e) {
+			// no high half
+		}
+		return true;
+	}
+
+	/** One array to lay: {@code count} elements of {@code type} spaced {@code elemLen} apart. */
+	private record Run(Address start, int count, int elemLen, DataType type) {}
+
+	/**
+	 * Lays every run or none (up to the final data creation): the checks of all runs come first, a
+	 * later run seeing the earlier runs' extents as already cleared, so one stock byte array
+	 * spanning two runs is absorbed once.
+	 */
+	private static boolean layRuns(Program program, List<Run> runs) {
+		Listing listing = program.getListing();
+		AddressSet willClear = new AddressSet();
+		for (Run run : runs) {
+			Address start = run.start();
+			Address end;
+			try {
+				end = start.add((long) run.elemLen() * run.count() - 1);
+			}
+			catch (AddressOutOfBoundsException e) {
+				return false;
+			}
+			AddressSet extent = new AddressSet(start, end);
+			if (listing.getInstructions(extent, true).hasNext() ||
+				listing.getInstructionContaining(start) != null) {
+				return false;
+			}
+			Address clearEnd = end;
+			Data atStart = listing.getDefinedDataAt(start);
+			Data containing = listing.getDataContaining(start);
+			if (containing != null && atStart == null && !willClear.contains(start) &&
+				!Undefined.isUndefined(containing.getDataType())) {
+				return false; // starts inside someone else's data
+			}
+			if (atStart != null) {
+				DataType dt = atStart.getDataType();
+				if (dt instanceof Array a) {
+					if (!isByteLike(a.getDataType())) {
+						return false;
+					}
+					if (atStart.getMaxAddress().compareTo(clearEnd) > 0) {
+						clearEnd = atStart.getMaxAddress(); // stock's over-read tail
+					}
+				}
+				else if (!isByteLike(dt)) {
+					return false;
+				}
+			}
+			for (Data d : listing.getDefinedData(extent, true)) {
+				if (d.getMinAddress().equals(start) || willClear.contains(d.getMinAddress())) {
+					continue;
+				}
+				if (d.getDataType() instanceof Array || !isByteLike(d.getDataType())) {
+					return false;
+				}
+			}
+			willClear.add(start, clearEnd);
+		}
+		// Stock's reference from the table's first byte (its pointer-table fallback) goes with its data.
+		removeAnalysisDataRefs(program, willClear);
+		for (AddressRange r : willClear) {
+			listing.clearCodeUnits(r.getMinAddress(), r.getMaxAddress(), false);
+		}
+		try {
+			for (Run run : runs) {
+				Data laid = listing.createData(run.start(),
+					new ArrayDataType(run.type(), run.count(), run.elemLen()));
+				// As stock's markDataAsConstant does: the decompiler folds loads from constant data, and
+				// bank-value recovery reads dispatch tables that way.
+				for (SettingsDefinition def : laid.getDataType().getSettingsDefinitions()) {
+					if (def instanceof MutabilitySettingsDefinition m) {
+						m.setChoice(laid, MutabilitySettingsDefinition.CONSTANT);
+					}
+				}
+			}
+		}
+		catch (Exception e) {
+			return false;
+		}
+		return true;
+	}
+
+	private static boolean isByteArray(Data d, int count) {
+		return d != null && d.getDataType() instanceof Array a && isByteLike(a.getDataType()) &&
+			a.getNumElements() == count;
 	}
 
 	private static boolean isWordArray(DataType dt) {

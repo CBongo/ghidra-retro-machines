@@ -19,6 +19,7 @@ REALROM count warnings 1
 REALROM count notes 2
 REALROM count symbols 168
 REALROM count jumptable.wordArrays 6
+REALROM count jumptable.planarArrays 0
 REALROM sample.warn ffc8 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.note 82ba [CopyLoopAnalyzer] copy-shaped loop RAM:ffcc -> RAM:014b (4 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note ffea [NesBankingAnalyzer] Bank value is the inbound argument of FUN_ffe8: the shadow cell $00F2 is stored from register A, which this function never defines; each caller supplies it (a far-call / relay), so it is resolved at the callers, not here.
