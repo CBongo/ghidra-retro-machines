@@ -597,7 +597,7 @@ final class InlineJumpTableDispatch {
 	 * is deliberately left alone: that is cross-bank retargeting, explicitly out of scope for this
 	 * class (see the class javadoc) and left to the existing machinery (grm-v60).
 	 */
-	private static Address resolveTarget(AddressSpace space, Memory memory, long target) {
+	static Address resolveTarget(AddressSpace space, Memory memory, long target) {
 		Address inSpace;
 		try {
 			inSpace = space.getAddress(target);

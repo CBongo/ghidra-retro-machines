@@ -139,11 +139,13 @@ final class JumpTableArrays {
 	 * (the high bytes carry none: an entry's target is the pair). Same constraints as
 	 * {@link #layWords}, decided for both halves before anything changes; declines when the halves
 	 * would overlap ({@code n > gap}). Stock's byte arrays over either half, or one merged array
-	 * spanning both, are absorbed.
+	 * spanning both, are absorbed. {@code gap} may be NEGATIVE (grm-gipk.7: an RTS-trick table whose
+	 * high half sits at the LOWER address, adventure_island bd50); the halves still must not overlap,
+	 * {@code n <= |gap|}.
 	 */
 	static boolean layPlanar(Program program, Address lo, int gap, List<Address> targets) {
 		int n = targets.size();
-		if (gap < 1 || n < 1 || n > gap) {
+		if (gap == 0 || n < 1 || n > Math.abs(gap)) {
 			return false;
 		}
 		Address hi;

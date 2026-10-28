@@ -301,7 +301,7 @@ public class InlineJumpTableDispatchAnalyzer extends AbstractAnalyzer {
 	 * (cv3: {@code a374 BEQ $a384}). Restricted to targets of the code this call restored, so it
 	 * is not a sweep of every dangling reference in the program.
 	 */
-	private void followDroppedFlows(Program program, Listing listing, AddressSetView restored,
+	static void followDroppedFlows(Program program, Listing listing, AddressSetView restored,
 			TaskMonitor monitor) throws CancelledException {
 		if (restored == null || restored.isEmpty()) {
 			return;
@@ -333,7 +333,7 @@ public class InlineJumpTableDispatchAnalyzer extends AbstractAnalyzer {
 
 	/** Verbatim port of {@code DecompilerSwitchAnalysisCmd.setSwitchTargetContext} (see the other
 	 *  analyzers' copies in this package). */
-	private void setTargetContext(Program program, ProgramContext programContext, Address target,
+	static void setTargetContext(Program program, ProgramContext programContext, Address target,
 			RegisterValue siteContext) throws ContextChangeException {
 		if (siteContext == null) {
 			return;

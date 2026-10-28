@@ -12,13 +12,18 @@ REALROM count blocks.overlay 0
 REALROM count refs.intoOverlay.retargeted 0
 REALROM count refs.intoOverlay.intraOverlay 0
 REALROM count instrs.inOverlay 0
-REALROM count bankComments 1
+REALROM count bankComments 6
 REALROM count warnings 1
 REALROM count notes 1
 REALROM count symbols 18
-REALROM count jumptable.wordArrays 0
-REALROM count jumptable.planarArrays 0
+REALROM count jumptable.wordArrays 4
+REALROM count jumptable.planarArrays 1
 REALROM sample.bankcomment 8049 bank -> 0 (chr_bank=0) via FUN_b817
+REALROM sample.bankcomment 8e8e bank -> 0? (chr_bank=0) via FUN_929e [known: chr_bank.1=0; assumed from initial: chr_bank.0]
+REALROM sample.bankcomment 9438 bank -> 0? (chr_bank=0) [known: chr_bank.1=0; assumed from initial: chr_bank.0]
+REALROM sample.bankcomment 94b5 bank -> 0? (chr_bank=0) [known: chr_bank.1=0; assumed from initial: chr_bank.0]
+REALROM sample.bankcomment 9b21 bank -> 0? (chr_bank=0) via LAB_920f+1 (mid-body entry in FUN_929e) [known: chr_bank.1=0; assumed from initial: chr_bank.0]
+REALROM sample.bankcomment 9b3d bank -> 0? (chr_bank=0) via LAB_9212+1 (mid-body entry in FUN_929e) [known: chr_bank.1=0; assumed from initial: chr_bank.0]
 REALROM sample.warn b81a [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.note 8965 [CopyLoopAnalyzer] copy-shaped loop RAM:8943 -> RAM:0694 (6 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.symbol 8000 RESET IMPORTED primary=true
@@ -27,4 +32,9 @@ REALROM sample.symbol b754 IRQ IMPORTED primary=true
 REALROM sample.symbol fffa NMI_VEC IMPORTED primary=true
 REALROM sample.symbol fffc RESET_VEC IMPORTED primary=true
 REALROM sample.symbol fffe IRQ_VEC IMPORTED primary=true
+REALROM sample.jumptable 8efe word[72]
+REALROM sample.jumptable 8f8e word[72]
+REALROM sample.jumptable c52c word[40]
+REALROM sample.jumptable c95d word[14]
+REALROM sample.jumptable.planar bd6d byte[8]
 === REALROM END ===
