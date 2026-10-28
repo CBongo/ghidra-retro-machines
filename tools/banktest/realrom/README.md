@@ -414,6 +414,14 @@ forces one enum analyzer option before analysis (e.g. StoredValueScanner's Const
 to `PCODE`) for a report-only A/B. Read its header for the token syntax. A prescript changes
 the analysis, so `bless` refuses to run with one set.
 
+`CodeUnitWatchProbe.java` is the other prescript. It answers **which analyzer** created or
+cleared the code units at an address, which no postScript can see: `GRM_WATCH=<space>::<hex>,…`
+with `REALROM_EXTRA_PRESCRIPT=CodeUnitWatchProbe.java`. It wraps every analyzer and logs a
+`CUWATCH <addr> by <analyzer>: <before> -> <after>` line, covering the code units from 4 bytes
+before the address to 12 after, whenever one of its `added()`/`removed()` calls changed them
+(`grm-vzp2`). Do not reach for a `DomainObjectListener` instead: headless analysis holds the
+program lock throughout, so it receives no events until analysis ends.
+
 ## Dump format and the invariant-line convention
 
 `RealRomDump.java` (NES) and `SnesRealRomDump.java` (SNES) share their header, symbol filter and

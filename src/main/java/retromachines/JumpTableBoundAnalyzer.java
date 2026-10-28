@@ -27,6 +27,7 @@ import ghidra.app.cmd.function.CreateFunctionCmd;
 import ghidra.app.decompiler.DecompInterface;
 import ghidra.app.decompiler.DecompileOptions;
 import ghidra.app.decompiler.DecompileResults;
+import ghidra.app.plugin.core.analysis.AutoAnalysisManager;
 import ghidra.app.plugin.core.analysis.SwitchAnalysisDecompileConfigurer;
 import ghidra.app.plugin.core.clear.ClearFlowAndRepairCmd;
 import ghidra.app.services.AbstractAnalyzer;
@@ -165,6 +166,18 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 	private static final int CONFIRMED_ARRAY_MAX = 128;
 
 	/**
+	 * grm-vzp2: every word array this analyzer has laid, start to targets, so {@link #relayCleared}
+	 * can restore one stock switch analysis wiped. Stock labels each half of an interleaved table
+	 * as its own byte load table; the one at {@code tbl+1} starts inside our array, where its
+	 * defined-data check sees nothing, and its forced {@code CreateDataCmd} clears the whole array.
+	 * That happens whenever stock (re)processes the switch after we laid it.
+	 */
+	private final Map<Address, List<Address>> laidArrays = new LinkedHashMap<>();
+
+	/** Whether a {@link StockClobberRelay} is already queued. */
+	private boolean relayPending;
+
+	/**
 	 * Configures {@code ifc} exactly as {@link SwitchAnalysisDecompileConfigurer} does, with one
 	 * deliberate exception: no cap on bad-data sites. Ghidra 12.2 (GP-6945) aborts a whole
 	 * decompile after 4 flows into undecodable or unmapped bytes, and an over-read table -- the
@@ -242,7 +255,81 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		if (bounded > 0) {
 			AnalyzerLog.info(this, "bounded " + bounded + " jump table(s)");
 		}
+		// grm-vzp2: stock switch analysis runs on this same set next, and may clear our arrays.
+		if (!laidArrays.isEmpty() && !relayPending) {
+			relayPending = true;
+			AutoAnalysisManager.getAnalysisManager(program)
+					.scheduleOneTimeAnalysis(new StockClobberRelay(this), set);
+		}
 		return true;
+	}
+
+	/**
+	 * grm-vzp2: re-lays every recorded array that is no longer laid, where nothing but stock's
+	 * byte data or undefined bytes now covers it ({@link JumpTableArrays#layWords} declines
+	 * otherwise, and the record is dropped). Returns how many it restored.
+	 */
+	int relayCleared(Program program) {
+		relayPending = false;
+		int restored = 0;
+		for (var it = laidArrays.entrySet().iterator(); it.hasNext();) {
+			Map.Entry<Address, List<Address>> e = it.next();
+			if (JumpTableArrays.isLaid(program, e.getKey(), e.getValue())) {
+				continue;
+			}
+			if (JumpTableArrays.layWords(program, e.getKey(), e.getValue())) {
+				restored++;
+				AnalyzerLog.info(this, "re-laid word[" + e.getValue().size() + "] at " +
+					e.getKey() + " after stock switch analysis cleared it");
+			}
+			else {
+				it.remove();
+			}
+		}
+		return restored;
+	}
+
+	/** {@link JumpTableArrays#layWords}, recording the array for {@link #relayCleared}. */
+	private boolean layArray(Program program, Address at, List<Address> targets) {
+		boolean laid = JumpTableArrays.layWords(program, at, targets);
+		if (laid) {
+			laidArrays.put(at, List.copyOf(targets));
+		}
+		else {
+			laidArrays.remove(at);
+		}
+		return laid;
+	}
+
+	/** {@link JumpTableArrays#unlay}, forgetting the array. */
+	private void unlayArray(Program program, Address at) {
+		JumpTableArrays.unlay(program, at);
+		laidArrays.remove(at);
+	}
+
+	/**
+	 * grm-vzp2: the one-shot pass that runs {@link #relayCleared} once stock switch analysis
+	 * ({@code CODE_ANALYSIS}) has had its turn. Scheduled through
+	 * {@code AutoAnalysisManager.scheduleOneTimeAnalysis}, which queues it at this priority. Not
+	 * named {@code *Analyzer} and not no-arg constructible, so Ghidra never discovers it as an
+	 * analyzer of its own.
+	 */
+	private static final class StockClobberRelay extends AbstractAnalyzer {
+		private final JumpTableBoundAnalyzer owner;
+
+		StockClobberRelay(JumpTableBoundAnalyzer owner) {
+			super(NAME + " (re-lay)", "Re-lays jump-table word arrays stock switch analysis " +
+				"cleared (grm-vzp2).", AnalyzerType.INSTRUCTION_ANALYZER);
+			this.owner = owner;
+			setPriority(AnalysisPriority.CODE_ANALYSIS.after());
+		}
+
+		@Override
+		public boolean added(Program program, AddressSetView set, TaskMonitor monitor,
+				MessageLog log) {
+			owner.relayCleared(program);
+			return true;
+		}
 	}
 
 	/** Decompiles each of {@code functions} and bounds every jump table found; returns how many it
@@ -675,7 +762,7 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 					arrayLaid = JumpTableArrays.isLaid(program, arrayAt, arrayTargets);
 				}
 				if (!arrayLaid) {
-					JumpTableArrays.unlay(program, arrayAt);
+					unlayArray(program, arrayAt);
 				}
 			}
 		}
@@ -714,7 +801,7 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 
 		// grm-deve: the bound has landed and its retraction is done; lay over the kept entries only.
 		boolean arrayNow = arrayLayout != null &&
-			(arrayLaid || JumpTableArrays.layWords(program, arrayAt, arrayTargets));
+			(arrayLaid || layArray(program, arrayAt, arrayTargets));
 		AnalyzerLog.info(this, "jump table array at " + switchAddr + ": " +
 			(arrayLayout == null ? "no word layout"
 					: arrayNow ? "laid word[" + arrayLayout.count() + "] at " + arrayAt
@@ -865,8 +952,8 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		if (JumpTableArrays.isLaid(program, arrayAt, cases)) {
 			return;
 		}
-		JumpTableArrays.unlay(program, arrayAt);
-		boolean laid = JumpTableArrays.layWords(program, arrayAt, cases);
+		unlayArray(program, arrayAt);
+		boolean laid = layArray(program, arrayAt, cases);
 		AnalyzerLog.info(this, "jump table array at " + switchAddr + ": " +
 			(laid ? "laid word[" + layout.count() + "] at " + arrayAt + " (count confirmed)"
 					: "declined at " + arrayAt));

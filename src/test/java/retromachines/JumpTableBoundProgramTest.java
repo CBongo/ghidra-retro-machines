@@ -415,6 +415,35 @@ public class JumpTableBoundProgramTest extends AbstractBundledLanguageTest {
 		assertNoOverrideWritten(program, function, true);
 	}
 
+	/** grm-vzp2: stock switch analysis, run after we laid the confirmed array, labels the table's
+	 *  hi-byte half (tbl+1) as its own byte table, and its forced CreateDataCmd there clears our
+	 *  whole word[8] (the control, asserted). The relay pass restores it, references included. */
+	@Test
+	public void arrayClearedByStockSwitchAnalysisIsRelaid() throws Exception {
+		ProgramDB program = buildProgram(TABLE, true);
+		Function function = createFunction(program, addr(0x8000));
+		JumpTableBoundAnalyzer analyzer = new JumpTableBoundAnalyzer();
+		inTx(program, "analyze", () -> {
+			analyzer.added(program, new AddressSet(function.getBody()), TaskMonitor.DUMMY,
+				new MessageLog());
+		});
+		assertWordArrayWithRefs(program, 8);
+
+		DecompileResults stock = decompileWithJumpLoads(program, function);
+		assertTrue(stock.getErrorMessage(), stock.decompileCompleted());
+		inTx(program, "stock", () -> {
+			new DecompilerSwitchAnalysisCmd(stock).applyTo(program, TaskMonitor.DUMMY);
+		});
+		ghidra.program.model.listing.Data atTable =
+			program.getListing().getDefinedDataAt(addr(TABLE));
+		assertTrue("control: stock cleared the array",
+			atTable == null || !(atTable.getDataType() instanceof ghidra.program.model.data.Array));
+
+		inTx(program, "relay", () -> assertEquals(1, analyzer.relayCleared(program)));
+		assertWordArrayWithRefs(program, 8);
+		inTx(program, "relay again", () -> assertEquals(0, analyzer.relayCleared(program)));
+	}
+
 	/** grm-k50b negative: no guard, but a zero word after the 8 real entries stops the
 	 *  decompiler's recovery there anyway. The 8 cases are right, but nothing proves it, so
 	 *  no array: the stop is the zero word's, not a guard's. */
