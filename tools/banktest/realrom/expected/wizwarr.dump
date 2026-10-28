@@ -21,11 +21,11 @@ REALROM count blocks.overlay 3
 REALROM count refs.intoOverlay.retargeted 24
 REALROM count refs.intoOverlay.intraOverlay 915
 REALROM count instrs.inOverlay 3964
-REALROM count bankComments 61
+REALROM count bankComments 62
 REALROM count warnings 7
 REALROM count notes 23
-REALROM count symbols 75
-REALROM count jumptable.wordArrays 2
+REALROM count symbols 84
+REALROM count jumptable.wordArrays 3
 REALROM count jumptable.planarArrays 0
 REALROM sample.bankcomment 0325 bank -> 3 (bank=3)
 REALROM sample.bankcomment 0344 bank -> 2 (bank=2)
@@ -80,6 +80,7 @@ REALROM sample.bankcomment c619 bank -> 0 (bank=0)
 REALROM sample.bankcomment c65e bank -> 0 (bank=0) via FUN_cf81
 REALROM sample.bankcomment ce86 bank -> 0 (bank=0) via FUN_ce8b
 REALROM sample.bankcomment cf94 bank -> 0 (bank=0)
+REALROM sample.bankcomment e7ad bank -> 0 (bank=0) via FUN_cf81
 REALROM sample.bankcomment e7c5 bank -> 0 (bank=0) via FUN_cf81
 REALROM sample.bankcomment e82b bank -> 0 (bank=0) via FUN_ce89
 REALROM sample.bankcomment e9f2 bank -> 0 (bank=0) via FUN_cf81
@@ -169,7 +170,8 @@ REALROM sample.symbol b77a case_22 USER_DEFINED primary=false
 REALROM sample.symbol b77a case_23 USER_DEFINED primary=false
 REALROM sample.symbol b77a case_24 USER_DEFINED primary=false
 REALROM sample.symbol b77a case_25 USER_DEFINED primary=false
-REALROM sample.symbol.truncated 25 of 63
+REALROM sample.symbol.truncated 25 of 72
 REALROM sample.jumptable PRG_ALL_B1::b5d4 word[51]
 REALROM sample.jumptable bcbc word[4]
+REALROM sample.jumptable e6d7 word[8]
 === REALROM END ===

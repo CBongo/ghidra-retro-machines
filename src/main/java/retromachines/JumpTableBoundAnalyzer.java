@@ -565,7 +565,15 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		// grm-uzep: a case list deduplicated by target (and over-read into other spaces) is bounded
 		// from the table's own words: instead of the shape checks when the case list mixes spaces
 		// (they decline it outright), else only once every other rule has declined.
-		JumpTableBound.Result deduped = boundDistinctWords(program, table, realCases);
+		// grm-wek2: a biased table's leading entries are the code tail before it; replace the case
+		// list with the slots from the first non-code entry on (null when the table is not that).
+		LeadingCodeTrim trim = trimLeadingCodeEntries(program, listing, table, realCases);
+		if (trim != null) {
+			realCases = trim.cases();
+			targetSpace = realCases.get(0).getAddressSpace();
+		}
+		JumpTableBound.Result deduped =
+			trim != null ? null : boundDistinctWords(program, table, realCases);
 		boolean mixed = false;
 		List<Long> targets = new ArrayList<>(realCases.size());
 		for (Address a : realCases) {
@@ -584,12 +592,21 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 			if (!sameMemory(lt.getAddress().getAddressSpace(), targetSpace)) {
 				continue; // only consider load tables describing the same memory as the targets
 			}
-			loadTables.add(
-				new JumpTableBound.LoadTableEntry(lt.getAddress().getOffset(), lt.getSize(),
-					lt.getNum()));
+			Address ltAddr = lt.getAddress();
+			if (trim != null && lt.equals(trim.table())) {
+				// grm-wek2: the table as it reads from its first non-code entry, in word entries
+				loadTables.add(new JumpTableBound.LoadTableEntry(trim.start().getOffset(), 2,
+					trim.slots()));
+				ltAddr = trim.start();
+			}
+			else {
+				loadTables.add(
+					new JumpTableBound.LoadTableEntry(ltAddr.getOffset(), lt.getSize(),
+						lt.getNum()));
+			}
 			if (lt.getNum() > 1 && (lowestMovingTableAddr == null ||
-				lt.getAddress().getOffset() < lowestMovingTableAddr.getOffset())) {
-				lowestMovingTableAddr = lt.getAddress();
+				ltAddr.getOffset() < lowestMovingTableAddr.getOffset())) {
+				lowestMovingTableAddr = ltAddr;
 			}
 		}
 
@@ -708,6 +725,9 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		}
 		boolean shrinks = result.isBounded() && result.count() < realCases.size();
 		if (!shrinks && !isCrossBank) {
+			if (trim != null) {
+				return false; // grm-wek2: nothing bounded; the trimmed view is not the decompiler's count
+			}
 			// grm-k50b: a bound that keeps every case confirms the decompiler's own count, so the
 			// table is laid as an array with nothing else written; any other decline stays a no-op.
 			if (result.isBounded() && result.count() == realCases.size() && searched == null &&
@@ -920,6 +940,9 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 			// grm-d59c: two byte tables, low then high, merged by the decompiler into one extent
 			why += ", planar lo/hi tables " + Integer.toHexString(result.planarGap()) + " apart";
 		}
+		if (trim != null) {
+			why += ", " + trim.dropped() + " leading entries in code dropped"; // grm-wek2
+		}
 		if (shrinks && cutAtData) {
 			why += ", then " + dataCut; // grm-0pen
 		}
@@ -941,6 +964,99 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		// analysis order (grm-kon2: dragonpower a546 carried this text 3 or 4 times), hence the
 		// text itself as the idempotence marker. Recorded for the exporter (grm-hb6.18).
 		AnalyzerCommentRecord.append(program, switchAddr, CommentType.EOL, text, text);
+		return true;
+	}
+
+	/** grm-wek2: a word table with its leading entries trimmed off (they lie in code). {@code cases}
+	 *  and the slot count are over the table from {@code start}; {@code table} is the decompiler
+	 *  load table this replaces. */
+	private record LeadingCodeTrim(JumpTable.LoadTable table, Address start, int slots,
+			List<Address> cases, int dropped) {}
+
+	/**
+	 * grm-wek2: the biased (1-based) table. Code indexes it from {@code tbl - k*2} because its index
+	 * is never below k, so the decompiler's load table starts k entries early, inside the code
+	 * before the real table, and those phantom entries are code bytes read as words. The structural
+	 * fact: leading entries whose bytes lie in instructions are not entries. Returns the case list
+	 * re-read from the first entry that is not in code, one case per SLOT (the decompiler's list is
+	 * deduplicated by target, which the extent rules cannot walk), or null when the table is not a
+	 * single interleaved word table, has no leading entry in code, or the decompiler's cases are not
+	 * exactly its words (so the reading is not the one this relies on). Declines too when a phantom
+	 * target also occurs among the real entries (it would be a real case).
+	 */
+	private static LeadingCodeTrim trimLeadingCodeEntries(Program program, Listing listing,
+			JumpTable table, List<Address> cases) {
+		JumpTable.LoadTable found = null;
+		for (JumpTable.LoadTable lt : table.getLoadTables()) {
+			if (lt.getNum() <= 1) {
+				continue;
+			}
+			if (found != null) {
+				return null;
+			}
+			found = lt;
+		}
+		if (found == null || found.getSize() != 1 || found.getNum() % 2 != 0 ||
+			found.getNum() < 2 * cases.size()) {
+			return null;
+		}
+		Address start = found.getAddress();
+		if (!sameMemory(start.getAddressSpace(), cases.get(0).getAddressSpace())) {
+			return null;
+		}
+		int slots = found.getNum() / 2;
+		int lead = 0;
+		try {
+			while (lead < slots && (listing.getInstructionContaining(start.add(2L * lead)) != null ||
+				listing.getInstructionContaining(start.add(2L * lead + 1)) != null)) {
+				lead++;
+			}
+		}
+		catch (ghidra.program.model.address.AddressOutOfBoundsException e) {
+			return null;
+		}
+		if (lead == 0 || lead > slots - 2) {
+			return null;
+		}
+		List<Long> words = wordsAt(program, start, slots);
+		if (words == null) {
+			return null;
+		}
+		for (int bias = 0; bias <= 1; bias++) {
+			List<Long> all = new ArrayList<>();
+			for (long w : words) {
+				all.add((w + bias) & 0xffff);
+			}
+			List<Long> distinct = new ArrayList<>(new LinkedHashSet<>(all));
+			if (!prefixOf(cases, all) && !prefixOf(cases, distinct)) {
+				continue; // neither one case per slot nor deduplicated by target
+			}
+			Set<Long> phantom = new LinkedHashSet<>(all.subList(0, lead));
+			List<Long> rest = all.subList(lead, slots);
+			for (long t : rest) {
+				if (phantom.contains(t)) {
+					return null;
+				}
+			}
+			List<Address> slotCases = new ArrayList<>(rest.size());
+			for (long t : rest) {
+				slotCases.add(cases.get(0).getNewAddress(t));
+			}
+			return new LeadingCodeTrim(found, start.add(2L * lead), slots - lead, slotCases, lead);
+		}
+		return null;
+	}
+
+	/** Whether {@code cases} are the first {@code cases.size()} of {@code offsets}. */
+	private static boolean prefixOf(List<Address> cases, List<Long> offsets) {
+		if (offsets.size() < cases.size()) {
+			return false;
+		}
+		for (int i = 0; i < cases.size(); i++) {
+			if (offsets.get(i).longValue() != cases.get(i).getOffset()) {
+				return false;
+			}
+		}
 		return true;
 	}
 

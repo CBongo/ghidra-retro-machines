@@ -1016,6 +1016,123 @@ public class JumpTableBoundProgramTest extends AbstractBundledLanguageTest {
 		assertNull("analyzer must not leave a comment when it declines", comment);
 	}
 
+	// ---- grm-wek2: biased tables whose phantom leading entries are the code tail before them ----
+
+	private static final long BIASED_TABLE = 0x8013;
+
+	private static long biasedTarget(long table, int i) {
+		return table + 16 + 0x10L * i;
+	}
+
+	/** The wizwarr shape: {@code LDA $78 / ASL A / TAY / LDA tbl-2k,Y / STA $04 / LDA tbl-2k+1,Y /
+	 *  STA $05 / JMP ($0004)}, the 8-entry table right after the JMP (so its k phantom leading
+	 *  entries are the code's own last bytes) or, when {@code codeBeforeTable} is false, 0x2f bytes
+	 *  of undefined data later. */
+	private ProgramDB buildBiased(int k, boolean codeBeforeTable) throws Exception {
+		long table = codeBeforeTable ? BIASED_TABLE : 0x8040;
+		builder = newBuilder("Test", LANG);
+		uninitializedRam(builder, ".zp", "0x0", 0x100);
+		builder.createMemory(".text", "0x8000", 0x1000);
+		long base = table - 2L * k;
+		String code = String.format("a5 78 0a a8 b9 %02x %02x 85 04 b9 %02x %02x 85 05 6c 04 00",
+			base & 0xff, (base >> 8) & 0xff, (base + 1) & 0xff, ((base + 1) >> 8) & 0xff);
+		builder.setBytes("0x8000", code, true);
+		// Dead code after the JMP: LDA #$80, so the k=1 phantom word is $80a9, a mapped address.
+		builder.setBytes("0x8011", "a9 80", true);
+		StringBuilder bytes = new StringBuilder();
+		if (!codeBeforeTable) {
+			for (long a = BIASED_TABLE; a < table; a += 2) {
+				bytes.append("11 80 "); // data words, not code
+			}
+			builder.setBytes(String.format("0x%x", BIASED_TABLE), bytes.toString().trim(), false);
+			bytes.setLength(0);
+		}
+		for (int i = 0; i < 8; i++) {
+			long t = biasedTarget(table, i);
+			bytes.append(String.format("%02x %02x ", t & 0xff, (t >> 8) & 0xff));
+		}
+		for (int i = 8; i < 128; i++) {
+			bytes.append(String.format("%02x %02x ", table & 0xff, (table >> 8) & 0xff));
+		}
+		builder.setBytes(String.format("0x%x", table), bytes.toString().trim(), false);
+		return builder.getProgram();
+	}
+
+	private void biasedRoundTrip(int k) throws Exception {
+		ProgramDB program = buildBiased(k, true);
+		Address switchAddr = addr(0x800e);
+		Function function = createFunction(program, addr(0x8000));
+		DecompileResults stock = decompileWithJumpLoads(program, function);
+		assertTrue(stock.getErrorMessage(), stock.decompileCompleted());
+		inTx(program, "stock", () -> {
+			new DecompilerSwitchAnalysisCmd(stock).applyTo(program, TaskMonitor.DUMMY);
+			CreateFunctionCmd.fixupFunctionBody(program, function, TaskMonitor.DUMMY);
+		});
+		java.util.Set<Address> stockTargets = targetsOf(program, switchAddr);
+		assertTrue("control: stock over-read the table, got " + stockTargets.size(),
+			stockTargets.size() > 8);
+
+		java.util.Set<Address> expected = new java.util.HashSet<>();
+		for (int i = 0; i < 8; i++) {
+			expected.add(addr(biasedTarget(BIASED_TABLE, i)));
+		}
+		inTx(program, "analyze", () -> {
+			new JumpTableBoundAnalyzer().boundFunctions(program, java.util.Set.of(function),
+				TaskMonitor.DUMMY, new MessageLog());
+		});
+		assertEquals(expected, targetsOf(program, switchAddr));
+		for (Address stale : stockTargets) {
+			if (!expected.contains(stale)) {
+				assertNull("junk reached only by phantom/over-read cases is cleared: " + stale,
+					program.getListing().getInstructionAt(stale));
+			}
+		}
+		String comment = program.getListing().getComment(CommentType.EOL, switchAddr);
+		assertNotNull(comment);
+		assertTrue(comment, comment.contains("table at " + Long.toHexString(BIASED_TABLE) + " bounded"));
+		assertTrue(comment, comment.contains("leading entries in code dropped"));
+		assertTrue(comment, comment.contains(", laid word[8]"));
+		ghidra.program.model.listing.Data d =
+			program.getListing().getDefinedDataAt(addr(BIASED_TABLE));
+		assertNotNull("expected an array at the real table", d);
+		assertEquals(8, ((ghidra.program.model.data.Array) d.getDataType()).getNumElements());
+		java.util.List<Reference> refs = dataRefsFrom(program, BIASED_TABLE, BIASED_TABLE + 16);
+		assertEquals(8, refs.size());
+		for (Reference r : refs) {
+			int i = (int) (r.getFromAddress().getOffset() - BIASED_TABLE) / 2;
+			assertEquals(addr(biasedTarget(BIASED_TABLE, i)), r.getToAddress());
+		}
+		// the code tail is still code, not overwritten by an array
+		assertNotNull(program.getListing().getInstructionAt(switchAddr));
+	}
+
+	/** k=5, as wizwarr e6d3: ten phantom bytes of code before the table. */
+	@Test
+	public void biasedTableDropsLeadingEntriesInCode() throws Exception {
+		biasedRoundTrip(5);
+	}
+
+	/** k=1: two phantom bytes, the JMP's own operand. */
+	@Test
+	public void biasedTableK1DropsLeadingEntriesInCode() throws Exception {
+		biasedRoundTrip(1);
+	}
+
+	/** Negative: the entries before the table are data, not code -- the rule does not fire. */
+	@Test
+	public void biasedTableWithLeadingDataIsNotTrimmed() throws Exception {
+		ProgramDB program = buildBiased(5, false);
+		Function function = createFunction(program, addr(0x8000));
+		inTx(program, "analyze", () -> {
+			new JumpTableBoundAnalyzer().added(program, new AddressSet(function.getBody()),
+				TaskMonitor.DUMMY, new MessageLog());
+		});
+		String comment = program.getListing().getComment(CommentType.EOL, addr(0x800e));
+		assertTrue(String.valueOf(comment),
+			comment == null || !comment.contains("leading entries in code dropped"));
+	}
+
+
 	/** The number of non-default cases {@code table} reports, i.e. what the analyzer would
 	 *  receive as its input case count. */
 	private int countRealCases(JumpTable table) {
