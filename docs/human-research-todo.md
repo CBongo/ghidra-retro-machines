@@ -174,6 +174,18 @@ Each is minutes of work and settles something specific. Highest value per unit e
   An answer becomes an agent bead to recover the true reference, so the code comes back as
   reached code rather than through the over-read.
 
+### 1.7 FF3 `$C5:3D1C`: what follows the sample pointer table? (`grm-hb6.28`)
+
+- [ ] **Question.** The sample (BRR) pointer table at `$C5:3C5F` has **63** real 3-byte entries
+  (`00`–`3E`, all `$C5:xxxx`–`$C8:xxxx`), so it ends at `$C5:3D1B`. `ff3mus.pl:147` reads 0x45
+  (69) entries, and the extra six (`3F`–`44`) read as `$B1:0B88 $07:5903 $47:0F39 $06:3910
+  $04:0441 $03:8D08`, none of them ROM pointers (measured 2026-10-28 on FF3 USA Rev 1).
+  - What table starts at `$C5:3D1C`? Another per-sample table (loop points, tuning, ADSR), and
+    with what entry size and count?
+  - Is 63 the real sample count, or does the sound code index past it?
+
+  The answer sets the counts in grm-hb6.28's FF3 descriptor hint, and may add a third table to it.
+
 ---
 
 ## 2. Def-use passes on untraced titles
