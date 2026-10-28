@@ -38,7 +38,6 @@ import ghidra.app.util.importer.MessageLog;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSetView;
 import ghidra.program.model.data.Array;
-import ghidra.program.model.data.ArrayDataType;
 import ghidra.program.model.data.WordDataType;
 import ghidra.program.model.lang.Register;
 import ghidra.program.model.listing.BookmarkType;
@@ -181,14 +180,10 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 				continue;
 			}
 			boolean call = site.getFlowType().isCall();
-			try {
-				if (!shared) {
-					listing.createData(table, new ArrayDataType(WordDataType.dataType, n, 2));
-				}
-			}
-			catch (Exception e) {
+			// grm-iv4i: one DATA reference per entry into bank:word, as on the NES side.
+			if (!shared && !JumpTableArrays.layWords(program, table, entryTargets(table, targets))) {
 				AnalyzerLog.info(this, "dispatch " + siteAddr + ": could not define table at " +
-					table + ": " + e.getMessage());
+					table);
 				continue;
 			}
 			RefType type = call ? RefType.COMPUTED_CALL : RefType.COMPUTED_JUMP;
@@ -296,20 +291,26 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 			if (keep == n) {
 				continue;
 			}
-			listing.clearCodeUnits(table, end, false);
+			// The cut entries' data references go with the array, so they cannot keep stale
+			// targets looking referenced.
+			if (!JumpTableArrays.unlay(program, table)) {
+				listing.clearCodeUnits(table, end, false);
+			}
 			Set<Address> kept = new LinkedHashSet<>();
 			if (keep > 0) {
-				try {
-					listing.createData(table, new ArrayDataType(WordDataType.dataType, keep, 2));
-				}
-				catch (Exception e) {
-					AnalyzerLog.info(this, "could not shrink table " + table + ": " + e.getMessage());
-				}
+				List<Long> entries = new ArrayList<>();
 				for (int i = 0; i < keep; i++) {
 					Integer w = word(program.getMemory(), table.add(2L * i));
-					if (w != null) {
-						kept.add(table.getNewAddress(targetBank | w));
+					if (w == null) {
+						break;
 					}
+					entries.add(targetBank | w);
+				}
+				List<Address> entryTargets = entryTargets(table, entries);
+				kept.addAll(entryTargets);
+				if (entries.size() < keep ||
+					!JumpTableArrays.layWords(program, table, entryTargets)) {
+					AnalyzerLog.info(this, "could not shrink table " + table);
 				}
 			}
 			else {
@@ -629,6 +630,15 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 			targets.add(targetBank | w);
 		}
 		return n;
+	}
+
+	/** Each entry's target as an address in {@code table}'s space, one per entry, in order. */
+	private static List<Address> entryTargets(Address table, List<Long> targets) {
+		List<Address> out = new ArrayList<>(targets.size());
+		for (long t : targets) {
+			out.add(table.getNewAddress(t));
+		}
+		return out;
 	}
 
 	private static boolean hasFlowTargets(Instruction in) {
