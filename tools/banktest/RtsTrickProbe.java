@@ -35,6 +35,11 @@
 // preceded within 12 bytes by two PUSH A ($2D) bytes, and whether analysis made an instruction
 // there (`RTSP spc rawhit ...`, `RTSP spc rawhits=<n>`), to catch code analysis never reached.
 //
+// Environment switches (for sweeps over a whole collection, tools/banktest/snes-rom-sweep.sh):
+//   GRM_RTSP_PART=spc|65816|both   which part to run (default both)
+//   GRM_RTSP_SPC_WALL_MS=<ms>      SPC upload-recovery wall clock per attempt (default 150000)
+// The SPC part also prints `RTSP spc recovery stop=<reason> steps=<n> success=<bool>`.
+//
 // Run as REALROM_EXTRA_POSTSCRIPT on snes-analysis (65816 side) and snes-spc (SPC side; those
 // rows import -noanalysis so the 65816 side finds almost nothing there). Read-only on the ROM
 // program. Prints ROM-derived bytes of a few instructions per site: a local survey, not a golden.
@@ -69,22 +74,33 @@ public class RtsTrickProbe extends GhidraScript {
 
 	@Override
 	protected void run() throws Exception {
+		String part = System.getenv().getOrDefault("GRM_RTSP_PART", "both").trim().toLowerCase();
+		if (!part.equals("spc") && !part.equals("65816") && !part.equals("both")) {
+			throw new IllegalArgumentException("GRM_RTSP_PART must be spc|65816|both, got " + part);
+		}
+		boolean do65816 = !part.equals("spc");
+		boolean doSpc = !part.equals("65816");
 		String lang = currentProgram.getLanguageID().getIdAsString();
-		if (lang.startsWith("65816")) {
+		if (!do65816) {
+			println("RTSP skip 65816 part (GRM_RTSP_PART=" + part + ")");
+		}
+		else if (lang.startsWith("65816")) {
 			survey(currentProgram, true);
 		}
 		else {
 			println("RTSP skip language " + lang);
 		}
-		if (SpcUploadRecovery.isSnesRom(currentProgram)) {
+		if (doSpc && SpcUploadRecovery.isSnesRom(currentProgram)) {
 			spcStep();
 		}
 	}
 
 	private void spcStep() throws Exception {
+		long wallMs = Long.parseLong(System.getenv().getOrDefault("GRM_RTSP_SPC_WALL_MS", "150000").trim());
 		StopConditions stop = StopConditions.builder()
-				.instructionFuel(SpcUploadRecovery.DEFAULT_FUEL).wallClockMillis(150_000L).build();
+				.instructionFuel(SpcUploadRecovery.DEFAULT_FUEL).wallClockMillis(wallMs).build();
 		SpcUploadRecovery.Result r = new SpcUploadRecovery(currentProgram).recover(stop, monitor);
+		println("RTSP spc recovery stop=" + r.stop() + " steps=" + r.steps() + " success=" + r.success());
 		println("RTSP spc blocks=" + r.blocks().size() + " entry=" +
 			(r.entry() < 0 ? "NONE" : String.format("%04x", r.entry())));
 		if (r.blocks().isEmpty()) {
