@@ -49,7 +49,8 @@ import ghidra.util.task.TaskMonitor;
  * through a table of target-minus-one entries (see {@link RtsTrickDispatch} for the shape and the
  * bound). On the 6502 {@code RTS} is a return, so stock builds no switch and the targets stay
  * undisassembled; the real instances are adventure_island's bd50 (planar, hi table first) and
- * 8dd1, c6c9, c95c (interleaved).
+ * 8dd1, c6c9, c95c (interleaved). The SPC700's {@code PUSH A / RET} form (bias 0) is recognized
+ * too, in the AKAO sound drivers (grm-gipk.8, {@link RtsTrickDispatch.Dialect}).
  *
  * <p>For every {@code RTS} in the newly-added set that is a recognized, bounded site this
  * <ol>
@@ -74,8 +75,8 @@ public class RtsTrickDispatchAnalyzer extends AbstractAnalyzer {
 	private static final String NAME = "Retro RTS Trick Dispatch";
 	private static final String DESCRIPTION =
 		"Resolves the 6502 RTS trick (LDA hi,X / PHA / LDA lo,X / PHA / RTS through a table of " +
-			"target-minus-one entries): lays the table, references and disassembles the targets " +
-			"(grm-gipk.7).";
+			"target-minus-one entries) and its SPC700 form (PUSH A / RET, exact targets): lays " +
+			"the table, references and disassembles the targets (grm-gipk.7, grm-gipk.8).";
 
 	/** Table bases of every recognized site seen so far, across {@code added} calls. */
 	private final Set<Address> knownBases = new HashSet<>();
@@ -102,12 +103,13 @@ public class RtsTrickDispatchAnalyzer extends AbstractAnalyzer {
 	public boolean added(Program program, AddressSetView set, TaskMonitor monitor, MessageLog log)
 			throws CancelledException {
 		Listing listing = program.getListing();
+		String returnMnemonic = RtsTrickDispatch.Dialect.of(program).returnMnemonic;
 		List<Instruction> rtsSites = new ArrayList<>();
 		InstructionIterator it = listing.getInstructions(set, true);
 		while (it.hasNext()) {
 			monitor.checkCancelled();
 			Instruction instr = it.next();
-			if ("RTS".equals(instr.getMnemonicString())) {
+			if (returnMnemonic.equals(instr.getMnemonicString())) {
 				rtsSites.add(instr);
 			}
 		}
@@ -137,12 +139,13 @@ public class RtsTrickDispatchAnalyzer extends AbstractAnalyzer {
 			RtsTrickDispatch.Shape shape = e.getValue();
 			RtsTrickDispatch.Site site = RtsTrickDispatch.scan(program, shape, knownBases);
 			if (site == null) {
-				AnalyzerLog.debug(this, "RTS " + rtsAddr + ": push pair recognized, table declined");
+				AnalyzerLog.debug(this, rts.getMnemonicString() + " " + rtsAddr +
+					": push pair recognized, table declined");
 				continue;
 			}
 			apply(program, listing, rts, site, monitor, log);
 			if (resolved.add(rtsAddr)) {
-				AnalyzerLog.info(this, "RTS " + rtsAddr + ": " +
+				AnalyzerLog.info(this, rts.getMnemonicString() + " " + rtsAddr + ": " +
 					(shape.interleaved() ? "interleaved word table at " + site.loBase
 							: "planar lo " + site.loBase + " hi " + site.loBase.add(shape.gap())) +
 					", " + site.targets.size() + " entries (" + site.cut + ")");

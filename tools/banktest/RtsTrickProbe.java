@@ -23,8 +23,11 @@
 // OR a PEA/PEI/PER). Each kept window prints as
 //   RTSP site <space>::<addr> <RTS|RTL|RET|RETI> cpu=<65816|spc700> incomingMidWindow=<yes|no>
 //   RTSP   <addr> <hex bytes> <instruction> [m=.. x=.. e=..]
+//   RTSP   computedJump n=<k> <targets>
 // incomingMidWindow = some instruction AFTER the window's first has a non-fall-through flow
-// reference into it. Summary lines: `RTSP summary cpu=.. returns=<n> kept=<n>`.
+// reference into it ("yes into <addrs>" names them). computedJump lists the return's resolved
+// computed-flow targets, e.g. RtsTrickDispatchAnalyzer's (grm-gipk.8). Summary lines:
+// `RTSP summary cpu=.. returns=<n> kept=<n>`.
 //
 // SPC700: the program is the 65816 SNES ROM, whose sound-driver upload is recovered with
 // SpcUploadRecovery and materialized IN MEMORY (never saved, released afterwards), auto-analysed,
@@ -196,15 +199,25 @@ public class RtsTrickProbe extends GhidraScript {
 				continue;
 			}
 			kept++;
-			boolean incoming = false;
+			StringBuilder into = new StringBuilder();
 			for (int k = 1; k < w.size(); k++) {
 				if (hasNonFallThroughFlowInto(p, w.get(k).getMinAddress())) {
-					incoming = true;
+					into.append(String.format(" %04x", w.get(k).getMinAddress().getOffset()));
 				}
 			}
 			println("RTSP site " + ret.getMinAddress().getAddressSpace().getName() + "::" +
 				String.format("%04x", ret.getMinAddress().getOffset()) + " " + mn + " cpu=" + cpu +
-				" incomingMidWindow=" + (incoming ? "yes" : "no"));
+				" incomingMidWindow=" + (into.length() > 0 ? "yes into" + into : "no"));
+			// What RtsTrickDispatchAnalyzer (or anything else) resolved the return to (grm-gipk.8).
+			StringBuilder targets = new StringBuilder();
+			int nTargets = 0;
+			for (Reference r : ret.getReferencesFrom()) {
+				if (r.getReferenceType().isComputed() && r.getReferenceType().isFlow()) {
+					nTargets++;
+					targets.append(String.format(" %04x", r.getToAddress().getOffset()));
+				}
+			}
+			println("RTSP   computedJump n=" + nTargets + targets);
 			for (Instruction in : w) {
 				StringBuilder hex = new StringBuilder();
 				try {
