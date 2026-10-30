@@ -66,8 +66,8 @@ import ghidra.program.model.symbol.Reference;
  * <p><b>Other CPUs</b> (grm-gipk.8): the SPC700 spells the same idiom
  * {@code MOV A,!t1+Y / PUSH A / MOV A,!t2+Y / PUSH A / RET}, and its {@code RET} pops the target
  * itself, so the bias is 0 (see {@link Dialect}). The AKAO sound drivers dispatch voice commands
- * this way, interleaved and hi first. The 65816 has no recognizer: the grm-gipk.8 survey found no
- * instance on the corpus.
+ * this way, interleaved and hi first. The 65816 form (a 16-bit {@code PHA}, grm-gipk.11) is
+ * recognized separately, by {@link W65816RtsTrick}.
  *
  * <p><b>The bound</b> ({@link #scan}). Entries are read in order from 0 until the first of
  * <ul>
@@ -354,7 +354,7 @@ final class RtsTrickDispatch {
 		}
 	}
 
-	private static boolean isStraight(Instruction instr) {
+	static boolean isStraight(Instruction instr) {
 		FlowType ft = instr.getFlowType();
 		return !(ft.isConditional() || ft.isJump() || ft.isCall() || ft.isTerminal() ||
 			ft.isComputed()) && instr.getFallThrough() != null;
@@ -394,7 +394,7 @@ final class RtsTrickDispatch {
 		}
 	}
 
-	private static boolean hasNonFallThroughFlowInto(Program program, Address at) {
+	static boolean hasNonFallThroughFlowInto(Program program, Address at) {
 		for (Reference ref : program.getReferenceManager().getReferencesTo(at)) {
 			if (ref.getReferenceType().isFlow() && !ref.getReferenceType().isFallthrough()) {
 				return true;

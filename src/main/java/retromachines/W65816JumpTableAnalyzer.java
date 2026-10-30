@@ -30,6 +30,7 @@ import java.util.WeakHashMap;
 import ghidra.app.cmd.disassemble.DisassembleCommand;
 import ghidra.app.cmd.function.CreateFunctionCmd;
 import ghidra.app.services.AbstractAnalyzer;
+import ghidra.app.services.Analyzer;
 import ghidra.app.services.AnalysisPriority;
 import ghidra.app.services.AnalyzerType;
 import ghidra.app.util.PseudoDisassembler;
@@ -201,7 +202,7 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 				if (existing != null) {
 					warned += warnIfOtherWidth(program, effects, site, existing) ? 1 : 0;
 				}
-				else if (stampAndDisassemble(program, t, ctx, monitor)) {
+				else if (stampAndDisassemble(this, program, t, ctx, monitor)) {
 					decoded++;
 				}
 				if (call && program.getFunctionManager().getFunctionAt(t) == null &&
@@ -633,7 +634,7 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 	}
 
 	/** Each entry's target as an address in {@code table}'s space, one per entry, in order. */
-	private static List<Address> entryTargets(Address table, List<Long> targets) {
+	static List<Address> entryTargets(Address table, List<Long> targets) {
 		List<Address> out = new ArrayList<>(targets.size());
 		for (long t : targets) {
 			out.add(table.getNewAddress(t));
@@ -655,7 +656,7 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 	 * through {@code ASL A}s and a {@code TAX} immediately before the dispatch (FF3 {@code
 	 * $C2:1B02}: {@code AND #$0F / ASL A / TAX} -- sixteen handlers).
 	 */
-	private static int indexCap(Listing listing, Instruction site) {
+	static int indexCap(Listing listing, Instruction site) {
 		BigInteger xf = site.getValue(site.getProgram().getRegister("ctx_XF"), false);
 		int cap = xf != null && xf.intValue() == 1 ? 128 : W65816JumpTables.MAX_ENTRIES;
 		Instruction cur = site;
@@ -713,7 +714,7 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 		return false;
 	}
 
-	private static Integer word(Memory memory, Address at) {
+	static Integer word(Memory memory, Address at) {
 		try {
 			return (memory.getByte(at) & 0xff) | (memory.getByte(at.add(1)) & 0xff) << 8;
 		}
@@ -723,7 +724,7 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 	}
 
 	/** Whether a byte may belong to the table: free of code and data, not another table. */
-	private static boolean tableByteFree(Program program, Address b, Address table,
+	static boolean tableByteFree(Program program, Address b, Address table,
 			Set<Address> tableStarts) {
 		if (!b.equals(table) && tableStarts.contains(b)) {
 			return false;
@@ -738,19 +739,27 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 	 * inside an instruction or data, and -- if not yet decoded -- its first instructions at the
 	 * dispatch's width contain no desync opcode and run into nothing mid-instruction.
 	 */
-	private static boolean plausibleTarget(Program program, Address t, Map<Register, Integer> ctx) {
+	static boolean plausibleTarget(Program program, Address t, Map<Register, Integer> ctx) {
+		return implausibility(program, t, ctx) == null;
+	}
+
+	/** Why {@code t} fails {@link #plausibleTarget}, or null when it passes (for decline logs). */
+	static String implausibility(Program program, Address t, Map<Register, Integer> ctx) {
 		Memory memory = program.getMemory();
 		MemoryBlock block = memory.getBlock(t);
-		if (block == null || !block.isInitialized() || !block.isExecute() || block.isWrite()) {
-			return false;
+		// A byte-mapped mirror reports isInitialized() false even over ROM, and LoROM FastROM code
+		// runs in exactly those mirrors (banks $80+, grm-gipk.11): ask the initialized set instead.
+		if (block == null || !memory.getAllInitializedAddressSet().contains(t) ||
+			!block.isExecute() || block.isWrite()) {
+			return "not ROM: " + block;
 		}
 		Listing listing = program.getListing();
 		if (listing.getInstructionAt(t) != null) {
-			return true;
+			return null;
 		}
 		if (listing.getInstructionContaining(t) != null ||
 			listing.getDefinedDataContaining(t) != null) {
-			return false;
+			return "inside " + listing.getCodeUnitContaining(t);
 		}
 		PseudoDisassembler pdis = new PseudoDisassembler(program);
 		Map<Register, Integer> width = new LinkedHashMap<>(ctx);
@@ -760,11 +769,11 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 		for (int i = 0; i < LOOKAHEAD; i++) {
 			if (i > 0) {
 				if (listing.getInstructionAt(a) != null) {
-					return true;   // merged into known code
+					return null;   // merged into known code
 				}
 				if (listing.getInstructionContaining(a) != null ||
 					listing.getDefinedDataContaining(a) != null) {
-					return false;
+					return "runs into " + listing.getCodeUnitContaining(a) + " at " + a;
 				}
 			}
 			PseudoDisassemblerContext pctx =
@@ -777,14 +786,14 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 				in = pdis.disassemble(a, pctx, false);
 			}
 			catch (Exception e) {
-				return false;
+				return "no decode at " + a + ": " + e.getMessage();
 			}
 			if (in == null) {
-				return false;
+				return "no decode at " + a;
 			}
 			String mn = in.getMnemonicString().toUpperCase(Locale.ROOT);
 			if (DESYNC.contains(mn)) {
-				return false;
+				return mn + " at " + a;
 			}
 			// A constant REP/SEP is followed at its new width (CT $C5:06FE's ninth entry decodes
 			// a BRK four instructions past one); anything else that changes width ends the look.
@@ -796,7 +805,7 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 					}
 				}
 				if (bits < 0) {
-					return true;
+					return null;
 				}
 				int v = mn.equals("SEP") ? 1 : 0;
 				if ((bits & 0x20) != 0 && mReg != null) {
@@ -807,23 +816,23 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 				}
 			}
 			else if (WIDTH_CHANGE.contains(mn)) {
-				return true;
+				return null;
 			}
 			FlowType ft = in.getFlowType();
 			// A conditional branch is looked past (its fall-through is decoded either way).
 			if (ft.isTerminal() || (ft.isJump() && !ft.isConditional()) || !in.hasFallthrough()) {
-				return true;
+				return null;
 			}
 			a = in.getFallThrough();
 			if (a == null || !Objects.equals(memory.getBlock(a), block)) {
-				return false;
+				return "leaves the block at " + a;
 			}
 		}
-		return true;
+		return null;
 	}
 
 	/** E/M/X at the dispatch. */
-	private static Map<Register, Integer> context(Program program, Instruction site) {
+	static Map<Register, Integer> context(Program program, Instruction site) {
 		Map<Register, Integer> ctx = new LinkedHashMap<>();
 		for (String name : new String[] { "ctx_EF", "ctx_MF", "ctx_XF" }) {
 			Register reg = program.getRegister(name);
@@ -835,7 +844,8 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 		return ctx;
 	}
 
-	private boolean stampAndDisassemble(Program program, Address t, Map<Register, Integer> ctx,
+	static boolean stampAndDisassemble(Analyzer owner, Program program, Address t,
+			Map<Register, Integer> ctx,
 			TaskMonitor monitor) {
 		for (Map.Entry<Register, Integer> c : ctx.entrySet()) {
 			try {
@@ -843,7 +853,7 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 					BigInteger.valueOf(c.getValue()));
 			}
 			catch (ContextChangeException e) {
-				AnalyzerLog.info(this, "could not stamp " + c.getKey().getName() + " at " + t +
+				AnalyzerLog.info(owner, "could not stamp " + c.getKey().getName() + " at " + t +
 					": " + e.getMessage());
 				return false;
 			}
@@ -856,7 +866,7 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 	 * Warns at the dispatch when an already-decoded target's decode depends on a flag the
 	 * dispatch holds at the other value.
 	 */
-	private static boolean warnIfOtherWidth(Program program, W65816WidthEffects effects,
+	static boolean warnIfOtherWidth(Program program, W65816WidthEffects effects,
 			Instruction site, Instruction target) {
 		if (effects.emulation(target)) {
 			return false;
@@ -881,7 +891,7 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 		return true;
 	}
 
-	private static String describe(Map<Register, Integer> ctx) {
+	static String describe(Map<Register, Integer> ctx) {
 		StringBuilder sb = new StringBuilder();
 		for (Map.Entry<Register, Integer> c : ctx.entrySet()) {
 			String n = c.getKey().getName();
