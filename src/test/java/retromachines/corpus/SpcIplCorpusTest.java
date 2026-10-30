@@ -79,7 +79,7 @@ public class SpcIplCorpusTest {
 
 		List<String> tsv = new ArrayList<>();
 		tsv.add("title\trom\tcopier\trank\tfileOffset\tstrippedOffset\tblocks\tpayload\tentry\t" +
-			"score\tsuppressedTails\tblockList");
+			"score\tdominantByteShare\tsuppressedTails\tblockList");
 		for (String title : TITLES) {
 			Path dir = root.resolve(title);
 			Path rom = findRom(dir);
@@ -100,10 +100,10 @@ public class SpcIplCorpusTest {
 				for (SpcIplFormat.Block b : c.stream().blocks()) {
 					bl.append(b).append("; ");
 				}
-				tsv.add(String.format("%s\t%s\t%b\t%d\t0x%x\t0x%x\t%d\t%d\t0x%04x\t%d\t%s\t%s", title,
+				tsv.add(String.format("%s\t%s\t%b\t%d\t0x%x\t0x%x\t%d\t%d\t0x%04x\t%d\t%.3f\t%s\t%s", title,
 					rom.getFileName(), c.copierHeader(), rank, c.fileOffset(), c.strippedOffset(),
 					c.stream().blocks().size(), c.stream().payloadBytes(), c.stream().entry(),
-					c.score(), c.suppressedTails().stream().map(t -> "0x" + Integer.toHexString(t)).toList(),
+					c.score(), SpcIplScanner.dominantByteShare(c.stream()), c.suppressedTails().stream().map(t -> "0x" + Integer.toHexString(t)).toList(),
 					bl.toString().trim()));
 			}
 		}

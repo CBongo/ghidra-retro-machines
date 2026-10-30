@@ -118,6 +118,50 @@ public class SpcIplScannerTest {
 		assertEquals(300, c.get(1).stream().payloadBytes());
 	}
 
+	/** A stream whose blocks are {len, addr} pairs filled with zero bytes, ending at {@code entry}. */
+	private static byte[] zeroStream(int[][] blocks, int entry) {
+		ByteArrayOutputStream o = new ByteArrayOutputStream();
+		for (int[] b : blocks) {
+			o.write(b[0]);
+			o.write(b[0] >> 8);
+			o.write(b[1]);
+			o.write(b[1] >> 8);
+			o.write(new byte[b[0]], 0, b[0]);
+		}
+		SpcIplFormatTest.terminator(o, entry);
+		return o.toByteArray();
+	}
+
+	/** grm-1.7.7: the share is over the whole payload, so an all-zero block (zero-filled RAM, as in
+	 *  F-Zero's and FF2's real streams) does not make an otherwise varied stream degenerate. */
+	@Test
+	public void dominantByteShareIsOverWholePayload() {
+		// one stream: a varied block, then an all-zero block, then the terminator
+		ByteArrayOutputStream o = new ByteArrayOutputStream();
+		SpcIplFormatTest.block(o, 2000, 0x0800, 1);
+		byte[] zeros = zeroStream(new int[][] { { 200, 0x4000 } }, 0x0800);
+		o.write(zeros, 0, zeros.length);
+		byte[] img = embed(noise(8), o.toByteArray(), noise(8));
+		List<SpcIplScanner.Candidate> c = SpcIplScanner.scanImage(img, false);
+		assertEquals(2200, c.get(0).stream().payloadBytes());
+		assertTrue(SpcIplScanner.dominantByteShare(c.get(0).stream()) <=
+			SpcIplScanner.MAX_DOMINANT_BYTE_SHARE);
+		assertTrue((c.get(0).score() & (1 << 29)) != 0);
+	}
+
+	/** grm-1.7.7: a degenerate chain ranks below a varied stream even with more blocks. */
+	@Test
+	public void degenerateStreamRanksBelowVaried() {
+		byte[] degenerate = zeroStream(new int[][] { { 300, 0x0800 }, { 300, 0x2000 }, { 300, 0x4000 } },
+			0x0800);
+		byte[] varied = stream(new int[][] { { 400, 0x0800, 1 } }, 0x0800);
+		byte[] image = embed(embed(noise(8), degenerate, noise(8)), varied, noise(8));
+		List<SpcIplScanner.Candidate> c = SpcIplScanner.scanImage(image, false);
+		assertEquals(400, c.get(0).stream().payloadBytes());
+		assertEquals(900, c.get(1).stream().payloadBytes());
+		assertEquals(1.0, SpcIplScanner.dominantByteShare(c.get(1).stream()), 0.0);
+	}
+
 	@Test
 	public void copierHeaderIsStrippedAndReported() {
 		byte[] body = embed(noise(0x400), stream(TWO_BLOCKS, 0x0800), noise(0x400 - 0x200));

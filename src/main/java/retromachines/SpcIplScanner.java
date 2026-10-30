@@ -60,11 +60,17 @@ import java.util.List;
  *
  * <p><b>Ranking.</b> Lexicographic: (1) whether the entry address equals the start address of
  * some block -- a driver is uploaded as a unit and begun at its load address, and a chance chain
- * hits that only by a 1-in-blocks-times-64K coincidence; (2) block count, since every extra
+ * hits that only by a 1-in-blocks-times-64K coincidence; (2) whether the payload is not
+ * degenerate: its most common byte is at most {@value #MAX_DOMINANT_BYTE_SHARE} of the whole
+ * payload ({@link #dominantByteShare}). A driver upload is SPC700 code plus BRR samples and
+ * tables; a chance chain through padding or tile data is dominated by one value. The share is
+ * taken over the WHOLE payload, never per block: genuine streams carry blocks that are entirely
+ * one byte (zero-filled RAM; F-Zero's and FF2's streams both do), and the three reference streams
+ * measure 0.05-0.09 (grm-1.7.7, 2026-10-30); (3) block count, since every extra
  * block is another independently validated {@code [len][addr]} header on the way to a
- * terminator; (3) payload bytes. Encoded as {@code score = (entryAtBlockStart ? 2^30 : 0) +
- * blockCount * 65536 + payloadBytes}. (1) is a ranking signal and not a rule: nothing in the
- * IPL protocol forces it. <b>Honest limits:</b> the format has very little redundancy, and ROM
+ * terminator; (4) payload bytes. Encoded as {@code score = (entryAtBlockStart ? 2^30 : 0) +
+ * (notDegenerate ? 2^29 : 0) + min(blockCount, 8191) * 65536 + payloadBytes}. (1) and (2) are
+ * ranking signals, not rules: nothing in the IPL protocol forces either. <b>Honest limits:</b> the format has very little redundancy, and ROM
  * data is full of zero words, so chance chains of several tiny blocks do pass the rules above;
  * the corpus report shows them. The ordering exists to float genuine streams (all of which in
  * the reference corpus satisfy (1)) above those, and a candidate that does not satisfy (1) should
@@ -88,6 +94,9 @@ public final class SpcIplScanner {
 
 	/** Minimum APU RAM the upload must leave untouched; see class doc. */
 	public static final int MIN_FREE_RAM = 0x1000;
+
+	/** Largest share of the payload its most common byte may take before ranking lower; see class doc. */
+	public static final double MAX_DOMINANT_BYTE_SHARE = 0.15;
 
 	private static final int COPIER_HEADER_LEN = 0x200;
 
@@ -144,7 +153,9 @@ public final class SpcIplScanner {
 				continue;
 			}
 			SpcIplFormat.Stream s = r.stream();
-			int score = (entryAtBlockStart(s) ? 1 << 30 : 0) + s.blocks().size() * 65536 + s.payloadBytes();
+			int score = (entryAtBlockStart(s) ? 1 << 30 : 0) +
+				(dominantByteShare(s) <= MAX_DOMINANT_BYTE_SHARE ? 1 << 29 : 0) +
+				Math.min(s.blocks().size(), 8191) * 65536 + s.payloadBytes();
 			long fileOff = off + (copierHeader ? COPIER_HEADER_LEN : 0);
 			found.add(new Candidate(off, fileOff, copierHeader, s, score, List.of()));
 		}
@@ -177,6 +188,28 @@ public final class SpcIplScanner {
 				k.score(), List.copyOf(tails.get(i))));
 		}
 		return out;
+	}
+
+	/**
+	 * The share of the stream's whole payload taken by its most common byte value.
+	 *
+	 * @param s a parsed stream
+	 * @return the share in [0, 1]; 1 for an empty payload
+	 */
+	public static double dominantByteShare(SpcIplFormat.Stream s) {
+		int[] counts = new int[256];
+		int total = 0;
+		for (SpcIplFormat.Block b : s.blocks()) {
+			for (byte v : b.data()) {
+				counts[v & 0xFF]++;
+			}
+			total += b.length();
+		}
+		int max = 0;
+		for (int c : counts) {
+			max = Math.max(max, c);
+		}
+		return total == 0 ? 1.0 : (double) max / total;
 	}
 
 	private static boolean entryAtBlockStart(SpcIplFormat.Stream s) {
