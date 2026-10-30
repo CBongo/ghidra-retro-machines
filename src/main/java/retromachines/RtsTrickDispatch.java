@@ -273,6 +273,7 @@ final class RtsTrickDispatch {
 		if (i < 1 || !isPush(d, w[i])) {
 			return null;
 		}
+		int push2 = i;
 		int load2 = i - 1;
 		int tLo = loadOperand(d, w[load2]);
 		int reg = loadRegister(d, w[load2]);
@@ -294,10 +295,13 @@ final class RtsTrickDispatch {
 		if (tHi < 0 || loadRegister(d, w[load1]) != reg || tHi == tLo) {
 			return null;
 		}
-		// No flow into the middle of the sequence: only its first instruction may be a join. The
-		// return itself may be one too: another path reaching it brings its own stack, and does not
-		// change what this path pushed (CT 0e10, FF3 0c69, SoM 100e share their RET; grm-gipk.8).
-		for (int k = load1 + 1; k < w.length - 1; k++) {
+		// No flow into the sequence between the first load and the last push: a join there could
+		// bring a different index or a half-built return address. Anything after the last push may
+		// be a join, the return included: another path reaching it brings its own stack, and does
+		// not change what this path pushed (CT 0e10, FF3 0c69, SoM 100e share their RET,
+		// grm-gipk.8; radical 0c89 and Terranigma 0468 join between the last push and it,
+		// grm-gipk.12).
+		for (int k = load1 + 1; k <= push2; k++) {
 			if (hasNonFallThroughFlowInto(program, w[k].getMinAddress())) {
 				return null;
 			}

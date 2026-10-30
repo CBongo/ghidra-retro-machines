@@ -173,6 +173,24 @@ public class Spc700RetTrickDispatchTest extends AbstractProgramTest {
 	}
 
 	@Test
+	public void flowIntoTheLastPushDeclines() throws Exception {
+		table(0x2000, 0x2010);
+		branchTo(RET - 1); // the second PUSH A: another path could push its own low byte
+		run(CT_DISPATCH);
+		assertTrue(computedJumpTargets().isEmpty());
+	}
+
+	@Test
+	public void flowAfterTheLastPushStillResolves() throws Exception {
+		// radical 0c89 / Terranigma 0468 (grm-gipk.12): a path joins between the last push and the
+		// RET. It brings its own stack, like a join at the RET itself.
+		table(0x2000, 0x2010);
+		branchTo(RET - 1); // the NOP between PUSH A and RET
+		run(CT_DISPATCH.replace(" 2d 6f", " 2d 00 6f"));
+		assertEquals(List.of(addr(0x2000), addr(0x2010)), computedJumpTargets());
+	}
+
+	@Test
 	public void indexWrittenBetweenTheLoadsDeclines() throws Exception {
 		table(0x2000, 0x2010);
 		// MOV Y,#$00 between the two loads: the second load reads a different entry.
