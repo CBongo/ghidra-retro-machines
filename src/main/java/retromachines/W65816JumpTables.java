@@ -76,35 +76,80 @@ final class W65816JumpTables {
 	 */
 	static int bound(long tableStart, long targetBank, int cap, IntFunction<Integer> word,
 			LongPredicate tableByteFree, LongPredicate targetPlausible, List<Long> targets) {
+		TableScorer.Result<Long, End> r = score(tableStart, targetBank, cap, false, word,
+			tableByteFree, targetPlausible);
+		targets.addAll(r.targets());
+		return r.count();
+	}
+
+	/** Why a table ended; each is one of {@link #score}'s evidence terms. */
+	enum End {
+		/** The entry's bytes would wrap past the end of the bank. */
+		BANK_END,
+		/** The entry's bytes reach the lowest accepted target above the table. */
+		ABOVE_TABLE_TARGET,
+		/** One of the entry's bytes is already code, data, or another table's start. */
+		BYTE_TAKEN,
+		UNREADABLE,
+		/** The target points into the table's own bytes. */
+		INTO_TABLE,
+		/** The target lies in the other 32 KB half of the bank from entry 0's (RTS trick only). */
+		OTHER_HALF,
+		/** {@code targetPlausible} rejects the target. */
+		IMPLAUSIBLE
+	}
+
+	/**
+	 * The table walk behind {@link #bound}, through {@link TableScorer}; {@code sameHalf} adds the
+	 * {@link End#OTHER_HALF} term. A HiROM bank maps both halves to ROM, so without it an RTS-trick
+	 * table runs on into a following one whose words point into the other half: Madden NFL '94
+	 * {@code $C5:A748} has 66 handlers at {@code $82xx-$A5xx}, then {@code $22B6, $2340, ...},
+	 * which decode as plausible code and took the count to 120 (grm-gipk.11). The half has no
+	 * hardware meaning in HiROM, which is why grm-gipk.16 means to soften it.
+	 */
+	static TableScorer.Result<Long, End> score(long tableStart, long targetBank, int cap,
+			boolean sameHalf, IntFunction<Integer> word, LongPredicate tableByteFree,
+			LongPredicate targetPlausible) {
 		long bank = tableStart & 0xff0000L;
-		long lowestAbove = Long.MAX_VALUE;   // lowest accepted target at or above the table
-		int n = 0;
-		for (; n < cap; n++) {
+		return TableScorer.walk(cap, (n, before) -> {
 			long at = tableStart + 2L * n;
-			// Wrapping past the bank end is not a table.
 			if (((at + 1) & 0xff0000L) != bank) {
-				break;
+				return TableScorer.Entry.rejected(End.BANK_END);
 			}
-			if (at + 1 >= lowestAbove || !tableByteFree.test(at) || !tableByteFree.test(at + 1)) {
-				break;
+			if (at + 1 >= lowestAbove(tableStart, before)) {
+				return TableScorer.Entry.rejected(End.ABOVE_TABLE_TARGET);
+			}
+			if (!tableByteFree.test(at) || !tableByteFree.test(at + 1)) {
+				return TableScorer.Entry.rejected(End.BYTE_TAKEN);
 			}
 			Integer w = word.apply(n);
 			if (w == null) {
-				break;
+				return TableScorer.Entry.rejected(End.UNREADABLE);
 			}
 			long target = (targetBank & 0xff0000L) | (w & 0xffff);
 			if (target >= tableStart && target <= at + 1) {
-				break;   // points into the table itself
+				return TableScorer.Entry.rejected(End.INTO_TABLE);
+			}
+			if (sameHalf && !before.isEmpty() && ((before.get(0) ^ target) & 0x8000L) != 0) {
+				return TableScorer.Entry.rejected(End.OTHER_HALF);
 			}
 			if (!targetPlausible.test(target)) {
-				break;
+				return TableScorer.Entry.rejected(End.IMPLAUSIBLE);
 			}
-			targets.add(target);
-			if (target > at + 1) {
-				lowestAbove = Math.min(lowestAbove, target);
+			return TableScorer.Entry.accepted(target, List.of());
+		}, TableScorer.HARD_ONLY);
+	}
+
+	/** The lowest of {@code before} lying past its own entry's bytes, else MAX_VALUE. */
+	private static long lowestAbove(long tableStart, List<Long> before) {
+		long lowest = Long.MAX_VALUE;
+		for (int j = 0; j < before.size(); j++) {
+			long t = before.get(j);
+			if (t > tableStart + 2L * j + 1) {
+				lowest = Math.min(lowest, t);
 			}
 		}
-		return n;
+		return lowest;
 	}
 
 	/**

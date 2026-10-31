@@ -120,7 +120,8 @@ public class W65816RtsTrickAnalyzer extends AbstractAnalyzer {
 			int n = sharedEntries(program, table, bank, bias, shape.cap(), targets);
 			boolean shared = n > 0;
 			if (!shared) {
-				n = W65816JumpTables.bound(table.getOffset(), bank, shape.cap(),
+				TableScorer.Result<Long, W65816JumpTables.End> r = W65816JumpTables.score(
+					table.getOffset(), bank, shape.cap(), true,
 					i -> {
 						Integer w = W65816JumpTableAnalyzer.word(program.getMemory(),
 							table.add(2L * i));
@@ -128,9 +129,10 @@ public class W65816RtsTrickAnalyzer extends AbstractAnalyzer {
 					},
 					b -> W65816JumpTableAnalyzer.tableByteFree(program, table.getNewAddress(b),
 						table, Set.of()),
-					t -> sameHalfAsFirst(targets, t) && W65816JumpTableAnalyzer.plausibleTarget(
-						program, table.getNewAddress(t), ctx),
-					targets);
+					t -> W65816JumpTableAnalyzer.plausibleTarget(program, table.getNewAddress(t),
+						ctx));
+				targets.addAll(r.targets());
+				n = r.count();
 			}
 			if (n < 2) {
 				AnalyzerLog.info(this, "RTS " + rtsAddr + ": only " + n + " plausible entr" +
@@ -182,16 +184,6 @@ public class W65816RtsTrickAnalyzer extends AbstractAnalyzer {
 			}
 		}
 		return false;
-	}
-
-	/**
-	 * Every target lies in the same 32 KB half of the bank as the first. A HiROM bank maps both
-	 * halves to ROM, so without this a table runs on into a following one whose words point into
-	 * the other half: Madden NFL '94 {@code $C5:A748} has 66 handlers at {@code $82xx-$A5xx}, then
-	 * {@code $22B6, $2340, ...}, which decode as plausible code and took the count to 120.
-	 */
-	private static boolean sameHalfAsFirst(List<Long> accepted, long t) {
-		return accepted.isEmpty() || ((accepted.get(0) ^ t) & 0x8000L) == 0;
 	}
 
 	/** Which check entry {@code i} fails, for the decline log. */

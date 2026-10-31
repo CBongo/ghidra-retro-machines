@@ -74,6 +74,35 @@ public class W65816JumpTablesTest {
 			new ArrayList<>()));
 	}
 
+	/**
+	 * grm-gipk.11's same-half term (RTS trick only): Madden '94 {@code $C5:A748} runs from its
+	 * {@code $82xx-$A5xx} handlers into a following table pointing into the low half.
+	 */
+	@Test
+	public void sameHalfEndsAtTheOtherHalf() {
+		int[] words = { 0x8210, 0xa5f0, 0x22b6, 0x2340 };
+		TableScorer.Result<Long, W65816JumpTables.End> r = W65816JumpTables.score(0xc5a748L,
+			0xc50000L, 128, true, i -> i < words.length ? words[i] : null, b -> true, t -> true);
+		assertEquals(2, r.count());
+		assertEquals(W65816JumpTables.End.OTHER_HALF, r.endedBy());
+		r = W65816JumpTables.score(0xc5a748L, 0xc50000L, 128, false,
+			i -> i < words.length ? words[i] : null, b -> true, t -> true);
+		assertEquals(4, r.count());
+		assertEquals(W65816JumpTables.End.UNREADABLE, r.endedBy());
+	}
+
+	/** Each former cut is now named by the term that ended the walk. */
+	@Test
+	public void theEndingTermIsNamed() {
+		TableScorer.Result<Long, W65816JumpTables.End> r = W65816JumpTables.score(0x008000L,
+			0x000000L, 128, false, i -> 0x9000 + i, b -> b < 0x008006L, t -> true);
+		assertEquals(W65816JumpTables.End.BYTE_TAKEN, r.endedBy());
+		r = W65816JumpTables.score(0x008000L, 0x000000L, 3, false, i -> 0x9000 + i, b -> true,
+			t -> true);
+		assertEquals(3, r.count());
+		assertEquals(null, r.endedBy());   // the cap
+	}
+
 	/** FF3 $C2:1B02: AND #$0F / ASL A / TAX -- sixteen entries. */
 	@Test
 	public void maskCap() {
