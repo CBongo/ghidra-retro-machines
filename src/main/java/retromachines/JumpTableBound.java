@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.function.BiFunction;
+import java.util.function.Predicate;
 
 /**
  * Pure logic for grm-eyn: bound a decompiler-recovered jump table by its own lowest target.
@@ -281,35 +282,33 @@ public final class JumpTableBound {
 		// Established once entry 0's own target sits above the table: the table-before-code idiom
 		// that makes a later below-table entry meaningful as a cut point rather than noise.
 		boolean tableBeforeCode = tableBlock != null && targets.get(0) > shape.tableStart;
-		long minTarget = 0;
-		boolean haveTarget = false;
-		int i;
-		int belowTableCut = -1;
-		for (i = 0; i < caseCount; i++) {
-			if (haveTarget && shape.entryEnd(i) > minTarget) {
-				break; // this entry's own bytes would collide with the lowest target so far
+		// grm-rsxe: when the table dispatches into its OWN block (entry 0 is there), a below-table
+		// target in that block is a real handler on the other side of the table (tmnt B5 940a:
+		// handlers 864b..9464 and 9464..a59f), not an over-read -- it is skipped rather than cut, and
+		// the table keeps bounding by the lowest target ABOVE the table. Over-read garbage lands
+		// outside the block (lwings dcb3's 8c84 is the switchable window, the table the fixed bank).
+		// When entry 0 is outside the block the table's real targets live elsewhere and an in-block
+		// one is the garbage (cv3 e137): no skip. A skipped entry still counts as a kept entry.
+		Predicate<Long> skipped = t -> tableBeforeCode && t < shape.tableStart &&
+			tableBlock.contains(t) && tableBlock.contains(targets.get(0));
+		TableScorer.Result<Long, Stop> walk = TableScorer.walk(caseCount, (i, before) -> {
+			Long lowest = lowestExcept(before, skipped);
+			if (lowest != null && shape.entryEnd(i) > lowest) {
+				// this entry's own bytes would collide with the lowest target so far
+				return TableScorer.Entry.rejected(Stop.OVERLAPS_LOWEST_TARGET);
 			}
 			long target = targets.get(i);
-			if (tableBeforeCode && target < shape.tableStart && tableBlock.contains(target) &&
-				tableBlock.contains(targets.get(0))) {
-				// grm-rsxe: when the table dispatches into its OWN block (entry 0 is there), a
-				// below-table target in that block is a real handler on the other side of the table
-				// (tmnt B5 940a: handlers 864b..9464 and 9464..a59f), not an over-read -- skip it
-				// rather than cut, and keep bounding by the lowest target ABOVE the table. Over-read
-				// garbage lands outside the block (lwings dcb3's 8c84 is the switchable window, the
-				// table the fixed bank). When entry 0 is outside the block the table's real targets
-				// live elsewhere and an in-block one is the garbage (cv3 e137): no skip.
-				continue;
+			if (!skipped.test(target) && tableBeforeCode && i >= 2 && target < shape.tableStart) {
+				// grm-fxtp: cut here instead of dragging minTarget below tableStart
+				return TableScorer.Entry.rejected(Stop.BELOW_TABLE);
 			}
-			if (tableBeforeCode && i >= 2 && target < shape.tableStart) {
-				belowTableCut = i; // grm-fxtp: cut here instead of dragging minTarget below tableStart
-				break;
-			}
-			if (!haveTarget || target < minTarget) {
-				minTarget = target;
-				haveTarget = true;
-			}
-		}
+			return TableScorer.Entry.accepted(target, List.of());
+		}, TableScorer.HARD_ONLY);
+		int i = walk.count();
+		Long lowest = lowestExcept(walk.targets(), skipped);
+		long minTarget = lowest == null ? 0 : lowest;
+		boolean haveTarget = lowest != null;
+		int belowTableCut = walk.endedBy() == Stop.BELOW_TABLE ? i : -1;
 		if (belowTableCut >= 0) {
 			return boundBelowTableCut(targets, tableBlock, shape.tableStart, belowTableCut, minTarget);
 		}
@@ -416,17 +415,22 @@ public final class JumpTableBound {
 		long hi = shape.tableStart;
 		int caseCount = targets.size();
 		long neighbour = shape.nearestNeighbour(otherStarts, shape.entryEnd(caseCount - 1));
-		int cut = 0;
-		long minTarget = Long.MAX_VALUE;
-		while (cut < caseCount && targets.get(cut) >= lo && targets.get(cut) < hi &&
-			shape.entryEnd(cut) <= neighbour) {
-			minTarget = Math.min(minTarget, targets.get(cut));
-			cut++;
-		}
+		TableScorer.Result<Long, Stop> walk = TableScorer.walk(caseCount, (i, before) -> {
+			long target = targets.get(i);
+			if (target < lo || target >= hi) {
+				return TableScorer.Entry.rejected(Stop.LEFT_WINDOW);
+			}
+			if (shape.entryEnd(i) > neighbour) {
+				return TableScorer.Entry.rejected(Stop.AT_NEIGHBOUR);
+			}
+			return TableScorer.Entry.accepted(target, List.of());
+		}, TableScorer.HARD_ONLY);
+		int cut = walk.count();
+		long minTarget = lowestOf(walk.targets());
 		if (cut < 2) {
 			return Result.decline();
 		}
-		if (cut < caseCount && targets.get(cut) >= lo && targets.get(cut) < hi) {
+		if (walk.endedBy() == Stop.AT_NEIGHBOUR) {
 			// Only the neighbour ended the walk (when the window would have too, as at tmnt 8fb8
 			// running into 8fc4, the plain window rule and its confirm check apply unchanged).
 			return Result.bounded(cut, minTarget, Rule.WINDOW_AT_NEIGHBOUR);
@@ -570,12 +574,11 @@ public final class JumpTableBound {
 			return Result.decline();
 		}
 		int m = (targets.size() + 1) / 2; // even cases
-		int cut = 0;
-		long minTarget = Long.MAX_VALUE;
-		while (cut < m && inCode.get(2 * cut)) {
-			minTarget = Math.min(minTarget, targets.get(2 * cut));
-			cut++;
-		}
+		TableScorer.Result<Long, Stop> walk = TableScorer.walk(m, (i, before) -> inCode.get(2 * i) ?
+			TableScorer.Entry.accepted(targets.get(2 * i), List.of()) :
+			TableScorer.Entry.rejected(Stop.NOT_IN_CODE), TableScorer.HARD_ONLY);
+		int cut = walk.count();
+		long minTarget = lowestOf(walk.targets());
 		if (cut < 2 || cut == m) {
 			return Result.decline();
 		}
@@ -646,18 +649,24 @@ public final class JumpTableBound {
 		if (neighbour == Long.MAX_VALUE || !shape.isEntryBoundary(neighbour)) {
 			return Result.decline();
 		}
-		int cut = 0;
-		long minTarget = Long.MAX_VALUE;
-		while (cut < caseCount && shape.entryEnd(cut) <= neighbour) {
-			if (!inCode.get(cut)) {
-				// A kept entry that cannot be code means the neighbour lies past garbage this
-				// table already over-read (measured: dbz2/dbz_saiyan tables whose cut would have
-				// labelled zero-page and PPU targets as cases) -- not the idiom, decline.
-				return Result.decline();
+		final long cutAt = neighbour;
+		TableScorer.Result<Long, Stop> walk = TableScorer.walk(caseCount, (i, before) -> {
+			if (shape.entryEnd(i) > cutAt) {
+				return TableScorer.Entry.rejected(Stop.AT_NEIGHBOUR);
 			}
-			minTarget = Math.min(minTarget, targets.get(cut));
-			cut++;
+			if (!inCode.get(i)) {
+				return TableScorer.Entry.rejected(Stop.NOT_IN_CODE);
+			}
+			return TableScorer.Entry.accepted(targets.get(i), List.of());
+		}, TableScorer.HARD_ONLY);
+		if (walk.endedBy() == Stop.NOT_IN_CODE) {
+			// A kept entry that cannot be code means the neighbour lies past garbage this table
+			// already over-read (measured: dbz2/dbz_saiyan tables whose cut would have labelled
+			// zero-page and PPU targets as cases) -- not the idiom, decline.
+			return Result.decline();
 		}
+		int cut = walk.count();
+		long minTarget = lowestOf(walk.targets());
 		if (cut < 2) {
 			return Result.decline();
 		}
@@ -696,15 +705,16 @@ public final class JumpTableBound {
 			return Result.decline();
 		}
 		int caseCount = targets.size();
-		int cut = -1;
-		for (int i = 0; i < caseCount && cut < 0; i++) {
+		TableScorer.Result<Long, Stop> walk = TableScorer.walk(caseCount, (i, before) -> {
 			for (long c : codeStarts) {
 				if (shape.entryContains(i, c)) {
-					cut = i;
-					break;
+					return TableScorer.Entry.rejected(Stop.CONTAINS_CODE_START);
 				}
 			}
-		}
+			return TableScorer.Entry.accepted(targets.get(i), List.of());
+		}, TableScorer.HARD_ONLY);
+		// No entry contains a code start: nothing to cut at.
+		int cut = walk.endedBy() == Stop.CONTAINS_CODE_START ? walk.count() : -1;
 		if (cut < 2) {
 			return Result.decline();
 		}
@@ -797,6 +807,42 @@ public final class JumpTableBound {
 
 	/** How many words {@link #looksLikeWordTable} needs. */
 	static final int WORD_TABLE_RUN = 4;
+
+	/** Why a per-entry walk ended at an entry (the reason type of its {@link TableScorer} walk). */
+	private enum Stop {
+		/** {@link #bound}: grm-fxtp -- a target below the table's own start, from entry 2 on. */
+		BELOW_TABLE,
+		/** {@link #bound}: the entry's own bytes would reach the lowest target so far. */
+		OVERLAPS_LOWEST_TARGET,
+		/** {@link #boundBySwitchWindow}: the target lies outside the switch window. */
+		LEFT_WINDOW,
+		/** The entry's bytes would reach another table's start. */
+		AT_NEIGHBOUR,
+		/** The target lies in memory that cannot hold code. */
+		NOT_IN_CODE,
+		/** {@link #boundByKnownCode}: the entry's bytes contain another table's target. */
+		CONTAINS_CODE_START
+	}
+
+	/** The lowest of {@code ts} that {@code skip} does not exclude, or null when there is none. */
+	private static Long lowestExcept(List<Long> ts, Predicate<Long> skip) {
+		Long lowest = null;
+		for (long t : ts) {
+			if (!skip.test(t) && (lowest == null || t < lowest)) {
+				lowest = t;
+			}
+		}
+		return lowest;
+	}
+
+	/** The lowest of {@code ts}, or {@link Long#MAX_VALUE} when empty. */
+	private static long lowestOf(List<Long> ts) {
+		long lowest = Long.MAX_VALUE;
+		for (long t : ts) {
+			lowest = Math.min(lowest, t);
+		}
+		return lowest;
+	}
 
 	/** Which rule produced a bounded {@link Result}. */
 	public enum Rule {
