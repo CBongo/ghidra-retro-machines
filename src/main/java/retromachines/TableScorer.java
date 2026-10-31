@@ -16,7 +16,10 @@
 package retromachines;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
+import java.util.function.Function;
 
 /**
  * Pure logic for grm-gipk.16: one model for "how long is this table", shared by every walk that
@@ -172,10 +175,77 @@ final class TableScorer {
 	 * A walked table: the kept targets, in entry order, and the reason it ended -- the hard term,
 	 * or for a policy end the weakest term of the first entry dropped. Null when the cap ended it.
 	 */
-	record Result<T, R>(List<T> targets, R endedBy) {
+	record Result<T, R>(List<T> targets, R endedBy, List<Double> scores) {
 		int count() {
 			return targets.size();
 		}
+
+		/** The sum of the kept entries' scores: how many real entries the evidence expects. */
+		double expected() {
+			double s = 0;
+			for (double d : scores) {
+				s += d;
+			}
+			return s;
+		}
+	}
+
+	/**
+	 * One candidate reading of a table for {@link #rank} (grm-gipk.16.6): which entry is entry 0
+	 * (offset {@code k}), or what each word adds to make its target (bias {@code b}), with the
+	 * prior the dispatch code gives it. The code-derived reading carries the strong prior; the
+	 * neighbours searched around it a weak one, so the bytes overturn the code only by a wide
+	 * margin.
+	 */
+	record Candidate<K>(K key, double prior) {
+	}
+
+	/** A candidate walked: its result and quality, {@code prior * result.expected()}. */
+	record Ranked<K, T, R>(K key, double prior, Result<T, R> result) {
+		double quality() {
+			return prior * result.expected();
+		}
+	}
+
+	/**
+	 * Walks every candidate with {@code walk} and returns them best first by quality; ties keep
+	 * the input order, so list the code-derived reading first and it wins a tie. A table read at
+	 * the wrong start or bias meets implausible targets early (code-tail bytes before the real
+	 * entry 0, handlers one byte off), so its walk ends short and its expected count is low.
+	 */
+	static <K, T, R> List<Ranked<K, T, R>> rank(List<Candidate<K>> candidates,
+			Function<K, Result<T, R>> walk) {
+		List<Ranked<K, T, R>> out = new ArrayList<>(candidates.size());
+		for (Candidate<K> c : candidates) {
+			out.add(new Ranked<>(c.key(), c.prior(), walk.apply(c.key())));
+		}
+		out.sort(Comparator.comparingDouble((Ranked<K, T, R> r) -> r.quality()).reversed());
+		return out;
+	}
+
+	/**
+	 * When a candidate other than {@code chosen} ranks above it, a log fragment naming both and
+	 * the quality ratio; null when {@code chosen} ranks first. Check mode: the caller still uses
+	 * the code-derived reading, and this only reports where the bytes disagree with it.
+	 */
+	static <K, T, R> String disagreement(List<Ranked<K, T, R>> ranked, K chosen) {
+		if (ranked.isEmpty() || ranked.get(0).key().equals(chosen)) {
+			return null;
+		}
+		Ranked<K, T, R> best = ranked.get(0);
+		Ranked<K, T, R> code = null;
+		for (Ranked<K, T, R> r : ranked) {
+			if (r.key().equals(chosen)) {
+				code = r;
+			}
+		}
+		if (code == null) {
+			return null;
+		}
+		String ratio = code.quality() > 0
+				? String.format(Locale.ROOT, "%.2f", best.quality() / code.quality()) : "inf";
+		return "code " + chosen + " keeps " + code.result().count() + "; " + best.key() +
+			" keeps " + best.result().count() + " (quality x" + ratio + ")";
 	}
 
 	/** Reads up to {@code cap} entries and keeps the prefix {@code policy} chooses. */
@@ -208,6 +278,7 @@ final class TableScorer {
 			Term<R> w = read.get(keep).weakest();
 			endedBy = w == null ? null : w.reason();
 		}
-		return new Result<>(List.copyOf(targets.subList(0, keep)), endedBy);
+		return new Result<>(List.copyOf(targets.subList(0, keep)), endedBy,
+			List.copyOf(scores.subList(0, keep)));
 	}
 }

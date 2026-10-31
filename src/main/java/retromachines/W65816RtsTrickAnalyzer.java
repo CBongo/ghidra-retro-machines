@@ -120,28 +120,30 @@ public class W65816RtsTrickAnalyzer extends AbstractAnalyzer {
 			int n = sharedEntries(program, table, bank, bias, shape.cap(), targets);
 			boolean shared = n > 0;
 			if (!shared) {
-				// grm-gipk.16.7: references at an entry position that are not the table's own.
 				List<EntryReferences.Extent> extent =
-					List.of(new EntryReferences.Extent(table, 2L * shape.cap()));
+					W65816JumpTableAnalyzer.extentOf(table, shape.cap());
 				Set<Address> own = Set.of(rtsAddr);
-				TableScorer.Result<Long, W65816JumpTables.End> r = W65816JumpTables.score(
-					table.getOffset(), bank, shape.cap(), true,
-					i -> {
-						Integer w = W65816JumpTableAnalyzer.word(program.getMemory(),
-							table.add(2L * i));
-						return w == null ? null : (w + bias) & 0xffff;
-					},
-					b -> W65816JumpTableAnalyzer.tableByteFree(program, table.getNewAddress(b),
-						table, Set.of()),
-					t -> W65816JumpTableAnalyzer.plausibleTarget(program, table.getNewAddress(t),
-						ctx),
-					i -> EntryReferences.find(program, table.add(2L * i), extent, own));
+				TableScorer.Result<Long, W65816JumpTables.End> r =
+					walkTable(program, table, bank, bias, shape.cap(), ctx, own);
 				targets.addAll(r.targets());
 				n = r.count();
 				if (r.endedBy() == W65816JumpTables.End.ENTRY_REFERENCED) {
 					AnalyzerLog.info(this, "RTS " + rtsAddr + ": table " + table + " ended at " +
 						"entry " + n + " by ENTRY_REFERENCED " +
 						EntryReferences.find(program, table.add(2L * n), extent, own).describe());
+				}
+				// grm-gipk.16.6, check mode: would the bytes read better with the value bias one
+				// either side of the code-derived one (RTS +1, minus each DEC A)? Logged only.
+				List<TableScorer.Candidate<Integer>> biases = List.of(
+					new TableScorer.Candidate<>(bias, 1.0),
+					new TableScorer.Candidate<>(bias - 1, W65816JumpTableAnalyzer.ALT_PRIOR),
+					new TableScorer.Candidate<>(bias + 1, W65816JumpTableAnalyzer.ALT_PRIOR));
+				String why = TableScorer.disagreement(TableScorer.rank(biases, b -> b == bias ? r
+						: walkTable(program, table, bank, b, shape.cap(), ctx, own)),
+					bias);
+				if (why != null) {
+					AnalyzerLog.info(this, "RTS " + rtsAddr + ": table " + table +
+						" bias check: " + why);
 				}
 			}
 			if (n < 2) {
@@ -194,6 +196,23 @@ public class W65816RtsTrickAnalyzer extends AbstractAnalyzer {
 			}
 		}
 		return false;
+	}
+
+	/** One RTS-trick table read with value bias {@code bias} (grm-gipk.16.6 walks alternatives). */
+	private static TableScorer.Result<Long, W65816JumpTables.End> walkTable(Program program,
+			Address table, long bank, int bias, int cap, Map<Register, Integer> ctx,
+			Set<Address> own) {
+		// grm-gipk.16.7: references at an entry position that are not the table's own.
+		List<EntryReferences.Extent> extent = W65816JumpTableAnalyzer.extentOf(table, cap);
+		return W65816JumpTables.score(table.getOffset(), bank, cap, true,
+			i -> {
+				Integer w = W65816JumpTableAnalyzer.word(program.getMemory(), table.add(2L * i));
+				return w == null ? null : (w + bias) & 0xffff;
+			},
+			b -> W65816JumpTableAnalyzer.tableByteFree(program, table.getNewAddress(b), table,
+				Set.of()),
+			t -> W65816JumpTableAnalyzer.plausibleTarget(program, table.getNewAddress(t), ctx),
+			i -> EntryReferences.find(program, table.add(2L * i), extent, own));
 	}
 
 	/** Which check entry {@code i} fails, for the decline log. */

@@ -130,6 +130,43 @@ public class TableScorerTest {
 		assertEquals(1, p.settle(List.of(1.0, 0.1, 0.7)));
 	}
 
+	/** A walk of {@code n} accepted entries, the last {@code soft} of them scoring 0.5. */
+	private static TableScorer.Result<Integer, Why> walkOf(int n, int soft) {
+		return TableScorer.<Integer, Why> walk(n + 1,
+			(i, before) -> i == n ? TableScorer.Entry.rejected(Why.BAD)
+					: TableScorer.Entry.accepted(i, i >= n - soft
+							? List.of(new TableScorer.Term<>(Why.WEAK, 0.5)) : List.of()),
+			TableScorer.HARD_ONLY);
+	}
+
+	@Test
+	public void expectedIsTheSumOfKeptScores() {
+		assertEquals(3.0, walkOf(4, 2).expected(), 1e-12);
+	}
+
+	/** The code-derived reading wins unless the bytes beat its prior by the prior's ratio. */
+	@Test
+	public void rankWeighsThePrior() {
+		List<TableScorer.Candidate<Integer>> c = List.of(new TableScorer.Candidate<>(1, 1.0),
+			new TableScorer.Candidate<>(0, 0.25));
+		// code b=1 keeps 10; b=0 keeps 30: 0.25*30 = 7.5 < 10, the code stands.
+		List<TableScorer.Ranked<Integer, Integer, Why>> r =
+			TableScorer.rank(c, b -> walkOf(b == 1 ? 10 : 30, 0));
+		assertEquals(1, (int) r.get(0).key());
+		assertNull(TableScorer.disagreement(r, 1));
+		// code b=1 keeps 2; b=0 keeps 40: 0.25*40 = 10 > 2, the bytes disagree.
+		r = TableScorer.rank(c, b -> walkOf(b == 1 ? 2 : 40, 0));
+		assertEquals(0, (int) r.get(0).key());
+		assertEquals("code 1 keeps 2; 0 keeps 40 (quality x5.00)", TableScorer.disagreement(r, 1));
+	}
+
+	@Test
+	public void rankTiesKeepInputOrder() {
+		List<TableScorer.Candidate<String>> c = List.of(new TableScorer.Candidate<>("k=0", 1.0),
+			new TableScorer.Candidate<>("k=1", 1.0));
+		assertEquals("k=0", TableScorer.rank(c, k -> walkOf(5, 0)).get(0).key());
+	}
+
 	@Test
 	public void scoreIsTheProductOfTerms() {
 		TableScorer.Entry<Integer, Why> e = TableScorer.Entry.accepted(1,

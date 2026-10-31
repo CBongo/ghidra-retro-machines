@@ -170,26 +170,37 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 			int n = sharedTableEntries(program, table, targetBank, cap, targets);
 			boolean shared = n > 0;
 			if (!shared) {
-				// grm-gipk.16.7: references at an entry position that are not the table's own.
-				List<EntryReferences.Extent> extent =
-					List.of(new EntryReferences.Extent(table, 2L * cap));
 				Set<Address> own = new LinkedHashSet<>();
 				own.add(siteAddr);
 				if (dispatch.index() != null) {
 					own.add(dispatch.index().getMinAddress());
 				}
-				TableScorer.Result<Long, W65816JumpTables.End> r = W65816JumpTables.score(
-					table.getOffset(), targetBank, cap, false,
-					i -> word(program.getMemory(), table.add(2L * i)),
-					b -> tableByteFree(program, table.getNewAddress(b), table, tableStarts),
-					t -> plausibleTarget(program, table.getNewAddress(t), ctx),
-					i -> EntryReferences.find(program, table.add(2L * i), extent, own));
+				TableScorer.Result<Long, W65816JumpTables.End> r =
+					walkTable(program, table, targetBank, cap, ctx, tableStarts, own);
 				targets.addAll(r.targets());
 				n = r.count();
 				if (r.endedBy() == W65816JumpTables.End.ENTRY_REFERENCED) {
 					AnalyzerLog.info(this, "dispatch " + siteAddr + ": table " + table + " ended at " +
-						"entry " + n + " by ENTRY_REFERENCED " +
-						EntryReferences.find(program, table.add(2L * n), extent, own).describe());
+						"entry " + n + " by ENTRY_REFERENCED " + EntryReferences.find(program,
+							table.add(2L * n), extentOf(table, cap), own).describe());
+				}
+				// grm-gipk.16.6, check mode: would the bytes read better one entry either side of
+				// the code-derived start? Logged only; the code's start is what is laid.
+				List<TableScorer.Candidate<Integer>> starts = new ArrayList<>();
+				starts.add(new TableScorer.Candidate<>(0, 1.0));
+				starts.add(new TableScorer.Candidate<>(1, ALT_PRIOR));
+				if ((table.getOffset() & 0xffff) >= 2) {
+					starts.add(new TableScorer.Candidate<>(-1, ALT_PRIOR));
+				}
+				// The code's own start is not another table's start for the shifted readings.
+				Set<Address> others = new LinkedHashSet<>(tableStarts);
+				others.remove(table);
+				String why = TableScorer.disagreement(TableScorer.rank(starts, k -> k == 0 ? r
+						: walkTable(program, table.add(2L * k), targetBank, cap, ctx, others, own)),
+					0);
+				if (why != null) {
+					AnalyzerLog.info(this, "dispatch " + siteAddr + ": table " + table +
+						" start check (entry offset): " + why);
 				}
 			}
 			if (n == 0) {
@@ -372,6 +383,30 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 	 * @param index the instruction whose X indexes the table -- where the index bound is read
 	 */
 	record Dispatch(Address table, long targetBank, Instruction index) {}
+
+	/**
+	 * grm-gipk.16.6: the prior of a start or bias the bytes propose against the code-derived one,
+	 * which has prior 1. An alternative must read four times as many entries to outrank the code.
+	 */
+	static final double ALT_PRIOR = 0.25;
+
+	/** The bytes a table at {@code table} could occupy, for grm-gipk.16.7's own-reference test. */
+	static List<EntryReferences.Extent> extentOf(Address table, int cap) {
+		return List.of(new EntryReferences.Extent(table, 2L * cap));
+	}
+
+	/** One JMP/JSR (abs,X) table read from {@code table} (grm-gipk.16.6 walks alternatives too). */
+	private static TableScorer.Result<Long, W65816JumpTables.End> walkTable(Program program,
+			Address table, long targetBank, int cap, Map<Register, Integer> ctx,
+			Set<Address> tableStarts, Set<Address> own) {
+		// grm-gipk.16.7: references at an entry position that are not the table's own.
+		List<EntryReferences.Extent> extent = extentOf(table, cap);
+		return W65816JumpTables.score(table.getOffset(), targetBank, cap, false,
+			i -> word(program.getMemory(), table.add(2L * i)),
+			b -> tableByteFree(program, table.getNewAddress(b), table, tableStarts),
+			t -> plausibleTarget(program, table.getNewAddress(t), ctx),
+			i -> EntryReferences.find(program, table.add(2L * i), extent, own));
+	}
 
 	/**
 	 * The word table {@code in} dispatches through, either shape; else null. A table whose index
