@@ -693,9 +693,10 @@ files), FF2's eight blocks at `04/8683` (`notes.txt`), and Lemmings' block at `0
 
 **Precision is weak and the report shows it:** the format has little redundancy and ROM data is
 full of zero words, so each title yields hundreds of chance candidates; the plausibility rules and
-ranking (documented on `SpcIplScanner`) float the genuine streams (F-Zero, FF2 first; Lemmings
-5th, a single-block stream, up from 17th once degenerate payloads ranked lower, `grm-1.7.7`;
-the TSV's `dominantByteShare` column is that signal) but a lone candidate is a lead, not a finding. Som and FF3 keep the
+ranking (documented on `SpcIplScanner`) float the genuine streams (F-Zero, FF2 and Lemmings all first since `grm-1.7.7`; Lemmings
+was 17th): the top signal is whether flow from the entry reaches a DSP write
+(`SpcDriverStart`, TSV column `driverStart`; 40 of 4999 candidates do), then a non-degenerate
+payload (`dominantByteShare`). But a lone candidate is a lead, not a finding. Som and FF3 keep the
 destination out of line (`[len][data]` with the address elsewhere) and are invisible to this tier by
 construction; that is what the emulation tier is for.
 

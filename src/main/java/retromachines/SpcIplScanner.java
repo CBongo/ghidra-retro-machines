@@ -58,7 +58,11 @@ import java.util.List;
  * The IPL itself lives at {@code $FFC0-$FFFF} but is only mapped while CONTROL bit 7 is set, so
  * uploads may legitimately target that RAM; it is not excluded.
  *
- * <p><b>Ranking.</b> Lexicographic: (1) whether the entry address equals the start address of
+ * <p><b>Ranking.</b> Lexicographic: (0) whether straight-line flow from the entry reaches a DSP
+ * or control-register write ({@link SpcDriverStart}) -- every driver programs the DSP; 40 of the
+ * 4999 reference-corpus candidates do, including all three ground-truth streams (grm-1.7.7,
+ * 2026-10-30). A ranking signal, not a rule: the walk cannot see writes through an index
+ * register; (1) whether the entry address equals the start address of
  * some block -- a driver is uploaded as a unit and begun at its load address, and a chance chain
  * hits that only by a 1-in-blocks-times-64K coincidence; (2) whether the payload is not
  * degenerate: its most common byte is at most {@value #MAX_DOMINANT_BYTE_SHARE} of the whole
@@ -68,9 +72,10 @@ import java.util.List;
  * one byte (zero-filled RAM; F-Zero's and FF2's streams both do), and the three reference streams
  * measure 0.05-0.09 (grm-1.7.7, 2026-10-30); (3) block count, since every extra
  * block is another independently validated {@code [len][addr]} header on the way to a
- * terminator; (4) payload bytes. Encoded as {@code score = (entryAtBlockStart ? 2^30 : 0) +
- * (notDegenerate ? 2^29 : 0) + min(blockCount, 8191) * 65536 + payloadBytes}. (1) and (2) are
- * ranking signals, not rules: nothing in the IPL protocol forces either. <b>Honest limits:</b> the format has very little redundancy, and ROM
+ * terminator; (4) payload bytes. Encoded as {@code score = (dspWrite ? 2^30 : 0) +
+ * (entryAtBlockStart ? 2^29 : 0) + (notDegenerate ? 2^28 : 0) + min(blockCount, 4095) * 65536 +
+ * payloadBytes}. (1) and (2) are ranking signals, not rules: nothing in the IPL protocol forces
+ * either. <b>Honest limits:</b> the format has very little redundancy, and ROM
  * data is full of zero words, so chance chains of several tiny blocks do pass the rules above;
  * the corpus report shows them. The ordering exists to float genuine streams (all of which in
  * the reference corpus satisfy (1)) above those, and a candidate that does not satisfy (1) should
@@ -153,9 +158,10 @@ public final class SpcIplScanner {
 				continue;
 			}
 			SpcIplFormat.Stream s = r.stream();
-			int score = (entryAtBlockStart(s) ? 1 << 30 : 0) +
-				(dominantByteShare(s) <= MAX_DOMINANT_BYTE_SHARE ? 1 << 29 : 0) +
-				Math.min(s.blocks().size(), 8191) * 65536 + s.payloadBytes();
+			int score = (SpcDriverStart.walk(s) == SpcDriverStart.Outcome.DSP_WRITE ? 1 << 30 : 0) +
+				(entryAtBlockStart(s) ? 1 << 29 : 0) +
+				(dominantByteShare(s) <= MAX_DOMINANT_BYTE_SHARE ? 1 << 28 : 0) +
+				Math.min(s.blocks().size(), 4095) * 65536 + s.payloadBytes();
 			long fileOff = off + (copierHeader ? COPIER_HEADER_LEN : 0);
 			found.add(new Candidate(off, fileOff, copierHeader, s, score, List.of()));
 		}

@@ -146,7 +146,7 @@ public class SpcIplScannerTest {
 		assertEquals(2200, c.get(0).stream().payloadBytes());
 		assertTrue(SpcIplScanner.dominantByteShare(c.get(0).stream()) <=
 			SpcIplScanner.MAX_DOMINANT_BYTE_SHARE);
-		assertTrue((c.get(0).score() & (1 << 29)) != 0);
+		assertTrue((c.get(0).score() & (1 << 28)) != 0);
 	}
 
 	/** grm-1.7.7: a degenerate chain ranks below a varied stream even with more blocks. */

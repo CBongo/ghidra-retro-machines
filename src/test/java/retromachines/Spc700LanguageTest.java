@@ -68,6 +68,25 @@ public class Spc700LanguageTest extends AbstractBundledLanguageTest {
 		return instr;
 	}
 
+	/** grm-1.7.7: SpcDriverStart's hand length table must agree with the SLEIGH decoder on all 256. */
+	@Test
+	public void driverStartLengthTableMatchesSleigh() throws Exception {
+		ghidra.program.model.lang.Language lang = program.getLanguage();
+		ghidra.program.model.address.Address at = builder.addr("0x0200");
+		StringBuilder bad = new StringBuilder();
+		for (int op = 0; op < 256; op++) {
+			byte[] bytes = { (byte) op, 0x10, 0x20 };
+			ghidra.program.model.lang.InstructionPrototype proto = lang.parse(
+				new ghidra.program.model.mem.ByteMemBufferImpl(at, bytes, false),
+				new ghidra.program.model.lang.ProcessorContextImpl(lang), false);
+			if (proto.getLength() != SpcDriverStart.length(op)) {
+				bad.append(String.format(" %02X:sleigh=%d,table=%d", op, proto.getLength(),
+					SpcDriverStart.length(op)));
+			}
+		}
+		assertEquals("", bad.toString());
+	}
+
 	@Test
 	public void languageResolves() {
 		assertEquals(LANGUAGE_ID, program.getLanguage().getLanguageID().getIdAsString());
