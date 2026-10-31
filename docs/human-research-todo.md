@@ -186,6 +186,18 @@ Each is minutes of work and settles something specific. Highest value per unit e
 
   The answer sets the counts in grm-hb6.28's FF3 descriptor hint, and may add a third table to it.
 
+### 1.8 65816 tables where the bytes outvote the code's start or bias (`grm-gipk.16.8`)
+
+- [ ] **Question.** The start/bias check (grm-gipk.16.6) logs where reading a table one entry
+  later, or with the RTS value bias one off, yields far more plausible entries than the reading the
+  code implies. Where the code's reading resolves *nothing* the agent will adopt the alternative.
+  For the close calls below it needs a ruling. Which reading is the real table?
+  - BoF2 `$C4:3042` (table `$C4:3045`): code start keeps 3 entries, one entry later keeps 15.
+  - Timecop `$81:AF35` (table `$81:AF90`): code start keeps 1, one entry later keeps 10.
+  - Madden NFL 95, RTS `$C6:B892` (table `$C6:B8DE`): code bias +1 keeps 3, bias 0 keeps 19.
+
+  Two or three answers set the margin rule for acting on the rest (full list on grm-gipk.16.6).
+
 ---
 
 ## 2. Def-use passes on untraced titles
