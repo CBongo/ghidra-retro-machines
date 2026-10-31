@@ -402,31 +402,24 @@ final class InlineJumpTableDispatch {
 		Memory memory = program.getMemory();
 		ReferenceManager refMgr = program.getReferenceManager();
 
-		List<Address> kept = new ArrayList<>();
 		List<Address> trimmed = new ArrayList<>();
-		long lowestAbove = Long.MAX_VALUE;
-		Cut cut = Cut.DECLINED;
-		for (int i = 0; i < MAX_TABLE_ENTRIES; i++) {
+		TableScorer.Result<Address, Cut> walked = TableScorer.walk(MAX_TABLE_ENTRIES, (i, before) -> {
 			long entryOffset = tableStart.getOffset() + 2L * i;
-			if (entryOffset >= lowestAbove) {
-				cut = Cut.ABOVE_TABLE_TARGET;
-				break;
+			if (entryOffset >= lowestAbove(tableStart, before)) {
+				return TableScorer.Entry.rejected(Cut.ABOVE_TABLE_TARGET);
 			}
 			Address entryAddr = tableStart.add(2L * i);
 			if (ranIntoCode(refMgr, tableStart, entryAddr)) {
-				cut = Cut.RAN_INTO_CODE;
-				break;
+				return TableScorer.Entry.rejected(Cut.RAN_INTO_CODE);
 			}
 			Address targetAddr = readTarget(memory, space, tableStart, i);
 			if (targetAddr == null) {
-				cut = Cut.INVALID_WORD;
-				break;
+				return TableScorer.Entry.rejected(Cut.INVALID_WORD);
 			}
-			if (targetAddr.getOffset() > tableStart.getOffset()) {
-				lowestAbove = Math.min(lowestAbove, targetAddr.getOffset());
-			}
-			kept.add(targetAddr);
-		}
+			return TableScorer.Entry.accepted(targetAddr, List.of());
+		}, TableScorer.HARD_ONLY);
+		List<Address> kept = new ArrayList<>(walked.targets());
+		Cut cut = walked.endedBy() == null ? Cut.DECLINED : walked.endedBy();
 		if (cut == Cut.DECLINED) {
 			kept.clear();
 		}
@@ -444,6 +437,17 @@ final class InlineJumpTableDispatch {
 			}
 		}
 		return new CallSiteScan(tableStart, cut, List.copyOf(kept), List.copyOf(trimmed));
+	}
+
+	/** The lowest of {@code before} lying after the table start, else MAX_VALUE. */
+	private static long lowestAbove(Address tableStart, List<Address> before) {
+		long lowest = Long.MAX_VALUE;
+		for (Address t : before) {
+			if (t.getOffset() > tableStart.getOffset()) {
+				lowest = Math.min(lowest, t.getOffset());
+			}
+		}
+		return lowest;
 	}
 
 	/**

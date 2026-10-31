@@ -92,6 +92,44 @@ public class TableScorerTest {
 		assertEquals(Why.WEAK, r.endedBy());
 	}
 
+	private static TableScorer.Result<Integer, Why> doubtRun(boolean... low) {
+		return TableScorer.<Integer, Why> walk(low.length + 1,
+			(i, before) -> i == low.length ? TableScorer.Entry.rejected(Why.BAD)
+					: TableScorer.Entry.accepted(i,
+						low[i] ? List.of(new TableScorer.Term<>(Why.WEAK, 0.1)) : List.of()),
+			TableScorer.doubtRun(0.5, 1.0, 3));
+	}
+
+	@Test
+	public void doubtRunEndsBeforeASustainedRun() {
+		TableScorer.Result<Integer, Why> r = doubtRun(false, false, true, true, true, false);
+		assertEquals(List.of(0, 1), r.targets());
+		assertEquals(Why.WEAK, r.endedBy());
+	}
+
+	@Test
+	public void doubtRunKeepsAShortRunBetweenGoodEntries() {
+		assertEquals(7, doubtRun(false, true, true, false, false, true, false).count());
+	}
+
+	/** At a hard end, a trailing low run too short to have ended the table is still dropped. */
+	@Test
+	public void doubtRunDropsATrailingShortRunAtAHardEnd() {
+		TableScorer.Result<Integer, Why> r = doubtRun(false, false, false, true, true);
+		assertEquals(3, r.count());
+		assertEquals(Why.WEAK, r.endedBy());
+	}
+
+	/** An entry between the cuts extends open doubt but never opens or closes it. */
+	@Test
+	public void aMiddlingEntryNeitherOpensNorClosesDoubt() {
+		TableScorer.EndPolicy p = TableScorer.doubtRun(0.5, 1.0, 3);
+		assertEquals(-1, p.end(List.of(1.0, 0.7, 0.7, 0.7)));
+		assertEquals(4, p.settle(List.of(1.0, 0.7, 0.7, 0.7)));
+		assertEquals(1, p.end(List.of(1.0, 0.1, 0.7, 0.7)));
+		assertEquals(1, p.settle(List.of(1.0, 0.1, 0.7)));
+	}
+
 	@Test
 	public void scoreIsTheProductOfTerms() {
 		TableScorer.Entry<Integer, Why> e = TableScorer.Entry.accepted(1,

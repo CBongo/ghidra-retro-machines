@@ -307,14 +307,17 @@ public class W65816RtsTrickTest extends AbstractProgramTest {
 		assertTrue(jumpTargets(rts).isEmpty());
 	}
 
-	/** Madden NFL '94 $C5:A748: the table ends where the words cross into the bank's other half. */
+	/**
+	 * Madden NFL '94 $C5:A748: the table ends where the words cross into the bank's other half,
+	 * far from its handlers, for a sustained run (grm-gipk.16.4: a single such entry is kept).
+	 */
 	@Test
 	public void tableEndsWhereTargetsCrossIntoTheOtherHalfOfTheBank() throws Exception {
 		MemoryBlock lo = builder.createMemory(".lo", "0x0000", 0x8000);
 		setWritable(lo, false);
 		inTx(program, "lo executable", () -> lo.setExecute(true));
 		builder.setBytes("0x1100", "60", false);
-		words("0x8100", 0x81ff, 0x820f, 0x10ff, 0x821f);
+		words("0x8100", 0x81ff, 0x820f, 0x10ff, 0x10ff, 0x10ff, 0x821f);
 		Address rts = dispatcher("0a aa bd 00 81 48 60");
 		analyze(rts);
 		assertArray(0x8100, 2);

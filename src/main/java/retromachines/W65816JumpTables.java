@@ -15,6 +15,7 @@
  */
 package retromachines;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.IntFunction;
 import java.util.function.LongPredicate;
@@ -93,24 +94,62 @@ final class W65816JumpTables {
 		UNREADABLE,
 		/** The target points into the table's own bytes. */
 		INTO_TABLE,
-		/** The target lies in the other 32 KB half of the bank from entry 0's (RTS trick only). */
+		/**
+		 * Soft (RTS trick only): the target lies in the other 32 KB half of the bank from entry
+		 * 0's AND outside the cluster the confident targets so far span; see {@link #score}.
+		 */
 		OTHER_HALF,
+		/**
+		 * Soft, weaker (RTS trick only): outside that cluster without crossing. It neither opens
+		 * doubt nor vouches for an entry that did; see {@link #score}.
+		 */
+		FAR_FROM_CLUSTER,
 		/** {@code targetPlausible} rejects the target. */
 		IMPLAUSIBLE
 	}
 
+	/** Probability of an {@link End#OTHER_HALF} entry: well under the run policy's cut. */
+	static final double OTHER_HALF_P = 0.1;
+
+	/** Probability of a {@link End#FAR_FROM_CLUSTER} entry: between the policy's two cuts. */
+	static final double FAR_P = 0.5;
+
+	/** Entries doubt must stay open for to end an RTS-trick table there. */
+	static final int DOUBT_RUN = 3;
+
+	/**
+	 * The least half-width of the confident cluster: a cluster of one or two handlers says nothing
+	 * about how far apart its handlers are, and 1 KB is a few handler bodies.
+	 */
+	static final int CLUSTER_FLOOR = 0x400;
+
 	/**
 	 * The table walk behind {@link #bound}, through {@link TableScorer}; {@code sameHalf} adds the
-	 * {@link End#OTHER_HALF} term. A HiROM bank maps both halves to ROM, so without it an RTS-trick
-	 * table runs on into a following one whose words point into the other half: Madden NFL '94
-	 * {@code $C5:A748} has 66 handlers at {@code $82xx-$A5xx}, then {@code $22B6, $2340, ...},
-	 * which decode as plausible code and took the count to 120 (grm-gipk.11). The half has no
-	 * hardware meaning in HiROM, which is why grm-gipk.16 means to soften it.
+	 * soft {@link End#OTHER_HALF} term and ends the table at a sustained run of such entries.
+	 *
+	 * <p>A HiROM bank maps both halves to ROM, so an RTS-trick table can run on into a following
+	 * one whose words point into the other half: Madden NFL '94 {@code $C5:A748} has 66 handlers
+	 * at {@code $82xx-$A5xx}, then {@code $22B6, $2340, ...}, which decode as plausible code and
+	 * took the count to 120 (grm-gipk.11). But the half has no hardware meaning in HiROM: a table
+	 * whose handlers sit near {@code $8000} has targets on both sides. So crossing alone is no
+	 * evidence (grm-gipk.16.4); crossing to a target far from the handlers seen so far is. "Far"
+	 * is outside the confident targets' own span, widened by that span on each side (at least
+	 * {@link #CLUSTER_FLOOR}): Madden's {@code $22B6} lies {@code $5F00} below a {@code $23E0}-wide
+	 * cluster. Only sure entries define the cluster, so an over-read run cannot vouch for itself.
+	 *
+	 * <p>A far target that does NOT cross is weaker evidence ({@link End#FAR_FROM_CLUSTER}): a real
+	 * table's handlers can spread across its own half. It cannot open doubt on its own, but it cannot
+	 * close it either. Madden NFL 97 {@code $CD:8580} has 8 handlers at {@code $85C4-$865D}, then
+	 * {@code $04C0, $7F01} (crossing) and {@code $E539} (not): only a sure entry may vouch for the
+	 * two before it, and none comes.
 	 */
 	static TableScorer.Result<Long, End> score(long tableStart, long targetBank, int cap,
 			boolean sameHalf, IntFunction<Integer> word, LongPredicate tableByteFree,
 			LongPredicate targetPlausible) {
 		long bank = tableStart & 0xff0000L;
+		List<Boolean> sure = new ArrayList<>();   // per accepted entry, in order
+		TableScorer.EndPolicy policy = sameHalf ? TableScorer.doubtRun(0.5, 1.0, DOUBT_RUN)
+				: TableScorer.HARD_ONLY;
 		return TableScorer.walk(cap, (n, before) -> {
 			long at = tableStart + 2L * n;
 			if (((at + 1) & 0xff0000L) != bank) {
@@ -130,14 +169,33 @@ final class W65816JumpTables {
 			if (target >= tableStart && target <= at + 1) {
 				return TableScorer.Entry.rejected(End.INTO_TABLE);
 			}
-			if (sameHalf && !before.isEmpty() && ((before.get(0) ^ target) & 0x8000L) != 0) {
-				return TableScorer.Entry.rejected(End.OTHER_HALF);
-			}
+			boolean far = sameHalf && !before.isEmpty() && farFromCluster(before, sure, target);
 			if (!targetPlausible.test(target)) {
 				return TableScorer.Entry.rejected(End.IMPLAUSIBLE);
 			}
-			return TableScorer.Entry.accepted(target, List.of());
-		}, TableScorer.HARD_ONLY);
+			sure.add(!far);
+			if (!far) {
+				return TableScorer.Entry.accepted(target, List.of());
+			}
+			boolean crosses = ((before.get(0) ^ target) & 0x8000L) != 0;
+			return TableScorer.Entry.accepted(target, List.of(crosses
+					? new TableScorer.Term<>(End.OTHER_HALF, OTHER_HALF_P)
+					: new TableScorer.Term<>(End.FAR_FROM_CLUSTER, FAR_P)));
+		}, policy);
+	}
+
+	/** Whether {@code target} lies outside the widened span of the sure {@code before}. */
+	private static boolean farFromCluster(List<Long> before, List<Boolean> sure, long target) {
+		long lo = Long.MAX_VALUE;
+		long hi = Long.MIN_VALUE;
+		for (int j = 0; j < before.size(); j++) {
+			if (sure.get(j)) {
+				lo = Math.min(lo, before.get(j));
+				hi = Math.max(hi, before.get(j));
+			}
+		}
+		long reach = Math.max(CLUSTER_FLOOR, hi - lo);
+		return target < lo - reach || target > hi + reach;
 	}
 
 	/** The lowest of {@code before} lying past its own entry's bytes, else MAX_VALUE. */

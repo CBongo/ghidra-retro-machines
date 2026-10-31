@@ -91,6 +91,63 @@ public class W65816JumpTablesTest {
 		assertEquals(W65816JumpTables.End.UNREADABLE, r.endedBy());
 	}
 
+	private static TableScorer.Result<Long, W65816JumpTables.End> rtsTrick(long start,
+			int[] words) {
+		return W65816JumpTables.score(start, start & 0xff0000L, 256, true,
+			i -> i < words.length ? words[i] : null, b -> true, t -> true);
+	}
+
+	/** grm-gipk.16.4: a HiROM table whose handlers straddle $8000 resolves in full. */
+	@Test
+	public void aTableStraddlingTheHalfResolvesInFull() {
+		int[] words = { 0x7f00, 0x7f80, 0x8010, 0x8100, 0x7fc0, 0x8240 };
+		TableScorer.Result<Long, W65816JumpTables.End> r = rtsTrick(0xc09000L, words);
+		assertEquals(6, r.count());
+		assertEquals(W65816JumpTables.End.UNREADABLE, r.endedBy());
+	}
+
+	/** Madden '94 shape, over-read long: the table ends before a sustained far, cross-half run. */
+	@Test
+	public void aSustainedFarRunEndsTheTable() {
+		int[] words = new int[20];
+		for (int i = 0; i < 10; i++) {
+			words[i] = 0x8210 + 0x0400 * i;   // $8210..$A610
+		}
+		for (int i = 10; i < 20; i++) {
+			words[i] = 0x22b6 + 0x40 * (i - 10);
+		}
+		TableScorer.Result<Long, W65816JumpTables.End> r = rtsTrick(0xc5a748L, words);
+		assertEquals(10, r.count());
+		assertEquals(W65816JumpTables.End.OTHER_HALF, r.endedBy());
+	}
+
+	/**
+	 * Madden NFL 97 {@code $CD:8580}: two far crossing entries and then a far one in the same half;
+	 * the last cannot vouch for the two before it, so the table stays at its 8 handlers.
+	 */
+	@Test
+	public void aFarSameHalfEntryDoesNotVouch() {
+		int[] words = { 0x85c4, 0x85d0, 0x85ef, 0x85ff, 0x8622, 0x862e, 0x8651, 0x865d, 0x04c0,
+			0x7f01, 0xe539 };
+		TableScorer.Result<Long, W65816JumpTables.End> r = rtsTrick(0xcd8580L, words);
+		assertEquals(8, r.count());
+		assertEquals(W65816JumpTables.End.OTHER_HALF, r.endedBy());
+	}
+
+	/** A far entry in the table's own half, with no crossing, never ends the table by itself. */
+	@Test
+	public void aFarSameHalfEntryAloneIsKept() {
+		int[] words = { 0x85c4, 0x85d0, 0xe539, 0x85ef };
+		assertEquals(4, rtsTrick(0xcd8580L, words).count());
+	}
+
+	/** One far entry between good ones is kept: it does not hide the entries after it. */
+	@Test
+	public void aSingleFarEntryIsKept() {
+		int[] words = { 0x8210, 0x8400, 0x22b6, 0x8600, 0x8800 };
+		assertEquals(5, rtsTrick(0xc5a748L, words).count());
+	}
+
 	/** Each former cut is now named by the term that ended the walk. */
 	@Test
 	public void theEndingTermIsNamed() {

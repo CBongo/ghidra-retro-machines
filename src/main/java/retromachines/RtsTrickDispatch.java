@@ -459,19 +459,16 @@ final class RtsTrickDispatch {
 			}
 		}
 
-		List<Address> kept = new ArrayList<>();
-		long lowestAbove = Long.MAX_VALUE;
-		Cut cut = masked ? Cut.MASK : interleaved ? Cut.DECLINED : Cut.GAP;
-		for (int i = 0; i < cap; i++) {
+		Cut capCut = masked ? Cut.MASK : interleaved ? Cut.DECLINED : Cut.GAP;
+		final long fNextNeighbour = nextNeighbour;
+		TableScorer.Result<Address, Cut> walked = TableScorer.walk(cap, (i, before) -> {
 			long loOff = loBase.getOffset() + (long) stride * i;
 			long hiOff = hiBase.getOffset() + (long) stride * i;
-			if (Math.max(loOff, hiOff) >= lowestAbove) {
-				cut = Cut.ABOVE_TABLE_TARGET;
-				break;
+			if (Math.max(loOff, hiOff) >= lowestAbove(tableStart, before)) {
+				return TableScorer.Entry.rejected(Cut.ABOVE_TABLE_TARGET);
 			}
-			if (Math.max(loOff, hiOff) >= nextNeighbour) {
-				cut = Cut.NEIGHBOUR_TABLE;
-				break;
+			if (Math.max(loOff, hiOff) >= fNextNeighbour) {
+				return TableScorer.Entry.rejected(Cut.NEIGHBOUR_TABLE);
 			}
 			int lo;
 			int hi;
@@ -480,25 +477,33 @@ final class RtsTrickDispatch {
 				hi = memory.getByte(hiBase.add((long) stride * i)) & 0xff;
 			}
 			catch (MemoryAccessException | RuntimeException e) {
-				cut = Cut.INVALID_TARGET;
-				break;
+				return TableScorer.Entry.rejected(Cut.INVALID_TARGET);
 			}
 			long target = (lo | (hi << 8)) + shape.bias() & 0xffff;
 			Address targetAddr = usableTarget(program, space, loBase, target, loBase, hiBase, i,
 				stride);
 			if (targetAddr == null) {
-				cut = Cut.INVALID_TARGET;
-				break;
+				return TableScorer.Entry.rejected(Cut.INVALID_TARGET);
 			}
-			if (targetAddr.getOffset() > tableStart) {
-				lowestAbove = Math.min(lowestAbove, targetAddr.getOffset());
-			}
-			kept.add(targetAddr);
-		}
+			return TableScorer.Entry.accepted(targetAddr, List.of());
+		}, TableScorer.HARD_ONLY);
+		List<Address> kept = walked.targets();
+		Cut cut = walked.endedBy() != null ? walked.endedBy() : capCut;
 		if (cut == Cut.DECLINED || kept.size() < 2) {
 			return null;
 		}
 		return new Site(shape, loBase, cut, List.copyOf(kept));
+	}
+
+	/** The lowest of {@code before} lying past {@code tableStart}, else MAX_VALUE. */
+	private static long lowestAbove(long tableStart, List<Address> before) {
+		long lowest = Long.MAX_VALUE;
+		for (Address t : before) {
+			if (t.getOffset() > tableStart) {
+				lowest = Math.min(lowest, t.getOffset());
+			}
+		}
+		return lowest;
 	}
 
 	private static boolean isReadable(Memory memory, Address a) {

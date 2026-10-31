@@ -130,6 +130,45 @@ final class TableScorer {
 	};
 
 	/**
+	 * Doubt opens at an entry scoring below {@code low} and closes only at a later one scoring at
+	 * least {@code sure}; the table ends where doubt opened once it has stayed open for {@code run}
+	 * entries. So one doubtful entry between sure ones is kept (it does not hide the valid entries
+	 * after it), an entry between the two thresholds neither opens doubt nor vouches for it, and
+	 * when a hard term or the cap stops the walk with doubt still open, everything from where it
+	 * opened is dropped: nothing after it vouches for it.
+	 */
+	static EndPolicy doubtRun(double low, double sure, int run) {
+		return new EndPolicy() {
+			@Override
+			public int end(List<Double> scores) {
+				int open = openedAt(scores);
+				return open >= 0 && scores.size() - open >= run ? open : -1;
+			}
+
+			@Override
+			public int settle(List<Double> scores) {
+				int open = openedAt(scores);
+				return open >= 0 ? open : scores.size();
+			}
+
+			// Where the currently open doubt began, or -1.
+			private int openedAt(List<Double> scores) {
+				int open = -1;
+				for (int i = 0; i < scores.size(); i++) {
+					double s = scores.get(i);
+					if (s >= sure) {
+						open = -1;
+					}
+					else if (s < low && open < 0) {
+						open = i;
+					}
+				}
+				return open;
+			}
+		};
+	}
+
+	/**
 	 * A walked table: the kept targets, in entry order, and the reason it ended -- the hard term,
 	 * or for a policy end the weakest term of the first entry dropped. Null when the cap ended it.
 	 */
