@@ -20,6 +20,7 @@ import java.util.ArrayDeque;
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
+import java.util.function.IntFunction;
 
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSpace;
@@ -207,7 +208,12 @@ final class RtsTrickDispatch {
 		/** The entry's bytes would reach ANOTHER site's table base lying above this table's start. */
 		NEIGHBOUR_TABLE, DECLINED,
 		/** Every index an {@code AND #mask} before the loads allows was read (grm-gipk.8). */
-		MASK
+		MASK,
+		/**
+		 * The entry's position (either plane) carries a reference from outside the table that is
+		 * not this dispatch's own, grm-gipk.16.7; see {@link EntryReferences}.
+		 */
+		ENTRY_REFERENCED
 	}
 
 	/**
@@ -232,12 +238,15 @@ final class RtsTrickDispatch {
 		final Address loBase;
 		final Cut cut;
 		final List<Address> targets;
+		/** For {@link Cut#ENTRY_REFERENCED}: {@code from <source> (<kind>)}; else null. */
+		final String endNote;
 
-		private Site(Shape shape, Address loBase, Cut cut, List<Address> targets) {
+		private Site(Shape shape, Address loBase, Cut cut, List<Address> targets, String endNote) {
 			this.shape = shape;
 			this.loBase = loBase;
 			this.cut = cut;
 			this.targets = targets;
+			this.endNote = endNote;
 		}
 	}
 
@@ -459,6 +468,23 @@ final class RtsTrickDispatch {
 			}
 		}
 
+		// grm-gipk.16.7: references at an entry position that are not this table's or dispatch's own.
+		long extentLen = (long) stride * cap;
+		List<EntryReferences.Extent> extents = List.of(new EntryReferences.Extent(loBase, extentLen),
+			new EntryReferences.Extent(hiBase, extentLen));
+		Set<Address> own = Set.of(shape.rts());
+		IntFunction<EntryReferences.Hit> entryRef = i -> {
+			EntryReferences.Hit best = null;
+			for (Address pos : interleaved ? List.of(loBase.add(2L * i))
+					: List.of(loBase.add(i), hiBase.add(i))) {
+				EntryReferences.Hit h = EntryReferences.find(program, pos, extents, own);
+				if (h != null && (best == null || (h.strong() && !best.strong()))) {
+					best = h;
+				}
+			}
+			return best;
+		};
+
 		Cut capCut = masked ? Cut.MASK : interleaved ? Cut.DECLINED : Cut.GAP;
 		final long fNextNeighbour = nextNeighbour;
 		TableScorer.Result<Address, Cut> walked = TableScorer.walk(cap, (i, before) -> {
@@ -485,14 +511,24 @@ final class RtsTrickDispatch {
 			if (targetAddr == null) {
 				return TableScorer.Entry.rejected(Cut.INVALID_TARGET);
 			}
-			return TableScorer.Entry.accepted(targetAddr, List.of());
+			EntryReferences.Hit hit = i >= 1 ? entryRef.apply(i) : null;
+			if (hit != null && hit.strong()) {
+				return TableScorer.Entry.rejected(Cut.ENTRY_REFERENCED);
+			}
+			return TableScorer.Entry.accepted(targetAddr, hit == null ? List.of()
+					: List.of(new TableScorer.Term<>(Cut.ENTRY_REFERENCED, W65816JumpTables.LABEL_P)));
 		}, TableScorer.HARD_ONLY);
 		List<Address> kept = walked.targets();
 		Cut cut = walked.endedBy() != null ? walked.endedBy() : capCut;
 		if (cut == Cut.DECLINED || kept.size() < 2) {
 			return null;
 		}
-		return new Site(shape, loBase, cut, List.copyOf(kept));
+		String endNote = null;
+		if (cut == Cut.ENTRY_REFERENCED) {
+			EntryReferences.Hit h = entryRef.apply(kept.size());
+			endNote = h == null ? null : h.describe();
+		}
+		return new Site(shape, loBase, cut, List.copyOf(kept), endNote);
 	}
 
 	/** The lowest of {@code before} lying past {@code tableStart}, else MAX_VALUE. */

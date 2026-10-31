@@ -49,6 +49,92 @@ import ghidra.util.task.TaskMonitor;
  */
 public class InlineJumpTableDispatchAnalyzerTest extends AbstractBundledLanguageTest {
 
+	/** A 9-entry table at 0x9500 (targets below it); a ref added by {@code extra} at entry 9. */
+	private InlineJumpTableDispatch.CallSiteScan scanWithEntry9(String what,
+			java.util.function.BiConsumer<ProgramDB, Address> extra, long... own)
+			throws Exception {
+		ProgramDB program = freshProgram();
+		long tableStart = 0x9500;
+		Address entry9 = addr(tableStart + 2L * 9);
+		inTx(program, what, () -> {
+			for (int i = 0; i < 9; i++) {
+				long target = 0x8500 + 0x10L * i;
+				builder.setBytes(String.format("0x%x", tableStart + 2L * i),
+					String.format("%02x %02x", target & 0xff, (target >> 8) & 0xff), false);
+			}
+			builder.setBytes("0x9512", "00 85 00 85", false);   // a tenth and eleventh word
+			builder.setBytes("0x8500", "ea 60", false);   // plausible code: the tail is not trimmed
+			extra.accept(program, entry9);
+		});
+		java.util.Set<Address> ownSet = new java.util.HashSet<>();
+		for (long o : own) {
+			ownSet.add(addr(o));
+		}
+		return InlineJumpTableDispatch.scanTable(program, addr(tableStart), ownSet);
+	}
+
+	/** grm-gipk.16.7: a DATA ref from an instruction elsewhere (another dispatcher's table load). */
+	@Test
+	public void entryReferencedByADataRefFromOutsideEndsTheTable() throws Exception {
+		var scan = scanWithEntry9("data ref", (p, e) -> p.getReferenceManager()
+				.addMemoryReference(addr(0xb000), e, RefType.DATA, SourceType.ANALYSIS, 0));
+		assertEquals(InlineJumpTableDispatch.Cut.ENTRY_REFERENCED, scan.cut);
+		assertEquals(9, scan.kept.size());
+		assertTrue(scan.trimmed.isEmpty());
+		assertTrue(scan.endNote, scan.endNote.startsWith("from b000 (DATA"));
+	}
+
+	/** The same ref from one of the dispatch's own instructions does not count. */
+	@Test
+	public void entryReferencedIgnoresTheOwnDispatchInstruction() throws Exception {
+		var scan = scanWithEntry9("own ref", (p, e) -> p.getReferenceManager()
+				.addMemoryReference(addr(0xb000), e, RefType.DATA, SourceType.ANALYSIS, 0),
+			0xb000);
+		assertTrue(scan.cut != InlineJumpTableDispatch.Cut.ENTRY_REFERENCED);
+		assertTrue(scan.kept.size() > 9);
+	}
+
+	/** Refs sourced inside the table's own extent (our laid words, over-read) never count. */
+	@Test
+	public void entryReferencedIgnoresRefsFromInsideTheTable() throws Exception {
+		var scan = scanWithEntry9("inside ref", (p, e) -> p.getReferenceManager()
+				.addMemoryReference(addr(0x9510), e, RefType.DATA, SourceType.ANALYSIS, 0));
+		assertTrue(scan.cut != InlineJumpTableDispatch.Cut.ENTRY_REFERENCED);
+		assertTrue(scan.kept.size() > 9);
+	}
+
+	/** A fall-through ref is no cue. */
+	@Test
+	public void entryReferencedIgnoresFallthrough() throws Exception {
+		var scan = scanWithEntry9("fallthrough", (p, e) -> p.getReferenceManager()
+				.addMemoryReference(addr(0xb000), e, RefType.FALL_THROUGH, SourceType.ANALYSIS, 0));
+		assertTrue(scan.cut != InlineJumpTableDispatch.Cut.ENTRY_REFERENCED);
+	}
+
+	/** A bare label is only a soft term: it does not end a table under the hard-only policy. */
+	@Test
+	public void entryReferencedLabelAloneIsSoft() throws Exception {
+		var scan = scanWithEntry9("label", (p, e) -> {
+			try {
+				p.getSymbolTable().createLabel(e, "other_table", SourceType.USER_DEFINED);
+			}
+			catch (Exception ex) {
+				throw new RuntimeException(ex);
+			}
+		});
+		assertTrue(scan.cut != InlineJumpTableDispatch.Cut.ENTRY_REFERENCED);
+		assertTrue(scan.kept.size() > 9);
+	}
+
+	/** A ref to entry 0 (the dispatcher's own operand) is never asked about. */
+	@Test
+	public void entryReferencedNeverFiresAtEntryZero() throws Exception {
+		var scan = scanWithEntry9("entry0", (p, e) -> p.getReferenceManager()
+				.addMemoryReference(addr(0xb000), addr(0x9500), RefType.DATA, SourceType.ANALYSIS, 0));
+		assertTrue(scan.cut != InlineJumpTableDispatch.Cut.ENTRY_REFERENCED);
+		assertTrue(scan.kept.size() > 9);
+	}
+
 	private static final String LANG = "6502:LE:16:default";
 
 	private ProgramBuilder builder;

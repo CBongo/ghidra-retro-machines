@@ -160,6 +160,45 @@ public class W65816JumpTablesTest {
 		assertEquals(null, r.endedBy());   // the cap
 	}
 
+	/** grm-gipk.16.7: a strong hit at an entry position (i >= 1) is a hard end; entry 0 is not asked. */
+	@Test
+	public void aReferencedEntryEndsTheTable() {
+		int[] words = { 0x9000, 0x9010, 0x9020, 0x9030 };
+		var asked = new ArrayList<Integer>();
+		TableScorer.Result<Long, W65816JumpTables.End> r = W65816JumpTables.score(0x008000L,
+			0x000000L, 128, false, i -> i < words.length ? words[i] : null, b -> true, t -> true,
+			i -> {
+				asked.add(i);
+				return i == 0 || i == 2 ? new EntryReferences.Hit(true, "from 00a000 (DATA)") : null;
+			});
+		assertEquals(2, r.count());
+		assertEquals(W65816JumpTables.End.ENTRY_REFERENCED, r.endedBy());
+		assertEquals(List.of(1, 2), asked);
+	}
+
+	/** A label-only hit is soft: no end under the hard-only policy, and the sameHalf run policy
+	 *  does not read 0.5 as doubt. */
+	@Test
+	public void aLabelledEntryIsKept() {
+		int[] words = { 0x9000, 0x9010, 0x9020 };
+		for (boolean sameHalf : new boolean[] { false, true }) {
+			TableScorer.Result<Long, W65816JumpTables.End> r = W65816JumpTables.score(0x008000L,
+				0x000000L, 128, sameHalf, i -> i < words.length ? words[i] : null, b -> true,
+				t -> true, i -> new EntryReferences.Hit(false, "from x (label)"));
+			assertEquals(3, r.count());
+		}
+	}
+
+	/** An earlier hard check keeps its own name where both apply. */
+	@Test
+	public void existingHardChecksKeepTheirReason() {
+		int[] words = { 0x9000, 0x9010 };
+		TableScorer.Result<Long, W65816JumpTables.End> r = W65816JumpTables.score(0x008000L,
+			0x000000L, 128, false, i -> i < words.length ? words[i] : null, b -> true, t -> true,
+			i -> i == 2 ? new EntryReferences.Hit(true, "x") : null);
+		assertEquals(W65816JumpTables.End.UNREADABLE, r.endedBy());
+	}
+
 	/** FF3 $C2:1B02: AND #$0F / ASL A / TAX -- sixteen entries. */
 	@Test
 	public void maskCap() {

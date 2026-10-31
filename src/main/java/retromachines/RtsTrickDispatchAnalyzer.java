@@ -148,7 +148,8 @@ public class RtsTrickDispatchAnalyzer extends AbstractAnalyzer {
 				AnalyzerLog.info(this, rts.getMnemonicString() + " " + rtsAddr + ": " +
 					(shape.interleaved() ? "interleaved word table at " + site.loBase
 							: "planar lo " + site.loBase + " hi " + site.loBase.add(shape.gap())) +
-					", " + site.targets.size() + " entries (" + site.cut + ")");
+					", " + site.targets.size() + " entries (" + site.cut +
+						(site.endNote == null ? "" : " " + site.endNote) + ")");
 			}
 		}
 		return true;

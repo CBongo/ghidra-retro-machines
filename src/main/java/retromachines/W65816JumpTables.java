@@ -105,8 +105,16 @@ final class W65816JumpTables {
 		 */
 		FAR_FROM_CLUSTER,
 		/** {@code targetPlausible} rejects the target. */
-		IMPLAUSIBLE
+		IMPLAUSIBLE,
+		/**
+		 * The entry's position carries an outside reference (hard) or a non-default label (soft,
+		 * p {@link #LABEL_P}); see {@link EntryReferences} (grm-gipk.16.7).
+		 */
+		ENTRY_REFERENCED
 	}
+
+	/** Probability of a label-only {@link End#ENTRY_REFERENCED} entry: inert under both policies. */
+	static final double LABEL_P = 0.5;
 
 	/** Probability of an {@link End#OTHER_HALF} entry: well under the run policy's cut. */
 	static final double OTHER_HALF_P = 0.1;
@@ -146,6 +154,19 @@ final class W65816JumpTables {
 	static TableScorer.Result<Long, End> score(long tableStart, long targetBank, int cap,
 			boolean sameHalf, IntFunction<Integer> word, LongPredicate tableByteFree,
 			LongPredicate targetPlausible) {
+		return score(tableStart, targetBank, cap, sameHalf, word, tableByteFree, targetPlausible,
+			i -> null);
+	}
+
+	/**
+	 * As above, plus the {@link End#ENTRY_REFERENCED} term (grm-gipk.16.7): {@code entryRef} gives
+	 * what Ghidra already has at entry {@code i}'s position (null: nothing). It is asked only for
+	 * {@code i >= 1} and after every other hard check. A strong hit ends the table; a label-only
+	 * hit is a soft term.
+	 */
+	static TableScorer.Result<Long, End> score(long tableStart, long targetBank, int cap,
+			boolean sameHalf, IntFunction<Integer> word, LongPredicate tableByteFree,
+			LongPredicate targetPlausible, IntFunction<EntryReferences.Hit> entryRef) {
 		long bank = tableStart & 0xff0000L;
 		List<Boolean> sure = new ArrayList<>();   // per accepted entry, in order
 		TableScorer.EndPolicy policy = sameHalf ? TableScorer.doubtRun(0.5, 1.0, DOUBT_RUN)
@@ -173,14 +194,21 @@ final class W65816JumpTables {
 			if (!targetPlausible.test(target)) {
 				return TableScorer.Entry.rejected(End.IMPLAUSIBLE);
 			}
-			sure.add(!far);
-			if (!far) {
-				return TableScorer.Entry.accepted(target, List.of());
+			EntryReferences.Hit hit = n >= 1 ? entryRef.apply(n) : null;
+			if (hit != null && hit.strong()) {
+				return TableScorer.Entry.rejected(End.ENTRY_REFERENCED);
 			}
-			boolean crosses = ((before.get(0) ^ target) & 0x8000L) != 0;
-			return TableScorer.Entry.accepted(target, List.of(crosses
-					? new TableScorer.Term<>(End.OTHER_HALF, OTHER_HALF_P)
-					: new TableScorer.Term<>(End.FAR_FROM_CLUSTER, FAR_P)));
+			List<TableScorer.Term<End>> soft = new ArrayList<>();
+			if (hit != null) {
+				soft.add(new TableScorer.Term<>(End.ENTRY_REFERENCED, LABEL_P));
+			}
+			sure.add(!far);
+			if (far) {
+				boolean crosses = ((before.get(0) ^ target) & 0x8000L) != 0;
+				soft.add(crosses ? new TableScorer.Term<>(End.OTHER_HALF, OTHER_HALF_P)
+						: new TableScorer.Term<>(End.FAR_FROM_CLUSTER, FAR_P));
+			}
+			return TableScorer.Entry.accepted(target, soft);
 		}, policy);
 	}
 

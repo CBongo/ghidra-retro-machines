@@ -17,6 +17,7 @@ package retromachines;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import ghidra.app.util.PseudoDisassembler;
 import ghidra.app.util.PseudoInstruction;
@@ -323,9 +324,12 @@ final class InlineJumpTableDispatch {
 		final List<Address> kept;
 		/** Tail entries dropped as implausible (only for {@link Cut#INVALID_WORD}). */
 		final List<Address> trimmed;
+		/** For {@link Cut#ENTRY_REFERENCED}: {@code from <source> (<kind>)}; else null. */
+		final String endNote;
 
 		private CallSiteScan(Address tableStart, Cut cut, List<Address> kept,
-				List<Address> trimmed) {
+				List<Address> trimmed, String endNote) {
+			this.endNote = endNote;
 			this.tableStart = tableStart;
 			this.cut = cut;
 			this.trimmed = trimmed;
@@ -345,6 +349,13 @@ final class InlineJumpTableDispatch {
 		 * {@link #ABOVE_TABLE_TARGET}: no tail trim, since nothing here is implausible.
 		 */
 		RAN_INTO_CODE,
+		/**
+		 * The next entry position carries some OTHER reference from outside the table (not a FLOW
+		 * one from before it, which is {@link #RAN_INTO_CODE}): another table's data pointer, a
+		 * dispatcher's table load, code reached from after the table (grm-gipk.16.7; see {@link
+		 * EntryReferences}). Positive like {@link #RAN_INTO_CODE}: no tail trim.
+		 */
+		ENTRY_REFERENCED,
 		/** The next word is not a usable target (unmapped, RAM/IO, or into the table itself). */
 		INVALID_WORD,
 		/** Neither happened within {@link #MAX_TABLE_ENTRIES}; the site is declined. */
@@ -398,11 +409,21 @@ final class InlineJumpTableDispatch {
 	 * straddle a real handler (921e's first target 9224 sits right after the table).
 	 */
 	static CallSiteScan scanTable(Program program, Address tableStart) {
+		return scanTable(program, tableStart, Set.of());
+	}
+
+	/**
+	 * As {@link #scanTable(Program, Address)}, where {@code own} are the dispatch's own
+	 * instructions (the {@code JSR}), whose references never count as {@link Cut#ENTRY_REFERENCED}.
+	 */
+	static CallSiteScan scanTable(Program program, Address tableStart, Set<Address> own) {
 		AddressSpace space = tableStart.getAddressSpace();
 		Memory memory = program.getMemory();
 		ReferenceManager refMgr = program.getReferenceManager();
 
 		List<Address> trimmed = new ArrayList<>();
+		List<EntryReferences.Extent> extents =
+			List.of(new EntryReferences.Extent(tableStart, 2L * MAX_TABLE_ENTRIES));
 		TableScorer.Result<Address, Cut> walked = TableScorer.walk(MAX_TABLE_ENTRIES, (i, before) -> {
 			long entryOffset = tableStart.getOffset() + 2L * i;
 			if (entryOffset >= lowestAbove(tableStart, before)) {
@@ -416,7 +437,13 @@ final class InlineJumpTableDispatch {
 			if (targetAddr == null) {
 				return TableScorer.Entry.rejected(Cut.INVALID_WORD);
 			}
-			return TableScorer.Entry.accepted(targetAddr, List.of());
+			EntryReferences.Hit hit =
+				i >= 1 ? EntryReferences.find(program, entryAddr, extents, own) : null;
+			if (hit != null && hit.strong()) {
+				return TableScorer.Entry.rejected(Cut.ENTRY_REFERENCED);
+			}
+			return TableScorer.Entry.accepted(targetAddr, hit == null ? List.of()
+					: List.of(new TableScorer.Term<>(Cut.ENTRY_REFERENCED, W65816JumpTables.LABEL_P)));
 		}, TableScorer.HARD_ONLY);
 		List<Address> kept = new ArrayList<>(walked.targets());
 		Cut cut = walked.endedBy() == null ? Cut.DECLINED : walked.endedBy();
@@ -436,7 +463,13 @@ final class InlineJumpTableDispatch {
 				trimmed.add(0, kept.remove(kept.size() - 1));
 			}
 		}
-		return new CallSiteScan(tableStart, cut, List.copyOf(kept), List.copyOf(trimmed));
+		String endNote = null;
+		if (cut == Cut.ENTRY_REFERENCED) {
+			EntryReferences.Hit h = EntryReferences.find(program,
+				tableStart.add(2L * kept.size()), extents, own);
+			endNote = h == null ? null : h.describe();
+		}
+		return new CallSiteScan(tableStart, cut, List.copyOf(kept), List.copyOf(trimmed), endNote);
 	}
 
 	/** The lowest of {@code before} lying after the table start, else MAX_VALUE. */

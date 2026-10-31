@@ -120,6 +120,10 @@ public class W65816RtsTrickAnalyzer extends AbstractAnalyzer {
 			int n = sharedEntries(program, table, bank, bias, shape.cap(), targets);
 			boolean shared = n > 0;
 			if (!shared) {
+				// grm-gipk.16.7: references at an entry position that are not the table's own.
+				List<EntryReferences.Extent> extent =
+					List.of(new EntryReferences.Extent(table, 2L * shape.cap()));
+				Set<Address> own = Set.of(rtsAddr);
 				TableScorer.Result<Long, W65816JumpTables.End> r = W65816JumpTables.score(
 					table.getOffset(), bank, shape.cap(), true,
 					i -> {
@@ -130,9 +134,15 @@ public class W65816RtsTrickAnalyzer extends AbstractAnalyzer {
 					b -> W65816JumpTableAnalyzer.tableByteFree(program, table.getNewAddress(b),
 						table, Set.of()),
 					t -> W65816JumpTableAnalyzer.plausibleTarget(program, table.getNewAddress(t),
-						ctx));
+						ctx),
+					i -> EntryReferences.find(program, table.add(2L * i), extent, own));
 				targets.addAll(r.targets());
 				n = r.count();
+				if (r.endedBy() == W65816JumpTables.End.ENTRY_REFERENCED) {
+					AnalyzerLog.info(this, "RTS " + rtsAddr + ": table " + table + " ended at " +
+						"entry " + n + " by ENTRY_REFERENCED " +
+						EntryReferences.find(program, table.add(2L * n), extent, own).describe());
+				}
 			}
 			if (n < 2) {
 				AnalyzerLog.info(this, "RTS " + rtsAddr + ": only " + n + " plausible entr" +

@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import ghidra.app.cmd.disassemble.DisassembleCommand;
 import ghidra.app.cmd.function.CreateFunctionCmd;
@@ -150,9 +151,14 @@ public class InlineJumpTableDispatchAnalyzer extends AbstractAnalyzer {
 
 			Address tableStart = jsr.getMinAddress().add(jsr.getLength());
 			InlineJumpTableDispatch.CallSiteScan scan =
-				InlineJumpTableDispatch.scanTable(program, tableStart);
+				InlineJumpTableDispatch.scanTable(program, tableStart, Set.of(jsr.getMinAddress()));
 			AnalyzerLog.debug(this, "call site " + jsr.getMinAddress() + " table " + tableStart +
-				": cut=" + scan.cut + " kept=" + scan.kept.size());
+				": cut=" + scan.cut + (scan.endNote == null ? "" : " " + scan.endNote) +
+				" kept=" + scan.kept.size());
+			if (scan.cut == InlineJumpTableDispatch.Cut.ENTRY_REFERENCED) {
+				AnalyzerLog.info(this, "call site " + jsr.getMinAddress() + " table " + tableStart +
+					": ended at entry " + scan.kept.size() + " by ENTRY_REFERENCED " + scan.endNote);
+			}
 			if (!scan.trimmed.isEmpty()) {
 				AnalyzerLog.info(this, "call site " + jsr.getMinAddress() + " table " + tableStart +
 					": kept " + scan.kept.size() + ", trimmed implausible tail " + scan.trimmed);

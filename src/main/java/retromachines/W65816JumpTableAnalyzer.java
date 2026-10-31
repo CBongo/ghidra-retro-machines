@@ -170,11 +170,27 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 			int n = sharedTableEntries(program, table, targetBank, cap, targets);
 			boolean shared = n > 0;
 			if (!shared) {
-				n = W65816JumpTables.bound(table.getOffset(), targetBank, cap,
+				// grm-gipk.16.7: references at an entry position that are not the table's own.
+				List<EntryReferences.Extent> extent =
+					List.of(new EntryReferences.Extent(table, 2L * cap));
+				Set<Address> own = new LinkedHashSet<>();
+				own.add(siteAddr);
+				if (dispatch.index() != null) {
+					own.add(dispatch.index().getMinAddress());
+				}
+				TableScorer.Result<Long, W65816JumpTables.End> r = W65816JumpTables.score(
+					table.getOffset(), targetBank, cap, false,
 					i -> word(program.getMemory(), table.add(2L * i)),
 					b -> tableByteFree(program, table.getNewAddress(b), table, tableStarts),
 					t -> plausibleTarget(program, table.getNewAddress(t), ctx),
-					targets);
+					i -> EntryReferences.find(program, table.add(2L * i), extent, own));
+				targets.addAll(r.targets());
+				n = r.count();
+				if (r.endedBy() == W65816JumpTables.End.ENTRY_REFERENCED) {
+					AnalyzerLog.info(this, "dispatch " + siteAddr + ": table " + table + " ended at " +
+						"entry " + n + " by ENTRY_REFERENCED " +
+						EntryReferences.find(program, table.add(2L * n), extent, own).describe());
+				}
 			}
 			if (n == 0) {
 				AnalyzerLog.info(this, "dispatch " + siteAddr + ": no plausible entry at " + table);
