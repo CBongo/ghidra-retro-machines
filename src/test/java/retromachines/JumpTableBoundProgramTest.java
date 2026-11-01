@@ -1118,6 +1118,60 @@ public class JumpTableBoundProgramTest extends AbstractBundledLanguageTest {
 		biasedRoundTrip(1);
 	}
 
+	/** grm-c9d.8.1: a leading trim with NO tail rule behind it is applied on its own. The k=5 biased
+	 *  table here has 123 real entries, every one pointing at distinct NOP code far above the table,
+	 *  so nothing bounds its end (the decompiler's 128 slots minus the 5 phantom ones is all of it):
+	 *  before the plumbing fix the trim was discarded and the 5 phantom targets stayed. */
+	@Test
+	public void leadingTrimAloneIsApplied() throws Exception {
+		int k = 5;
+		builder = newBuilder("Test", LANG);
+		uninitializedRam(builder, ".zp", "0x0", 0x100);
+		builder.createMemory(".text", "0x8000", 0x1000);
+		long base = BIASED_TABLE - 2L * k;
+		String code = String.format("a5 78 0a a8 b9 %02x %02x 85 04 b9 %02x %02x 85 05 6c 04 00",
+			base & 0xff, (base >> 8) & 0xff, (base + 1) & 0xff, ((base + 1) >> 8) & 0xff);
+		builder.setBytes("0x8000", code, true);
+		builder.setBytes("0x8011", "a9 80", true);
+		StringBuilder nops = new StringBuilder();
+		for (int i = 0; i < 123; i++) {
+			nops.append("ea ");
+		}
+		nops.append("60");
+		builder.setBytes("0x8200", nops.toString(), false);
+		StringBuilder bytes = new StringBuilder();
+		for (int i = 0; i < 123; i++) {
+			long t = 0x8200L + i;
+			bytes.append(String.format("%02x %02x ", t & 0xff, (t >> 8) & 0xff));
+		}
+		builder.setBytes(String.format("0x%x", BIASED_TABLE), bytes.toString().trim(), false);
+		ProgramDB program = builder.getProgram();
+		Address switchAddr = addr(0x800e);
+		Function function = createFunction(program, addr(0x8000));
+		DecompileResults stock = decompileWithJumpLoads(program, function);
+		assertTrue(stock.getErrorMessage(), stock.decompileCompleted());
+		inTx(program, "stock", () -> {
+			new DecompilerSwitchAnalysisCmd(stock).applyTo(program, TaskMonitor.DUMMY);
+			CreateFunctionCmd.fixupFunctionBody(program, function, TaskMonitor.DUMMY);
+		});
+		assertTrue("control: stock includes the phantom entries",
+			targetsOf(program, switchAddr).size() > 123);
+
+		java.util.Set<Address> expected = new java.util.HashSet<>();
+		for (int i = 0; i < 123; i++) {
+			expected.add(addr(0x8200L + i));
+		}
+		inTx(program, "analyze", () -> {
+			new JumpTableBoundAnalyzer().boundFunctions(program, java.util.Set.of(function),
+				TaskMonitor.DUMMY, new MessageLog());
+		});
+		assertEquals(expected, targetsOf(program, switchAddr));
+		String comment = program.getListing().getComment(CommentType.EOL, switchAddr);
+		assertNotNull(comment);
+		assertTrue(comment, comment.contains("bounded 128 (123 after LISTING_CODE leading trim) -> 123"));
+		assertTrue(comment, comment.contains("5 leading entries in code dropped"));
+	}
+
 	/** Negative: the entries before the table are data, not code -- the rule does not fire. */
 	@Test
 	public void biasedTableWithLeadingDataIsNotTrimmed() throws Exception {

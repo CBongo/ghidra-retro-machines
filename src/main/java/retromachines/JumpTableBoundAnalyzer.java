@@ -567,7 +567,9 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		// (they decline it outright), else only once every other rule has declined.
 		// grm-wek2: a biased table's leading entries are the code tail before it; replace the case
 		// list with the slots from the first non-code entry on (null when the table is not that).
-		LeadingCodeTrim trim = trimLeadingCodeEntries(program, listing, table, realCases);
+		// The decompiler's own case count, before any leading trim: the log line reports both.
+		int decompilerCases = realCases.size();
+		LeadingTrim trim = trimLeadingCodeEntries(program, listing, table, realCases);
 		if (trim != null) {
 			realCases = trim.cases();
 			targetSpace = realCases.get(0).getAddressSpace();
@@ -724,10 +726,10 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 			result = deduped; // grm-uzep: nothing else could read this case list
 		}
 		boolean shrinks = result.isBounded() && result.count() < realCases.size();
-		if (!shrinks && !isCrossBank) {
-			if (trim != null) {
-				return false; // grm-wek2: nothing bounded; the trimmed view is not the decompiler's count
-			}
+		// A leading trim is itself a result (grm-c9d.8.1): when it applied and no tail rule shortens
+		// the trimmed table further, the trimmed table is still applied below. Before, this
+		// returned false and dropped the trim; wek2 only ever landed together with a tail rule.
+		if (!shrinks && !isCrossBank && trim == null) {
 			// grm-k50b: a bound that keeps every case confirms the decompiler's own count, so the
 			// table is laid as an array with nothing else written; any other decline stays a no-op.
 			if (result.isBounded() && result.count() == realCases.size() && searched == null &&
@@ -767,7 +769,7 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		}
 		String dataCut = trailingCut ? "trailing targets that do not decode as code"
 				: "first target that does not decode as code";
-		if (shrinks || cutAtData) {
+		if (shrinks || cutAtData || trim != null) {
 			keptOut.addAll(firstN);
 		}
 		// grm-deve: decide now (bytes do not change when the bound lands) whether this table reads as
@@ -906,7 +908,7 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		String why;
 		if (!shrinks) {
 			// A cross-bank table no extent rule could cut (grm-pwuh), possibly cut by grm-0pen.
-			why = cutAtData ? dataCut : "kept all";
+			why = cutAtData ? dataCut : trim != null ? "no tail rule bounded" : "kept all";
 		}
 		else if (result.rule() == JumpTableBound.Rule.SWITCH_WINDOW) {
 			why = "targets between switch and table";
@@ -941,7 +943,7 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 			why += ", planar lo/hi tables " + Integer.toHexString(result.planarGap()) + " apart";
 		}
 		if (trim != null) {
-			why += ", " + trim.dropped() + " leading entries in code dropped"; // grm-wek2
+			why += ", " + trim.dropped() + " leading entries in code dropped"; // grm-wek2 (LISTING_CODE)
 		}
 		if (shrinks && cutAtData) {
 			why += ", then " + dataCut; // grm-0pen
@@ -959,7 +961,9 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 				crossBank.model();
 		}
 		String text = "[JumpTableBound] table at " + Long.toHexString(tableStart) + " bounded " +
-			realCases.size() + " -> " + firstN.size() + " entries (" + why + ")";
+			(trim != null ? decompilerCases + " (" + realCases.size() + " after " + trim.source() +
+				" leading trim)" : String.valueOf(realCases.size())) +
+			" -> " + firstN.size() + " entries (" + why + ")";
 		// A switch is bounded once per pass that reaches it, and how many passes do depends on
 		// analysis order (grm-kon2: dragonpower a546 carried this text 3 or 4 times), hence the
 		// text itself as the idempotence marker. Recorded for the exporter (grm-hb6.18).
@@ -967,11 +971,20 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		return true;
 	}
 
-	/** grm-wek2: a word table with its leading entries trimmed off (they lie in code). {@code cases}
-	 *  and the slot count are over the table from {@code start}; {@code table} is the decompiler
-	 *  load table this replaces. */
-	private record LeadingCodeTrim(JumpTable.LoadTable table, Address start, int slots,
-			List<Address> cases, int dropped) {}
+	/** Where a {@link LeadingTrim} came from. Later sources (a recovered index guard, two-ended forms
+	 *  of the tail rules) add a constant here and a producer returning a {@link LeadingTrim}; the
+	 *  application in {@link #processTable} does not change. */
+	private enum TrimSource {
+		/** grm-wek2: the leading entries' bytes lie in listing instructions. */
+		LISTING_CODE
+	}
+
+	/** A table with its leading slots trimmed off, whatever decided so (grm-c9d.8.1). {@code start}
+	 *  is the new first slot's address, {@code slots} the slot count from it and {@code cases} the
+	 *  trimmed case list, one per slot; {@code table} is the decompiler load table this replaces,
+	 *  {@code dropped} how many leading slots went. */
+	private record LeadingTrim(JumpTable.LoadTable table, Address start, int slots,
+			List<Address> cases, int dropped, TrimSource source) {}
 
 	/**
 	 * grm-wek2: the biased (1-based) table. Code indexes it from {@code tbl - k*2} because its index
@@ -984,7 +997,7 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 	 * exactly its words (so the reading is not the one this relies on). Declines too when a phantom
 	 * target also occurs among the real entries (it would be a real case).
 	 */
-	private static LeadingCodeTrim trimLeadingCodeEntries(Program program, Listing listing,
+	private static LeadingTrim trimLeadingCodeEntries(Program program, Listing listing,
 			JumpTable table, List<Address> cases) {
 		JumpTable.LoadTable found = null;
 		for (JumpTable.LoadTable lt : table.getLoadTables()) {
@@ -1042,7 +1055,8 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 			for (long t : rest) {
 				slotCases.add(cases.get(0).getNewAddress(t));
 			}
-			return new LeadingCodeTrim(found, start.add(2L * lead), slots - lead, slotCases, lead);
+			return new LeadingTrim(found, start.add(2L * lead), slots - lead, slotCases, lead,
+					TrimSource.LISTING_CODE);
 		}
 		return null;
 	}
