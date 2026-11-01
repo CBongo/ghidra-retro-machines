@@ -174,6 +174,18 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 	 */
 	private final Map<Address, LaidArray> laidArrays = new LinkedHashMap<>();
 
+	/**
+	 * grm-c9d.8.3 (check mode): the tables seen so far, for the leading-rule dry run in
+	 * {@link LeadingShadow}, one per program: a later round (possibly another analyzer instance,
+	 * the relocator's) that sees a table the decompiler re-read whole after our pin must not
+	 * replace the bounded view an earlier round had.
+	 */
+	private static final Map<Program, LeadingShadow> SHADOWS =
+		java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
+
+	/** The program's {@link LeadingShadow} while {@link #boundFunctions} runs, else null. */
+	private LeadingShadow shadow;
+
 	/** One recorded array: {@code gap} 0 for a {@code word[n]}, else the grm-d3tu lo/hi pair. */
 	private record LaidArray(int gap, List<Address> targets) {}
 
@@ -372,6 +384,8 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		// rebuilding it per switch would be wasteful.
 		BankContext keepAlive = BankContext.forProgram(program);
 		DecompInterface ifc = new DecompInterface();
+		LeadingShadow outerShadow = shadow;
+		shadow = SHADOWS.computeIfAbsent(program, p -> new LeadingShadow());
 		try {
 			configureDecompiler(program, ifc);
 			if (!ifc.openProgram(program)) {
@@ -433,8 +447,11 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 					}
 				}
 			}
+			// grm-c9d.8.3: dry-run the leading trim rules over what this pass bounded (log only).
+			shadow.run(program, this, getName());
 		}
 		finally {
+			shadow = outerShadow;
 			ifc.dispose();
 			java.lang.ref.Reference.reachabilityFence(keepAlive);
 		}
@@ -743,6 +760,11 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		// the trimmed table further, the trimmed table is still applied below. Before, this
 		// returned false and dropped the trim; wek2 only ever landed together with a tail rule.
 		if (!shrinks && !isCrossBank && trim == null) {
+			if (shadow != null && !guarded && searched == null && !mixed) {
+				// grm-c9d.8.3: a table every tail rule left whole still gets the leading dry run.
+				recordShadow(program, switchAddr, realCases, 1, inCode, realCases.size(), loadTables,
+					result, false, tableBlock, lowestMovingTableAddr, null);
+			}
 			// grm-k50b: a bound that keeps every case confirms the decompiler's own count, so the
 			// table is laid as an array with nothing else written; any other decline stays a no-op.
 			if (result.isBounded() && result.count() == realCases.size() && searched == null &&
@@ -780,6 +802,16 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		boolean trailingCut = cutAtData && decodes.subList(0, codePrefix).contains(false);
 		if (cutAtData) {
 			firstN = new ArrayList<>(firstN.subList(0, codePrefix));
+		}
+		if (shadow != null && !guarded && !isCrossBank && searched == null) {
+			// grm-c9d.8.3: the post-tail view, for the leading-rule dry run (log only).
+			if (shrinks && result.rule() == JumpTableBound.Rule.DISTINCT_WORDS) {
+				recordShadowWords(program, table, result);
+			}
+			else if (!mixed) {
+				recordShadow(program, switchAddr, firstN, result.stride(), inCode, realCases.size(),
+					loadTables, result, shrinks, tableBlock, lowestMovingTableAddr, decodes);
+			}
 		}
 		String dataCut = trailingCut ? "trailing targets that do not decode as code"
 				: "first target that does not decode as code";
@@ -999,6 +1031,66 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		// text itself as the idempotence marker. Recorded for the exporter (grm-hb6.18).
 		AnalyzerCommentRecord.append(program, switchAddr, CommentType.EOL, text, text);
 		return true;
+	}
+
+	/**
+	 * grm-c9d.8.3: records one table's post-tail view for the {@link LeadingShadow} dry run. Pure
+	 * observation: reads the listing and memory, writes nothing. {@code kept} are the kept cases
+	 * (every {@code stride}-th of the decompiler's, so {@code inCode} is sampled at that stride);
+	 * {@code decodes} is aligned with {@code kept} or null (computed here then).
+	 */
+	private void recordShadow(Program program, Address switchAddr, List<Address> kept, int stride,
+			List<Boolean> inCode, int originalCases, List<JumpTableBound.LoadTableEntry> loadTables,
+			JumpTableBound.Result result, boolean shrinks, JumpTableBound.Block block,
+			Address tableAddr, List<Boolean> decodes) {
+		if (tableAddr == null || kept.size() < 2) {
+			return;
+		}
+		int step = shrinks ? stride : 1;
+		List<JumpTableBound.LoadTableEntry> view = JumpTableBound.leadingView(originalCases,
+			loadTables, kept.size(), step, shrinks ? result.planarGap() : 0);
+		if (view == null) {
+			return;
+		}
+		List<Long> offsets = new ArrayList<>(kept.size());
+		List<Boolean> keptInCode = new ArrayList<>(kept.size());
+		List<Boolean> keptDecodes = new ArrayList<>(kept.size());
+		for (int i = 0; i < kept.size(); i++) {
+			Address a = kept.get(i);
+			offsets.add(a.getOffset());
+			keptInCode.add(inCode.get(i * step));
+			keptDecodes.add(decodes != null ? decodes.get(i)
+					: InlineJumpTableDispatch.decodesAsCode(program, a, true) &&
+						!JumpTableBound.looksLikeWordTable(
+							bytesAt(program, a, 2 * JumpTableBound.WORD_TABLE_RUN)));
+		}
+		shadow.add(new LeadingShadow.Table(switchAddr, kept.get(0).getAddressSpace(), offsets, view,
+			block, keptInCode, keptDecodes, step == 2, result.isBounded(),
+			result.isBounded() ? result.rule() : null, null));
+	}
+
+	/**
+	 * grm-c9d.8.3: the {@link LeadingShadow} record for a grm-uzep table, whose slots are the
+	 * table's own words (the decompiler's case list is deduplicated by target).
+	 */
+	private void recordShadowWords(Program program, JumpTable table, JumpTableBound.Result result) {
+		JumpTable.LoadTable only = singleMovingByteTable(table);
+		if (only == null || only.getNum() % 2 != 0) {
+			return;
+		}
+		List<Long> words = wordsAt(program, only.getAddress(), only.getNum() / 2);
+		if (words == null) {
+			return;
+		}
+		long start = only.getAddress().getOffset();
+		int slots = JumpTableBound.distinctWordSlots(words, start);
+		if (slots < 2) {
+			return;
+		}
+		shadow.add(new LeadingShadow.Table(table.getSwitchAddress(),
+			only.getAddress().getAddressSpace(), List.of(),
+			List.of(new JumpTableBound.LoadTableEntry(start, 2, slots)), null, List.of(), List.of(),
+			false, result.isBounded(), result.rule(), words));
 	}
 
 	/** Where a {@link LeadingTrim} came from. Later sources (a recovered index guard, two-ended forms

@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.function.BiFunction;
+import java.util.function.LongUnaryOperator;
 import java.util.function.Predicate;
 
 /**
@@ -958,6 +959,558 @@ public final class JumpTableBound {
 		return Result.bounded(count, lowestTarget, Rule.INDEX_GUARD);
 	}
 
+	// ---------------------------------------------------------------------------------------------
+	// grm-c9d.8.3: two-ended forms of the trim rules above -- the LEADING cuts, run in shadow mode.
+	// ---------------------------------------------------------------------------------------------
+
+	/**
+	 * The leading (start-side) forms of the trim rules, grm-c9d.8.3 (owner ruling 2026-11-01: every
+	 * trim rule applies to both ends wherever that makes sense). Each one drops the first
+	 * {@link Leading#drop()} slots of an already tail-bounded table and keeps the rest.
+	 *
+	 * <p>Common frame, shared by every leading form below:
+	 * <ul>
+	 * <li><b>The tail-verified end is the anchor.</b> The tail rules (and the decompiler's own
+	 * end) fixed the LAST kept entry; a leading rule only ever drops slots from the front, never
+	 * the last one, and an interior violation drops the side before it (owner ruling).</li>
+	 * <li><b>At least 2 slots survive</b>, as for every tail rule; otherwise the rule declines.</li>
+	 * <li>The input is the post-tail view: {@code targets} are the kept entries in slot order and
+	 * {@code view} describes exactly their bytes, one {@link LoadTableEntry} per moving table as
+	 * {@code (start, perEntryBytes, keptCount)} (see {@link #leadingView}).</li>
+	 * <li>A recovered {@link Rule#INDEX_GUARD} beats all of these: the caller does not run them for
+	 * a guarded table.</li>
+	 * </ul>
+	 */
+	public enum LeadingRule {
+		/** {@link #leadingByExtent}: no kept entry's bytes inside another kept target's code. */
+		EXTENT_OVERLAP,
+		/** {@link #leadingByKnownCode}: no kept entry's bytes inside another table's handler. */
+		KNOWN_CODE_OVERLAP,
+		/** {@link #leadingByBelowTable}: mirror of grm-fxtp's below-table cut. */
+		BELOW_TABLE,
+		/** {@link #leadingBySwitchWindow}: mirror of the grm-akiv switch window. */
+		SWITCH_WINDOW,
+		/** {@link #leadingByValidTargets}: mirror of grm-yjiq's valid-target cut. */
+		VALID_TARGET,
+		/** {@link #leadingByNeighbourEnd}: mirror of grm-2m07's neighbour-table cut. */
+		NEIGHBOUR_END,
+		/** {@link #leadingByCodePrefix}: mirror of grm-0pen's codePrefix. */
+		CODE_PREFIX,
+		/** {@link #leadingByExtent} on a table NO tail rule bounded, so with no verified end to
+		 *  anchor on: reported for the sweep, never part of {@link #CASCADE}. */
+		EXTENT_OVERLAP_UNANCHORED,
+		/** {@link #leadingByDistinctWords}: grm-uzep's table, read as words. */
+		DISTINCT_WORDS_EXTENT,
+		/** All of the above applied in sequence (EXTENT, KNOWN_CODE, BELOW_TABLE, WINDOW,
+		 *  VALID_TARGET, NEIGHBOUR_END, CODE_PREFIX): the total a stage-4 cascade would drop. */
+		CASCADE
+	}
+
+	/** What one leading rule says: drop the first {@link #drop()} slots, or ({@code drop == 0})
+	 *  nothing to say. */
+	public static final class Leading {
+		private final LeadingRule rule;
+		private final int drop;
+
+		private Leading(LeadingRule rule, int drop) {
+			this.rule = rule;
+			this.drop = drop;
+		}
+
+		static Leading none(LeadingRule rule) {
+			return new Leading(rule, 0);
+		}
+
+		/** Which rule. */
+		public LeadingRule rule() {
+			return rule;
+		}
+
+		/** How many leading slots the rule drops; 0 when it declines or finds nothing. */
+		public int drop() {
+			return drop;
+		}
+
+		/** Whether the rule would drop anything. */
+		public boolean applies() {
+			return drop > 0;
+		}
+	}
+
+	/**
+	 * The inputs the leading rules need beyond the post-tail targets and view. Every list is aligned
+	 * with the kept targets; any member may be null to switch off the rules that need it.
+	 *
+	 * @param switchAddr flat offset of the switch instruction
+	 * @param block the table's memory block, for {@link #leadingByBelowTable}
+	 * @param extentEnd the exclusive end of the code run decoded linearly from a target (bytes
+	 *                  only, to a return or unconditional jump, stopping at calls): the extent a
+	 *                  table's own bytes must not lie in
+	 * @param foreignCodeStarts kept targets of OTHER tables bounded in the same pass
+	 * @param otherTableEnds exclusive ends of OTHER tables' bounded extents
+	 * @param inCode per kept entry, as for {@link #boundByValidTargets}
+	 * @param decodes per kept entry, as for {@link #codePrefix}
+	 * @param overlappingByte whether the table is a grm-yjiq overlapping byte table (kept entries
+	 *                        are its even cases)
+	 * @param tailRule the tail rule that bounded the table, or null when none did. A leading form
+	 *                 runs only where its tail rule would have: the window form for a table after
+	 *                 its code, the below-table form for one before it, the neighbour and
+	 *                 known-code forms only as last fallbacks (the tail order of the analyzer). The
+	 *                 two extent forms need a bound: they anchor on the tail-verified end, and an
+	 *                 unbounded table has none -- there an overlap of slots with handlers is as
+	 *                 likely an over-read TAIL (real-ROM sweep: tmnt 823b, dbz_saiyan d286,
+	 *                 dragonpower 803e, rcproam c635, each a real table followed by its own
+	 *                 handlers and then junk) as a bad start
+	 */
+	public record LeadingFacts(long switchAddr, Block block, LongUnaryOperator extentEnd,
+			Collection<Long> foreignCodeStarts, Collection<Long> otherTableEnds,
+			List<Boolean> inCode, List<Boolean> decodes, boolean overlappingByte, Rule tailRule) {
+
+		/** Whether a leading form gated on the tail rules {@code allowed} (or none) may run. */
+		boolean gate(Rule... allowed) {
+			if (tailRule == null) {
+				return true;
+			}
+			for (Rule r : allowed) {
+				if (r == tailRule) {
+					return true;
+				}
+			}
+			return false;
+		}
+	}
+
+	/**
+	 * The load-table view the leading rules measure against, for the first {@code kept} entries of
+	 * a table the tail rules bounded (or left whole): one {@code (start, perEntryBytes, kept)} per
+	 * moving table. {@code stride} 2 is the grm-yjiq overlapping byte table (re-described as 2-byte
+	 * entries, as the tail rules do) and {@code planarGap > 0} the grm-d59c planar split table (two
+	 * byte tables {@code gap} apart), so both halves of a planar table move together when the start
+	 * shifts, and a start shift applies under stride 2 as well (those normalisers are not cuts).
+	 * Null when the shape is not understood, exactly where {@link Shape#of} declines.
+	 */
+	public static List<LoadTableEntry> leadingView(int originalCases,
+			List<LoadTableEntry> loadTables, int kept, int stride, int planarGap) {
+		if (stride == 2) {
+			LoadTableEntry table = overlappingByteTable(originalCases, loadTables);
+			return table == null ? null : List.of(new LoadTableEntry(table.start(), 2, kept));
+		}
+		List<LoadTableEntry> view = new ArrayList<>();
+		if (planarGap > 0) {
+			for (LoadTableEntry t : loadTables) {
+				if (t.num() > 1) {
+					view.add(new LoadTableEntry(t.start(), 1, kept));
+					view.add(new LoadTableEntry(t.start() + planarGap, 1, kept));
+				}
+			}
+			return view.isEmpty() ? null : view;
+		}
+		if (originalCases < 2 || kept < 1) {
+			return null;
+		}
+		for (LoadTableEntry t : loadTables) {
+			if (t.num() <= 1) {
+				continue;
+			}
+			long bytes = (long) t.entrySize() * t.num();
+			if (bytes % originalCases != 0) {
+				return null;
+			}
+			view.add(new LoadTableEntry(t.start(), (int) (bytes / originalCases), kept));
+		}
+		return view.isEmpty() ? null : view;
+	}
+
+	/** The exclusive end of the lowest moving table of a {@link #leadingView}, or -1 when empty. */
+	public static long viewEnd(List<LoadTableEntry> view) {
+		LoadTableEntry lowest = null;
+		for (LoadTableEntry t : view) {
+			if (lowest == null || t.start() < lowest.start()) {
+				lowest = t;
+			}
+		}
+		return lowest == null ? -1 : lowest.start() + (long) lowest.entrySize() * lowest.num();
+	}
+
+	/** {@code view} with its first {@code drop} slots removed. */
+	private static List<LoadTableEntry> shiftView(List<LoadTableEntry> view, int drop) {
+		if (drop <= 0) {
+			return view;
+		}
+		List<LoadTableEntry> out = new ArrayList<>(view.size());
+		for (LoadTableEntry t : view) {
+			out.add(new LoadTableEntry(t.start() + (long) drop * t.entrySize(), t.entrySize(),
+				t.num() - drop));
+		}
+		return out;
+	}
+
+	private static <T> List<T> tailFrom(List<T> l, int drop) {
+		return drop <= 0 ? l : l.subList(Math.min(drop, l.size()), l.size());
+	}
+
+	/**
+	 * Every leading rule on the post-tail view: one result per rule that would drop something, then
+	 * a {@link LeadingRule#CASCADE} total when any did. Each rule is evaluated on the whole view
+	 * independently -- the log wants to know which rule fires where -- except that
+	 * {@link #leadingBySwitchWindow} runs on what {@link #leadingByExtent} left: a biased start
+	 * leaves the window's top (the table start) unknown until the extent rule has placed it. The
+	 * cascade total applies the rules in sequence instead, each on what the previous left.
+	 */
+	public static List<Leading> leadingChecks(List<Long> targets, List<LoadTableEntry> view,
+			LeadingFacts f) {
+		List<Leading> out = new ArrayList<>();
+		LongUnaryOperator ext = f.extentEnd();
+		Collection<Long> foreign = f.foreignCodeStarts();
+		boolean valid = f.overlappingByte() && f.inCode() != null;
+		boolean verified = f.tailRule() != null;
+		Leading extent = ext == null || !verified ? Leading.none(LeadingRule.EXTENT_OVERLAP)
+				: leadingByExtent(targets, view, ext);
+		Leading unanchored = ext == null || verified ? Leading.none(LeadingRule.EXTENT_OVERLAP_UNANCHORED)
+				: new Leading(LeadingRule.EXTENT_OVERLAP_UNANCHORED,
+					leadingByExtent(targets, view, ext).drop());
+		boolean useKnown = ext != null && foreign != null && verified && f.gate(Rule.KNOWN_CODE);
+		boolean useBelow = f.gate(Rule.LOWEST_TARGET, Rule.BELOW_TABLE_CUT);
+		boolean useWindow = f.gate(Rule.SWITCH_WINDOW, Rule.WINDOW_AT_NEIGHBOUR);
+		boolean useNeighbour = f.otherTableEnds() != null && f.inCode() != null &&
+			f.gate(Rule.NEIGHBOUR_TABLE);
+		Leading known = !useKnown ? Leading.none(LeadingRule.KNOWN_CODE_OVERLAP)
+				: leadingByKnownCode(targets, view, foreign, ext);
+		Leading below = !useBelow ? Leading.none(LeadingRule.BELOW_TABLE)
+				: leadingByBelowTable(targets, view, f.block());
+		Leading window = !useWindow ? Leading.none(LeadingRule.SWITCH_WINDOW)
+				: leadingBySwitchWindow(f.switchAddr(), tailFrom(targets, extent.drop()),
+					shiftView(view, extent.drop()));
+		Leading validCut = valid ? leadingByValidTargets(targets, view, f.inCode())
+				: Leading.none(LeadingRule.VALID_TARGET);
+		Leading neighbour = !useNeighbour ? Leading.none(LeadingRule.NEIGHBOUR_END)
+				: leadingByNeighbourEnd(targets, view, f.otherTableEnds(), f.inCode());
+		Leading prefix = f.decodes() == null ? Leading.none(LeadingRule.CODE_PREFIX)
+				: leadingByCodePrefix(f.decodes());
+		for (Leading l : List.of(extent, unanchored, known, below, window, validCut, neighbour,
+			prefix)) {
+			if (l.applies()) {
+				out.add(l);
+			}
+		}
+		if (out.isEmpty() || (out.size() == 1 && out.get(0) == unanchored)) {
+			return out;
+		}
+		// The cascade: sequential, each rule on the remainder. Window comes after extent and known
+		// code, which place the table start.
+		int d = extent.drop();
+		if (useKnown) {
+			d += leadingByKnownCode(tailFrom(targets, d), shiftView(view, d), foreign, ext).drop();
+		}
+		if (useBelow) {
+			d += leadingByBelowTable(tailFrom(targets, d), shiftView(view, d), f.block()).drop();
+		}
+		if (useWindow) {
+			d += leadingBySwitchWindow(f.switchAddr(), tailFrom(targets, d), shiftView(view, d))
+					.drop();
+		}
+		if (valid) {
+			d += leadingByValidTargets(tailFrom(targets, d), shiftView(view, d),
+				tailFrom(f.inCode(), d)).drop();
+		}
+		if (useNeighbour) {
+			d += leadingByNeighbourEnd(tailFrom(targets, d), shiftView(view, d),
+				f.otherTableEnds(), tailFrom(f.inCode(), d)).drop();
+		}
+		if (f.decodes() != null) {
+			d += leadingByCodePrefix(tailFrom(f.decodes(), d)).drop();
+		}
+		if (d > 0) {
+			out.add(new Leading(LeadingRule.CASCADE, d));
+		}
+		return out;
+	}
+
+	/**
+	 * Leading form of {@link #bound}'s lowest-target rule ("a table cannot overlap the code it
+	 * dispatches to"): no kept entry's bytes may lie inside the decoded extent of another kept
+	 * target. Evaluated from the tail-verified end: every violating pair (slot {@code i} inside the
+	 * extent of target {@code k}, {@code i != k}) is resolved by dropping its lower-indexed side, so
+	 * the drop is the highest {@code min(i, k) + 1}; slots after it, the verified end included, stay.
+	 * That is also what keeps a junk early target (whose extent happens to cover real slots) from
+	 * costing real entries: its pair drops the junk, not the slot it covers.
+	 *
+	 * <p>Only targets AT or ABOVE the table's start count. A handler that starts below the table
+	 * and decodes on into it is the ordinary table-after-code layout, not an overlap: the decode
+	 * falls through the last instruction into the data (megaman c847: the last handler ends
+	 * {@code BPL / BMI}, a branch-always pair, and its linear extent runs through all of the table at
+	 * c89e). A table that overlaps its OWN handlers (SMW 0d44, dragonpower 803b) has them above its
+	 * start. Hazard: handlers that call a routine with inline data after the {@code JSR} (db3,
+	 * deadly_towers). The caller's {@code extentEnd} stops AT a call, so the inline bytes are never
+	 * part of an extent. Declines for a shape {@link Shape#of} does not understand.
+	 */
+	public static Leading leadingByExtent(List<Long> targets, List<LoadTableEntry> view,
+			LongUnaryOperator extentEnd) {
+		Shape shape = Shape.of(targets.size(), view);
+		if (shape == null) {
+			return Leading.none(LeadingRule.EXTENT_OVERLAP);
+		}
+		int n = targets.size();
+		long[] end = new long[n];
+		for (int k = 0; k < n; k++) {
+			end[k] = Math.max(extentEnd.applyAsLong(targets.get(k)), targets.get(k) + 1);
+		}
+		int drop = 0;
+		for (int i = 0; i < n; i++) {
+			for (int k = 0; k < n; k++) {
+				if (k != i && targets.get(k) >= shape.tableStart &&
+					shape.entryOverlaps(i, targets.get(k), end[k])) {
+					drop = Math.max(drop, Math.min(i, k) + 1);
+				}
+			}
+		}
+		return checked(LeadingRule.EXTENT_OVERLAP, drop, n);
+	}
+
+	/**
+	 * Leading form of {@link #boundByKnownCode} (grm-rsxe): the tail rule cuts where a handler of
+	 * ANOTHER table begins inside this table's bytes. Its mirror is the same predicate on the
+	 * handler's decoded extent: a slot inside {@code [c, extentEnd(c))} of another table's kept
+	 * target {@code c} is that handler's bytes, not an entry. An interior hit drops everything
+	 * before it (the tail-verified end stays). A foreign start equal to one of this table's own
+	 * targets is skipped -- a shared handler, and {@link #leadingByExtent} already judges that pair
+	 * -- and so is one below the table, for the reason given there.
+	 */
+	public static Leading leadingByKnownCode(List<Long> targets, List<LoadTableEntry> view,
+			Collection<Long> foreignCodeStarts, LongUnaryOperator extentEnd) {
+		Shape shape = Shape.of(targets.size(), view);
+		if (shape == null) {
+			return Leading.none(LeadingRule.KNOWN_CODE_OVERLAP);
+		}
+		int n = targets.size();
+		int drop = 0;
+		for (long c : foreignCodeStarts) {
+			if (c < shape.tableStart || targets.contains(c)) {
+				continue; // below the table: a handler running on into it is table-after-code
+			}
+			long end = Math.max(extentEnd.applyAsLong(c), c + 1);
+			for (int i = 0; i < n; i++) {
+				if (shape.entryOverlaps(i, c, end)) {
+					drop = Math.max(drop, i + 1);
+				}
+			}
+		}
+		return checked(LeadingRule.KNOWN_CODE_OVERLAP, drop, n);
+	}
+
+	/**
+	 * Leading form of grm-fxtp's below-table cut. The tail rule: entry 0's target above the table
+	 * establishes the table-before-code idiom, and the first later entry below the table (and not
+	 * an in-block handler on the table's other side, grm-rsxe) is where the over-read starts. The
+	 * mirror anchors on the LAST kept entry: if its target is above the table, the last entry
+	 * (index {@code <= n - 3}) below the table and not skipped ends a leading run of garbage, and
+	 * everything up to it is dropped. The guards mirror too -- same-block (every entry after the cut
+	 * lies in {@code block}) and confirm (the {@link #WINDOW_CONFIRM} entries BEFORE the cut, as
+	 * many as exist, are each below the table or outside the block). Needs the block; declines
+	 * without one, as the tail rule does.
+	 */
+	public static Leading leadingByBelowTable(List<Long> targets, List<LoadTableEntry> view,
+			Block block) {
+		Shape shape = Shape.of(targets.size(), view);
+		int n = targets.size();
+		if (shape == null || block == null || !(targets.get(n - 1) > shape.tableStart)) {
+			return Leading.none(LeadingRule.BELOW_TABLE);
+		}
+		boolean anchorInBlock = block.contains(targets.get(n - 1));
+		int cut = -1;
+		for (int i = n - 3; i >= 0; i--) {
+			long t = targets.get(i);
+			boolean skipped = t < shape.tableStart && block.contains(t) && anchorInBlock;
+			if (t < shape.tableStart && !skipped) {
+				cut = i;
+				break;
+			}
+		}
+		if (cut < 0) {
+			return Leading.none(LeadingRule.BELOW_TABLE);
+		}
+		for (int k = cut + 1; k < n; k++) {
+			if (!block.contains(targets.get(k))) {
+				return Leading.none(LeadingRule.BELOW_TABLE); // not the idiom
+			}
+		}
+		for (int k = Math.max(0, cut - WINDOW_CONFIRM); k < cut; k++) {
+			long t = targets.get(k);
+			if (t >= shape.tableStart && block.contains(t)) {
+				return Leading.none(LeadingRule.BELOW_TABLE); // ambiguous: comes back above the table
+			}
+		}
+		return checked(LeadingRule.BELOW_TABLE, cut + 1, n);
+	}
+
+	/**
+	 * Leading form of {@link #boundBySwitchWindow} (grm-akiv), for a table that follows its switch:
+	 * the real entries lie in {@code [switchAddr, tableStart)}. Mirror: anchored on the last kept
+	 * entry (it must lie in the window), the last entry outside the window ends a leading run of
+	 * strays; everything up to it is dropped when the {@link #WINDOW_CONFIRM} entries before it
+	 * (as many as exist) are outside too. The window's top is the table start, which a biased
+	 * start leaves unknown, so {@link #leadingChecks} runs this only on the view
+	 * {@link #leadingByExtent} left. (The tail rule's neighbour stop has its own mirror,
+	 * {@link #leadingByNeighbourEnd}.)
+	 */
+	public static Leading leadingBySwitchWindow(long switchAddr, List<Long> targets,
+			List<LoadTableEntry> view) {
+		Shape shape = Shape.of(targets.size(), view);
+		int n = targets.size();
+		if (shape == null || shape.tableStart <= switchAddr) {
+			return Leading.none(LeadingRule.SWITCH_WINDOW);
+		}
+		long lo = switchAddr;
+		long hi = shape.tableStart;
+		if (targets.get(n - 1) < lo || targets.get(n - 1) >= hi) {
+			return Leading.none(LeadingRule.SWITCH_WINDOW);
+		}
+		int cut = -1;
+		for (int i = n - 3; i >= 0; i--) {
+			long t = targets.get(i);
+			if (t < lo || t >= hi) {
+				cut = i;
+				break;
+			}
+		}
+		if (cut < 0) {
+			return Leading.none(LeadingRule.SWITCH_WINDOW);
+		}
+		for (int k = Math.max(0, cut - WINDOW_CONFIRM); k < cut; k++) {
+			long t = targets.get(k);
+			if (t >= lo && t < hi) {
+				return Leading.none(LeadingRule.SWITCH_WINDOW); // the table comes back into the window
+			}
+		}
+		return checked(LeadingRule.SWITCH_WINDOW, cut + 1, n);
+	}
+
+	/**
+	 * Leading form of {@link #boundByValidTargets} (grm-yjiq), for the same one shape only (the
+	 * overlapping byte table, the kept entries being its even cases; grm-os9b measured the rule on
+	 * ordinary shapes and it ran through neighbouring tables): walking back from the last kept
+	 * entry, the last entry that cannot hold code ends a leading run of invalid targets, cut when
+	 * the {@link #WINDOW_CONFIRM} entries before it fail too and at least 2 entries stay. Declines
+	 * when every entry is in code (nothing to cut).
+	 */
+	public static Leading leadingByValidTargets(List<Long> targets, List<LoadTableEntry> view,
+			List<Boolean> inCode) {
+		int n = targets.size();
+		if (inCode.size() != n || Shape.of(n, view) == null) {
+			return Leading.none(LeadingRule.VALID_TARGET);
+		}
+		int cut = n - 1;
+		while (cut >= 0 && inCode.get(cut)) {
+			cut--;
+		}
+		if (cut < 0 || n - 1 - cut < 2) {
+			return Leading.none(LeadingRule.VALID_TARGET);
+		}
+		for (int k = Math.max(0, cut - WINDOW_CONFIRM); k < cut; k++) {
+			if (inCode.get(k)) {
+				return Leading.none(LeadingRule.VALID_TARGET); // plausible again; ambiguous
+			}
+		}
+		return checked(LeadingRule.VALID_TARGET, cut + 1, n);
+	}
+
+	/**
+	 * Leading form of {@link #boundByNeighbourTable} (grm-2m07): cut this table where ANOTHER
+	 * table's bounded extent ENDS. Dispatch tables are laid end to end, so when a table starts
+	 * early (a biased base, an over-read start) the previous table's end falls strictly inside this
+	 * one's extent, on one of its entry boundaries, and the entries before it are the neighbour's.
+	 * The last such end wins (the mirror of the tail rule's nearest start). Every entry that stays
+	 * must be in code, as for the tail rule ("a cut that keeps a RAM target found something far
+	 * from the idiom"). The neighbour end must be independently established -- another table's
+	 * bounded extent, never inferred from this table's entries -- which is why this is a second
+	 * pass over the bounded results.
+	 */
+	public static Leading leadingByNeighbourEnd(List<Long> targets, List<LoadTableEntry> view,
+			Collection<Long> otherEnds, List<Boolean> inCode) {
+		int n = targets.size();
+		Shape shape = Shape.of(n, view);
+		if (shape == null || inCode.size() != n) {
+			return Leading.none(LeadingRule.NEIGHBOUR_END);
+		}
+		long extentEnd = shape.entryEnd(n - 1);
+		long best = -1;
+		for (long e : otherEnds) {
+			if (e > shape.tableStart && e < extentEnd && shape.isEntryBoundary(e)) {
+				best = Math.max(best, e);
+			}
+		}
+		if (best < 0) {
+			return Leading.none(LeadingRule.NEIGHBOUR_END);
+		}
+		int drop = shape.slotsBefore(best);
+		for (int k = drop; k < n; k++) {
+			if (!inCode.get(k)) {
+				return Leading.none(LeadingRule.NEIGHBOUR_END);
+			}
+		}
+		return checked(LeadingRule.NEIGHBOUR_END, drop, n);
+	}
+
+	/**
+	 * Leading form of {@link #codePrefix} (grm-0pen): keep the TRAILING run of entries that decode
+	 * as code. With at least 2 entries in that run and a failing entry before it, the cut is
+	 * trusted when the {@link #CODE_CUT_CONFIRM} entries before the failure fail too; otherwise
+	 * (an odd real handler may sit there) only the leading non-decoding run is dropped, as
+	 * {@link #codePrefix} cuts only the trailing run then. Weak where junk decodes: Super Mario
+	 * World's over-read targets decode as TCALLs.
+	 */
+	public static Leading leadingByCodePrefix(List<Boolean> decodes) {
+		int n = decodes.size();
+		int run = 0;
+		while (run < n && decodes.get(n - 1 - run)) {
+			run++;
+		}
+		if (run < 2 || run == n) {
+			return Leading.none(LeadingRule.CODE_PREFIX);
+		}
+		int fail = n - run - 1;
+		for (int k = Math.max(0, fail - CODE_CUT_CONFIRM); k < fail; k++) {
+			if (decodes.get(k)) {
+				int lead = 0;
+				while (lead < n && !decodes.get(lead)) {
+					lead++;
+				}
+				return checked(LeadingRule.CODE_PREFIX, lead, n);
+			}
+		}
+		return checked(LeadingRule.CODE_PREFIX, fail + 1, n);
+	}
+
+	/**
+	 * Leading form of {@link #boundByDistinctWords} (grm-uzep): the table's own words, in slot
+	 * order, walked with {@link #leadingByExtent} (the lowest-target walk's mirror). The words, not
+	 * the deduplicated case list, are the slots, so the extent check is slot-positional. {@code
+	 * slots} is the count the tail rule kept ({@link #distinctWordSlots}).
+	 */
+	public static Leading leadingByDistinctWords(List<Long> words, long tableStart, int slots,
+			LongUnaryOperator extentEnd) {
+		if (slots < 2 || slots > words.size()) {
+			return Leading.none(LeadingRule.DISTINCT_WORDS_EXTENT);
+		}
+		Leading l = leadingByExtent(words.subList(0, slots),
+			List.of(new LoadTableEntry(tableStart, 2, slots)), extentEnd);
+		return l.applies() ? new Leading(LeadingRule.DISTINCT_WORDS_EXTENT, l.drop())
+				: Leading.none(LeadingRule.DISTINCT_WORDS_EXTENT);
+	}
+
+	/** {@code drop} of {@code n} slots as a result, or nothing when fewer than 2 would stay. */
+	private static Leading checked(LeadingRule rule, int drop, int n) {
+		return drop > 0 && n - drop >= 2 ? new Leading(rule, drop) : Leading.none(rule);
+	}
+
+	// Rules with NO leading form, and why (owner ruling: a one-ended rule says so):
+	//  * looksLikeWordTable (inventory rule 9) is a per-target predicate, already end-agnostic.
+	//  * boundBySearchLoop (rule 11) states the exact value set; it is two-ended already.
+	//  * the normalisers (planarGap, overlappingByteTable; rule 4) are not cuts: a start shift
+	//    applies to every half, see leadingView.
+	//  * maskCap / indexCap (rule 15) bound the index from above only; the lower bound is the
+	//    recovered index guard (INDEX_GUARD), which sets both ends.
+
 	/** The reconstructed table shape both rules share: each moving load table's start and
 	 *  per-entry byte extent, and the table's lowest address. */
 	private static final class Shape {
@@ -1022,6 +1575,27 @@ public final class JumpTableBound {
 				}
 			}
 			return false;
+		}
+
+		/** Whether any entry-{@code i} byte of any moving table lies in {@code [lo, hi)}. */
+		boolean entryOverlaps(int i, long lo, long hi) {
+			for (int k = 0; k < start.length; k++) {
+				long elo = start[k] + (long) i * chunk[k];
+				if (elo < hi && lo < elo + chunk[k]) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		/** How many whole entries of the lowest moving table lie before {@code boundary}. */
+		int slotsBefore(long boundary) {
+			for (int k = 0; k < start.length; k++) {
+				if (start[k] == tableStart) {
+					return (int) ((boundary - tableStart) / chunk[k]);
+				}
+			}
+			return 0;
 		}
 
 		/** The lowest of {@code otherStarts} strictly inside {@code (tableStart, extentEnd)} that is
