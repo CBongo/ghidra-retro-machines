@@ -198,6 +198,33 @@ Each is minutes of work and settles something specific. Highest value per unit e
 
   Two or three answers set the margin rule for acting on the rest (full list on grm-gipk.16.6).
 
+### 1.10 Three over-read NES jump tables: where does each real table end? (`grm-c9d.8.7`)
+
+- [ ] **Question.** Each table below was read to 83–128 entries and no bound rule cuts it. The
+  agent read the bytes and proposes a real count and a rule change for each. Before any rule is
+  loosened, please check each count in a disassembler, and say whether the proposed rule matches
+  what the game does. The full target list per entry is in the comment on `grm-c9d.8.7`
+  (`bd show grm-c9d.8.7`).
+  - **dbz_saiyan `c4fb`, table `d286`** (128 read). Proposed: **20** entries (`d2f3 d2f6 d3bf …
+    d311`), with the table bytes from `d2ae` decoding as code (`85 32 a8 …`). Entry 20 (`3285`) is
+    the first target below the table, so the existing below-table cut lands on 20. Its follow-up
+    check declines because entry 22 (`d2bf`) points back inside the table's bank. Is `d2ae` code,
+    and is that entry 22 junk? If both are yes, the follow-up check is too strict here.
+  - **tmnt `W8000_B5::8238`, table `823b`** (83 read). Proposed: **67** entries. The bytes from
+    `82c1` decode as `LDA $0630,X / CMP #$FF / BEQ / DEC $0630,X / BNE / JSR $EF48 / RTS`. Entry
+    67 (`30bd`) is the first target below the table. The below-table cut is declined only because
+    many real handlers (`cfb8`, `fd4b`, `fd5f`, …) sit in the fixed bank, outside the table's bank.
+    Is it 67? Entries 65 (`bef0`) and 66 (`8733`, which entries 5 and 28 also use) are the doubtful
+    ones. Is a table in one bank whose handlers sit in the fixed bank normal for tmnt?
+  - **dragonpower `803b`, table `803e`** (128 read). Proposed: about **9** entries (`80b4 81b2
+    81a4 81d2 81a4 80ba 80b4 80dd 81f2`). From `8050` the bytes read as code (`20 fb 99 a0 18 20 8b
+    98 …`), yet entries 11, 17 and 19 (`2018`, `2008`, `06a0`) still fall inside that span. Is it
+    9? No current rule reaches 9. Would "the table ends where its own bytes start decoding as code"
+    be a safe rule, or does this game put tables right before code that only looks that way?
+
+  The answers decide whether `grm-c9d.8.7` loosens the below-table cut's two checks, adds a
+  "table bytes decode as code" end test, or leaves these tables alone.
+
 ---
 
 ## 2. Def-use passes on untraced titles
