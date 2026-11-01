@@ -730,6 +730,68 @@ public final class JumpTableBound {
 	}
 
 	/**
+	 * Apply the extent-overlap bound (grm-c9d.8.6), the tail form of {@link #leadingByExtent}: cut
+	 * the table at the first entry whose bytes lie inside the decoded extent of an EARLIER entry's
+	 * target. A table cannot overlap the code it dispatches to -- the rule {@link #bound} applies to
+	 * the lowest target -- but {@link #bound} declines outright once any target lies below the
+	 * table (handlers on both sides of it), so a table that runs straight into its own handler
+	 * above it is never cut there. This rule ignores below-table targets and measures only the code
+	 * that actually starts at each above-table target, so it still sees the table end where its
+	 * handler begins. rcproam c632 is the case: its table at c635 has handlers on both sides
+	 * (c605..c622 below, c649..c701 above), and entry 9's handler c649 starts exactly at slot 10,
+	 * so the 102 cases the decompiler read are 10 -- what follows is that handler's code.
+	 *
+	 * <p>Earlier targets only: walking from slot 0, every target judged is one already kept, so a
+	 * junk target read from the over-read can never cut the real entries before it. Runs only as
+	 * the last fallback, after every other tail rule has declined.
+	 *
+	 * <p>Declines for a shape {@link Shape#of} does not understand, when no entry lies inside an
+	 * earlier handler (nothing to cut at), when fewer than 2 entries would be kept, and when any
+	 * kept entry fails {@code inCode} (the handler lies past garbage already over-read, as for
+	 * {@link #boundByKnownCode}).
+	 *
+	 * @param targets as for {@link #bound}
+	 * @param loadTables as for {@link #bound}
+	 * @param extentEnd the exclusive end of the code decoded linearly from a target, as for
+	 *                  {@link LeadingFacts#extentEnd()}
+	 * @param inCode as for {@link #boundByValidTargets}
+	 * @return a bounded result, or a decline
+	 */
+	public static Result boundByExtentOverlap(List<Long> targets, List<LoadTableEntry> loadTables,
+			LongUnaryOperator extentEnd, List<Boolean> inCode) {
+		if (inCode.size() != targets.size()) {
+			return Result.decline();
+		}
+		Shape shape = Shape.of(targets.size(), loadTables);
+		if (shape == null) {
+			return Result.decline();
+		}
+		int caseCount = targets.size();
+		long[] end = new long[caseCount];
+		TableScorer.Result<Long, Stop> walk = TableScorer.walk(caseCount, (i, before) -> {
+			for (int k = 0; k < i; k++) {
+				long t = targets.get(k);
+				if (t >= shape.tableStart && shape.entryOverlaps(i, t, end[k])) {
+					return TableScorer.Entry.rejected(Stop.INSIDE_HANDLER);
+				}
+			}
+			long t = targets.get(i);
+			end[i] = Math.max(extentEnd.applyAsLong(t), t + 1);
+			return TableScorer.Entry.accepted(t, List.of());
+		}, TableScorer.HARD_ONLY);
+		int cut = walk.endedBy() == Stop.INSIDE_HANDLER ? walk.count() : -1;
+		if (cut < 2) {
+			return Result.decline();
+		}
+		for (int k = 0; k < cut; k++) {
+			if (!inCode.get(k)) {
+				return Result.decline(); // the handler lies past garbage already over-read
+			}
+		}
+		return Result.bounded(cut, lowestOf(walk.targets()), Rule.EXTENT_OVERLAP);
+	}
+
+	/**
 	 * How many of a bounded table's kept cases to keep once each one's target bytes have been
 	 * judged as code (grm-0pen): the cases up to, but not including, the first whose target does
 	 * not decode as code -- trusted only when the {@link #CODE_CUT_CONFIRM} cases after it (as many
@@ -822,7 +884,9 @@ public final class JumpTableBound {
 		/** The target lies in memory that cannot hold code. */
 		NOT_IN_CODE,
 		/** {@link #boundByKnownCode}: the entry's bytes contain another table's target. */
-		CONTAINS_CODE_START
+		CONTAINS_CODE_START,
+		/** {@link #boundByExtentOverlap}: the entry's bytes lie in an earlier target's code. */
+		INSIDE_HANDLER
 	}
 
 	/** The lowest of {@code ts} that {@code skip} does not exclude, or null when there is none. */
@@ -876,7 +940,10 @@ public final class JumpTableBound {
 		DISTINCT_WORDS,
 		/** {@link #boundByIndexGuard}: grm-c9d.8.2 -- the slots a recovered {@code CMP #imm}
 		 *  guard says the dispatch reaches ({@link IndexGuardRecovery}). */
-		INDEX_GUARD
+		INDEX_GUARD,
+		/** {@link #boundByExtentOverlap}: grm-c9d.8.6 -- cut at the first entry whose bytes lie in
+		 *  an earlier target's decoded code (the table runs into its own handler). */
+		EXTENT_OVERLAP
 	}
 
 	/**

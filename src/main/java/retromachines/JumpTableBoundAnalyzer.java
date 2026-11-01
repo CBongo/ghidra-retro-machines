@@ -16,6 +16,7 @@
 package retromachines;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -34,6 +35,7 @@ import ghidra.app.services.AbstractAnalyzer;
 import ghidra.app.services.AnalysisPriority;
 import ghidra.app.services.Analyzer;
 import ghidra.app.services.AnalyzerType;
+import ghidra.app.util.PseudoDisassembler;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSet;
@@ -752,6 +754,16 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 			}
 			result = JumpTableBound.boundByKnownCode(targets, loadTables, codeStarts, inCode);
 		}
+		if (!result.isBounded() && !mixed) {
+			// grm-c9d.8.6: the table runs into its own handler, with handlers on both sides of it
+			// (so the lowest-target rule declined). Bytes only, via the pseudo disassembler.
+			PseudoDisassembler dis = new PseudoDisassembler(program);
+			AddressSpace space = targetSpace;
+			Map<Long, Long> extents = new HashMap<>();
+			result = JumpTableBound.boundByExtentOverlap(targets, loadTables,
+				o -> extents.computeIfAbsent(o, x -> LeadingShadow.decodedExtentEnd(dis, space, x)),
+				inCode);
+		}
 		if (!result.isBounded() && deduped != null) {
 			result = deduped; // grm-uzep: nothing else could read this case list
 		}
@@ -982,6 +994,9 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		}
 		else if (result.rule() == JumpTableBound.Rule.KNOWN_CODE) {
 			why = "ran into another table's target"; // grm-rsxe
+		}
+		else if (result.rule() == JumpTableBound.Rule.EXTENT_OVERLAP) {
+			why = "ran into its own handler's code"; // grm-c9d.8.6
 		}
 		else if (result.rule() == JumpTableBound.Rule.SEARCH_LOOP) {
 			why = "index from a keyed search loop"; // grm-jt7s
