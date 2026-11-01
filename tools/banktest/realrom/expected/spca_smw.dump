@@ -3,80 +3,10 @@ REALROM program spca_smw.sfc
 REALROM sha256 0838e531fe22c077528febe14cb3ff7c492f1f5fa8de354192bdff7137c27f5b
 REALROM language 65816:LE:24:retro
 REALROM spca recovery stop IPL_DONE blocks 3 entry 0500
-REALROM spca instructions 3201
-REALROM spca functions 45
-REALROM spca bookmarks.error 40
-REALROM spca computed sites=71 withTargets=1
-REALROM spca computed 0d44 jump JMP n=78 00e8 02b1 02d0 0389 0697 088d 0d47 0d8d 0d8e 0da5 0db0 0eba 0eeb 0f76 0f85 0f8d 125c 125e 149a 14da 1f28 2008 286f 2ec4 3c8d 3f06 3f12 3f2c 3f63 3f64 3f65 3fae 3fbc 46f8 5d90 5dcf 5e3f 60c4 60f8 62a4 63da 64e4 67da 6ac4 6c8d 6f02 6f46 763f 7d8d 8060 8860 8d62 8d6f 973f 975f 9e00 a480 adf5 b580 c0d5 c1d5 c412 c546 d57f da0f da61 dafd dd02 dd3d e406 e82d f210 f42d f869 f86f f8ee fd10 ff48
-REALROM spca computed 0eba call TCALL n=0
-REALROM spca computed 0ebe call TCALL n=0
-REALROM spca computed 14c2 call TCALL n=0
-REALROM spca computed 1528 call TCALL n=0
-REALROM spca computed 1534 call TCALL n=0
-REALROM spca computed 153a call TCALL n=0
-REALROM spca computed 15c8 jump JMP n=0
-REALROM spca computed 1628 jump JMP n=0
-REALROM spca computed 1638 jump JMP n=0
-REALROM spca computed 1f48 call TCALL n=0
-REALROM spca computed 2082 call TCALL n=0
-REALROM spca computed 208c call TCALL n=0
-REALROM spca computed 208d call TCALL n=0
-REALROM spca computed 2098 call TCALL n=0
-REALROM spca computed 20a2 call TCALL n=0
-REALROM spca computed 20a3 call TCALL n=0
-REALROM spca computed 20f8 call TCALL n=0
-REALROM spca computed 2199 call TCALL n=0
-REALROM spca computed 223f call TCALL n=0
-REALROM spca computed 224b call TCALL n=0
-REALROM spca computed 224c call TCALL n=0
-REALROM spca computed 224d call TCALL n=0
-REALROM spca computed 2281 call TCALL n=0
-REALROM spca computed 2285 call TCALL n=0
-REALROM spca computed 235a call TCALL n=0
-REALROM spca computed 235e call TCALL n=0
-REALROM spca computed 235f call TCALL n=0
-REALROM spca computed 2372 call TCALL n=0
-REALROM spca computed 2376 call TCALL n=0
-REALROM spca computed 2377 call TCALL n=0
-REALROM spca computed 23ea call TCALL n=0
-REALROM spca computed 2420 call TCALL n=0
-REALROM spca computed 248a call TCALL n=0
-REALROM spca computed 2496 call TCALL n=0
-REALROM spca computed 2548 call TCALL n=0
-REALROM spca computed 2581 call TCALL n=0
-REALROM spca computed 2582 call TCALL n=0
-REALROM spca computed 2585 call TCALL n=0
-REALROM spca computed 2586 call TCALL n=0
-REALROM spca computed 2589 call TCALL n=0
-REALROM spca computed 258a call TCALL n=0
-REALROM spca computed 258d call TCALL n=0
-REALROM spca computed 25ce call TCALL n=0
-REALROM spca computed 2640 call TCALL n=0
-REALROM spca computed 2653 call TCALL n=0
-REALROM spca computed 2654 call TCALL n=0
-REALROM spca computed 26a3 call TCALL n=0
-REALROM spca computed 27fe call TCALL n=0
-REALROM spca computed 2804 call TCALL n=0
-REALROM spca computed 2851 call TCALL n=0
-REALROM spca computed 285f call TCALL n=0
-REALROM spca computed 286e call TCALL n=0
-REALROM spca computed 287f call TCALL n=0
-REALROM spca computed 28a9 call TCALL n=0
-REALROM spca computed 28c7 call TCALL n=0
-REALROM spca computed 28db call TCALL n=0
-REALROM spca computed 28e9 call TCALL n=0
-REALROM spca computed 2908 call TCALL n=0
-REALROM spca computed 290b call TCALL n=0
-REALROM spca computed 291b call TCALL n=0
-REALROM spca computed 294b call TCALL n=0
-REALROM spca computed 296f call TCALL n=0
-REALROM spca computed 5d97 call TCALL n=0
-REALROM spca computed 5dc1 call TCALL n=0
-REALROM spca computed 5dcc call TCALL n=0
-REALROM spca computed 5e4c call TCALL n=0
-REALROM spca computed 5ecc call TCALL n=0
-REALROM spca computed 5ed3 call TCALL n=0
-REALROM spca computed 5ef1 call TCALL n=0
-REALROM spca computed 5fb6 call TCALL n=0
+REALROM spca instructions 1640
+REALROM spca functions 43
+REALROM spca bookmarks.error 0
+REALROM spca computed sites=1 withTargets=1
+REALROM spca computed 0d44 jump JMP n=23 0d47 0d8e 0da5 0dc1 0dd5 0dda 0df0 0dfc 0e11 0e1d 0e35 0e3b 0e4a 0e4f 0e53 0e73 0e82 0e9e 0ea5 0ec9 0ef9 0f1d 0f33
 REALROM spca retTrick sites=0
 === REALROM END ===

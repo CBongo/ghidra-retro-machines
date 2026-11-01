@@ -569,7 +569,13 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		// list with the slots from the first non-code entry on (null when the table is not that).
 		// The decompiler's own case count, before any leading trim: the log line reports both.
 		int decompilerCases = realCases.size();
-		LeadingTrim trim = trimLeadingCodeEntries(program, listing, table, realCases);
+		// grm-c9d.8.2: a recovered index guard is exact, so it goes first and the listing-based trim
+		// (and every tail rule below) is skipped when it applies.
+		LeadingTrim trim = trimByIndexGuard(program, listing, switchAddr, table, realCases);
+		boolean guarded = trim != null;
+		if (trim == null) {
+			trim = trimLeadingCodeEntries(program, listing, table, realCases);
+		}
 		if (trim != null) {
 			realCases = trim.cases();
 			targetSpace = realCases.get(0).getAddressSpace();
@@ -628,7 +634,7 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		// grm-pwuh: the dispatch may read its table from a DIFFERENT bank than the decompiler did
 		// (the code switches banks first, then reads). Re-read it from the switched-in bank.
 		CrossBank crossBank = null;
-		if (lowestMovingTableAddr != null && !mixed) {
+		if (lowestMovingTableAddr != null && !mixed && !guarded) {
 			crossBank = crossBankTable(program, listing, switchAddr, table, lowestMovingTableAddr,
 				targets);
 		}
@@ -672,13 +678,20 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		// grm-jt7s: a keyed linear search leaves the index in a value set the code itself states;
 		// read the cases from it exactly, ahead of every extent rule (none can cut every third case).
 		List<Address> searched = null;
-		if (!isCrossBank && !mixed) {
+		if (!isCrossBank && !mixed && !guarded) {
 			Instruction switchInstr = listing.getInstructionAt(switchAddr);
 			searched = switchInstr == null ? null
 					: SearchLoopDispatch.cases(program, switchInstr, realCases);
 		}
 		JumpTableBound.Result result;
-		if (searched != null) {
+		if (guarded) {
+			long lowest = Long.MAX_VALUE;
+			for (Address a : realCases) {
+				lowest = Math.min(lowest, a.getOffset());
+			}
+			result = JumpTableBound.boundByIndexGuard(realCases.size(), lowest);
+		}
+		else if (searched != null) {
 			long lowest = Long.MAX_VALUE;
 			for (Address a : searched) {
 				lowest = Math.min(lowest, a.getOffset());
@@ -760,7 +773,8 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 				!JumpTableBound.looksLikeWordTable(bytesAt(program, a, 2 * JumpTableBound.WORD_TABLE_RUN)));
 		}
 		// An exact search-loop set is not an extent to refine.
-		int codePrefix = searched != null ? firstN.size() : JumpTableBound.codePrefix(decodes);
+		int codePrefix =
+			searched != null || guarded ? firstN.size() : JumpTableBound.codePrefix(decodes);
 		boolean cutAtData = codePrefix < firstN.size();
 		// grm-8x6f: a kept case that still fails to decode means only the trailing run was cut.
 		boolean trailingCut = cutAtData && decodes.subList(0, codePrefix).contains(false);
@@ -769,8 +783,12 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		}
 		String dataCut = trailingCut ? "trailing targets that do not decode as code"
 				: "first target that does not decode as code";
+		// The targets the switch really reaches: an unused (placeholder) slot of a guarded table is
+		// represented in the positional case list by an alias of a neighbour (see LeadingTrim), and
+		// is no target of its own.
+		List<Address> reached = guarded ? trim.reachedTargets(firstN) : firstN;
 		if (shrinks || cutAtData || trim != null) {
-			keptOut.addAll(firstN);
+			keptOut.addAll(reached);
 		}
 		// grm-deve: decide now (bytes do not change when the bound lands) whether this table reads as
 		// a word array of exactly the kept targets; a previous array of ours goes BEFORE the pin or
@@ -859,7 +877,7 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		// branch into another address space), so a cross-bank table is always pinned by references.
 		if (isUndefined || isCrossBank ||
 			(shrinks && result.rule() == JumpTableBound.Rule.KNOWN_CODE)) {
-			if (!pinByReferences(program, listing, switchAddr, firstN, monitor)) {
+			if (!pinByReferences(program, listing, switchAddr, reached, monitor)) {
 				AnalyzerLog.warn(this, log,
 					"could not pin jump table by references at " + switchAddr +
 						": no instruction there");
@@ -878,7 +896,14 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 						e.getMessage());
 				return false;
 			}
-			retractStaleCases(program, function, switchAddr, firstN, monitor);
+			retractStaleCases(program, function, switchAddr, reached, monitor);
+			if (guarded && !pinByReferences(program, listing, switchAddr, reached, monitor)) {
+				// grm-c9d.8.2: a guard may EXTEND the table past what stock switch analysis read,
+				// and the targets it adds have no reference or disassembly from stock. The override
+				// is what the decompiler honours; the references are what the listing shows.
+				AnalyzerLog.warn(this, log,
+					"could not add references for the guarded jump table at " + switchAddr);
+			}
 		}
 
 		// grm-deve: the bound has landed and its retraction is done; lay over the kept entries only.
@@ -908,7 +933,8 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		String why;
 		if (!shrinks) {
 			// A cross-bank table no extent rule could cut (grm-pwuh), possibly cut by grm-0pen.
-			why = cutAtData ? dataCut : trim != null ? "no tail rule bounded" : "kept all";
+			why = cutAtData ? dataCut : guarded ? "index guard" : trim != null ? "no tail rule bounded"
+					: "kept all";
 		}
 		else if (result.rule() == JumpTableBound.Rule.SWITCH_WINDOW) {
 			why = "targets between switch and table";
@@ -942,7 +968,11 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 			// grm-d59c: two byte tables, low then high, merged by the decompiler into one extent
 			why += ", planar lo/hi tables " + Integer.toHexString(result.planarGap()) + " apart";
 		}
-		if (trim != null) {
+		if (guarded) {
+			why += ": " + trim.note() + (trim.unusedCount() > 0 ? "; " + trim.unusedCount() +
+				" unused ($0000) slot(s) not case targets" : ""); // grm-c9d.8.2 (INDEX_GUARD)
+		}
+		else if (trim != null) {
 			why += ", " + trim.dropped() + " leading entries in code dropped"; // grm-wek2 (LISTING_CODE)
 		}
 		if (shrinks && cutAtData) {
@@ -976,15 +1006,127 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 	 *  application in {@link #processTable} does not change. */
 	private enum TrimSource {
 		/** grm-wek2: the leading entries' bytes lie in listing instructions. */
-		LISTING_CODE
+		LISTING_CODE,
+		/** grm-c9d.8.2: a {@code CMP #imm} guard in front of the dispatch states the slots it
+		 *  reaches ({@link IndexGuardRecovery}); sets the start AND the count, and may extend the
+		 *  table past the decompiler's end. */
+		INDEX_GUARD
 	}
 
 	/** A table with its leading slots trimmed off, whatever decided so (grm-c9d.8.1). {@code start}
 	 *  is the new first slot's address, {@code slots} the slot count from it and {@code cases} the
 	 *  trimmed case list, one per slot; {@code table} is the decompiler load table this replaces,
-	 *  {@code dropped} how many leading slots went. */
+	 *  {@code dropped} how many leading slots went. {@code unused} (null when none) marks the slots
+	 *  that hold a {@code $0000} placeholder (grm-c9d.8.2): a jump-table override is POSITIONAL (case
+	 *  {@code i} is the {@code i}-th destination, whatever its address), so such a slot cannot be
+	 *  left out without shifting every later index. It stays in {@code cases} as an alias of the
+	 *  nearest real target -- an address already reached, so the override adds no flow, no label
+	 *  location and no reference at {@code $0000} -- and {@link #reachedTargets} drops it for the
+	 *  reference-based paths (the pin, the stale-case retraction, the known-code list). {@code note}
+	 *  is the evidence text for the log (null for the listing trim). */
 	private record LeadingTrim(JumpTable.LoadTable table, Address start, int slots,
-			List<Address> cases, int dropped, TrimSource source) {}
+			List<Address> cases, int dropped, TrimSource source, List<Boolean> unused,
+			String note) {
+
+		LeadingTrim(JumpTable.LoadTable table, Address start, int slots, List<Address> cases,
+				int dropped, TrimSource source) {
+			this(table, start, slots, cases, dropped, source, null, null);
+		}
+
+		/** {@code kept} without the aliases standing in for unused slots (position-aligned). */
+		List<Address> reachedTargets(List<Address> kept) {
+			if (unused == null) {
+				return kept;
+			}
+			List<Address> out = new ArrayList<>();
+			for (int i = 0; i < kept.size(); i++) {
+				if (i >= unused.size() || !unused.get(i)) {
+					out.add(kept.get(i));
+				}
+			}
+			return out;
+		}
+
+		int unusedCount() {
+			return unused == null ? 0 : (int) unused.stream().filter(b -> b).count();
+		}
+	}
+
+	/**
+	 * grm-c9d.8.2: the table a recovered index guard states ({@link IndexGuardRecovery}), as a
+	 * {@link LeadingTrim} that also fixes the count. Declines (null) unless the switch is a single
+	 * word or byte-interleaved table indexed through its own register, a guard covers every caller,
+	 * and at least two slots pass the hard checks. The guard may start the table later AND end it
+	 * later than the decompiler did (owner ruling, grm-c9d.8.2): slots past the decompiler's end
+	 * count only while they pass the per-entry checks, and the span is clipped at the first that
+	 * does not (logged). A guard that merely confirms the decompiler's table changes nothing.
+	 */
+	private static LeadingTrim trimByIndexGuard(Program program, Listing listing, Address switchAddr,
+			JumpTable table, List<Address> cases) {
+		JumpTable.LoadTable found = null;
+		for (JumpTable.LoadTable lt : table.getLoadTables()) {
+			if (lt.getNum() <= 1) {
+				continue;
+			}
+			if (found != null) {
+				return null;
+			}
+			found = lt;
+		}
+		if (found == null || (found.getSize() != 2 && found.getSize() != 1) ||
+			(found.getSize() == 1 && found.getNum() % 2 != 0) ||
+			!sameMemory(found.getAddress().getAddressSpace(), cases.get(0).getAddressSpace())) {
+			return null;
+		}
+		int slots = found.getSize() == 1 ? found.getNum() / 2 : found.getNum();
+		Instruction sw = listing.getInstructionAt(switchAddr);
+		if (sw == null) {
+			return null;
+		}
+		Address base = found.getAddress();
+		IndexGuardRecovery.Span span = IndexGuardRecovery.recover(program, sw, base, 2);
+		if (span == null) {
+			return null;
+		}
+		IndexGuardRecovery.GuardTable gt =
+			IndexGuardRecovery.readSlots(program, base, span, cases.get(0));
+		if (gt == null || gt.targets().size() < 2) {
+			return null;
+		}
+		int n = gt.targets().size();
+		if (gt.first() == 0 && n == slots) {
+			return null; // the guard agrees with the decompiler: nothing to change
+		}
+		// One case per slot. An unused slot aliases the previous real target (the next one when it
+		// leads), see LeadingTrim.
+		List<Address> aliased = new ArrayList<>(gt.targets());
+		List<Boolean> unused = new ArrayList<>(n);
+		Address previous = null;
+		for (int i = 0; i < n; i++) {
+			unused.add(aliased.get(i) == null);
+			if (aliased.get(i) == null) {
+				aliased.set(i, previous);
+			}
+			previous = aliased.get(i);
+		}
+		for (int i = n - 1; i >= 0; i--) {
+			if (aliased.get(i) == null) {
+				aliased.set(i, aliased.get(i + 1)); // trailing placeholders were dropped, so i+1 exists
+			}
+		}
+		StringBuilder note = new StringBuilder(span.evidence());
+		note.append(" (decompiler table: slots 0..").append(slots - 1).append(")");
+		if (gt.clippedAt() >= 0) {
+			note.append("; guard disagrees: span clipped at slot ").append(gt.clippedAt())
+					.append(", ").append(gt.why());
+		}
+		if (gt.first() + n > slots) {
+			note.append("; ").append(gt.first() + n - slots)
+					.append(" slot(s) past the decompiler's end");
+		}
+		return new LeadingTrim(found, base.add(2L * gt.first()), n, aliased, gt.first(),
+				TrimSource.INDEX_GUARD, unused, note.toString());
+	}
 
 	/**
 	 * grm-wek2: the biased (1-based) table. Code indexes it from {@code tbl - k*2} because its index

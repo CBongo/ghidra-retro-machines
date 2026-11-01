@@ -872,7 +872,10 @@ public final class JumpTableBound {
 		SEARCH_LOOP,
 		/** {@link #boundByDistinctWords}: grm-uzep -- lowest-target walk over the table's own
 		 *  words, for a decompiler case list deduplicated by target. */
-		DISTINCT_WORDS
+		DISTINCT_WORDS,
+		/** {@link #boundByIndexGuard}: grm-c9d.8.2 -- the slots a recovered {@code CMP #imm}
+		 *  guard says the dispatch reaches ({@link IndexGuardRecovery}). */
+		INDEX_GUARD
 	}
 
 	/**
@@ -944,6 +947,15 @@ public final class JumpTableBound {
 	 */
 	public static Result boundBySearchLoop(int count, long lowestTarget) {
 		return Result.bounded(count, lowestTarget, Rule.SEARCH_LOOP);
+	}
+
+	/**
+	 * grm-c9d.8.2: the bound a recovered index guard states, {@code count} slots. Like the search
+	 * loop it is exact, not an extent to refine: its slots start where the guard says, not at the
+	 * decompiler's table start, so {@link Result#keep} does not apply.
+	 */
+	public static Result boundByIndexGuard(int count, long lowestTarget) {
+		return Result.bounded(count, lowestTarget, Rule.INDEX_GUARD);
 	}
 
 	/** The reconstructed table shape both rules share: each moving load table's start and
