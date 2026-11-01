@@ -160,28 +160,40 @@ now saying which of the above states applied, so a surprising result can still b
 glance rather than reconstructed. See `which-script-builds-the-extension` and
 `realrom-ab-needs-rebuild` (both revised for this change) and `grm-4t2d`.
 
-### SUBAGENTS: run the gates in the FOREGROUND
+### Long gates: background them, then WAIT for the notification -- never poll
 
-**If you are a subagent, never launch `build-and-test.sh` or `realrom-test.sh` as a background
-task.** Run them in the foreground with a generous timeout and wait. Both gates run in **minutes,
-not hours** — measured 2026-08-31 on the 33-row NES corpus, four consecutive `realrom-test.sh
-check nes` (then spelled `--all`, since removed) runs took 6m10s–6m36s (median 7s per row), and a full
-`build-and-test.sh check` 5–6½ minutes, about 4 minutes since grm-w9ev.5 batched the synthetic
-fixtures into shared headless runs (230s measured 2026-10-14). The `core` floor `realrom-test.sh` now runs by default
-on a bare `check` (bead grm-ughg) is far cheaper still — 5 rows, measured 46s — so there is even
-less excuse to background it. They are slow enough that backgrounding them looks like the way to
-stay responsive. For a subagent it is not.
+**One rule for every agent, orchestrator and subagent alike:** launch `build-and-test.sh`,
+`realrom-test.sh` and sweeps with `run_in_background: true`, then wait for the harness's
+completion notification and read the result once it arrives. **Do not poll** the output file,
+do not loop on `sleep`, and do not chain short checks to stay under a time limit -- the host's own
+Bash-tool instructions forbid that, and every poll is a turn of agent effort spent on nothing.
+If you want events *during* a run (a FAIL row as it lands), use `Monitor` with a filter that
+matches every terminal state (`SUITE OK|SUITE FAIL|REALROM check:|FAIL|Exception`), not only
+success: a filter that greps only the happy path is silent on a crash, and silence looks like
+"still running".
 
-**"Foreground" means passing an explicit `timeout` on the Bash call — it is not the default.**
-The Bash tool's default timeout is 120 seconds, and when a command runs past it the harness
-does not fail the call: it silently **moves the command to the background** and returns, which
-is indistinguishable from having backgrounded it yourself. Every gate here exceeds 120s, so a
-gate launched without a timeout is ALWAYS auto-backgrounded, no matter what you intended.
-Measured 2026-09-20: two consecutive subagents in one session each ran a gate "in the
-foreground", were auto-backgrounded, stopped, and had to be resumed to collect a result they
-never observed. Pass `timeout: 600000` (the 10-minute maximum) on every `build-and-test.sh` or
-`realrom-test.sh` call. If a run genuinely needs longer than that, say so in your report and hand
-the orchestrator the command.
+Why not "foreground with a long timeout", which this section used to require: **it does not
+hold.** The Bash tool moves any command past its time limit to the background and returns, and
+on 2026-10-31 two subagents passing `timeout: 600000` were each still auto-backgrounded after
+about 180 s on every gate (grm-gipk.14, grm-gipk.10). Both then polled in loops to stay under the
+limit -- the behaviour this rule now forbids. Backgrounding happens either way, so do it on
+purpose and wait properly.
+
+**Subagents: ending your turn while a gate runs is now safe, but your REPORT is not done until
+you have read the result.** The harness re-invokes a subagent when its background work completes
+(observed 2026-10-31). The orchestrator meanwhile gets a notification marked "waiting on its own
+background work ... the result may be interim" -- **orchestrators, that is not the report**: wait
+for the subagent's final hand-back, and only resume it with `SendMessage` if none arrives well
+after the gate's expected wall time. (Before the harness labelled these, a parked subagent and a
+finished one looked identical -- grm-ft8, 2026-08-27, three spurious completions -- which is what
+the old foreground rule was working around.) Never report a gate result you did not observe.
+
+Both gates run in **minutes, not hours** -- measured 2026-08-31 on the 33-row NES corpus, four
+consecutive `realrom-test.sh check nes` (then spelled `--all`, since removed) runs took
+6m10s–6m36s (median 7s per row), and a full `build-and-test.sh check` about 4 minutes since
+grm-w9ev.5 batched the synthetic fixtures into shared headless runs (230s measured 2026-10-14;
+6m53s and 11m30s for `check` and `realrom-test.sh check all` on 2026-10-31). The `core` floor a
+bare `realrom-test.sh check` runs (bead grm-ughg) is 5 rows, measured 46s.
 
 **Do not inflate that figure.** This sentence previously said the real-ROM tier "is hours", which
 was never measured and was ~50x high; it rested in turn on a `~1min+` per-import estimate that was
@@ -192,21 +204,6 @@ probes that pointed the wrong way. When a full `check nes` run is the decisive
 experiment, just run it.
 Re-measure before quoting a number: these are one machine's timings, and the rows are hash-pinned
 but the hardware is not.
-
-The reason is structural, not stylistic: a subagent that backgrounds a gate has nothing left to do
-in that turn, so it **stops**. The orchestrator is then notified that the subagent "finished"
-while its actual work product does not exist yet, and has to notice the report is missing, go
-check for live JVMs, and resume the agent to collect a result the agent already had. Measured
-2026-08-27 on grm-ft8 increments 4 and 5: three spurious completion notifications, and one agent
-that never reported at all until nudged. From the outside, "finished with nothing to say" and
-"parked mid-gate" look identical.
-
-**This does not apply to the primary/orchestrating agent**, which has `Monitor` — the sanctioned
-way to await a background run — and stays in the conversation to act on the result. Backgrounding
-a long gate there is fine and often right.
-
-If a foreground run genuinely exceeds what one tool call allows, say so in your report and hand
-the orchestrator the command to finish it. Never report a gate result you did not observe.
 
 ## Upstream drafts: the bead is the master copy, between `---8<---` markers
 

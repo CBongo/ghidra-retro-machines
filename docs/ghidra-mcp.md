@@ -135,7 +135,9 @@ identities are computed from the same path spelling, because `ext_identity` is p
 ## Lifecycle
 
 `serve.sh start <row>` runs in the foreground, so an agent launches it as a background task and
-waits for `Uvicorn running`. On first use it builds `build/pyghidra-mcp-venv` (with
+waits for `Uvicorn running` -- not by polling its output, but with a second background command
+that exits on the line (`until grep -q "Uvicorn running" <output file>; do sleep 1; done`), which
+gives one completion notification (AGENTS.md, "Long gates"). On first use it builds `build/pyghidra-mcp-venv` (with
 [uv](https://docs.astral.sh/uv/) when installed, else `venv` + pip) at the version pinned in
 `PYGHIDRA_MCP_VERSION`, and rebuilds it whenever that pin changes, so an upgrade is a one-line
 edit.

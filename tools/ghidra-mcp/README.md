@@ -23,7 +23,8 @@ import, with no kept project and no server.
 bash tools/banktest/realrom-test.sh check nes --only blmaster --keep-project
 
 # 2. Start the server. It runs in the foreground, so launch it as a BACKGROUND task, then wait
-#    for "Uvicorn running" in its output.
+#    for "Uvicorn running" in its output -- with a second BACKGROUND command that exits on it,
+#    `until grep -q "Uvicorn running" <output file>; do sleep 1; done`, not by polling.
 bash tools/ghidra-mcp/serve.sh start blmaster
 
 # 3. Ask. (serve.sh creates build/pyghidra-mcp-venv on first use -- with uv when installed --
