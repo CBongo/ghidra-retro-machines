@@ -30,6 +30,8 @@ import ghidra.program.model.data.ByteDataType;
 import ghidra.program.model.data.CharDataType;
 import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.MutabilitySettingsDefinition;
+import ghidra.program.model.data.StructureDataType;
+import ghidra.program.model.data.Undefined1DataType;
 import ghidra.program.model.data.Undefined;
 import ghidra.program.model.data.WordDataType;
 import ghidra.program.model.listing.Data;
@@ -104,6 +106,66 @@ final class JumpTableArrays {
 		for (int i = 0; i < n; i++) {
 			refs.addMemoryReference(start.add(2L * i), targets.get(i), RefType.DATA,
 				SourceType.ANALYSIS, 0);
+		}
+		return true;
+	}
+
+	/** The record struct's name: it carries stride and field order, so a laid table is recognizable. */
+	static String recordName(int stride, boolean bankFirst) {
+		return "rtl_record" + stride + (bankFirst ? "_bank_first" : "_word_first");
+	}
+
+	/**
+	 * grm-gipk.14: the record struct, {@code stride} bytes: a {@code byte} bank and a {@code word}
+	 * (in {@code bankFirst} order or word then bank), plus one pad byte at stride 4.
+	 */
+	private static StructureDataType recordType(int stride, boolean bankFirst) {
+		StructureDataType st = new StructureDataType(recordName(stride, bankFirst), 0);
+		if (bankFirst) {
+			st.add(ByteDataType.dataType, "bank", null);
+			st.add(WordDataType.dataType, "target_minus_1", null);
+		}
+		else {
+			st.add(WordDataType.dataType, "target_minus_1", null);
+			st.add(ByteDataType.dataType, "bank", null);
+		}
+		if (stride == 4) {
+			st.add(Undefined1DataType.dataType, "pad", null);
+		}
+		return st;
+	}
+
+	/** The record count when {@code start} already holds an array of our record struct, else 0. */
+	static int laidRecords(Program program, Address start, int stride, boolean bankFirst) {
+		Data d = program.getListing().getDefinedDataAt(start);
+		if (d != null && d.getDataType() instanceof Array a &&
+			a.getDataType().getName().equals(recordName(stride, bankFirst)) &&
+			a.getElementLength() == stride) {
+			return a.getNumElements();
+		}
+		return 0;
+	}
+
+	/**
+	 * grm-gipk.14: lays {@code record[targets.size()]} at {@code start} (RTL-trick bank:word
+	 * records, see {@link #recordType}) with one data reference per record, from its word field to
+	 * the case target. A struct array, not two byte/word arrays, because the bank byte and the word
+	 * interleave at the record stride and an array element cannot be shorter than its stride.
+	 * Same constraints as {@link #layWords}. A null target is an unused slot: it gets no reference.
+	 */
+	static boolean layRecords(Program program, Address start, int stride, boolean bankFirst,
+			List<Address> targets) {
+		int n = targets.size();
+		if (!layRuns(program, List.of(new Run(start, n, stride, recordType(stride, bankFirst))))) {
+			return false;
+		}
+		ReferenceManager refs = program.getReferenceManager();
+		int wordOff = bankFirst ? 1 : 0;
+		for (int i = 0; i < n; i++) {
+			if (targets.get(i) != null) {
+				refs.addMemoryReference(start.add((long) stride * i + wordOff), targets.get(i),
+					RefType.DATA, SourceType.ANALYSIS, 0);
+			}
 		}
 		return true;
 	}

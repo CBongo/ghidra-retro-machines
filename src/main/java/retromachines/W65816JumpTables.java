@@ -110,8 +110,21 @@ final class W65816JumpTables {
 		 * The entry's position carries an outside reference (hard) or a non-default label (soft,
 		 * p {@link #LABEL_P}); see {@link EntryReferences} (grm-gipk.16.7).
 		 */
-		ENTRY_REFERENCED
+		ENTRY_REFERENCED,
+		/** Soft (record tables only): an unused slot, {@link #UNUSED_ENTRY}; p {@link #UNUSED_P}. */
+		UNUSED_SLOT
 	}
+
+	/**
+	 * grm-gipk.14: the target {@link #scoreRecords}'s {@code entryTarget} returns for a record that
+	 * is a placeholder, not a handler (a word of $FFFF with the RTL trick's +1 bias is offset 0:
+	 * ABC Monday Night Football $00:84E1 holds {@code C6A3, FFFF x6, DDD9, ...}, indexed by state).
+	 * It is accepted with no plausibility checks and carries no reference.
+	 */
+	static final long UNUSED_ENTRY = -1L;
+
+	/** Probability of an {@link End#UNUSED_SLOT} entry: counts half in a candidate's quality. */
+	static final double UNUSED_P = 0.5;
 
 	/** Probability of a label-only {@link End#ENTRY_REFERENCED} entry: inert under both policies. */
 	static final double LABEL_P = 0.5;
@@ -167,27 +180,58 @@ final class W65816JumpTables {
 	static TableScorer.Result<Long, End> score(long tableStart, long targetBank, int cap,
 			boolean sameHalf, IntFunction<Integer> word, LongPredicate tableByteFree,
 			LongPredicate targetPlausible, IntFunction<EntryReferences.Hit> entryRef) {
+		return scoreCore(tableStart, 2, cap, sameHalf, false, n -> {
+			Integer w = word.apply(n);
+			return w == null ? null : (targetBank & 0xff0000L) | (w & 0xffff);
+		}, tableByteFree, targetPlausible, entryRef);
+	}
+
+	/**
+	 * grm-gipk.14: the walk for a table of fixed-size RECORDS ({@code stride} bytes apart) that each
+	 * name their own full 24-bit target, the 65816 RTL trick's bank:word records. {@code entryTarget}
+	 * gives entry {@code i}'s target, or null when its bytes are unreadable; the first three bytes
+	 * of every record, the whole {@code stride}, must be free. Only same-bank targets bound the
+	 * table from above, since a target in another bank says nothing about where this one ends.
+	 */
+	static TableScorer.Result<Long, End> scoreRecords(long tableStart, int stride, int cap,
+			IntFunction<Long> entryTarget, LongPredicate tableByteFree,
+			LongPredicate targetPlausible, IntFunction<EntryReferences.Hit> entryRef) {
+		return scoreCore(tableStart, stride, cap, false, true, entryTarget, tableByteFree,
+			targetPlausible, entryRef);
+	}
+
+	private static TableScorer.Result<Long, End> scoreCore(long tableStart, int stride, int cap,
+			boolean sameHalf, boolean bankFilter, IntFunction<Long> entryTarget,
+			LongPredicate tableByteFree, LongPredicate targetPlausible,
+			IntFunction<EntryReferences.Hit> entryRef) {
 		long bank = tableStart & 0xff0000L;
 		List<Boolean> sure = new ArrayList<>();   // per accepted entry, in order
 		TableScorer.EndPolicy policy = sameHalf ? TableScorer.doubtRun(0.5, 1.0, DOUBT_RUN)
 				: TableScorer.HARD_ONLY;
 		return TableScorer.walk(cap, (n, before) -> {
-			long at = tableStart + 2L * n;
-			if (((at + 1) & 0xff0000L) != bank) {
+			long at = tableStart + (long) stride * n;
+			long last = at + stride - 1;
+			if ((last & 0xff0000L) != bank) {
 				return TableScorer.Entry.rejected(End.BANK_END);
 			}
-			if (at + 1 >= lowestAbove(tableStart, before)) {
+			if (last >= lowestAbove(tableStart, stride, bankFilter, before)) {
 				return TableScorer.Entry.rejected(End.ABOVE_TABLE_TARGET);
 			}
-			if (!tableByteFree.test(at) || !tableByteFree.test(at + 1)) {
-				return TableScorer.Entry.rejected(End.BYTE_TAKEN);
+			for (long b = at; b <= last; b++) {
+				if (!tableByteFree.test(b)) {
+					return TableScorer.Entry.rejected(End.BYTE_TAKEN);
+				}
 			}
-			Integer w = word.apply(n);
-			if (w == null) {
+			Long target = entryTarget.apply(n);
+			if (target == null) {
 				return TableScorer.Entry.rejected(End.UNREADABLE);
 			}
-			long target = (targetBank & 0xff0000L) | (w & 0xffff);
-			if (target >= tableStart && target <= at + 1) {
+			if (target == UNUSED_ENTRY) {
+				sure.add(true);
+				return TableScorer.Entry.accepted(target,
+					List.of(new TableScorer.Term<>(End.UNUSED_SLOT, UNUSED_P)));
+			}
+			if (target >= tableStart && target <= last) {
 				return TableScorer.Entry.rejected(End.INTO_TABLE);
 			}
 			boolean far = sameHalf && !before.isEmpty() && farFromCluster(before, sure, target);
@@ -226,12 +270,19 @@ final class W65816JumpTables {
 		return target < lo - reach || target > hi + reach;
 	}
 
-	/** The lowest of {@code before} lying past its own entry's bytes, else MAX_VALUE. */
-	private static long lowestAbove(long tableStart, List<Long> before) {
+	/**
+	 * The lowest of {@code before} lying past its own entry's bytes, else MAX_VALUE; with
+	 * {@code bankFilter}, only targets in the table's own bank count.
+	 */
+	private static long lowestAbove(long tableStart, int stride, boolean bankFilter,
+			List<Long> before) {
 		long lowest = Long.MAX_VALUE;
 		for (int j = 0; j < before.size(); j++) {
 			long t = before.get(j);
-			if (t > tableStart + 2L * j + 1) {
+			if (bankFilter && (t & 0xff0000L) != (tableStart & 0xff0000L)) {
+				continue;
+			}
+			if (t > tableStart + (long) stride * j + (stride - 1)) {
 				lowest = Math.min(lowest, t);
 			}
 		}
