@@ -105,6 +105,13 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 	/** Tables this analyzer defined, per program, with the dispatches that read each. */
 	private static final Map<Program, Map<Address, Set<Address>>> TABLES =
 		Collections.synchronizedMap(new WeakHashMap<>());
+	/**
+	 * grm-gipk.16.8: code-derived table starts whose table was laid one entry away, per program,
+	 * mapped to where it was laid. Later dispatches through the same code start reuse it, and the
+	 * overread repair does not cut such a table at its own code start.
+	 */
+	private static final Map<Program, Map<Address, Address>> ADOPTED =
+		Collections.synchronizedMap(new WeakHashMap<>());
 
 	public W65816JumpTableAnalyzer() {
 		super(NAME, DESCRIPTION, AnalyzerType.INSTRUCTION_ANALYZER);
@@ -128,6 +135,8 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 			DONE.computeIfAbsent(program, p -> Collections.synchronizedSet(new LinkedHashSet<>()));
 		Map<Address, Set<Address>> tables = TABLES.computeIfAbsent(program,
 			p -> Collections.synchronizedMap(new LinkedHashMap<>()));
+		Map<Address, Address> adopted = ADOPTED.computeIfAbsent(program,
+			p -> Collections.synchronizedMap(new LinkedHashMap<>()));
 		// Every dispatch's table start, program-wide: one table ends where another begins.
 		Set<Address> tableStarts = new LinkedHashSet<>();
 		for (Instruction in : listing.getInstructions(true)) {
@@ -136,7 +145,7 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 				tableStarts.add(d.table());
 			}
 		}
-		repairOverreads(program, tables, tableStarts, monitor);
+		repairOverreads(program, tables, tableStarts, adopted, monitor);
 
 		List<Instruction> sites = new ArrayList<>();
 		for (Instruction in : listing.getInstructions(set, true)) {
@@ -167,7 +176,9 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 			List<Long> targets = new ArrayList<>();
 			// Several dispatches often share one table (CT $C1:B80D has four): the first defines
 			// it, the rest reuse its extent rather than finding its bytes taken.
-			int n = sharedTableEntries(program, table, targetBank, cap, targets);
+			// Where the table was laid: its code-derived start, or one entry away (grm-gipk.16.8).
+			Address laid = adopted.getOrDefault(table, table);
+			int n = sharedTableEntries(program, laid, targetBank, cap, targets);
 			boolean shared = n > 0;
 			if (!shared) {
 				Set<Address> own = new LinkedHashSet<>();
@@ -184,8 +195,9 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 						"entry " + n + " by ENTRY_REFERENCED " + EntryReferences.find(program,
 							table.add(2L * n), extentOf(table, cap), own).describe());
 				}
-				// grm-gipk.16.6, check mode: would the bytes read better one entry either side of
-				// the code-derived start? Logged only; the code's start is what is laid.
+				// grm-gipk.16.6: would the bytes read better one entry either side of the
+				// code-derived start? Adopted where the code reads nothing (grm-gipk.16.8), else
+				// logged only.
 				List<TableScorer.Candidate<Integer>> starts = new ArrayList<>();
 				starts.add(new TableScorer.Candidate<>(0, 1.0));
 				starts.add(new TableScorer.Candidate<>(1, ALT_PRIOR));
@@ -195,10 +207,21 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 				// The code's own start is not another table's start for the shifted readings.
 				Set<Address> others = new LinkedHashSet<>(tableStarts);
 				others.remove(table);
-				String why = TableScorer.disagreement(TableScorer.rank(starts, k -> k == 0 ? r
-						: walkTable(program, table.add(2L * k), targetBank, cap, ctx, others, own)),
-					0);
-				if (why != null) {
+				List<TableScorer.Ranked<Integer, Long, W65816JumpTables.End>> ranked =
+					TableScorer.rank(starts, k -> k == 0 ? r
+						: walkTable(program, table.add(2L * k), targetBank, cap, ctx, others, own));
+				String why = TableScorer.disagreement(ranked, 0);
+				var adopt = TableScorer.adoption(ranked, 0, MIN_ADOPTED_ENTRIES);
+				if (adopt != null) {
+					laid = table.add(2L * adopt.key());
+					targets.clear();
+					targets.addAll(adopt.result().targets());
+					n = adopt.result().count();
+					adopted.put(table, laid);
+					AnalyzerLog.info(this, "dispatch " + siteAddr + ": table " + table +
+						" start adopted at " + laid + " (entry offset " + adopt.key() + "): " + why);
+				}
+				else if (why != null) {
 					AnalyzerLog.info(this, "dispatch " + siteAddr + ": table " + table +
 						" start check (entry offset): " + why);
 				}
@@ -209,9 +232,9 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 			}
 			boolean call = site.getFlowType().isCall();
 			// grm-iv4i: one DATA reference per entry into bank:word, as on the NES side.
-			if (!shared && !JumpTableArrays.layWords(program, table, entryTargets(table, targets))) {
+			if (!shared && !JumpTableArrays.layWords(program, laid, entryTargets(laid, targets))) {
 				AnalyzerLog.info(this, "dispatch " + siteAddr + ": could not define table at " +
-					table);
+					laid);
 				continue;
 			}
 			RefType type = call ? RefType.COMPUTED_CALL : RefType.COMPUTED_JUMP;
@@ -237,9 +260,9 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 					new CreateFunctionCmd(t).applyTo(program, monitor);
 				}
 			}
-			tables.computeIfAbsent(table, t -> new LinkedHashSet<>()).add(siteAddr);
+			tables.computeIfAbsent(laid, t -> new LinkedHashSet<>()).add(siteAddr);
 			AnalyzerCommentRecord.replaceOwn(program, siteAddr, CommentType.EOL,
-				note(table, n, unique.size(), ctx, cap), COMMENT_PREFIX);
+				note(laid, n, unique.size(), ctx, cap), COMMENT_PREFIX);
 			resolved++;
 		}
 		if (resolved > 0) {
@@ -270,7 +293,8 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 	 * later one begins, so the later one finds its bytes free (grm-9nxj.5.8).
 	 */
 	private void repairOverreads(Program program, Map<Address, Set<Address>> tables,
-			Set<Address> tableStarts, TaskMonitor monitor) throws CancelledException {
+			Set<Address> tableStarts, Map<Address, Address> adopted, TaskMonitor monitor)
+			throws CancelledException {
 		Listing listing = program.getListing();
 		var bookmarks = program.getBookmarkManager();
 		for (Map.Entry<Address, Set<Address>> t : new ArrayList<>(tables.entrySet())) {
@@ -308,6 +332,9 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 			}
 			Address cutAt = null;
 			for (Address other : tableStarts) {
+				if (table.equals(adopted.get(other))) {
+					continue;   // its own code-derived start, one entry in (grm-gipk.16.8)
+				}
 				if (other.compareTo(table) > 0 && other.compareTo(end) <= 0) {
 					int k = (int) (other.subtract(table) / 2);
 					if (k < keep) {
@@ -389,6 +416,13 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 	 * which has prior 1. An alternative must read four times as many entries to outrank the code.
 	 */
 	static final double ALT_PRIOR = 0.25;
+
+	/**
+	 * grm-gipk.16.8: the fewest entries an alternative start must keep to be adopted over a code
+	 * reading that keeps none. One or two plausible words are chance; the 41-ROM sweep's adopted
+	 * tables keep 3-12.
+	 */
+	static final int MIN_ADOPTED_ENTRIES = 3;
 
 	/** The bytes a table at {@code table} could occupy, for grm-gipk.16.7's own-reference test. */
 	static List<EntryReferences.Extent> extentOf(Address table, int cap) {

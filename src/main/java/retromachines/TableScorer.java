@@ -248,6 +248,26 @@ final class TableScorer {
 			" keeps " + best.result().count() + " (quality x" + ratio + ")";
 	}
 
+	/**
+	 * grm-gipk.16.8, stage 2: the top-ranked candidate when it should replace {@code chosen}; else
+	 * null. Only where the code-derived reading keeps no entry at all, so adopting cannot lose a
+	 * table it resolves, and only when the alternative keeps at least {@code minKept}, so one or
+	 * two plausible words do not make a table. Close calls stay check-mode ({@link #disagreement}).
+	 */
+	static <K, T, R> Ranked<K, T, R> adoption(List<Ranked<K, T, R>> ranked, K chosen,
+			int minKept) {
+		if (ranked.isEmpty() || ranked.get(0).key().equals(chosen)) {
+			return null;
+		}
+		for (Ranked<K, T, R> r : ranked) {
+			if (r.key().equals(chosen) && r.result().count() > 0) {
+				return null;
+			}
+		}
+		Ranked<K, T, R> best = ranked.get(0);
+		return best.result().count() >= minKept ? best : null;
+	}
+
 	/** Reads up to {@code cap} entries and keeps the prefix {@code policy} chooses. */
 	static <T, R> Result<T, R> walk(int cap, Evidence<T, R> evidence, EndPolicy policy) {
 		List<Entry<T, R>> read = new ArrayList<>();

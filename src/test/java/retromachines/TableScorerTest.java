@@ -160,6 +160,26 @@ public class TableScorerTest {
 		assertEquals("code 1 keeps 2; 0 keeps 40 (quality x5.00)", TableScorer.disagreement(r, 1));
 	}
 
+	/** Stage 2 adopts only over a code reading that keeps nothing, and only a real table. */
+	@Test
+	public void adoptionOnlyReplacesAnEmptyCodeReading() {
+		List<TableScorer.Candidate<Integer>> c = List.of(new TableScorer.Candidate<>(0, 1.0),
+			new TableScorer.Candidate<>(1, 0.25));
+		// code keeps 0, k=1 keeps 8: adopted.
+		var r = TableScorer.rank(c, k -> walkOf(k == 0 ? 0 : 8, 0));
+		assertEquals(1, (int) TableScorer.adoption(r, 0, 3).key());
+		// code keeps 0, k=1 keeps 2: below the floor, not adopted.
+		r = TableScorer.rank(c, k -> walkOf(k == 0 ? 0 : 2, 0));
+		assertNull(TableScorer.adoption(r, 0, 3));
+		// code keeps 3, k=1 keeps 15: outranked, but a close call stays logged only.
+		r = TableScorer.rank(c, k -> walkOf(k == 0 ? 3 : 15, 0));
+		assertEquals(1, (int) r.get(0).key());
+		assertNull(TableScorer.adoption(r, 0, 3));
+		// the code ranks first: nothing to adopt.
+		r = TableScorer.rank(c, k -> walkOf(k == 0 ? 10 : 12, 0));
+		assertNull(TableScorer.adoption(r, 0, 3));
+	}
+
 	@Test
 	public void rankTiesKeepInputOrder() {
 		List<TableScorer.Candidate<String>> c = List.of(new TableScorer.Candidate<>("k=0", 1.0),
