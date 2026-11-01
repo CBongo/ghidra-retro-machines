@@ -198,6 +198,22 @@ Each is minutes of work and settles something specific. Highest value per unit e
 
   Two or three answers set the margin rule for acting on the rest (full list on grm-gipk.16.6).
 
+### 1.9 SMW SPC700 driver: how many commands does the `$0D44` dispatch really have? (`grm-c9d.8.2`)
+
+- [ ] **Question.** Super Mario World's sound driver dispatches at `0d40 ASL A; MOV X,A; MOV A,#0;
+  0d44 JMP [!$0EDC+X]`, and its only caller guards it with `CMP A,#$DA; BCC skip; CALL $0D40`.
+  That allows command bytes `$DA`–`$FF`, i.e. 38 table slots (`$0F90`..`$0FDA`). The agent
+  reads them in order and stops at the first slot whose target isn't code: slot 115 (command
+  `$F3`, word at `$0FC2`) reads `$0202`, which isn't initialized memory in the materialized
+  driver image. So it keeps 25 slots (commands `$DA`–`$F2`, 23 distinct handlers in
+  `0d47..0f33`; `$DD` and `$ED` are `$0000` placeholders).
+  - Do commands `$F3`–`$FF` exist? Is `$0202` a real handler (code uploaded later, outside the
+    three IPL blocks the agent materializes), or is the table over after `$F2` and the bytes from
+    `$0FC2` on something else?
+
+  If the table is longer, the clip rule needs softening for exact guards (owner ruling on
+  grm-c9d.8.2: clip at the first failing slot); if not, the current result stands.
+
 ---
 
 ## 2. Def-use passes on untraced titles
