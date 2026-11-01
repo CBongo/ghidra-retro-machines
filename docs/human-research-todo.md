@@ -198,22 +198,6 @@ Each is minutes of work and settles something specific. Highest value per unit e
 
   Two or three answers set the margin rule for acting on the rest (full list on grm-gipk.16.6).
 
-### 1.9 SMW SPC700 driver: how many commands does the `$0D44` dispatch really have? (`grm-c9d.8.2`)
-
-- [ ] **Question.** Super Mario World's sound driver dispatches at `0d40 ASL A; MOV X,A; MOV A,#0;
-  0d44 JMP [!$0EDC+X]`, and its only caller guards it with `CMP A,#$DA; BCC skip; CALL $0D40`.
-  That allows command bytes `$DA`–`$FF`, i.e. 38 table slots (`$0F90`..`$0FDA`). The agent
-  reads them in order and stops at the first slot whose target isn't code: slot 115 (command
-  `$F3`, word at `$0FC2`) reads `$0202`, which isn't initialized memory in the materialized
-  driver image. So it keeps 25 slots (commands `$DA`–`$F2`, 23 distinct handlers in
-  `0d47..0f33`; `$DD` and `$ED` are `$0000` placeholders).
-  - Do commands `$F3`–`$FF` exist? Is `$0202` a real handler (code uploaded later, outside the
-    three IPL blocks the agent materializes), or is the table over after `$F2` and the bytes from
-    `$0FC2` on something else?
-
-  If the table is longer, the clip rule needs softening for exact guards (owner ruling on
-  grm-c9d.8.2: clip at the first failing slot); if not, the current result stands.
-
 ---
 
 ## 2. Def-use passes on untraced titles
@@ -395,6 +379,7 @@ Agents don't write into your ROM library or other personal directories.
 
 | question | answer | bead |
 |---|---|---|
+| SMW SPC700 driver: how many commands does the `$0D44` dispatch really have? | **25 slots, commands `$DA`–`$F2` (owner, 2026-11-01, from the SMWDisX disassembly, bank_0E.asm at [30643c7](https://github.com/IsoFrieze/SMWDisX/blob/30643c7595a7d097d731de69476f8059c7cf98c3/bank_0E.asm#L1510)).** `$DD` and `$ED` are the expected zero holes. The table is followed at `$0FC2` by the vcmd operand-length table, referenced from `$10CB`. The agent's clip at slot 115 (`$0202`) is therefore right, but by luck: the reference to `$0FC2` is the structural end and should be what stops the guarded read. Do not soften the clip rule for exact guards. | `grm-c9d.8.2`, `grm-c9d.8.5` |
 | Did upstream fix 12.2's deprecated `Option` constructors silently dropping headless `-loader-*` args? | **Yes, for 12.2.1. [ghidra#10027](https://github.com/NationalSecurityAgency/ghidra/issues/10027), posted 2026-10-25, was confirmed 2026-10-26 and closed as completed 2026-10-27 by ryanmkurtz, milestone `12.2.1`.** The fix restores `parseAndSetValueByType()`'s 12.1 `valueClass` parsing until the deprecated constructors are removed (our suggested fix 1). No linked PR (`Status: Internal`), so the change lands with the release. Suggested fix 2 was not taken: a failed `-loader-*` arg still makes `getLoaderOptions()` return `null` and the import runs on defaults with exit 0. Raise that as its own issue only if you want it. Nothing here depends on either: our loaders use the 12.2 builders (`grm-75ey`, `grm-vrkk.1`). Do not go back to the deprecated constructors once 12.2.1 ships. | `grm-vrkk.8` **closed** |
 | What idiom carries cv3 (MMC5) into its banked code, given almost none of it is reached? | **Probably not an idiom at all — a lost PRG mode (owner, 2026-10-10).** cv3 is the one MMC5 title in the corpus that runs in **PRG mode 2**, set by `FUN_e0df` in RESET. The comment at that call (`e03a`) correctly says `prg_mode=2`, but the very next instruction, `e03d JSR e2da` (`$5116 <- #$9e`), is commented mode 3. The golden dump shows the same at every later `FUN_e2e6`/`e2e8` call site, and 44 `WA000_M3` overlays: `$5115` read as mode 3's 8K window, not mode 2's 16K `W8000`. **Do not hunt for a far-call trampoline until `grm-dos9.1` (carry `prg_mode` past a helper call) has landed and cv3 has been re-measured.** | `grm-dos9`; `grm-dos9.1` |
 | Can blmaster's `e953` far-call body reach `e692 STA $D3 / JMP $E61B`? | **No (owner confirmed, 2026-10-10; agent walk via pyghidra-mcp, `grm-haj3`).** `e953` is not a dispatch loop. It is an RLE decoder (`LDA ($7A),Y` into `STA $2007`) whose whole closure is 14 blocks of direct calls (`e949 e6f0 e895 e996 e974 e986 e9a2`, exit `JMP e93f`), with no `$D3` write and no indirect jump; it never reaches `e61b` or `e692`. `grm-zsxz` keeps its customer as far as `e953` goes. **Still open, on `grm-zsxz`:** the span's `e9bf JSR ea3a` calls `e61b` directly. From there the only fixed-bank route to `e692` is the restart exit `f270 JMP c24f`, which never returns to the `e9c9` restore (and clears `$D3` itself at `c251`); with that cut, 72 blocks and no `$D3` write. **Banked calls `$bfe5/$bfe8/$bff1` (`dec5/def4/df02`), owner 2026-10-10:** in PRG mode 3 the only bank with valid code there is **bank 5**, self-contained sound code that appears not to touch the bank shadows or save slots. (Ghidra has no instructions in `W8000_M3_B5` at all, so the walk cannot check this; it is the owner's read.) **Indirect stores `e2af`/`e2b4 STA ($CE),Y`, owner 2026-10-10:** the only `$CE/$CF` writes found are `e24e` (`#$7400`) and `e266` (copied from `$7A/$7B`, which every ref seen loads with ROM addresses), so the pointer never targets zero page. **Net: the `e9b8` save/restore span is sound as far as anyone has looked — `grm-zsxz` keeps blmaster as its customer.** Reproduce with `tools/ghidra-mcp/closure6502.py` (it walks Ghidra's existing instructions, not raw bytes). | `grm-zsxz` |
