@@ -25,9 +25,12 @@ the same word; the flags were removed in grm-x4y1.5, see below). Sets **compose*
 | `snes-cart` | 13 | SNES alt-board cartridge loader sample (loader layout only, `-noanalysis`) |
 | `snes-spc` | 9 | SNES SPC700 sound-driver upload recovery (65816 emulated against the IPL handshake; hashes of recovered blocks, `-noanalysis`) |
 | `snes-analysis` | 5 | SNES 65816 auto-analysis width census (analysis ON; `W65816WidthDump.java`: instructions by M/X/E context, desync opcodes, vector coverage, call-width disagreements; grm-9nxj.5) |
+| `snes-spc-analysis` | 9 | **OPT-IN**: SNES SPC700 auto-analysis census (the recovered upload is materialized in memory and analysed from the script, `SpcAnalysisRealRomDump.java`: instructions, functions, computed jumps with target counts, RET-trick sites and targets, Error bookmarks; cartridge imported `-noanalysis`; grm-gipk.10). In no group and not in `all`; run only by naming it. |
 | `nes` | 35 | platform group: every NES set (`nes-curated` + `nes-gme`) |
 | `snes` | 27 | platform group: every SNES set (`snes-cart` + `snes-spc` + `snes-analysis`; the latter two are `snes-*` sub-platforms because each needs its own dump script) |
-| `all` | 62 | every set on every platform |
+| `all` | 62 | every set on every platform EXCEPT opt-in sets (`sets.tsv` `opt_in=yes`; today only `snes-spc-analysis`) |
+
+After changing any SPC700 analyzer or `data/languages/spc700*.sinc`, run `realrom-test.sh check snes-spc-analysis`: nothing else in the real-ROM tier analyzes SPC700.
 
 **A bare `check` now runs `core`, not the curated NES set** — the owner's ruling on grm-ughg.
 `core` is a *new* always-run floor, not a renamed manifest: it is a cross-manifest subset of
@@ -39,8 +42,8 @@ see that paragraph.
 aliases since grm-ughg). They are now ordinary unknown options: exit 2, with an error naming the
 replacement. Type the set positionally instead: `--gme` → `nes-gme`, `--all` → `nes` (both NES
 manifests, 35 rows today — what `--all` always meant), `--snes` → `snes`; an unflagged run used to
-mean `nes-curated` and is now spelled `nes-curated`. The bare word `all` spans every platform
-(62 rows), because a word that didn't mean what it said is what grm-ughg was filed to fix.
+mean `nes-curated` and is now spelled `nes-curated`. The bare word `all` spans every platform except opt-in sets
+(62 rows; `snes-spc-analysis` must be named), because a word that didn't mean what it said is what grm-ughg was filed to fix.
 `ab-test.sh` takes the same positional SET names and forwards them to `realrom-test.sh`;
 `realrom-test.sh ids [SET ...]` prints a set's row ids (read-only, instant).
 

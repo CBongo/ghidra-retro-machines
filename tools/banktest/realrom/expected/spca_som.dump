@@ -1,0 +1,12 @@
+=== REALROM BEGIN ===
+REALROM program spca_som.sfc
+REALROM sha256 4c15013131351e694e05f22e38bb1b3e4031dedac77ec75abecebe8520d82d5f
+REALROM language 65816:LE:24:retro
+REALROM spca recovery stop IPL_DONE blocks 6 entry 0200
+REALROM spca instructions 1761
+REALROM spca functions 26
+REALROM spca bookmarks.error 0
+REALROM spca computed sites=0 withTargets=0
+REALROM spca retTrick sites=1
+REALROM spca retTrick 100e RET n=13 100f 1011 1066 10c0 111f 112c 117a 1181 1185 118e 12ac 12c6 12dd
+=== REALROM END ===

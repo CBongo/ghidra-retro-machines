@@ -1,0 +1,12 @@
+=== REALROM BEGIN ===
+REALROM program spca_lemmings.sfc
+REALROM sha256 cd016c41c7ef9f4f243d57c2b1564b4ceb3b4c38cc165cd02ab6c8e35c93aa2e
+REALROM language 65816:LE:24:retro
+REALROM spca recovery stop IPL_DONE blocks 1 entry 0800
+REALROM spca instructions 1042
+REALROM spca functions 35
+REALROM spca bookmarks.error 0
+REALROM spca computed sites=0 withTargets=0
+REALROM spca retTrick sites=1
+REALROM spca retTrick 1175 RET n=13 09eb 0a03 0a41 1176 1180 1192 119e 11a2 11ac 1214 121d 1258 125f
+=== REALROM END ===

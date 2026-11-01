@@ -1,0 +1,11 @@
+=== REALROM BEGIN ===
+REALROM program spca_gradius3.sfc
+REALROM sha256 93da752a0c76167d0907efa832367e5d14aab8e835b864f345c386071a9af718
+REALROM language 65816:LE:24:retro
+REALROM spca recovery stop IPL_DONE blocks 4 entry 0400
+REALROM spca instructions 1221
+REALROM spca functions 37
+REALROM spca bookmarks.error 0
+REALROM spca computed sites=0 withTargets=0
+REALROM spca retTrick sites=0
+=== REALROM END ===

@@ -25,7 +25,11 @@
 #   snes-spc      SNES SPC700 sound-driver upload recovery
 #   snes-analysis SNES 65816 auto-analysis width census (the only SNES rows WITH analysis)
 #   nes | snes    PLATFORM GROUPS: every set declared for that platform
-#   all           every set on every platform
+#   snes-spc-analysis  SPC700 auto-analysis census (bead grm-gipk.10). OPT-IN (sets.tsv opt_in=yes):
+#                 in no platform group and not in `all`; runs only when named. After changing any
+#                 SPC700 analyzer or data/languages/spc700*.sinc run it: nothing else in the tier
+#                 analyzes SPC700.
+#   all           every set on every platform except opt-in sets
 #
 # A bare `check` runs `core` (owner's ruling, 2026-09-06). It used to mean the curated NES
 # set -- a third of the tier -- which is the specific misreading CLAUDE.md spent three
@@ -282,13 +286,14 @@ if [ "${1:-}" = "--list-sets" ]; then
 		exit 2
 	}
 	printf '%-14s %-6s %-6s %s\n' SET PLATFORM ROWS DESCRIPTION
-	while IFS=$'\t' read -r set_name set_plat _ set_rows set_desc; do
+	while IFS=$'\t' read -r set_name set_plat _ set_rows set_desc set_optin; do
 		case "$set_name" in ""|set|"#"*) continue ;; esac
 		if [ "$set_rows" = '*' ]; then
 			row_count=all
 		else
 			row_count="$(printf '%s' "$set_rows" | tr ',' '\n' | grep -c .)"
 		fi
+		[ "$set_optin" = yes ] && set_desc="[OPT-IN: not in any group or 'all'] $set_desc"
 		printf '%-14s %-6s %-6s %s\n' "$set_name" "$set_plat" "$row_count" "$set_desc"
 	done < <(tr -d '\r' < "$SETS_TSV")
 	echo
@@ -298,7 +303,7 @@ if [ "${1:-}" = "--list-sets" ]; then
 		printf '%-14s %-6s %-6s %s\n' "$p" "$p" "" \
 			"all $p sets; ROM dirs from $(tsv_field "$PLATFORMS_TSV" "$p" rom_dir_env)"
 	done < <(tsv_column "$PLATFORMS_TSV" platform)
-	printf '%-14s %-6s %-6s %s\n' all "" "" "every set on every platform"
+	printf '%-14s %-6s %-6s %s\n' all "" "" "every set on every platform except opt-in sets"
 	echo
 	echo "mode 'coverage [SET ...]': read-only; which of a set's rows have RAN at the current build"
 	echo "(derived from build/realrom-cache; imports nothing, needs no ROM dirs; 'ran' != passed)."
@@ -509,10 +514,18 @@ add_set() {
 for want in "${REQUESTED_SETS[@]}"; do
 	case "$want" in
 		all)
-			for s in "${ALL_SETS[@]}"; do add_set "$s"; done
+			for s in "${ALL_SETS[@]}"; do
+				# Opt-in sets (sets.tsv opt_in=yes) are excluded from `all`; name them explicitly.
+				[ "$(tsv_field "$SETS_TSV" "$s" opt_in)" = yes ] && continue
+				add_set "$s"
+			done
 			;;
 		*)
-			if tsv_field "$PLATFORMS_TSV" "$want" platform >/dev/null 2>&1; then
+			if tsv_field "$SETS_TSV" "$want" set >/dev/null 2>&1; then
+				# A set NAMED exactly is taken as that set, before the platform-group reading: it is
+				# the only way to select an opt-in set (snes-spc-analysis is also a platform name).
+				add_set "$want"
+			elif tsv_field "$PLATFORMS_TSV" "$want" platform >/dev/null 2>&1; then
 				# A platform group: every set declared for it. Empty is an ERROR rather than a
 				# quiet no-op -- "run every snes set" finding none means the tables disagree.
 				found=0
@@ -521,6 +534,8 @@ for want in "${REQUESTED_SETS[@]}"; do
 					# snes-spc, which needs its own dump script and so its own platform row).
 					s_p="$(tsv_field "$SETS_TSV" "$s" platform)"
 					case "$s_p" in "$want"|"$want"-*) ;; *) continue ;; esac
+					# Opt-in sets (sets.tsv opt_in=yes) are never part of a group, only named.
+					[ "$(tsv_field "$SETS_TSV" "$s" opt_in)" = yes ] && continue
 					add_set "$s"; found=1
 				done
 				[ "$found" = 1 ] || {

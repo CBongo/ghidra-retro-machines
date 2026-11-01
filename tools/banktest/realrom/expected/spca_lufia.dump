@@ -1,0 +1,12 @@
+=== REALROM BEGIN ===
+REALROM program spca_lufia.sfc
+REALROM sha256 73731a5a7932965de02a9e98055dcf88b4d17b8f710a6ecfde3e36a1f248773b
+REALROM language 65816:LE:24:retro
+REALROM spca recovery stop IPL_DONE blocks 1 entry 0400
+REALROM spca instructions 98
+REALROM spca functions 5
+REALROM spca bookmarks.error 0
+REALROM spca computed sites=1 withTargets=0
+REALROM spca computed 043a jump JMP n=0
+REALROM spca retTrick sites=0
+=== REALROM END ===

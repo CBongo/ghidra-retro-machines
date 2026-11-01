@@ -89,7 +89,8 @@ bash tools/banktest/build-and-test.sh --list-chunks
 bash tools/banktest/realrom-test.sh check            # core floor, 5 rows, ~46s
 bash tools/banktest/realrom-test.sh check nes         # full NES tier, 35 rows -- romdirs from GRM_ROM_DIR
 bash tools/banktest/realrom-test.sh check snes        # full SNES tier, 27 rows -- romdirs from GRM_SNES_ROM_DIR
-bash tools/banktest/realrom-test.sh check all         # everything, every platform, 62 rows
+bash tools/banktest/realrom-test.sh check all         # everything except opt-in sets, every platform, 62 rows
+bash tools/banktest/realrom-test.sh check snes-spc-analysis  # OPT-IN, 9 rows: run after changing any SPC700 analyzer or data/languages/spc700*.sinc (nothing else analyzes SPC700)
 bash tools/banktest/realrom-test.sh --list-sets       # print the table below
 bash tools/banktest/realrom-test.sh coverage [SET]    # read-only: which rows have RAN at this build (not "passed")
 ```
