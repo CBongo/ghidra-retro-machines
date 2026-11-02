@@ -114,18 +114,6 @@ Each is minutes of work and settles something specific. Highest value per unit e
   the likely cause is a wrong assumption about which bank `e72a JSR $8574` enters (`$80` gives 16K
   bank 0). Say so, and `grm-mej.19` can aim for a full RESTORED note.
 
-### 1.3 kicarus bank 4: what is the record array at `$A180`, and what walks it? (`grm-gipk.6`)
-
-- [ ] **Question.** None of kicarus's bank-4 menu/screen handlers are in the listing. Examples are
-  `a217`, `a225`, `a23a`, `a253`, `a25b`, `abee`, plus everything they call (`a21e`,
-  `a27a`/`a27e`/`a282`, `a381`, `a38d`, ...). Their addresses appear as pointer words inside what
-  looks like 10-byte records at `$A180`: PRG offsets `0x12180`, `0x1218a`, `0x12194`, `0x1219e`,
-  `0x121a3`, `0x121ad`. Note the uneven offsets; `0x121a3` breaks the stride. The dispatch looks
-  like a zero-page pointer: `a28c LDA #$a1 / STA $ec`, then `a22f JMP ($00eb)`.
-  - What is the record layout, where does the array end, and what sets `$eb`?
-  - Is this a general "struct array with an embedded code pointer" shape, worth a recognizer?
-    Or is it one game's menu table, better handled by a per-game descriptor hint?
-
 ### 1.4 FF3 `$C0:196F` / `$C0:1AB6`, fzero `$00:B59F`: what width does the code after `JSR` really run at? (`grm-9nxj.5.7`)
 
 - [ ] **Question.** Each is a call continuation that two paths enter at different accumulator
@@ -406,6 +394,7 @@ Agents don't write into your ROM library or other personal directories.
 
 | question | answer | bead |
 |---|---|---|
+| kicarus bank 4: what is the record array at `$A180`, and what walks it? | **Two-level bit-priority dispatch, not a stride-10 array (owner, 2026-11-01; bytes re-checked against the pinned ROM).** Stubs `a210`–`a23a` do `LDA <RAM>` / `LDX #key` / `BNE a22c`, then `a22c JSR a3d7` / `JMP ($eb)`. `a3d7` reads a 5-byte record at `$A100+X`: a word pointing to an 8-word handler table, a default target word, and a `$034e` byte. There are 10 records at `$A17E`–`$A1AF`. The highest set bit of A picks the handler from that table (bit 7 first); if A is zero, the default word is used. Defaults chain in pairs: rec0's default is stub `a217`, which dispatches rec1, whose default is `$A404`, a bare `RTS`. The handler tables are `$A1B0` (48 words) and `$ABB7` (24 words). **Do not build a recognizer for it.** Resolving it needs a value set for X over six callers plus a double dereference through one game's helper, and the corpus has one customer. It goes to a per-game code-pointer-table hint instead. | `grm-gipk.6` **closed**; `grm-hb6.29` |
 | SMW SPC700 driver: how many commands does the `$0D44` dispatch really have? | **25 slots, commands `$DA`–`$F2` (owner, 2026-11-01, from the SMWDisX disassembly, bank_0E.asm at [30643c7](https://github.com/IsoFrieze/SMWDisX/blob/30643c7595a7d097d731de69476f8059c7cf98c3/bank_0E.asm#L1510)).** `$DD` and `$ED` are the expected zero holes. The table is followed at `$0FC2` by the vcmd operand-length table, referenced from `$10CB`. The agent's clip at slot 115 (`$0202`) is therefore right, but by luck: the reference to `$0FC2` is the structural end and should be what stops the guarded read. Do not soften the clip rule for exact guards. | `grm-c9d.8.2`, `grm-c9d.8.5` |
 | Did upstream fix 12.2's deprecated `Option` constructors silently dropping headless `-loader-*` args? | **Yes, for 12.2.1. [ghidra#10027](https://github.com/NationalSecurityAgency/ghidra/issues/10027), posted 2026-10-25, was confirmed 2026-10-26 and closed as completed 2026-10-27 by ryanmkurtz, milestone `12.2.1`.** The fix restores `parseAndSetValueByType()`'s 12.1 `valueClass` parsing until the deprecated constructors are removed (our suggested fix 1). No linked PR (`Status: Internal`), so the change lands with the release. Suggested fix 2 was not taken: a failed `-loader-*` arg still makes `getLoaderOptions()` return `null` and the import runs on defaults with exit 0. Raise that as its own issue only if you want it. Nothing here depends on either: our loaders use the 12.2 builders (`grm-75ey`, `grm-vrkk.1`). Do not go back to the deprecated constructors once 12.2.1 ships. | `grm-vrkk.8` **closed** |
 | What idiom carries cv3 (MMC5) into its banked code, given almost none of it is reached? | **Probably not an idiom at all — a lost PRG mode (owner, 2026-10-10).** cv3 is the one MMC5 title in the corpus that runs in **PRG mode 2**, set by `FUN_e0df` in RESET. The comment at that call (`e03a`) correctly says `prg_mode=2`, but the very next instruction, `e03d JSR e2da` (`$5116 <- #$9e`), is commented mode 3. The golden dump shows the same at every later `FUN_e2e6`/`e2e8` call site, and 44 `WA000_M3` overlays: `$5115` read as mode 3's 8K window, not mode 2's 16K `W8000`. **Do not hunt for a far-call trampoline until `grm-dos9.1` (carry `prg_mode` past a helper call) has landed and cv3 has been re-measured.** | `grm-dos9`; `grm-dos9.1` |
