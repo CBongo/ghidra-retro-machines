@@ -379,11 +379,6 @@ deprecated `Option` ctors lose `-loader-*` args, fixed for 12.2.1 (`grm-vrkk.8`)
 
 Agents don't write into your ROM library or other personal directories.
 
-### 6.1 Install ruff, the Python linter (`grm-o8id`, unblocks `grm-l9s7`)
-
-- [ ] **Install.** `winget install --id astral-sh.ruff` (0.17.1 on winget as of 2026-10-26).
-  Confirm `ruff --version` in git bash, then close `grm-o8id`.
-
 ### 6.2 Install PSScriptAnalyzer, the PowerShell linter (`grm-76hw`, unblocks `grm-kk77`)
 
 - [ ] **Install.** In pwsh: `Install-Module PSScriptAnalyzer -Scope CurrentUser`. Confirm with
@@ -514,3 +509,4 @@ Agents don't write into your ROM library or other personal directories.
 | dodge bank 3 `$A00A`–`$A2FF` (code on 12.1, data on 12.2, no outside reference): real code, and how is it reached? | **Real code, but no entry was seen (owner, 2026-10-25).** Bank 3 `$9E72`–`$A4AA` is code throughout, apart from a couple of switch tables. Normal play (the first couple of matches, then a game over) never executes `$FB1B`, the far-call stub that selects bank 3 and `JSR $8003` → `JMP $A28B`; it may serve late-game or credits content. With no identifiable entry there is nothing honest to teach, so **12.2's output stands and dodge was re-blessed** (instrs.inOverlay 11366 → 11098, symbols 189 → 166); 12.1 only reached it through an over-read jump-table seed. A heuristic that treats every stub in a far-call trampoline run as an entry is filed as `grm-m06g` (P4, ask before building). Separate owner observation: dodge's table at `82bd` (dispatch `82ba`) is over-read, real length 21 (`grm-uzep`). | `grm-6m24`; `grm-m06g`; `grm-uzep` |
 | Do the loader option tooltips actually show in the 12.2 import dialog (including our `RomFileOption` path fields)? | **Yes, every one (owner, 2026-10-25)** — but each showed as one long line. They are now built by `OptionTooltip`: HTML wrapped at about 70 characters, with the `Headless: -loader-…` usage on its own line, which the owner asked for in particular. `LoaderOptionContractTest` now fails any of our options whose description skips it (Ghidra's two stock label options are exempt). The Browse button having no tooltip was not raised; leave it. | `grm-vrkk.1` |
 | Post the fall-through-into-overlay issue (`grm-p3dy`) now that 12.2 carries GP-7010? | **Posted 2026-10-26 as [ghidra#10030](https://github.com/NationalSecurityAgency/ghidra/issues/10030).** 12.2 did not make it moot: `callReturnFlowOverrideDoesNotRescueIt` still passes, so a fall-through override into an overlay still makes the function undecompilable. Waiting on a maintainer, tracked in section 5's table; the RFC addendum and #10030's link went to #9349 the same day. Do not start a local `flow.cc` patch before the answer | `grm-p3dy` |
+| Install ruff, the Python linter? | **Done (owner, 2026-11-02):** `ruff --version` in git bash prints `0.17.1`. `grm-l9s7` (ruff audit of tracked Python + the standing "ruff what you edit" rule) is unblocked. | `grm-o8id` **closed**; `grm-l9s7` |
