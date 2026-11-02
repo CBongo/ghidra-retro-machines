@@ -492,6 +492,31 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		return false;
 	}
 
+	/**
+	 * The grm-fxtp {@link JumpTableBound.Block} for the table at {@code tableAddr}, or {@code null}
+	 * when no block contains it. When that block is a bank overlay (a switchable window), the
+	 * block also names every non-overlay initialized, non-volatile block as always mapped -- the
+	 * fixed bank(s) -- so the same-block guard accepts a kept handler there (grm-c9d.8.7, tmnt B5
+	 * 823b). A table in a non-overlay block gets none: no layout fact says which other blocks are
+	 * mapped alongside it.
+	 */
+	private static JumpTableBound.Block tableBlock(Program program, Address tableAddr) {
+		MemoryBlock block = program.getMemory().getBlock(tableAddr);
+		if (block == null) {
+			return null;
+		}
+		List<long[]> fixed = new ArrayList<>();
+		if (block.isOverlay()) {
+			for (MemoryBlock b : program.getMemory().getBlocks()) {
+				if (!b.isOverlay() && b.isInitialized() && !b.isVolatile()) {
+					fixed.add(new long[] { b.getStart().getOffset(), b.getEnd().getOffset() });
+				}
+			}
+		}
+		return new JumpTableBound.Block(block.getStart().getOffset(), block.getEnd().getOffset(),
+			fixed);
+	}
+
 	/** Whether {@code a} and {@code b} describe the same underlying memory: either they are the
 	 *  same space, or one is directly an overlay of the other ({@link AddressSpace#getPhysicalSpace()}
 	 *  returns the space itself for a non-overlay space, and the underlying physical space for an
@@ -641,14 +666,8 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		// guard (JumpTableBound is pure logic over flat offsets and can't look this up itself).
 		// Unresolvable (no moving table, or no block containing it) -- pass none, which disables
 		// that refinement and falls back to the plain lowest-target walk.
-		JumpTableBound.Block tableBlock = null;
-		if (lowestMovingTableAddr != null) {
-			MemoryBlock block = program.getMemory().getBlock(lowestMovingTableAddr);
-			if (block != null) {
-				tableBlock =
-					new JumpTableBound.Block(block.getStart().getOffset(), block.getEnd().getOffset());
-			}
-		}
+		JumpTableBound.Block tableBlock =
+			lowestMovingTableAddr == null ? null : tableBlock(program, lowestMovingTableAddr);
 
 		// grm-pwuh: the dispatch may read its table from a DIFFERENT bank than the decompiler did
 		// (the code switches banks first, then reads). Re-read it from the switched-in bank.
@@ -677,10 +696,7 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 				loadTables.addAll(moved);
 			}
 			lowestMovingTableAddr = crossBank.table();
-			MemoryBlock block = program.getMemory().getBlock(lowestMovingTableAddr);
-			tableBlock = block == null ? null
-					: new JumpTableBound.Block(block.getStart().getOffset(),
-						block.getEnd().getOffset());
+			tableBlock = tableBlock(program, lowestMovingTableAddr);
 		}
 		boolean isCrossBank = crossBank != null;
 

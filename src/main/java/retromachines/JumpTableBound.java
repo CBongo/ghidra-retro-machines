@@ -69,11 +69,17 @@ import java.util.function.Predicate;
  * <ul>
  * <li><b>same-block:</b> every kept entry (0 through the cut) must resolve inside that block --
  * "below the table" means nothing when the table and its targets sit in different blocks
- * (cv3 e137: table at 9f31 in a switchable window, targets in the fixed bank);</li>
+ * (cv3 e137: table at 9f31 in a switchable window, targets in the fixed bank). grm-c9d.8.7: a
+ * kept target in a fixed (always-mapped) block also passes, when the {@link Block} names them --
+ * a banked table whose handlers are split between its window and the fixed bank (tmnt B5 823b:
+ * 82d0 in the window, cfb8/fd5f in the fixed bank). At least one kept target must still be in the
+ * table's own block, so cv3 e137 (every kept target in the fixed bank) still declines;</li>
  * <li><b>confirm:</b> the {@link #WINDOW_CONFIRM} entries after the cut (as many as exist) must
- * each be either below {@code tableStart} or outside the block -- one coming back above the table
- * inside the block means a real case reaches shared code past the garbage, exactly as {@link
- * #boundBySwitchWindow}'s own confirm check guards.</li>
+ * each be either below the lowest kept target (or {@code tableStart}, whichever is higher) or
+ * outside the block -- one coming back at or above the table's handlers inside the block means a
+ * real case reaches shared code past the garbage, exactly as {@link #boundBySwitchWindow}'s own
+ * confirm check guards. A target between the table and its lowest kept handler is the table's own
+ * bytes or the gap after them, never this table's handler (grm-c9d.8.7, dbz_saiyan d286).</li>
  * </ul>
  *
  * <p><b>grm-yjiq: an un-doubled index over 2-byte entries.</b> When the game keeps its switch
@@ -235,14 +241,39 @@ public final class JumpTableBound {
 	public static final class Block {
 		private final long start;
 		private final long end;
+		/** grm-c9d.8.7: [start, end] ranges (inclusive) of blocks that are always mapped wherever
+		 *  this block is -- the fixed bank(s). Empty when unknown. */
+		private final List<long[]> alwaysMapped;
 
 		public Block(long start, long end) {
+			this(start, end, List.of());
+		}
+
+		/**
+		 * @param alwaysMapped inclusive {@code {start, end}} ranges of the fixed (always-mapped)
+		 *                     blocks, which the same-block guard also accepts a kept target in
+		 */
+		public Block(long start, long end, List<long[]> alwaysMapped) {
 			this.start = start;
 			this.end = end;
+			this.alwaysMapped = List.copyOf(alwaysMapped);
 		}
 
 		boolean contains(long offset) {
 			return offset >= start && offset <= end;
+		}
+
+		/** In this block, or in a fixed block that is mapped whenever this one is. */
+		boolean reaches(long offset) {
+			if (contains(offset)) {
+				return true;
+			}
+			for (long[] r : alwaysMapped) {
+				if (offset >= r[0] && offset <= r[1]) {
+					return true;
+				}
+			}
+			return false;
 		}
 	}
 
@@ -324,21 +355,33 @@ public final class JumpTableBound {
 
 	/**
 	 * Guards grm-fxtp's below-table cut: declines (never cuts) unless every kept entry (indices
-	 * {@code 0..cut-1}) resolves inside {@code tableBlock}, and the {@link #WINDOW_CONFIRM} entries
-	 * after the cut (as many as exist) are each either below the table or outside the block -- see
-	 * the class javadoc's same-block and confirm guards.
+	 * {@code 0..cut-1}) resolves inside {@code tableBlock} or one of its always-mapped (fixed)
+	 * blocks with at least one inside {@code tableBlock} itself, and the {@link #WINDOW_CONFIRM} entries after the cut (as many as exist) are each
+	 * below the lowest kept target or outside the block -- see the class javadoc's same-block and
+	 * confirm guards.
 	 */
 	private static Result boundBelowTableCut(List<Long> targets, Block tableBlock, long tableStart,
 			int cut, long minTarget) {
+		boolean anyInBlock = false;
 		for (int k = 0; k < cut; k++) {
-			if (!tableBlock.contains(targets.get(k))) {
+			long t = targets.get(k);
+			if (!tableBlock.reaches(t)) {
 				return Result.decline(); // table and its targets don't share a block; not the idiom
 			}
+			anyInBlock |= tableBlock.contains(t);
 		}
+		if (!anyInBlock) {
+			// every kept target is in the fixed bank: "below the table" means nothing (cv3 e137)
+			return Result.decline();
+		}
+		// grm-c9d.8.7: "comes back" means at or above the lowest kept handler. A target in
+		// [tableStart, minTarget) lands in the table's own bytes or the gap before its first
+		// handler, where no real handler of this table sits (dbz_saiyan d286 entry 22 = d2bf).
+		long comesBackFrom = Math.max(tableStart, minTarget);
 		int confirmEnd = Math.min(targets.size(), cut + 1 + WINDOW_CONFIRM);
 		for (int k = cut + 1; k < confirmEnd; k++) {
 			long t = targets.get(k);
-			if (t >= tableStart && tableBlock.contains(t)) {
+			if (t >= comesBackFrom && tableBlock.contains(t)) {
 				return Result.decline(); // a later entry comes back above the table in-block: ambiguous
 			}
 		}

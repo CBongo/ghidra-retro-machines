@@ -18,13 +18,13 @@ REALROM block WC000 c000-ffff overlay=false
 REALROM count blocks.total 13
 REALROM count blocks.overlay 7
 REALROM count refs.intoOverlay.retargeted 72
-REALROM count refs.intoOverlay.intraOverlay 3745
-REALROM count instrs.inOverlay 15098
+REALROM count refs.intoOverlay.intraOverlay 3742
+REALROM count instrs.inOverlay 15097
 REALROM count bankComments 106
 REALROM count warnings 5
 REALROM count notes 12
-REALROM count symbols 110
-REALROM count jumptable.wordArrays 5
+REALROM count symbols 178
+REALROM count jumptable.wordArrays 6
 REALROM count jumptable.planarArrays 0
 REALROM sample.bankcomment a947 bank -> mirroring=3,prg_mode=3,prg_bank=3 via FUN_ce56 [switch-value flow]
 REALROM sample.bankcomment bf6c bank -> mirroring=3,prg_mode=3,prg_bank=2 via FUN_ce56 [switch-value flow]
@@ -157,7 +157,7 @@ REALROM sample.ref 803b -> W8000_B5::8212 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 803b -> W8000_B6::8047 CONDITIONAL_JUMP primary=true
 REALROM sample.ref 8041 -> W8000_B5::803b CONDITIONAL_JUMP primary=true
 REALROM sample.ref 8043 -> W8000_B5::93f0 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref.truncated 25 of 3817
+REALROM sample.ref.truncated 25 of 3814
 REALROM sample.warn 97a5 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn ced2 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_cea7 whose bank argument could not be recovered at this call site
 REALROM sample.warn cf0d [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_cea7 whose bank argument could not be recovered at this call site
@@ -175,6 +175,20 @@ REALROM sample.note ceba [NesBankingAnalyzer] Bank value is this helper's ARGUME
 REALROM sample.note d06f [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call re-commits the bank READ BACK at d067 from bank-identifying ROM byte 8000 -- a byte whose value is the bank it is read from, so the byte read is the bank live at the read, carried on the stack across the call at d06b -- the save/restore idiom. The bank after this call is whatever 8000 held at that read, not a fresh value this analyzer failed to pin down. That read sits at the ENTRY of FUN_d067 (nothing switches between its entry and the read), so it is the bank live on entry: each of its call sites' own bank, which those sites already track -- the call passes it through unchanged. A property of the game, not a gap in analysis.
 REALROM sample.note d159 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call re-commits the bank READ BACK at d151 from bank-identifying ROM byte 8000 -- a byte whose value is the bank it is read from, so the byte read is the bank live at the read, carried on the stack across the call at d155 -- the save/restore idiom. The bank after this call is whatever 8000 held at that read, not a fresh value this analyzer failed to pin down. That read sits at the ENTRY of FUN_d151 (nothing switches between its entry and the read), so it is the bank live on entry: each of its call sites' own bank, which those sites already track -- the call passes it through unchanged. A property of the game, not a gap in analysis.
 REALROM sample.note d1aa [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call re-commits the bank READ BACK at d1a2 from bank-identifying ROM byte 8000 -- a byte whose value is the bank it is read from, so the byte read is the bank live at the read, carried on the stack across the call at d1a6 -- the save/restore idiom. The bank after this call is whatever 8000 held at that read, not a fresh value this analyzer failed to pin down. That read sits at the ENTRY of FUN_d1a2 (nothing switches between its entry and the read), so it is the bank live on entry: each of its call sites' own bank, which those sites already track -- the call passes it through unchanged. A property of the game, not a gap in analysis.
+REALROM sample.symbol 8238 switch USER_DEFINED primary=true
+REALROM sample.symbol 82d0 case_1 USER_DEFINED primary=true
+REALROM sample.symbol 82d0 case_2 USER_DEFINED primary=false
+REALROM sample.symbol 82d0 case_27 USER_DEFINED primary=false
+REALROM sample.symbol 82d0 case_29 USER_DEFINED primary=false
+REALROM sample.symbol 82d0 case_3 USER_DEFINED primary=false
+REALROM sample.symbol 82d0 case_30 USER_DEFINED primary=false
+REALROM sample.symbol 82d0 case_4 USER_DEFINED primary=false
+REALROM sample.symbol 82d0 case_47 USER_DEFINED primary=false
+REALROM sample.symbol 82d0 case_6 USER_DEFINED primary=false
+REALROM sample.symbol 82d0 case_63 USER_DEFINED primary=false
+REALROM sample.symbol 82d0 case_64 USER_DEFINED primary=false
+REALROM sample.symbol 82d0 case_7 USER_DEFINED primary=false
+REALROM sample.symbol 82d0 case_8 USER_DEFINED primary=false
 REALROM sample.symbol 82e0 switch USER_DEFINED primary=true
 REALROM sample.symbol 832f case_3 USER_DEFINED primary=true
 REALROM sample.symbol 8341 case_0 USER_DEFINED primary=true
@@ -183,26 +197,13 @@ REALROM sample.symbol 8342 case_9 USER_DEFINED primary=true
 REALROM sample.symbol 8357 case_15 USER_DEFINED primary=true
 REALROM sample.symbol 864b case_24 USER_DEFINED primary=true
 REALROM sample.symbol 8708 case_25 USER_DEFINED primary=true
-REALROM sample.symbol 877e case_26 USER_DEFINED primary=true
-REALROM sample.symbol 87c0 case_27 USER_DEFINED primary=true
-REALROM sample.symbol 87f8 case_28 USER_DEFINED primary=true
-REALROM sample.symbol 8a3b case_1 USER_DEFINED primary=true
-REALROM sample.symbol 8a6a case_4 USER_DEFINED primary=true
-REALROM sample.symbol 8a7f case_2 USER_DEFINED primary=true
-REALROM sample.symbol 8a94 case_29 USER_DEFINED primary=true
-REALROM sample.symbol 8b05 case_30 USER_DEFINED primary=true
-REALROM sample.symbol 8b8d case_31 USER_DEFINED primary=true
-REALROM sample.symbol 8b99 case_32 USER_DEFINED primary=true
-REALROM sample.symbol 8c06 case_33 USER_DEFINED primary=true
-REALROM sample.symbol 8cd4 case_5 USER_DEFINED primary=true
-REALROM sample.symbol 8ce7 case_6 USER_DEFINED primary=true
-REALROM sample.symbol 8cfe case_7 USER_DEFINED primary=true
-REALROM sample.symbol 8d13 case_8 USER_DEFINED primary=true
-REALROM sample.symbol 8d2e case_11 USER_DEFINED primary=true
-REALROM sample.symbol 8d44 case_12 USER_DEFINED primary=true
-REALROM sample.symbol.truncated 25 of 98
+REALROM sample.symbol 8733 case_28 USER_DEFINED primary=false
+REALROM sample.symbol 8733 case_5 USER_DEFINED primary=true
+REALROM sample.symbol 8733 case_66 USER_DEFINED primary=false
+REALROM sample.symbol.truncated 25 of 166
 REALROM sample.jumptable 8fb8 word[6]
 REALROM sample.jumptable 8fc4 word[4]
+REALROM sample.jumptable W8000_B5::823b word[67]
 REALROM sample.jumptable W8000_B5::82e3 word[38]
 REALROM sample.jumptable W8000_B5::940a word[45]
 REALROM sample.jumptable W8000_B5::9477 word[23]

@@ -345,6 +345,64 @@ public class JumpTableBoundTest {
 		assertTrue(!r.isBounded() || r.count() == targets.size());
 	}
 
+	/** dbz_saiyan c4fb / table d286 (grm-c9d.8.7): 20 real handlers d2f3..d555, entry 20 = 3285 is
+	 *  below the table, and confirm entry 22 = d2bf is above the table in-block -- but below the
+	 *  lowest kept handler (d2f3), i.e. in the table's own bytes / the gap, so it is junk and the
+	 *  cut stands. */
+	@Test
+	public void belowTableCutConfirmIgnoresTargetsBelowTheLowestHandler() {
+		long tableStart = 0xd286;
+		List<Long> targets = new ArrayList<>(targets(0xd2f3, 0xd2f6, 0xd3bf, 0xd388, 0xd429,
+			0xd408, 0xd432, 0xd43e, 0xd36d, 0xd454, 0xd482, 0xd4a8, 0xd4b0, 0xd4fa, 0xd4da, 0xd4c5,
+			0xd34a, 0xd432, 0xd524, 0xd311));
+		targets.add(0x3285L); // entry 20: below the table -- the cut
+		targets.add(0xbea8L); // outside the block
+		targets.add(0xd2bfL); // above the table, in-block, but below d2f3: the gap
+		targets.add(0xb0bdL);
+		List<LoadTableEntry> tables = List.of(new LoadTableEntry(tableStart, 1, 2 * targets.size()));
+		JumpTableBound.Block block = new JumpTableBound.Block(0xc000, 0xffff);
+
+		Result r = JumpTableBound.bound(targets, tables, block);
+		assertTrue(r.isBounded());
+		assertEquals(20, r.count());
+		assertEquals(JumpTableBound.Rule.BELOW_TABLE_CUT, r.rule());
+
+		// A confirm entry AT the lowest kept handler still comes back: decline.
+		targets.set(22, 0xd2f3L);
+		assertFalse(JumpTableBound.bound(targets, tables, block).isBounded());
+	}
+
+	/** tmnt W8000_B5::8238 / table 823b (grm-c9d.8.7): a banked table whose handlers are split
+	 *  between its own window (82d0, 8733) and the fixed bank (cfb8, fd5f). Entry 5 = 30bd is
+	 *  below the table (RAM). With the fixed bank named always-mapped the cut stands; without it,
+	 *  or when no kept handler is in the table's own block (cv3 e137), the guard declines. */
+	@Test
+	public void belowTableCutAcceptsFixedBankHandlersBesideInBlockOnes() {
+		long tableStart = 0x823b;
+		List<Long> targets = new ArrayList<>(targets(0xcfb8, 0x82d0, 0x82d0, 0x8733, 0xfd5f));
+		targets.add(0x30bdL); // entry 5: below the table -- the cut
+		targets.add(0xc906L); // confirm: fixed bank, outside the window block
+		targets.add(0xf0ffL);
+		List<LoadTableEntry> tables = List.of(new LoadTableEntry(tableStart, 1, 2 * targets.size()));
+		List<long[]> fixed = List.<long[]>of(new long[] { 0xc000, 0xffff });
+
+		Result r = JumpTableBound.bound(targets, tables, new JumpTableBound.Block(0x8000, 0xbfff,
+			fixed));
+		assertTrue(r.isBounded());
+		assertEquals(5, r.count());
+		assertEquals(JumpTableBound.Rule.BELOW_TABLE_CUT, r.rule());
+
+		// Fixed bank unknown: the plain same-block guard declines, as before grm-c9d.8.7.
+		assertFalse(JumpTableBound.bound(targets, tables, new JumpTableBound.Block(0x8000, 0xbfff))
+				.isBounded());
+
+		// cv3 e137 shape: every kept handler in the fixed bank, none in the table's block.
+		List<Long> allFixed = targets(0xd030, 0xee50, 0x8123, 0xd040, 0xd050);
+		List<LoadTableEntry> cv3 = List.of(new LoadTableEntry(0x9f31, 1, 2 * allFixed.size()));
+		assertFalse(JumpTableBound.bound(allFixed, cv3, new JumpTableBound.Block(0x8000, 0x9fff,
+			fixed)).isBounded());
+	}
+
 	/** Block unknown ({@code null}) disables the refinement entirely: a below-table entry still
 	 *  drags minTarget down and declines, exactly as the pre-grm-fxtp 2-arg overload always did. */
 	@Test

@@ -182,12 +182,17 @@ Each is minutes of work and settles something specific. Highest value per unit e
 
   Two or three answers set the margin rule for acting on the rest (full list on grm-gipk.16.6).
 
-### 1.10 Three over-read NES jump tables: where does each real table end? (`grm-c9d.8.7`)
+### 1.10 Three over-read NES jump tables: where does each real table end? (`grm-c9d.8.7`, `grm-c9d.8.8`)
 
-- [ ] **Question.** Each table below was read to 83–128 entries and no bound rule cuts it. The
-  agent read the bytes and proposes a real count and a rule change for each. Before any rule is
-  loosened, please check each count in a disassembler, and say whether the proposed rule matches
-  what the game does. The full target list per entry is in the comment on `grm-c9d.8.7`
+- [ ] **Question.** Each table below was read to 83–128 entries and no bound rule cut it. The
+  agent read the bytes and proposed a real count and a rule change for each.
+  **Update 2026-11-01:** the owner ruled the rule directions without the disassembler check, and
+  `grm-c9d.8.7` shipped two of them. The below-table cut's confirm check now ignores a target
+  between the table and its lowest kept handler (dbz). Its same-block check now accepts handlers
+  in the fixed bank when at least one is in the table's own bank (tmnt). Both goldens are blessed
+  at **20** and **67**. dragonpower moved to `grm-c9d.8.8`. **What is still open is the check
+  itself:** are 20 and 67 right, and are tmnt's entries 65/66 real? If either count is wrong, reopen
+  `grm-c9d.8.7`. The full target list per entry is in the comment on `grm-c9d.8.7`
   (`bd show grm-c9d.8.7`).
   - **dbz_saiyan `c4fb`, table `d286`** (128 read). Proposed: **20** entries (`d2f3 d2f6 d3bf …
     d311`), with the table bytes from `d2ae` decoding as code (`85 32 a8 …`). Entry 20 (`3285`) is
@@ -206,8 +211,9 @@ Each is minutes of work and settles something specific. Highest value per unit e
     9? No current rule reaches 9. Would "the table ends where its own bytes start decoding as code"
     be a safe rule, or does this game put tables right before code that only looks that way?
 
-  The answers decide whether `grm-c9d.8.7` loosens the below-table cut's two checks, adds a
-  "table bytes decode as code" end test, or leaves these tables alone.
+  For dbz and tmnt, the answers confirm or reopen the rule changes that shipped. For dragonpower,
+  they decide whether `grm-c9d.8.8` adds a "table bytes decode as code" end test or leaves the
+  table alone.
 
 ---
 

@@ -30,8 +30,8 @@ REALROM count instrs.inOverlay 0
 REALROM count bankComments 0
 REALROM count warnings 1
 REALROM count notes 6
-REALROM count symbols 18
-REALROM count jumptable.wordArrays 0
+REALROM count symbols 39
+REALROM count jumptable.wordArrays 1
 REALROM count jumptable.planarArrays 0
 REALROM sample.warn c9e1 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c9bc, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
 REALROM sample.note c4da [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call re-commits the bank READ BACK at c43c from bank-identifying ROM byte 8000 -- a byte whose value is the bank it is read from, so the byte read is the bank live at the read, carried on the stack across control flow c43f..c4d9 -- the save/restore idiom. The bank after this call is whatever 8000 held at that read, not a fresh value this analyzer failed to pin down. That read sits at the ENTRY of NMI (nothing switches between its entry and the read), so it is the bank live on entry -- and that entry is an INTERRUPT entry, whose bank is the interrupted code's: arbitrary mainline context, no number on any path. The bank is unchanged from handler entry. A property of the game, not a gap in analysis.
@@ -43,7 +43,28 @@ REALROM sample.note c9ee [NesBankingAnalyzer] Bank value is RESTORED here, not r
 REALROM sample.symbol c3b5 RESET IMPORTED primary=true
 REALROM sample.symbol c437 NMI IMPORTED primary=true
 REALROM sample.symbol c4e3 IRQ IMPORTED primary=true
+REALROM sample.symbol c4fb switch USER_DEFINED primary=true
+REALROM sample.symbol d2f3 case_0 USER_DEFINED primary=true
+REALROM sample.symbol d2f6 case_1 USER_DEFINED primary=true
+REALROM sample.symbol d311 case_19 USER_DEFINED primary=true
+REALROM sample.symbol d34a case_16 USER_DEFINED primary=true
+REALROM sample.symbol d36d case_8 USER_DEFINED primary=true
+REALROM sample.symbol d388 case_3 USER_DEFINED primary=true
+REALROM sample.symbol d3bf case_2 USER_DEFINED primary=true
+REALROM sample.symbol d408 case_5 USER_DEFINED primary=true
+REALROM sample.symbol d429 case_4 USER_DEFINED primary=true
+REALROM sample.symbol d432 case_17 USER_DEFINED primary=false
+REALROM sample.symbol d432 case_6 USER_DEFINED primary=true
+REALROM sample.symbol d43e case_7 USER_DEFINED primary=true
+REALROM sample.symbol d454 case_9 USER_DEFINED primary=true
+REALROM sample.symbol d482 case_10 USER_DEFINED primary=true
+REALROM sample.symbol d4a8 case_11 USER_DEFINED primary=true
+REALROM sample.symbol d4b0 case_12 USER_DEFINED primary=true
+REALROM sample.symbol d4c5 case_15 USER_DEFINED primary=true
+REALROM sample.symbol d4da case_14 USER_DEFINED primary=true
+REALROM sample.symbol d4fa case_13 USER_DEFINED primary=true
+REALROM sample.symbol d524 case_18 USER_DEFINED primary=true
 REALROM sample.symbol fffa NMI_VEC IMPORTED primary=true
-REALROM sample.symbol fffc RESET_VEC IMPORTED primary=true
-REALROM sample.symbol fffe IRQ_VEC IMPORTED primary=true
+REALROM sample.symbol.truncated 25 of 27
+REALROM sample.jumptable d286 word[20]
 === REALROM END ===
