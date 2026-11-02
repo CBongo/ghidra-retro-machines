@@ -309,6 +309,13 @@ this is SndMus_QueueCommon in captainsouthbirds disassembly - https://github.com
 dodge 3:a00a-a2ff:
 this is definitely code from 9e72-a4aa, with only a couple of switch tables interrupting.  normal gameplay does not seem to reach fb1b. it's possible it is used later in the game or in an end credits context, but it is not reached after playing through the first couple of matches and game over. in an unrelated observation, the jump table at 82ba (table 82bd) appears to be overread but not fixed up. the first entry points to 82e9 which immediately follows the table so i would have expected our table shortener to clean it up. actual length is 21.
 
+kicarus records at 4:a180:
+the routines at a210, a217, a21e, a225, a232, a23a load A from RAM and a static X value then go to a22c which calls a3d7 then does the JMP (eb).  a3d7 uses X as low byte and #$a1 as high byte pointer into the 5-byte wide table at a17e with 10 entries. first 4 bytes are copied to e9-ec; byte 5 ends up in 034e. e9 is used as a pointer to another table; index into that table is based on the position of the leftmost set bit in the A value coming in to a3d7 (bit 7 = 0; bit 6 = 2; etc.) this value is then loaded into eb/ec. so bytes 2-3 of the table at a17e act as a "default" target for the jump if no bits are set in A; otherwise the jump will go based on the table pointed to from bytes 0-1 of the a17e table.
+
+CT c7:0ad9:
+for c70173, A is bound by CMP to indexes beween $10 and $17, so the effective table start is 0af9 and is 8 entries. c5:06fe doesn't seem to be reached/pointed by anything.
+for c1:0051, this is a table of length 10, which runs right up to the function c10065.  side note: the JSR and JMPs on 65816 do not seem to preserve a data reference to the table itself, just COMPUTED_CALL refs to the targets.
+
   Next session's shortest path
 
   1. bd list --label background-ok → farm out immediately (grm-hhd first; it blocks every parallel agent).
