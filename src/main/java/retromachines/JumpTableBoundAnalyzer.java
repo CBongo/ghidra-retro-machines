@@ -1212,7 +1212,7 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 			return null;
 		}
 		IndexGuardRecovery.GuardTable gt =
-			IndexGuardRecovery.readSlots(program, base, span, cases.get(0));
+			IndexGuardRecovery.readSlots(program, base, span, cases.get(0), switchAddr);
 		if (gt == null || gt.targets().size() < 2) {
 			return null;
 		}

@@ -39,6 +39,7 @@ import ghidra.program.model.listing.CommentType;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.symbol.RefType;
 import ghidra.program.model.symbol.Reference;
+import ghidra.program.model.symbol.SourceType;
 import ghidra.util.task.TaskMonitor;
 
 /**
@@ -200,6 +201,115 @@ public class IndexGuardProgramTest extends AbstractProgramTest {
 		assertEquals(0, span.first());
 		assertEquals(15, span.last());
 		assertTrue(span.evidence(), span.evidence().contains("BCS not taken"));
+	}
+
+	// ---- grm-c9d.8.5: the read ends at a referenced entry -----------------------------------
+
+	/** SMW's vcmd operand-length table position: span slot 25 ({@code $0F90 + 2*25}). */
+	private static final long NEXT_TABLE = BASE + 2L * (FIRST_SLOT + 25);
+
+	/** A {@code MOV A,!$0FC2+X} at {@code from}, with its READ reference, as SMW's 10cb. */
+	private void reader(long from) throws Exception {
+		builder.setBytes(hex(from), "f5 " + word(NEXT_TABLE).trim(), false);
+		inTx(program, "reader ref", () -> program.getReferenceManager().addMemoryReference(
+			addr(from), addr(NEXT_TABLE), RefType.READ, SourceType.ANALYSIS, 0));
+	}
+
+	private IndexGuardRecovery.GuardTable readGuarded() {
+		return IndexGuardRecovery.readSlots(program, addr(BASE), recover(), addr(0x2000),
+			addr(SWITCH));
+	}
+
+	@Test
+	public void aReferenceFromElsewhereEndsTheGuardedRead() throws Exception {
+		build(GUARDED);
+		reader(0x10cb);
+		IndexGuardRecovery.GuardTable gt = readGuarded();
+		assertNotNull(gt);
+		assertEquals(25, gt.targets().size());
+		assertEquals(FIRST_SLOT + 25, gt.clippedAt());
+		assertTrue(gt.why(), gt.why().contains("entry referenced") && gt.why().contains("10cb"));
+	}
+
+	@Test
+	public void aReferenceFromInsideTheTableDoesNotEndTheRead() throws Exception {
+		build(GUARDED);
+		reader(BASE + 2L * 10); // sourced in the decoy slots: the table's own extent
+		IndexGuardRecovery.GuardTable gt = readGuarded();
+		assertNotNull(gt);
+		assertEquals(SLOTS, gt.targets().size());
+		assertEquals(-1, gt.clippedAt());
+	}
+
+	/**
+	 * SMW's real reader, byte for byte: {@code 10c3 CMP A,#$DA / BCC $10CE / PUSH Y / MOV Y,A /
+	 * POP A / CLRC / 10cb ADC A,!$0EE8+Y / RET}. Y is {@code $DA..$FF}, so it reads from
+	 * {@code $0EE8 + $DA = $0FC2}, with no reference there.
+	 */
+	private void biasedReader(boolean guarded) throws Exception {
+		if (guarded) {
+			builder.setBytes("0x10c3", "68 da 90 07 6d fd ae 60 96 e8 0e 6f", true);
+		}
+		else {
+			builder.setBytes("0x10c7", "6d fd ae 60 96 e8 0e 6f", true);
+		}
+	}
+
+	@Test
+	public void aGuardedBiasedReaderEndsTheGuardedRead() throws Exception {
+		build(GUARDED);
+		biasedReader(true);
+		IndexGuardRecovery.ReaderStart rs = IndexGuardRecovery.readerStart(program,
+			program.getListing().getInstructionAt(addr(0x10cb)));
+		assertNotNull(rs);
+		assertEquals(NEXT_TABLE, rs.start());
+		IndexGuardRecovery.GuardTable gt = readGuarded();
+		assertNotNull(gt);
+		assertEquals(25, gt.targets().size());
+		assertEquals(FIRST_SLOT + 25, gt.clippedAt());
+		assertTrue(gt.why(), gt.why().contains("guarded reader") && gt.why().contains("10cb"));
+	}
+
+	@Test
+	public void anUnguardedBiasedReaderDoesNotEndTheRead() throws Exception {
+		build(GUARDED);
+		biasedReader(false);
+		assertNull(IndexGuardRecovery.readerStart(program,
+			program.getListing().getInstructionAt(addr(0x10cb))));
+		IndexGuardRecovery.GuardTable gt = readGuarded();
+		assertNotNull(gt);
+		assertEquals(SLOTS, gt.targets().size());
+	}
+
+	@Test
+	public void theAnalyzerLogsTheGuardedReaderEnd() throws Exception {
+		build(GUARDED);
+		biasedReader(true);
+		builder.disassemble("0xd40", 7, true);
+		inTx(program, "analyze", () -> {
+			new JumpTableBoundAnalyzer().added(program, new AddressSet(addr(0xd40), addr(0xd46)),
+				TaskMonitor.DUMMY, new MessageLog());
+		});
+		String comment = program.getListing().getComment(CommentType.EOL, addr(SWITCH));
+		assertNotNull(comment);
+		assertTrue(comment, comment.contains("-> 25 entries"));
+		assertTrue(comment, comment.contains("guarded reader") && comment.contains("10cb"));
+	}
+
+	@Test
+	public void theAnalyzerLogsTheReferencedEnd() throws Exception {
+		build(GUARDED);
+		reader(0x10cb);
+		builder.disassemble("0xd40", 7, true);
+		inTx(program, "analyze", () -> {
+			new JumpTableBoundAnalyzer().added(program, new AddressSet(addr(0xd40), addr(0xd46)),
+				TaskMonitor.DUMMY, new MessageLog());
+		});
+		String comment = program.getListing().getComment(CommentType.EOL, addr(SWITCH));
+		assertNotNull(comment);
+		assertTrue(comment, comment.contains("-> 25 entries"));
+		assertTrue(comment, comment.contains("clipped at slot 115") && comment.contains("10cb"));
+		assertFalse(computedTargets().contains(addr(realTarget(25))));
 	}
 
 	// ---- through the analyzer ------------------------------------------------------------

@@ -114,6 +114,99 @@ final class IndexGuardRecovery {
 	}
 
 	/**
+	 * grm-c9d.8.5: where another guarded reader of nearby bytes starts reading. {@code start} is
+	 * {@code base + lo} for an instruction with one {@code base+reg} operand whose register range
+	 * the same guards as {@link #recover} establish; {@code evidence} says how.
+	 */
+	record ReaderStart(Address reader, long start, String evidence) {}
+
+	/**
+	 * The lowest byte {@code instr} can read through its indexed operand ({@code !base+X/Y}: the
+	 * instruction names exactly one scalar and exactly one {@code X}/{@code Y} register, which
+	 * SPC700 puts in separate operands, {@code ADC A,!$0EE8+Y} being {@code [A] [0xee8] [Y]}),
+	 * when a guard bounds the index
+	 * ({@link #walk}, as for {@link #recover}); else null. SMW's {@code 10cb ADC A,!$0EE8+Y}, guarded
+	 * by {@code 10c3 CMP A,#$DA / BCC} through {@code MOV Y,A}, starts at {@code $0FC2}: the vcmd
+	 * operand-length table that follows the {@code $0D44} dispatch table.
+	 */
+	static ReaderStart readerStart(Program program, Instruction instr) {
+		Register index = null;
+		Long base = null;
+		int indexes = 0;
+		int scalars = 0;
+		for (int i = 0; i < instr.getNumOperands(); i++) {
+			for (Object o : instr.getOpObjects(i)) {
+				if (o instanceof Register reg &&
+					(reg.getName().equals("X") || reg.getName().equals("Y"))) {
+					index = reg;
+					indexes++;
+				}
+				else if (o instanceof Scalar sc) {
+					base = sc.getUnsignedValue();
+					scalars++;
+				}
+			}
+		}
+		if (indexes != 1 || scalars != 1) {
+			return null; // e.g. MOV X,!abs+Y: which register indexes is not the simple shape
+		}
+		List<String> notes = new ArrayList<>();
+		IndexGuard.Range r = walk(program, instr, index, new ArrayList<>(), true, notes);
+		if (r == null) {
+			return null;
+		}
+		long start = base + r.lo();
+		return new ReaderStart(instr.getMinAddress(), start, instr.getMinAddress() + " " + instr +
+			": " + String.join("; ", notes) + " -> " + index.getName() + " " + r + " -> from " +
+			Long.toHexString(start));
+	}
+
+	/**
+	 * The guarded readers ({@link #readerStart}) whose first byte lies at an entry position of the
+	 * word table at {@code base}, between slot {@code first + 1} and {@code last}: offset of that
+	 * position to the reader. Candidates are instructions in the table's address space with an
+	 * indexed base in {@code [base - 255, base + 2*(last+1))} (an 8-bit index reaches at most 255
+	 * past its base), outside the table's possible extent (bytes there are table read as code) and
+	 * not {@code own}.
+	 */
+	static Map<Long, ReaderStart> readerStarts(Program program, Address base, int first, int last,
+			Address own) {
+		Map<Long, ReaderStart> out = new java.util.HashMap<>();
+		long lo = base.getOffset() - 255;
+		long extentEnd = base.getOffset() + 2L * (last + 1);
+		var space = base.getAddressSpace();
+		var set = new ghidra.program.model.address.AddressSet(space.getMinAddress(),
+			space.getMaxAddress());
+		for (Instruction in : program.getListing().getInstructions(set, true)) {
+			long at = in.getMinAddress().getOffset();
+			if (in.getMinAddress().equals(own) || (at >= base.getOffset() && at < extentEnd) ||
+				!hasScalarIn(in, lo, extentEnd)) {
+				continue;
+			}
+			ReaderStart rs = readerStart(program, in);
+			if (rs == null) {
+				continue;
+			}
+			long d = rs.start() - base.getOffset();
+			if (d % 2 == 0 && d / 2 > first && d / 2 <= last) {
+				out.merge(rs.start(), rs, (a, b) -> a.reader().compareTo(b.reader()) <= 0 ? a : b);
+			}
+		}
+		return out;
+	}
+
+	private static boolean hasScalarIn(Instruction in, long lo, long hi) {
+		for (int i = 0; i < in.getNumOperands(); i++) {
+			for (Object o : in.getOpObjects(i)) {
+				if (o instanceof Scalar s && s.getUnsignedValue() >= lo && s.getUnsignedValue() < hi) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	/**
 	 * The range of the register that ends up as the switch index, given that the instruction
 	 * {@code from} is reached with {@code reg} holding the value we track. {@code opsBackward}
 	 * collects the modelled maps met so far, last first. Null on any failure.
@@ -332,16 +425,50 @@ final class IndexGuardRecovery {
 	 * non-volatile memory block, unless the word is {@code $0000}, a placeholder. Trailing
 	 * placeholders are not part of the table. Returns null when nothing remains.
 	 *
+	 * <p>grm-c9d.8.5: the read also ends at the first slot after {@code span.first()} that
+	 * something else references ({@link EntryReferences}, strong hits only): another table's load
+	 * or code reached from elsewhere starts there, the structural end of this one. The guard states
+	 * which indices the CODE can reach, not where the table's bytes stop, so a guard over-wide for
+	 * the table (SMW 0d44: slots 90..127 guarded, 25 real, then the vcmd length table at
+	 * {@code $0FC2}, read from {@code $10CB}) is cut there. A bare label (weak hit) does not end
+	 * the read: there is no scorer here to weigh it. The same holds for another GUARDED READER
+	 * whose lowest byte is such a position ({@link #readerStarts}): SMW's real reader of
+	 * {@code $0FC2} is {@code 10cb ADC A,!$0EE8+Y} with Y guarded to {@code $DA..$FF}, a biased base
+	 * that makes no reference to {@code $0FC2} at all. References sourced in the table's possible
+	 * extent (slot 0 of {@code base} through the span's end, covering our own laid words over any
+	 * earlier over-read) or at {@code own} do not count.
+	 *
 	 * @param template an address in the space the targets live in
+	 * @param own the dispatch instruction, whose operand reference points into the table
 	 */
-	static GuardTable readSlots(Program program, Address base, Span span, Address template) {
+	static GuardTable readSlots(Program program, Address base, Span span, Address template,
+			Address own) {
 		List<Address> targets = new ArrayList<>();
 		int clippedAt = -1;
 		String why = null;
+		List<EntryReferences.Extent> extents =
+			List.of(new EntryReferences.Extent(base, 2L * (span.last() + 1)));
+		List<Address> owns = own == null ? List.of() : List.of(own);
+		Map<Long, ReaderStart> readers = readerStarts(program, base, span.first(), span.last(), own);
 		for (int k = span.first(); k <= span.last(); k++) {
 			long word;
 			try {
 				Address at = base.add(2L * k);
+				if (k > span.first()) {
+					EntryReferences.Hit hit = EntryReferences.find(program, at, extents, owns);
+					if (hit != null && hit.strong()) {
+						clippedAt = k;
+						why = "slot " + k + " entry referenced " + hit.describe();
+						break;
+					}
+					ReaderStart reader = readers.get(at.getOffset());
+					if (reader != null) {
+						clippedAt = k;
+						why = "slot " + k + " is where a guarded reader starts (" +
+							reader.evidence() + ")";
+						break;
+					}
+				}
 				word = (program.getMemory().getByte(at) & 0xffL) |
 					(program.getMemory().getByte(at.add(1)) & 0xffL) << 8;
 			}
