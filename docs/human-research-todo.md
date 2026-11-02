@@ -329,7 +329,7 @@ throwaway copy). The bead stays the master copy: edit drafts there (see `AGENTS.
 drafts").
 
 **Current state of everything upstream** — full re-check against GitHub 2026-10-04; `#9655`/`#9765`
-re-checked 2026-10-10; `#10001` and `#10027`-`#10030` rows checked 2026-10-25, `#10027` again 2026-10-26 and retired 2026-10-27. Re-check before acting on it, and before re-deriving anything a row covers.
+re-checked 2026-10-10; `#10001` and `#10027`-`#10030` rows checked 2026-10-25, `#10027` again 2026-10-26 and retired 2026-10-27; `#10087` and `#9656` re-checked 2026-11-02. Re-check before acting on it, and before re-deriving anything a row covers.
 
 **Ordering rule:** rows that need you come first, then your deliberately deferred items, then rows
 waiting on someone else (most recent activity first). A row whose upstream item is **merged or
@@ -338,7 +338,8 @@ do not keep "Done" rows here.
 
 | item | state | last activity | yours? |
 |---|---|---|---|
-| [ghidra#10087](https://github.com/NationalSecurityAgency/ghidra/pull/10087) 6502 JSR/RTS/BRK hardware return address (`grm-4ixu`) | PR open, no labels or reviewer yet | you opened it 2026-11-01 | No, waiting on a maintainer. The NES loader still uses stock `6502:LE:16:default`; switching it to our corrected language is a separate decision |
+| [ghidra#10087](https://github.com/NationalSecurityAgency/ghidra/pull/10087) 6502 JSR/RTS/BRK hardware return address (`grm-4ixu`) | PR open, `Feature: Processor/6502` + `Status: Triage`, assigned `GhidorahRex`. 2026-11-02: a third party (jobermayr) asked "Have you seen #5870?" | 2026-11-02 comment | **Yes: post the reply** (`python -I tools/upstream-draft.py grm-4ixu`; the last `---8<---` block on the bead). Prior art the 2026-10-28 search missed: [#5740](https://github.com/NationalSecurityAgency/ghidra/pull/5740) (`Status: Internal`) has the **identical** JSR/RTS hunks, and [#5870](https://github.com/NationalSecurityAgency/ghidra/pull/5870) has JSR/RTS plus the same BRK change. The maintainer's stated requirements there (no register-layout change, don't break 65c02, don't trade decompiler output for emulation fidelity) are all met; the reply says so and offers to close in #5740's favour. The 65c02 compile (stock and patched, 12.2 sleigh) is clean; the vector check on `wdc65c02` is being added to the bead before you post. The NES loader still uses stock `6502:LE:16:default`; switching it to our corrected language is a separate decision |
+| [ghidra#9656](https://github.com/NationalSecurityAgency/ghidra/pull/9656) 6502 ADC/SBC flags + zp pointer wrap (`grm-ef46`) | open PR, `Status: Triage`, assigned `GhidorahRex`, no reviews (`blocked` = awaiting review) | your regression tests added 2026-09-20; other comments are a third party's (who also opened 65C02 `BIT #imm` PR [#9670](https://github.com/NationalSecurityAgency/ghidra/pull/9670)) | **Yes, optional: post the prior-art note** (`python -I tools/upstream-draft.py grm-ef46`). [#5740](https://github.com/NationalSecurityAgency/ghidra/pull/5740) fixes the same SBC carry, ADC overflow and `(zp,X)`/`(zp),Y` wrap and is `Status: Internal`; #9656 doesn't cite it. The note credits it, names what #9656 adds (the 65C02 ADC constructor, vector provenance, regression tests) and offers to close or rebase. Found 2026-11-02 while answering #10087 |
 | [ghidra#10085](https://github.com/NationalSecurityAgency/ghidra/issues/10085) GP-7316 regression: switches outside a defined function no longer recovered, fix PR [#10086](https://github.com/NationalSecurityAgency/ghidra/pull/10086) (`grm-3scq`) | issue and PR open, no labels or assignee yet | you opened both 2026-11-01 | No, waiting on a maintainer. Master only, so it matters to us at the next retarget |
 | [ghidra#10083](https://github.com/NationalSecurityAgency/ghidra/issues/10083) switch analysis clears data a load table starts inside, fix PR [#10084](https://github.com/NationalSecurityAgency/ghidra/pull/10084) (`grm-8jml`) | issue (1 comment) and PR open, no labels or assignee yet | you opened both 2026-11-01 | No, waiting on a maintainer. `grm-vzp2`'s relay covers us meanwhile |
 | [ghidra discussion #9349](https://github.com/NationalSecurityAgency/ghidra/discussions/9349) banked-memory RFC | open, **zero replies** | 2026-10-26: you posted the M3 status update and the decompiler addendum, with [#10030](https://github.com/NationalSecurityAgency/ghidra/issues/10030)'s link (opened 2026-07-05) | No, waiting on replies. `docs/rfc-banked-memory.md` stays the source of record; mirror any further revision there |
@@ -349,7 +350,6 @@ do not keep "Done" rows here.
 | [ghidra#9655](https://github.com/NationalSecurityAgency/ghidra/issues/9655) GP-6936 join varnodes + RAM-half fix PR [#9765](https://github.com/NationalSecurityAgency/ghidra/pull/9765) (`grm-qp5x.2`) | issue open, `Status: Triage`, assigned `caheckman`, [correction comment](https://github.com/NationalSecurityAgency/ghidra/issues/9655#issuecomment-6102852548) asks which of two directions for the 6502 half; PR open, `blocked` = awaiting review | 2026-10-10: PR + comment, then the `certification.manifest` line a third party flagged | No, waiting on a maintainer. Do not PR a spacebase fix until they pick a direction |
 | [ghidra#9447](https://github.com/NationalSecurityAgency/ghidra/issues/9447) jump-table over-read + fix PR [#9717](https://github.com/NationalSecurityAgency/ghidra/pull/9717) (`grm-b3m`) | issue open, `Status: Triage`, assigned `caheckman`; PR open, `blocked` = awaiting review | PR opened 2026-10-04 | No, waiting on a maintainer |
 | [ghidra-snes#6](https://github.com/joshleaves/ghidra-snes/pull/6) seven 65816 defects (`grm-9nxj.7`) | open PR, mergeable, no comments or reviews | opened 2026-09-21 | No, waiting on the maintainer |
-| [ghidra#9656](https://github.com/NationalSecurityAgency/ghidra/pull/9656) 6502 ADC/SBC flags + zp pointer wrap (`grm-ef46`) | open PR, `Status: Triage`, assigned `GhidorahRex`, no reviews (`blocked` = awaiting review) | your regression tests added 2026-09-20; other comments are a third party's (who also opened 65C02 `BIT #imm` PR [#9670](https://github.com/NationalSecurityAgency/ghidra/pull/9670)) | No, waiting on a maintainer |
 
 *Retired from this table (outcomes in `## Answered`):* [#9513](https://github.com/NationalSecurityAgency/ghidra/pull/9513)
 `setMinStoreLoadOffset`, merged for 12.2 (`grm-6xh`); [#9658](https://github.com/NationalSecurityAgency/ghidra/issues/9658)
@@ -370,6 +370,11 @@ deprecated `Option` ctors lose `-loader-*` args, fixed for 12.2.1 (`grm-vrkk.8`)
   **read-only reference checkout**, not GitHub — name the GitHub remote explicitly, cut the
   branch from a freshly fetched `master` (not `HEAD`), and use `git worktree add` so the b3m fork
   build tree stays on its own branch. Full recipe on `grm-6xh`.*
+- *Search for prior art by FILE and by open PR, not only by symptom keywords.* The 2026-10-28
+  search for `grm-4ixu` ("6502 RTS return address") missed two open PRs carrying the same fix
+  (#5740, #5870), and #9656 had missed #5740 too. Before drafting a language PR, list the open PRs
+  carrying the processor's label (`label:"Feature: Processor/6502" is:pr is:open`) and read their
+  diffs for the constructors you touch.
 - *An agent cannot confirm a fork exists by searching for it: GitHub repo search omits forks unless
   the query carries `fork:true`. Check the fork's `master` head directly instead.*
 
