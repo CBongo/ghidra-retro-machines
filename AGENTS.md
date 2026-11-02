@@ -331,6 +331,10 @@ cp -rf source dest          # NOT: cp -r source dest
 
 Run `shellcheck <file>` on any `.sh` you edit (`shellcheck $(git ls-files '*.sh')` must exit 0; config in `.shellcheckrc`). A new finding is fixed or justified with a narrow `# shellcheck disable=SCxxxx # reason`, never left (bead `grm-rszf`).
 
+## Python: run ruff on what you edit
+
+Run `ruff check <file>` on any `.py` you edit (`ruff check .` must exit 0; rules F/E9/B only, config in `ruff.toml`). It is a bug-finder, not a formatter: never run `ruff format`. A new finding is fixed or justified with a narrow `# noqa: XXXX  # reason`, never left (bead `grm-l9s7`).
+
 ## Java: keep javac lint at zero warnings
 
 `build.gradle` compiles with `-Xlint:all` minus two Ghidra-induced categories, plus the Error Prone plugin (`grm-tl0o`) minus the style checks its comment lists, and the build is kept at **zero** warnings from both. The owner decided against `-Werror` (`grm-uv3l`), and against letting Error Prone's ERROR-severity checks fail the build (`allErrorsAsWarnings`, `grm-tl0o`), for the same reason. So nothing enforces this but you. After changing Java, run `./gradlew compileJava --rerun compileTestJava --rerun compileGdtBuilderJava --rerun 2>&1 | grep -c "warning: \["`, which must print 0. Both tools print `warning: [Name]`, so the one count covers both. Use `--rerun` because an incremental or `UP-TO-DATE` compile skips unchanged files and hides their warnings. A new warning is fixed, or suppressed with a narrow `@SuppressWarnings("xxx")` on the smallest element plus a one-line reason, never left. Disable an Error Prone check project-wide only by adding it to the `build.gradle` list with its reason.

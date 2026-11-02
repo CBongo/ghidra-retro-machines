@@ -1,0 +1,5 @@
+# ruff is run as a bug-finder, not a formatter (bead grm-l9s7). `ruff check .` must exit 0.
+# F = pyflakes (undefined names, unused imports/vars), E9 = syntax/io errors, B = bugbear.
+# No style rules (E1-E5, W) and never `ruff format`: this repo's Python keeps its own layout.
+[lint]
+select = ["F", "E9", "B"]

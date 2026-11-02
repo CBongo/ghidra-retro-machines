@@ -74,7 +74,7 @@ def main() -> int:
         "upstream_repo: https://github.com/SingleStepTests/65x02",
         f"upstream_commit: {commit}",
         f"cases_per_file: {args.n}",
-        f"source_pattern: 6502/v1/<opcode-hex>.json",
+        "source_pattern: 6502/v1/<opcode-hex>.json",
         f"file_count: {len(source_files)}",
     ]
 

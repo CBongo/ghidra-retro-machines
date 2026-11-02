@@ -132,7 +132,7 @@ def build():
     # Now that every line's address is known, fill in each line's link field
     # (address of the next line) and append the master end-of-program link.
     out = bytearray()
-    for i, (body, la) in enumerate(zip(bodies, line_addrs)):
+    for i, body in enumerate(bodies):
         next_addr = line_addrs[i + 1] if i + 1 < len(bodies) else (ml_addr - 2)
         out += bytes([next_addr & 0xFF, next_addr >> 8])
         out += body

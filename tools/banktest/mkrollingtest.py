@@ -52,7 +52,7 @@ def build():
     ])
     assert LOAD_ADDR + len(code) == KEYTAB_ADDR, "code must end exactly at the key table"
     assert KEYTAB_ADDR + len(KEYTAB) == PAYLOAD_ADDR, "key table must end at the payload"
-    ciphertext = bytes(p ^ k for p, k in zip(PLAINTEXT, KEYTAB))
+    ciphertext = bytes(p ^ k for p, k in zip(PLAINTEXT, KEYTAB, strict=True))
     return code + KEYTAB + ciphertext
 
 
