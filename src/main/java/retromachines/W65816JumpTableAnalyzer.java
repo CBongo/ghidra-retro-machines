@@ -56,6 +56,7 @@ import ghidra.program.model.scalar.Scalar;
 import ghidra.program.model.symbol.FlowType;
 import ghidra.program.model.symbol.RefType;
 import ghidra.program.model.symbol.Reference;
+import ghidra.program.model.symbol.ReferenceManager;
 import ghidra.program.model.symbol.SourceType;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.task.TaskMonitor;
@@ -237,6 +238,7 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 					laid);
 				continue;
 			}
+			referTable(program, dispatch.index(), laid);
 			RefType type = call ? RefType.COMPUTED_CALL : RefType.COMPUTED_JUMP;
 			Set<Address> unique = new LinkedHashSet<>();
 			for (long t : targets) {
@@ -270,6 +272,39 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 				" new target(s); " + warned + " target(s) already decoded at another width");
 		}
 		return true;
+	}
+
+	/**
+	 * grm-9nxj.25: a READ reference from the instruction that reads the table -- the {@code JMP/JSR
+	 * (abs,X)} itself, or a pointer dispatch's {@code LDA tbl,X} -- to where the table was laid, so
+	 * the table's XREFs name its dispatcher (before, only the targets were referenced). Not added
+	 * twice (a stock operand reference to the same address counts). Primary only when the operand
+	 * names that address: a table laid one entry in (a {@code BEQ}-guarded index, an adopted start)
+	 * keeps the operand showing its own value. {@link #unreferTable} undoes it.
+	 */
+	static void referTable(Program program, Instruction reader, Address laid) {
+		ReferenceManager refs = program.getReferenceManager();
+		for (Reference r : refs.getReferencesFrom(reader.getMinAddress())) {
+			if (r.getToAddress().equals(laid) && !r.getReferenceType().isFlow()) {
+				return;
+			}
+		}
+		Reference ref = refs.addMemoryReference(reader.getMinAddress(), laid, RefType.READ,
+			SourceType.ANALYSIS, 0);
+		if (ref.isPrimary() && (operandValue(reader) & 0xffff) != (laid.getOffset() & 0xffff)) {
+			refs.setPrimary(ref, false);
+		}
+	}
+
+	/** Removes {@link #referTable}'s reference from {@code reader} to a withdrawn table. */
+	static void unreferTable(Program program, Address reader, Address table) {
+		ReferenceManager refs = program.getReferenceManager();
+		for (Reference r : refs.getReferencesFrom(reader)) {
+			if (r.getToAddress().equals(table) && RefType.READ.equals(r.getReferenceType()) &&
+				r.getSource() == SourceType.ANALYSIS) {
+				refs.delete(r);
+			}
+		}
 	}
 
 	private static String note(Address table, int n, int targets, Map<Register, Integer> ctx,
@@ -380,6 +415,8 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 				}
 				Instruction in = listing.getInstructionAt(site);
 				if (keep == 0) {
+					Dispatch dp = in == null ? null : dispatchOf(listing, in);
+					unreferTable(program, dp == null ? site : dp.index().getMinAddress(), table);
 					AnalyzerCommentRecord.replaceOwn(program, site, CommentType.EOL,
 						COMMENT_PREFIX + table + ": withdrawn, code later decoded at its first " +
 							"entry", COMMENT_PREFIX);

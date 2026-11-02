@@ -91,6 +91,47 @@ public class W65816JumpTableArraysTest extends AbstractProgramTest {
 		assertEntryRefs(0x8104, 0x8220, 0x8230);
 	}
 
+	/**
+	 * grm-9nxj.25: the dispatch refers to its table (a primary READ on the operand), so the
+	 * table's XREFs name the dispatcher -- for both dispatches when one later cuts the other.
+	 */
+	@Test
+	public void eachDispatchReferencesItsTable() throws Exception {
+		dispatchAt("0x8000", 0x8100);
+		assertTableRef("0x8000", 0x8100, true);
+
+		dispatchAt("0x8010", 0x8104);
+		assertTableRef("0x8000", 0x8100, true);
+		assertTableRef("0x8010", 0x8104, true);
+	}
+
+	/** Removing a withdrawn table's reference leaves the target references alone. */
+	@Test
+	public void unreferTableRemovesOnlyTheTableReference() throws Exception {
+		dispatchAt("0x8000", 0x8100);
+		int before = program.getReferenceManager().getReferencesFrom(addr("0x8000")).length;
+		inTx(program, "unrefer", () -> W65816JumpTableAnalyzer.unreferTable(program,
+			addr("0x8000"), addr("0x8100")));
+		var refs = program.getReferenceManager().getReferencesFrom(addr("0x8000"));
+		assertEquals(before - 1, refs.length);
+		for (var r : refs) {
+			assertTrue(r.getReferenceType().isFlow());
+		}
+	}
+
+	private void assertTableRef(String site, long table, boolean primary) {
+		var hits = new java.util.ArrayList<ghidra.program.model.symbol.Reference>();
+		for (var r : program.getReferenceManager().getReferencesFrom(addr(site))) {
+			if (r.getToAddress().equals(addr(table)) &&
+				r.getReferenceType().equals(ghidra.program.model.symbol.RefType.READ)) {
+				hits.add(r);
+			}
+		}
+		assertEquals("READ refs " + site + " -> " + hex(table), 1, hits.size());
+		assertEquals(primary, hits.get(0).isPrimary());
+		assertEquals(0, hits.get(0).getOperandIndex());
+	}
+
 	/** {@code JMP ($table,X)} at {@code site}, disassembled, then the analyzer run over it. */
 	private void dispatchAt(String site, long table) throws Exception {
 		builder.setBytes(site,

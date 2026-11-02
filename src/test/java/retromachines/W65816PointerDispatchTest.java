@@ -95,6 +95,30 @@ public class W65816PointerDispatchTest extends AbstractProgramTest {
 		assertEquals(addr("0x80f7"), d.table());
 	}
 
+	/**
+	 * grm-9nxj.25: a table laid one entry past the operand (the BEQ guard above) is referenced,
+	 * but not as the operand's primary reference, so the operand still shows its own value.
+	 */
+	@Test
+	public void tableRefOffTheOperandIsNotPrimary() throws Exception {
+		builder.setBytes("0x8000", "ad 6e 3a f0 03 aa 7c f5 80", false);
+		builder.disassemble("0x8000", 0x20, false);
+		var site = instructionAt("0x8006");
+		inTx(program, "refer", () -> {
+			W65816JumpTableAnalyzer.referTable(program, site, addr("0x80f7"));
+			W65816JumpTableAnalyzer.referTable(program, site, addr("0x80f7"));	// idempotent
+		});
+		var refs = program.getReferenceManager().getReferencesFrom(addr("0x8006"));
+		int n = 0;
+		for (var r : refs) {
+			if (r.getToAddress().equals(addr("0x80f7"))) {
+				n++;
+				assertEquals(false, r.isPrimary());
+			}
+		}
+		assertEquals(1, n);
+	}
+
 	/** Without the guard the table starts where the operand says. */
 	@Test
 	public void unguardedIndexStartsAtTheFirstEntry() throws Exception {
