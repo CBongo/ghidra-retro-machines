@@ -2,15 +2,15 @@
 REALROM program w_ct.sfc
 REALROM sha256 06d1c2b06b716052c5596aaa0c2e5632a027fee1a9a28439e509f813c30829a9
 REALROM language 65816:LE:24:retro
-REALROM instrs 77193
+REALROM instrs 77122
 REALROM functions 1820
 REALROM ctx E0M0X0 14588
 REALROM ctx E0M0X1 1883
-REALROM ctx E0M1X0 55594
+REALROM ctx E0M1X0 55523
 REALROM ctx E0M1X1 5121
 REALROM ctx E1M1X1 7
 REALROM desync BRK 0
-REALROM desync COP 2
+REALROM desync COP 0
 REALROM desync STP 0
 REALROM desync WDM 1
 REALROM ops PHP 76
@@ -19,12 +19,11 @@ REALROM ops REP 1643
 REALROM ops RTI 8
 REALROM ops SEP 1570
 REALROM ops XCE 3
-REALROM bookmarks.error 18
+REALROM bookmarks.error 15
 REALROM bookmark      6 Bad Instruction: Multiple flows produced inconsistent instruction prototype at # - possibly due to inconsistent context (flow from #)
-REALROM bookmark      6 Bad Instruction: Failed to disassemble at # due to conflicting instruction at # (flow from #)
+REALROM bookmark      4 Bad Instruction: Failed to disassemble at # due to conflicting instruction at # (flow from #)
 REALROM bookmark      3 Bad Instruction: Disassembly not permitted within uninitialized memory block (flow from #)
 REALROM bookmark      2 Bad Instruction: Disassembly not permitted within mapped memory block (flow from #)
-REALROM bookmark      1 Bad Instruction: Could not follow disassembly flow into non-existing memory at # (flow from #)
 REALROM vector NATIVE_COP 00ffff code=no function=false
 REALROM vector NATIVE_BRK 00ff18 code=yes ctx=E0M1X1 function=true
 REALROM vector NATIVE_ABORT 00ffff code=no function=false
@@ -35,7 +34,7 @@ REALROM vector EMU_ABORT 00ffff code=no function=false
 REALROM vector EMU_NMI 00ffff code=no function=false
 REALROM vector EMU_RESET 00ff00 code=yes ctx=E1M1X1 function=true
 REALROM vector EMU_IRQBRK 00ffff code=no function=false
-REALROM calls direct=3505 decodedTarget=3501 widthDisagree=102 distinctTargets=26
+REALROM calls direct=3504 decodedTarget=3501 widthDisagree=102 distinctTargets=26
 REALROM calls.disagree c0418d E0M1X0 -> fdc000 E0M1X1
 REALROM calls.disagree c047e9 E0M1X1 -> c0e12a E0M1X0
 REALROM calls.disagree c08aac E0M1X1 -> c09ad3 E0M1X0
@@ -123,10 +122,8 @@ REALROM exitwidth c288d8 entry=M1X0 exits=M0X0
 REALROM exitwidth c28d05 entry=M1X1 exits=M0X0
 REALROM exitwidth c28d45 entry=M1X1 exits=M0X0
 REALROM exitwidth.truncated 40 of 75
-REALROM computed COP 0xe sites=1 withTargets=0
-REALROM computed COP 0xn sites=1 withTargets=0
 REALROM computed JMP (!$0x0) sites=1 withTargets=0
-REALROM computed JMP (!$0xn) sites=3 withTargets=0
+REALROM computed JMP (!$0xn) sites=2 withTargets=0
 REALROM computed JMP (!$0xn,X) sites=11 withTargets=11
 REALROM computed JSR (!$0xn,X) sites=58 withTargets=57
 REALROM computed RTI <UNSUPPORTn> sites=8 withTargets=0

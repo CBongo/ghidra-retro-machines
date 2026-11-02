@@ -297,4 +297,70 @@ final class W65816JumpTables {
 		long maxIndex = ((long) mask) << shifts;
 		return (int) Math.min(MAX_ENTRIES, maxIndex / 2 + 1);
 	}
+
+	/**
+	 * One step of the accumulator's derivation into the index (grm-9nxj.24): a left shift, an
+	 * {@code AND #mask}, or a range guard the code falls through ({@code BELOW k}: A < k after
+	 * {@code CMP #k / BCS}; {@code AT_LEAST k}: A >= k after {@code CMP #k / BCC}).
+	 */
+	record IndexOp(Kind kind, long value) {
+		enum Kind { SHIFT, MASK, BELOW, AT_LEAST }
+	}
+
+	/** The widest value set {@link #derivedCap} tracks: a 16-bit accumulator. */
+	private static final int DOMAIN = 0x10000;
+
+	/**
+	 * The entry count the index can reach when A takes {@code ops} (in program order) on its way
+	 * into X: every 16-bit value A could start with, run forward. With no bounding step this is
+	 * {@link #MAX_ENTRIES}; {@code [MASK m, SHIFT]} reproduces {@link #maskCap}. A guard that
+	 * leaves no value (code that cannot reach the dispatch) bounds nothing. Only ever a CAP: a
+	 * lower guard narrows the set but does not move the table start (CT {@code $C7:0173}'s
+	 * {@code >= $10} is folded away by its {@code AND #$0F}). Not {@link IndexGuard}: that core
+	 * keeps 8-bit contiguous ranges and has no mask, and a mask is exactly what CT needs.
+	 */
+	static int derivedCap(List<IndexOp> ops) {
+		java.util.BitSet values = new java.util.BitSet();
+		values.set(0, DOMAIN);
+		int shifts = 0;
+		for (IndexOp op : ops) {
+			java.util.BitSet next = new java.util.BitSet();
+			switch (op.kind()) {
+				case SHIFT -> {
+					shifts++;
+					continue;
+				}
+				case MASK -> {
+					// A mask after a shift applies to the shifted value; keep the order honest.
+					long m = op.value() >>> shifts;
+					for (int v = values.nextSetBit(0); v >= 0; v = values.nextSetBit(v + 1)) {
+						next.set((int) (v & m & (DOMAIN - 1)));
+					}
+				}
+				case BELOW, AT_LEAST -> {
+					long k = op.value() >>> shifts;
+					boolean below = op.kind() == IndexOp.Kind.BELOW;
+					if (shifts != 0 && (op.value() & ((1L << shifts) - 1)) != 0) {
+						return MAX_ENTRIES;	// guard on a shifted value off the grid: give up
+					}
+					next.or(values);
+					if (below) {
+						next.clear((int) Math.min(k, DOMAIN), DOMAIN);
+					}
+					else {
+						next.clear(0, (int) Math.min(k, DOMAIN));
+					}
+				}
+			}
+			if (next.isEmpty()) {
+				return MAX_ENTRIES;
+			}
+			values = next;
+		}
+		if (values.cardinality() == DOMAIN && shifts == 0) {
+			return MAX_ENTRIES;
+		}
+		long maxIndex = ((long) values.length() - 1) << shifts;
+		return (int) Math.min(MAX_ENTRIES, maxIndex / 2 + 1);
+	}
 }

@@ -206,4 +206,62 @@ public class W65816JumpTablesTest {
 		assertEquals(4, W65816JumpTables.maskCap(0x06, 0));   // AND #$06 / TAX: 0,2,4,6
 		assertEquals(W65816JumpTables.MAX_ENTRIES, W65816JumpTables.maskCap(0xff, 1));
 	}
+
+	private static W65816JumpTables.IndexOp op(W65816JumpTables.IndexOp.Kind k, long v) {
+		return new W65816JumpTables.IndexOp(k, v);
+	}
+
+	private static final W65816JumpTables.IndexOp.Kind SHIFT = W65816JumpTables.IndexOp.Kind.SHIFT;
+	private static final W65816JumpTables.IndexOp.Kind MASK = W65816JumpTables.IndexOp.Kind.MASK;
+	private static final W65816JumpTables.IndexOp.Kind BELOW = W65816JumpTables.IndexOp.Kind.BELOW;
+	private static final W65816JumpTables.IndexOp.Kind AT_LEAST =
+		W65816JumpTables.IndexOp.Kind.AT_LEAST;
+
+	/** grm-9nxj.24: the mask-then-shift chain agrees with {@link W65816JumpTables#maskCap}. */
+	@Test
+	public void derivedCapReproducesMaskCap() {
+		assertEquals(16, W65816JumpTables.derivedCap(List.of(op(MASK, 0x0f), op(SHIFT, 1))));
+		assertEquals(4, W65816JumpTables.derivedCap(List.of(op(MASK, 0x06))));
+		assertEquals(W65816JumpTables.MAX_ENTRIES, W65816JumpTables.derivedCap(List.of()));
+		assertEquals(W65816JumpTables.MAX_ENTRIES,
+			W65816JumpTables.derivedCap(List.of(op(SHIFT, 1))));
+	}
+
+	/**
+	 * CT $C7:0173: CMP #$10 / BCC / CMP #$18 / BCS / AND #$0F / ASL A -- the guards leave
+	 * $10..$17, the mask folds them to 0..7: eight entries, where the mask alone allows sixteen.
+	 */
+	@Test
+	public void derivedCapFoldsGuardsThroughTheMask() {
+		assertEquals(8, W65816JumpTables.derivedCap(List.of(op(AT_LEAST, 0x10), op(BELOW, 0x18),
+			op(MASK, 0x0f), op(SHIFT, 1))));
+	}
+
+	/** A plain upper guard: CMP #$05 / BCS / ASL A -- indices 0..4. */
+	@Test
+	public void derivedCapFromUpperGuardAlone() {
+		assertEquals(5, W65816JumpTables.derivedCap(List.of(op(BELOW, 5), op(SHIFT, 1))));
+	}
+
+	/** A lower guard alone bounds nothing above: still the uncapped count. */
+	@Test
+	public void derivedCapLowerGuardAloneIsNoCap() {
+		assertEquals(W65816JumpTables.MAX_ENTRIES,
+			W65816JumpTables.derivedCap(List.of(op(AT_LEAST, 0x10), op(SHIFT, 1))));
+	}
+
+	/** Contradictory guards (dead code) bound nothing rather than reading zero entries. */
+	@Test
+	public void derivedCapEmptySetIsNoCap() {
+		assertEquals(W65816JumpTables.MAX_ENTRIES,
+			W65816JumpTables.derivedCap(List.of(op(AT_LEAST, 0x20), op(BELOW, 0x10))));
+	}
+
+	/** A shift before the mask: ASL A / AND #$1E -- even indices up to $1E, sixteen entries. */
+	@Test
+	public void derivedCapShiftBeforeMask() {
+		assertEquals(16, W65816JumpTables.derivedCap(List.of(op(SHIFT, 1), op(MASK, 0x1e))));
+		// AND #$1F after the shift still cannot set bit 0: same sixteen.
+		assertEquals(16, W65816JumpTables.derivedCap(List.of(op(SHIFT, 1), op(MASK, 0x1f))));
+	}
 }

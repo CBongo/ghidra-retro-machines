@@ -737,27 +737,60 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 	}
 
 	/**
-	 * The entries the index can reach: 128 for an 8-bit X, fewer when {@code AND #mask} reaches X
-	 * through {@code ASL A}s and a {@code TAX} immediately before the dispatch (FF3 {@code
-	 * $C2:1B02}: {@code AND #$0F / ASL A / TAX} -- sixteen handlers).
+	 * The entries the index can reach: 128 for an 8-bit X, fewer when the accumulator's
+	 * derivation just before the {@code TAX} bounds it (FF3 {@code $C2:1B02}: {@code AND #$0F /
+	 * ASL A / TAX} -- sixteen handlers). The walk back collects {@code ASL A}, {@code AND #mask}
+	 * and range guards ({@code CMP #k} then {@code BCC}/{@code BCS} falling through toward the
+	 * dispatch), and {@link W65816JumpTables#derivedCap} runs them forward over every value A
+	 * could hold (grm-9nxj.24, CT {@code $C7:0173}: {@code CMP #$10 / BCC / CMP #$18 / BCS /
+	 * AND #$0F / ASL A} -- the guards and mask together allow 8 entries, the mask alone 16).
+	 * Besides {@code TAX}, the CT transfer {@code XBA / LDA #$00 / PHA / XBA / PHA / PLX} moves A
+	 * into X with a zero high byte ({@link #zeroExtendingTransfer}).
 	 */
 	static int indexCap(Listing listing, Instruction site) {
 		BigInteger xf = site.getValue(site.getProgram().getRegister("ctx_XF"), false);
 		int cap = xf != null && xf.intValue() == 1 ? 128 : W65816JumpTables.MAX_ENTRIES;
 		Instruction cur = site;
 		boolean sawTax = false;
-		int shifts = 0;
-		for (int i = 0; i < 8; i++) {
+		// The derivation, latest first (the walk runs backward).
+		List<W65816JumpTables.IndexOp> chain = new ArrayList<>();
+		for (int i = 0; i < 12; i++) {
 			Instruction prev = listing.getInstructionBefore(cur.getMinAddress());
 			if (prev == null || !cur.getMinAddress().equals(prev.getFallThrough()) ||
-				prev.getFlowType().isJump() || hasFlowInto(cur)) {
+				hasFlowInto(cur)) {
 				break;
 			}
+			String pmn = prev.getMnemonicString().toUpperCase(Locale.ROOT);
+			if (prev.getFlowType().isJump()) {
+				// Only a carry guard on A, met by falling through, bounds the index.
+				Instruction cmp = sawTax && (pmn.equals("BCC") || pmn.equals("BCS")) &&
+					!hasFlowInto(prev) ? fallsFrom(listing, prev) : null;
+				Long k = cmp != null &&
+					cmp.getMnemonicString().equalsIgnoreCase("CMP") ? immediate(cmp) : null;
+				if (k == null) {
+					break;
+				}
+				// BCS skips when A >= k, so falling through means A < k; BCC the reverse.
+				chain.add(new W65816JumpTables.IndexOp(pmn.equals("BCS")
+						? W65816JumpTables.IndexOp.Kind.BELOW
+						: W65816JumpTables.IndexOp.Kind.AT_LEAST, k));
+				cur = cmp;
+				continue;
+			}
 			cur = prev;
-			String mn = cur.getMnemonicString().toUpperCase(Locale.ROOT);
+			String mn = pmn;
 			String op = cur.getNumOperands() > 0 ? cur.getDefaultOperandRepresentation(0) : "";
 			if (!sawTax) {
 				if (mn.equals("TAX")) {
+					sawTax = true;
+					continue;
+				}
+				if (mn.equals("PLX")) {
+					Instruction first = zeroExtendingTransfer(listing, cur);
+					if (first == null) {
+						break;
+					}
+					cur = first;
 					sawTax = true;
 					continue;
 				}
@@ -770,23 +803,60 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 				break;
 			}
 			if (mn.equals("ASL") && (op.isEmpty() || op.equals("A"))) {
-				shifts++;
+				chain.add(new W65816JumpTables.IndexOp(W65816JumpTables.IndexOp.Kind.SHIFT, 1));
 				continue;
 			}
 			if (mn.equals("REP") || mn.equals("SEP") || mn.equals("CLC") || mn.equals("SEC")) {
 				continue;
 			}
-			if (mn.equals("AND") && op.startsWith("#")) {
-				for (Object o : cur.getOpObjects(0)) {
-					if (o instanceof Scalar s) {
-						return Math.min(cap, W65816JumpTables.maskCap((int) s.getUnsignedValue(),
-							shifts));
-					}
-				}
+			Long mask = mn.equals("AND") ? immediate(cur) : null;
+			if (mask != null) {
+				chain.add(new W65816JumpTables.IndexOp(W65816JumpTables.IndexOp.Kind.MASK, mask));
+				continue;
 			}
 			break;
 		}
-		return cap;
+		Collections.reverse(chain);
+		return Math.min(cap, W65816JumpTables.derivedCap(chain));
+	}
+
+	/** An instruction's immediate operand ({@code #k}), or null. */
+	private static Long immediate(Instruction in) {
+		if (in.getNumOperands() != 1 || !in.getDefaultOperandRepresentation(0).startsWith("#")) {
+			return null;
+		}
+		for (Object o : in.getOpObjects(0)) {
+			if (o instanceof Scalar s) {
+				return s.getUnsignedValue();
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * CT {@code $C7:016D}: {@code XBA / LDA #$00 / PHA / XBA / PHA / PLX} with an 8-bit A pushes
+	 * a zero byte then A's byte, so the 16-bit {@code PLX} loads X with A zero-extended -- a
+	 * {@code TAX} for the index's purposes. Given the {@code PLX}, returns the first {@code XBA}
+	 * when the whole sequence falls straight through with nothing else flowing in, else null.
+	 */
+	static Instruction zeroExtendingTransfer(Listing listing, Instruction plx) {
+		String[] want = { "PHA", "XBA", "PHA", "LDA", "XBA" };
+		Instruction cur = plx;
+		for (String mn : want) {
+			if (hasFlowInto(cur)) {
+				return null;
+			}
+			cur = fallsFrom(listing, cur);
+			if (cur == null || !cur.getMnemonicString().equalsIgnoreCase(mn)) {
+				return null;
+			}
+			// LDA #$00 at 8 bits: two bytes long, so PHA pushes one byte.
+			if (mn.equals("LDA") && (cur.getLength() != 2 || !Long.valueOf(0).equals(
+				immediate(cur)))) {
+				return null;
+			}
+		}
+		return cur;
 	}
 
 	private static boolean hasFlowInto(Instruction in) {

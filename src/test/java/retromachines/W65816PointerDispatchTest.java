@@ -104,6 +104,41 @@ public class W65816PointerDispatchTest extends AbstractProgramTest {
 		assertEquals(addr("0x80f5"), d.table());
 	}
 
+	/** CT $C7:0161..0174, 8-bit A, 16-bit X: guards, mask, shift, then the stack transfer. */
+	private static final String CT_C7_0173 =
+		"c9 10 90 2d c9 18 b0 0d 29 0f 0a eb a9 00 48 eb 48 fa 7c d9 0a";
+
+	private int capAt(String bytes, String jumpAt) throws Exception {
+		setContext("0x8000", "0x8fff", "ctx_MF", 1);
+		setContext("0x8000", "0x8fff", "ctx_XF", 0);
+		builder.setBytes("0x8000", bytes, false);
+		builder.disassemble("0x8000", bytes.split(" ").length, false);
+		return W65816JumpTableAnalyzer.indexCap(program.getListing(), instructionAt(jumpAt));
+	}
+
+	/**
+	 * grm-9nxj.24, CT $C7:0173: the CMP range guards folded through AND #$0F cap the table at 8
+	 * (the owner confirmed 8 entries at $0AD9); the zero-extending XBA/PHA/PLX transfer counts
+	 * as the TAX.
+	 */
+	@Test
+	public void cmpGuardsThroughStackTransferCapAtEight() throws Exception {
+		assertEquals(8, capAt(CT_C7_0173, "0x8012"));
+	}
+
+	/** The same tail entered at the AND (no guards in the straight run): the mask's sixteen. */
+	@Test
+	public void maskWithoutGuardsCapsAtSixteen() throws Exception {
+		assertEquals(16, capAt("29 0f 0a eb a9 00 48 eb 48 fa 7c d9 0a", "0x800a"));
+	}
+
+	/** A transfer that pushes a nonzero high byte is not a TAX: nothing bounds the index. */
+	@Test
+	public void transferWithNonzeroHighByteIsNotMatched() throws Exception {
+		assertEquals(W65816JumpTables.MAX_ENTRIES,
+			capAt("29 0f 0a eb a9 01 48 eb 48 fa 7c d9 0a", "0x800a"));
+	}
+
 	private void setContext(String start, String end, String field, int value) throws Exception {
 		Register register = program.getLanguage().getRegister(field);
 		assertNotNull("no context field named " + field, register);
