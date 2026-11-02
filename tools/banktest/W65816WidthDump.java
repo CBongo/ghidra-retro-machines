@@ -39,6 +39,10 @@
 //   computed             computed jumps/calls, and how many have any resolved target (item 1)
 //   ops                  PLP/RTI/PHP/REP/SEP/XCE counts (PLP/RTI restore widths the language
 //                        cannot see: item 2)
+//   dp                   direct-page coverage (grm-9nxj.22): dp-operand instructions, how many have
+//                        DP known (a program-context value on DP) and how many carry a memory
+//                        reference; TCD/PLD writers and how many leave DP known at the next
+//                        instruction; a sorted histogram of the known DP values (value=count)
 //   plp                  native PLPs paired (forward from each PHP) with the PHPs whose status
 //                        they pull: paired at one width, ambiguous (PHPs at several), unpaired;
 //                        and stale -- paired, but the fall-through decoded at another width that
@@ -67,6 +71,8 @@ import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.InstructionIterator;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.mem.MemoryAccessException;
+import ghidra.program.model.pcode.PcodeOp;
+import ghidra.program.model.pcode.Varnode;
 import ghidra.program.model.symbol.FlowType;
 import ghidra.program.model.symbol.Reference;
 
@@ -108,6 +114,7 @@ public class W65816WidthDump extends GhidraScript {
 		emitExitWidths();
 		emitComputed();
 		emitPlp();
+		emitDirectPage();
 		out.end();
 	}
 
@@ -639,6 +646,69 @@ public class W65816WidthDump extends GhidraScript {
 	}
 
 	// ------------------------------------------------------------------
+
+	/** DP coverage: see the header. Counts only, no addresses. */
+	private void emitDirectPage() {
+		Register dp = currentProgram.getRegister("DP");
+		if (dp == null) {
+			return;
+		}
+		int dpOps = 0;
+		int known = 0;
+		int withRef = 0;
+		int knownWithRef = 0;
+		Map<String, int[]> writers = new TreeMap<>();   // kind -> {sites, knownAfter}
+		Map<String, Integer> hist = new TreeMap<>();
+		InstructionIterator it = currentProgram.getListing().getInstructions(true);
+		while (it.hasNext()) {
+			Instruction in = it.next();
+			String m = in.getMnemonicString().toUpperCase();
+			BigInteger v = in.getValue(dp, false);
+			if (m.equals("TCD") || m.equals("PLD")) {
+				int[] w = writers.computeIfAbsent(m, k -> new int[2]);
+				w[0]++;
+				Instruction next = in.getNext();
+				if (next != null && in.hasFallthrough() && next.getValue(dp, false) != null) {
+					w[1]++;
+				}
+				continue;
+			}
+			if (m.equals("TDC") || m.equals("PHD")) {
+				continue;
+			}
+			boolean reads = false;
+			for (PcodeOp op : in.getPcode()) {
+				for (Varnode vn : op.getInputs()) {
+					if (vn.isRegister() && vn.getOffset() < dp.getAddress().getOffset() +
+						dp.getMinimumByteSize() &&
+						dp.getAddress().getOffset() < vn.getOffset() + vn.getSize()) {
+						reads = true;
+					}
+				}
+			}
+			if (!reads) {
+				continue;
+			}
+			dpOps++;
+			boolean ref = false;
+			for (Reference r : in.getReferencesFrom()) {
+				if (r.isMemoryReference() && !r.getReferenceType().isFlow()) {
+					ref = true;
+				}
+			}
+			withRef += ref ? 1 : 0;
+			if (v != null) {
+				known++;
+				knownWithRef += ref ? 1 : 0;
+				hist.merge(String.format("%04x", v.intValue()), 1, Integer::sum);
+			}
+		}
+		println("REALROM dp operands=" + dpOps + " known=" + known + " withRef=" + withRef +
+			" knownWithRef=" + knownWithRef);
+		writers.forEach((k, w) -> println("REALROM dp writer " + k + " sites=" + w[0] +
+			" knownAfter=" + w[1]));
+		hist.forEach((k, c) -> println("REALROM dp value " + k + "=" + c));
+	}
 
 	private String ctx(Instruction instr) {
 		return "E" + bit(instr, ctxE) + mx(instr);
