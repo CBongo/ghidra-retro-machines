@@ -215,6 +215,23 @@ Each is minutes of work and settles something specific. Highest value per unit e
   they decide whether `grm-c9d.8.8` adds a "table bytes decode as code" end test or leaves the
   table alone.
 
+### 1.13 FF2 `$00:E0D0` `JMP (!$063d)`: what does it dispatch to, and do those handlers keep DP? (`grm-9nxj.27`)
+
+- [ ] **Question.** The FF2 direct-page chain now loops back on itself. RESET keeps DP=`$0600` up
+  to `JSR $00df63` at `$8083` and loses it there. The reason is that `FUN_00df63` calls
+  `FUN_00e01a`, and `FUN_00e01a` contains the untargeted indirect jump `JMP (!$063d)` at `$E0D0`,
+  the very site this bead is trying to reach. A call summary rejects any computed jump with no
+  targets. Downstream, the main-loop body `FUN_0080a0` (which tail-jumps back to `$808e` in RESET)
+  is DP=?, and so are the other five callers of `FUN_00df63`. **Please check:** which addresses
+  does `$063d` hold when `$E0D0` runs (the routine stores `<$3d`/`<$3e` just before it)? Do those
+  handlers return to `FUN_00e01a`'s caller with the DP they were entered with, or does any of
+  them change DP?
+
+  If every handler keeps DP, the agent adds rule A: an untargeted `JMP (abs)` inside a callee
+  counts as a tail call that hands back its entry DP. If some handler changes DP, the summary stays
+  strict and E0D0 is reached another way (a caller-context walk or a per-game hint). The measured
+  chain is in the `grm-9nxj.27` comments.
+
 ---
 
 ## 2. Def-use passes on untraced titles
