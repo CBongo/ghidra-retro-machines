@@ -1505,18 +1505,7 @@ record_bless() {
 		BLESS_RECORD+=("$id: unchanged")
 		return 0
 	fi
-	moved=$(awk '
-		$1 == "REALROM" && $2 == "count" { if (FNR == NR) o[$3] = $4; else { n[$3] = $4; ord[++k] = $3 } }
-		END {
-			s = ""
-			for (i = 1; i <= k; i++) { c = ord[i]
-				if (!(c in o)) s = s sep c " (new) " n[c]
-				else if (o[c] != n[c]) s = s sep c " " o[c] " -> " n[c]
-				else continue
-				sep = ", " }
-			for (c in o) if (!(c in n)) { s = s sep c " " o[c] " (gone)"; sep = ", " }
-			print s
-		}' "$old" "$new")
+	moved=$(awk -f "$SCRIPT_DIR/lib/bless-record.awk" "$old" "$new")
 	BLESS_RECORD+=("$id: ${moved:-counts unchanged (sample/hash lines only)}")
 }
 
