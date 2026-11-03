@@ -127,6 +127,19 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 	 */
 	private static final Pushed FLOOR = new Pushed(0, UNKNOWN);
 
+	/**
+	 * The sole item of an "unwound" stack: the path has pulled below the stack it was entered
+	 * with (its own return address, and maybe more) and pushed nothing since. An RTS/RTL or
+	 * tail call from such a state cannot come back to the call's fall-through, so a call summary
+	 * ignores that exit (CT {@code $c7:0a8c}: {@code PLA PLA PLA / JMP} into an outer routine's
+	 * shared {@code ... PLD / PLB / RTL} epilogue). A push onto it restarts over {@link #FLOOR}
+	 * like a poisoned stack, so pull-adjust-push-return (inline arguments) is still no plain
+	 * return; a meet with any other stack poisons.
+	 */
+	private static final Pushed UNDER = new Pushed(-1, UNKNOWN);
+
+	private static final List<Pushed> UNWOUND = List.of(UNDER);
+
 	/** Dataflow state before an instruction. {@code stack == null} means poisoned. */
 	private record State(int dp, int a, int x, int y, List<Pushed> stack) {
 
@@ -422,7 +435,8 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 			if (s.stack != null && s.stack.size() >= STACK_LIMIT) {
 				return new State(s.dp, s.a, s.x, s.y, null);
 			}
-			List<Pushed> l = new ArrayList<>(s.stack == null ? List.of(FLOOR) : s.stack);
+			List<Pushed> l = new ArrayList<>(
+				s.stack == null || s.stack.equals(UNWOUND) ? List.of(FLOOR) : s.stack);
 			l.add(p);
 			return new State(s.dp, s.a, s.x, s.y, List.copyOf(l));
 		}
@@ -432,10 +446,10 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 			if (s.stack == null || width == UNKNOWN) {
 				return new Object[] { UNKNOWN, new State(s.dp, s.a, s.x, s.y, null) };
 			}
-			if (s.stack.isEmpty()) {
+			if (s.stack.isEmpty() || s.stack.equals(UNWOUND)) {
 				// The caller's data (its return address, say): unknown, and the stack below is
-				// no longer the entry's, so an RTS after this is not a plain return.
-				return new Object[] { UNKNOWN, new State(s.dp, s.a, s.x, s.y, null) };
+				// no longer the entry's, so an RTS after this is not a plain return to the call.
+				return new Object[] { UNKNOWN, new State(s.dp, s.a, s.x, s.y, UNWOUND) };
 			}
 			Pushed top = s.stack.get(s.stack.size() - 1);
 			if (top.width != width) {
@@ -547,8 +561,10 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 		 * constant, {@link #ENTRY_DP} (it hands back the DP it was given), or UNKNOWN. The
 		 * function is walked from a symbolic entry DP; it must reach at least one RTS/RTL, every
 		 * one with the same known-or-entry DP and an empty, unpoisoned stack (so it returns to the
-		 * caller); and it must have no other way out -- no RTI, no jump leaving its body, no jump
-		 * without a target. A callee that sets DP itself ({@code LDX #$0600 / PHX / PLD ... RTS})
+		 * caller); and it must have no other way out -- no RTI, no jump leaving its body except a
+		 * tail call (judged by its target's summary), no jump without a target. An exit taken after
+		 * pulling below the entry stack with nothing pushed since ({@link #UNDER}) is ignored: it
+		 * cannot return to the call. A callee that sets DP itself ({@code LDX #$0600 / PHX / PLD ... RTS})
 		 * so passes its constant back, and one that brackets its own DP change
 		 * ({@code PHD ... TCD ... PLD ... RTS}, FF2 {@code $04:8008}) returns the caller's DP.
 		 * Recursion is judged UNKNOWN.
@@ -577,18 +593,39 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				String mn = i.getMnemonicString().toUpperCase(Locale.ROOT);
 				var ft = i.getFlowType();
 				State st = e.getValue();
+				Address[] fl = i.getFlows();
+				int out = UNKNOWN;
+				boolean exit = false;
 				if (mn.equals("RTS") || mn.equals("RTL")) {
-					if (st.dp == UNKNOWN || st.stack == null || !st.stack.isEmpty() ||
-						(d != UNKNOWN && d != st.dp)) {
+					exit = true;
+					out = st.dp;
+				}
+				else if (!ft.isComputed() && !ft.isConditional() && fl.length == 1 &&
+					((!ft.isCall() && ft.isJump() && !callee.getBody().contains(fl[0])) ||
+						(ft.isCall() && ft.isTerminal()))) {
+					// A tail call (FF2's bank-$14 JMP thunks; or a JMP carrying Ghidra's CALL_RETURN
+					// flow override, which reads as a terminal call, FF2 $00:e660): it returns what
+					// its target returns, with the DP at the jump standing in for its entry DP.
+					exit = true;
+					int te = exitDp(fl[0]);
+					out = te == ENTRY_DP ? st.dp : te;
+				}
+				// An unwound exit has pulled its return address: it leaves for an outer frame, never
+				// the call's fall-through, so its DP is beside the point (see UNDER).
+				if (exit && UNWOUND.equals(st.stack)) {
+					continue;
+				}
+				if (exit) {
+					if (out == UNKNOWN || st.stack == null || !st.stack.isEmpty() ||
+						(d != UNKNOWN && d != out)) {
 						ok = false;
 					}
-					d = st.dp;
+					d = out;
 				}
 				else if (mn.equals("RTI")) {
 					ok = false;
 				}
 				else if (!ft.isCall() && (ft.isJump() || ft.isComputed())) {
-					Address[] fl = i.getFlows();
 					if (fl.length == 0 && !ft.isConditional()) {
 						ok = false;
 					}

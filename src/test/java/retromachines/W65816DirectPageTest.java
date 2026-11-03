@@ -279,6 +279,79 @@ public class W65816DirectPageTest extends AbstractProgramTest {
 		assertRef(0x8305, 0x1e10, RefType.WRITE);   // the body itself, seeded with $0600 then TCD
 	}
 
+	/**
+	 * FF2's {@code $14:fd00} shape: the callee is a JMP thunk (no return of its own) into a body
+	 * that brackets its DP change. The tail jump returns what its target returns.
+	 */
+	@Test
+	public void tailJumpThunkToBracketedBodyKeepsCallersDp() throws Exception {
+		lay("0x8200", "4c 00 83", "JTHUNK");   // JMP $8300
+		lay("0x8300", "0b a9 00 1e 5b 85 10 2b 60", "BODY");
+		lay("0x8000", SET_600_CALL_8200_STA, "C");
+		analyzeAll();
+		assertRef(0x8008, 0x063d, RefType.WRITE);
+	}
+
+	/** The same, with the JMP carrying a CALL_RETURN flow override (a terminal call). */
+	@Test
+	public void callReturnOverrideJmpIsATailCall() throws Exception {
+		lay("0x8200", "a9 00 00 4c 00 83", "JTHUNK");   // LDA #$0000 ; JMP $8300 (FF2 $00:e65e)
+		lay("0x8300", "0b a9 00 1e 5b 85 10 2b 60", "BODY");
+		inTx(program, "override", () -> program.getListing().getInstructionAt(addr(0x8203))
+				.setFlowOverride(ghidra.program.model.listing.FlowOverride.CALL_RETURN));
+		lay("0x8000", SET_600_CALL_8200_STA, "C");
+		analyzeAll();
+		assertRef(0x8008, 0x063d, RefType.WRITE);
+	}
+
+	/**
+	 * CT {@code $c7:0a39}: beside its plain RTS, an abort path pulls its own return address and
+	 * jumps into an outer routine's shared {@code PLD / RTL} epilogue. That path never returns to
+	 * the call, so the RTS alone decides the summary.
+	 */
+	@Test
+	public void unwindingAbortPathDoesNotSpoilTheSummary() throws Exception {
+		lay("0x8400", "2b 6b", "EPI");   // PLD ; RTL
+		// BCS $8203 ; RTS ; PLA ; PLA ; PLA ; JMP $8400
+		lay("0x8200", "b0 01 60 68 68 68 4c 00 84", "S");
+		lay("0x8000", SET_600_CALL_8200_STA, "C");
+		analyzeAll();
+		assertRef(0x8008, 0x063d, RefType.WRITE);
+	}
+
+	/** With only the unwinding exit there is no plain return to summarize. */
+	@Test
+	public void onlyAnUnwindingExitHasNoSummary() throws Exception {
+		lay("0x8400", "2b 6b", "EPI");
+		lay("0x8200", "68 68 4c 00 84", "S");   // PLA ; PLA ; JMP $8400
+		lay("0x8000", SET_600_CALL_8200_STA, "C");
+		analyzeAll();
+		assertNull(dataRef(0x8008));
+	}
+
+	/**
+	 * Pull the return address, push it back (inline arguments, adjusted): no plain return, so a
+	 * DP the callee sets is not passed back.
+	 */
+	@Test
+	public void repushedReturnAddressHasNoSummary() throws Exception {
+		// PLA ; LDX #$0700 ; PHX ; PLD ; PHA ; RTS
+		lay("0x8200", "68 a2 00 07 da 2b 48 60", "S");
+		lay("0x8000", SET_600_CALL_8200_STA, "C");
+		analyzeAll();
+		assertNull(dataRef(0x8008));
+	}
+
+	/** A tail jump to a body that sets a constant DP returns that constant. */
+	@Test
+	public void tailJumpThunkToConstantBodyReturnsConstant() throws Exception {
+		lay("0x8200", "4c 00 83", "JTHUNK");
+		lay("0x8300", "a2 00 07 da 2b 60", "BODY");   // LDX #$0700 ; PHX ; PLD ; RTS
+		lay("0x8000", SET_600_CALL_8200_STA, "C");
+		analyzeAll();
+		assertRef(0x8008, 0x073d, RefType.WRITE);
+	}
+
 	/** A path that skips the PLD returns the callee's own DP, not the caller's: unknown. */
 	@Test
 	public void bracketSkippedOnOnePathIsUnknown() throws Exception {

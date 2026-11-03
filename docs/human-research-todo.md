@@ -215,19 +215,6 @@ Each is minutes of work and settles something specific. Highest value per unit e
   they decide whether `grm-c9d.8.8` adds a "table bytes decode as code" end test or leaves the
   table alone.
 
-### 1.12 FF2 `$01:82bb`: what does it do to the direct page? (`grm-9nxj.27`)
-
-- [ ] **Question.** 1.11's answer is now handled: the analyzer keeps DP=`$0600` across
-  `JSL $048000` at `$8035`. RESET now loses DP one call later, at `JSL $01801c` (`$8039`).
-  `$01:801c` is another thunk (`JSR $82bb` / `RTL`, in a thunk table at `$01:800c`-`$01:8027`).
-  What does `$01:82bb` do to DP? Does it return with the DP it was given (and if so, what is the
-  analyzer missing, such as a `PLD` in a helper it jumps to, a `TCD` from a saved value, or an
-  early exit), or does it really leave a different DP? After `$8039`, RESET still calls `$85fa`,
-  `$01:800c`, `$8290`, `$92d0`, `$15:c23e`, `$8302` and `$f1aa` before `$8083`. Any of those
-  that visibly changes DP is worth a note too. `$01:800c` is a thunk to `$01:9598`, and `$85fa`
-  calls `$04:8004`, which thunks to `$04:8107` (a `PHD` ... `LDX #$1e00 / PHX / PLD` body like
-  `$04:8008`).
-
 ---
 
 ## 2. Def-use passes on untraced titles
@@ -529,3 +516,4 @@ Agents don't write into your ROM library or other personal directories.
 | Post the fall-through-into-overlay issue (`grm-p3dy`) now that 12.2 carries GP-7010? | **Posted 2026-10-26 as [ghidra#10030](https://github.com/NationalSecurityAgency/ghidra/issues/10030).** 12.2 did not make it moot: `callReturnFlowOverrideDoesNotRescueIt` still passes, so a fall-through override into an overlay still makes the function undecompilable. Waiting on a maintainer, tracked in section 5's table; the RFC addendum and #10030's link went to #9349 the same day. Do not start a local `flow.cc` patch before the answer | `grm-p3dy` |
 | Install ruff, the Python linter? | **Done (owner, 2026-11-02):** `ruff --version` in git bash prints `0.17.1`. `grm-l9s7` (ruff audit of tracked Python + the standing "ruff what you edit" rule) is unblocked. | `grm-o8id` **closed**; `grm-l9s7` |
 | FF2 `$00:E0D0`: which RESET callee before `$8083` loses the direct page? (1.11) | **`JSL $048000` at `$8035` (owner, 2026-11-02).** The UI shows DP=`$0600` after the `PLD` at `$8025` and UNKNOWN after the call at `$8035`. `$04:8000` is a JSR thunk to `$04:8008`, which saves DP with `PHD` at `$04:8009`, sets DP=`$1E00` at `$04:801C` for most of its body, and restores it with `PLD` at `$04:8104` just before it returns. So it hands back the DP it was given. The analyzer had only two call summaries, "visibly leaves DP alone" (no `TCD`) and "returns one constant", and this callee fits neither. It now also summarizes a callee as "returns its entry DP", walking it from a symbolic entry DP. That needs no caller context, so **no context-sensitive summary is needed.** Whether all six callers of `FUN_00df63` agree was left to the analyzer to measure (see the bead). | `grm-9nxj.27` |
+| FF2 `$01:82bb`: what does it do to the direct page? (1.12) | **Answered by the agent, 2026-11-03, before the owner got to it.** `$01:82bb` is `JSL $14:fd00`, and `$14:fd00` is a `JMP` thunk with no return of its own: the analyzer's call summary rejected any jump leaving the body. It now treats an unconditional jump out (and a `JMP` carrying Ghidra's CALL_RETURN override, FF2 `$00:e65e`) as a tail call returning its target's summary, and ignores an exit taken after the path pulled its own return address (CT `$c7:0a8c`, `PLA PLA PLA / JMP` into an outer routine's `PLD / RTL` epilogue). FF2 RESET now keeps `$0600` up to `JSR $00df63` at `$8083`; `tools/banktest/DpLossProbe.java` finds such losses from the stamps. | `grm-9nxj.27` |
