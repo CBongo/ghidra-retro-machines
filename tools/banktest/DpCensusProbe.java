@@ -1,7 +1,9 @@
 // Narrow probe (grm-9nxj.22): 65816 direct-page census. Classifies every DP writer (TCD/PLD) as
 // constant / PHD-bracket / unknown by a local backward scan, histograms the constant values, and
-// buckets dp-operand references by target page and type. With GRM_DP_SITES=<addr>,... it also lists
-// the next 24 instructions at each site with the DP context value and every outgoing reference.
+// buckets dp-operand references by target page and type, and (grm-9nxj.26) counts functions whose
+// every entry carries one known DP. With GRM_DP_SITES=<addr>,... it also lists, per site, the
+// containing function's entry refs with the DP at each source, then the next 24 instructions with
+// the DP context value and every outgoing reference.
 // Read-only; every line is prefixed "DPC ". The deterministic counts live in W65816WidthDump's
 // "REALROM dp" section; this adds the per-site detail the golden deliberately leaves out.
 //@category RetroMachines.Test
@@ -80,6 +82,7 @@ public class DpCensusProbe extends GhidraScript {
 		println("DPC dpValueHistogram=" + hist);
 		println("DPC dpOperandInstrs=" + dpOps + " withMemRef=" + dpOpsWithRef + " noMemRef=" + dpOpsNoRef);
 		println("DPC dpOperandRefTargets=" + refKinds);
+		entryCensus(dp);
 		String sites = System.getenv("GRM_DP_SITES");
 		if (sites == null || sites.isBlank()) return;
 		for (String s : sites.split(",")) {
@@ -90,6 +93,19 @@ public class DpCensusProbe extends GhidraScript {
 			Instruction in = l.getInstructionContaining(a);
 			if (in == null && (in = l.getInstructionAfter(a)) == null) continue;
 			println("DPC site " + s + " (" + a + "): next " + SITE_WINDOW + " instructions");
+			Function sf = currentProgram.getFunctionManager().getFunctionContaining(a);
+			if (sf == null) println("DPC   in no function");
+			else {
+				println("DPC   in " + sf.getName() + " @" + sf.getEntryPoint() + (currentProgram
+					.getSymbolTable().isExternalEntryPoint(sf.getEntryPoint()) ? " (external entry)" : ""));
+				for (Reference r : currentProgram.getReferenceManager().getReferencesTo(sf.getEntryPoint())) {
+					RegisterValue v = currentProgram.getProgramContext().getRegisterValue(dp, r.getFromAddress());
+					Function cf = currentProgram.getFunctionManager().getFunctionContaining(r.getFromAddress());
+					println("DPC     entry ref " + r.getReferenceType() + " from " + r.getFromAddress() + " in " +
+						(cf == null ? "<none>" : cf.getName() + "@" + cf.getEntryPoint()) + " DP=" +
+						(v != null && v.hasValue() ? String.format("%04x", v.getUnsignedValue()) : "?"));
+				}
+			}
 			for (int i = 0; i < SITE_WINDOW && in != null; i++, in = in.getNext()) {
 				RegisterValue v = currentProgram.getProgramContext().getRegisterValue(dp, in.getAddress());
 				StringBuilder sb = new StringBuilder("DPC   " + in.getAddress() + " " + in + " DP=" +
@@ -103,6 +119,57 @@ public class DpCensusProbe extends GhidraScript {
 	}
 
 	private static final int SITE_WINDOW = 24;
+
+	/**
+	 * grm-9nxj.26 measurement: classifies each function by the DP its entries see, read from the
+	 * stamps already laid at the source instruction of every flow reference into its entry point.
+	 * strict = a data reference (pointer table, vector) also counts as an unknown entry; lenient =
+	 * data references are ignored. "unlock" = dp operands in an agreeing function with DP unknown.
+	 */
+	private void entryCensus(Register dp) {
+		Map<String, Integer> strict = new TreeMap<>(), lenient = new TreeMap<>();
+		int unlockStrict = 0, unlockLenient = 0;
+		ReferenceManager rm = currentProgram.getReferenceManager();
+		for (Function f : currentProgram.getFunctionManager().getFunctions(true)) {
+			Set<Integer> vals = new HashSet<>();
+			boolean unknownFlow = false, data = false;
+			int flows = 0;
+			for (Reference r : rm.getReferencesTo(f.getEntryPoint())) {
+				if (!r.getReferenceType().isFlow()) { data = true; continue; }
+				flows++;
+				RegisterValue v = currentProgram.getProgramContext().getRegisterValue(dp, r.getFromAddress());
+				if (v == null || !v.hasValue()) unknownFlow = true;
+				else vals.add(v.getUnsignedValue().intValue());
+			}
+			String le = flows == 0 ? "noFlowEntry" : unknownFlow ? "unknownCaller" :
+				vals.size() > 1 ? "disagree" : "agree";
+			String st = data && le.equals("agree") ? "dataRef" : le;
+			bump(lenient, le);
+			bump(strict, st);
+			if (le.equals("agree")) {
+				int n = unknownDpOperands(f, dp);
+				unlockLenient += n;
+				if (st.equals("agree")) unlockStrict += n;
+			}
+		}
+		println("DPC entry strict=" + strict + " unlockOperands=" + unlockStrict);
+		println("DPC entry lenient=" + lenient + " unlockOperands=" + unlockLenient);
+	}
+
+	private int unknownDpOperands(Function f, Register dp) {
+		int n = 0;
+		for (Instruction in : currentProgram.getListing().getInstructions(f.getBody(), true)) {
+			String m = in.getMnemonicString().toUpperCase();
+			if (m.equals("TDC") || m.equals("PHD")) continue;
+			boolean reads = false;
+			for (PcodeOp op : in.getPcode())
+				for (Varnode v : op.getInputs()) if (isDp(v, dp)) reads = true;
+			if (!reads) continue;
+			RegisterValue v = currentProgram.getProgramContext().getRegisterValue(dp, in.getAddress());
+			if (v == null || !v.hasValue()) n++;
+		}
+		return n;
+	}
 
 	private boolean isDp(Varnode v, Register dp) {
 		if (v == null || !v.isRegister()) return false;

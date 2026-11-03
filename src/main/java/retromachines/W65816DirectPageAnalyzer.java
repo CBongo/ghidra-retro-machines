@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -31,6 +32,7 @@ import ghidra.app.services.AnalysisPriority;
 import ghidra.app.services.AnalyzerType;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.program.model.address.Address;
+import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.address.AddressSetView;
 import ghidra.program.model.lang.Register;
 import ghidra.program.model.listing.ContextChangeException;
@@ -84,8 +86,13 @@ import ghidra.util.task.TaskMonitor;
  * memory reference to that address. The index register is not applied: indexed forms reference
  * the base.
  *
- * <p><b>Limits (slice 1).</b> Intraprocedural: DP at a function's entry is unknown, so a callee
- * that relies on its caller's DP gets nothing; a {@code PHD} whose {@code PLD} is in another
+ * <p><b>Entry DP (slice 2, grm-9nxj.26).</b> A function's walk starts with DP unknown unless every
+ * way into its entry is known to carry the same DP (see {@code Walker.solve}); each run solves
+ * the whole program, since an entry's DP depends on callers outside the analyzed set.
+ *
+ * <p><b>Limits.</b> A function reached from anywhere unknown -- an unresolved computed jump, a
+ * vector, a pointer table no dispatch resolved, a recursive self-call -- keeps an unknown
+ * entry; a {@code PHD} whose {@code PLD} is in another
  * function is not paired; transfers ({@code TAX}, {@code TXA}...) and arithmetic forget the
  * constant; calls forget A/X/Y; a callee is assumed to preserve DP unless its body visibly
  * changes it. Stamps from an earlier run are not cleared where DP later becomes unknown.
@@ -106,13 +113,48 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 	/** One pushed item: its width in bytes and its value, or {@link #UNKNOWN}. */
 	private record Pushed(int width, int value) {}
 
+	/**
+	 * The bottom of a stack restarted after poisoning: what lies beneath is unknown and is not
+	 * the entry's, so a pop into it poisons (no pull has width 0) and a stack holding it is never
+	 * the empty stack a plain RTS needs.
+	 */
+	private static final Pushed FLOOR = new Pushed(0, UNKNOWN);
+
 	/** Dataflow state before an instruction. {@code stack == null} means poisoned. */
 	private record State(int dp, int a, int x, int y, List<Pushed> stack) {
 
 		State meet(State o) {
 			return new State(dp == o.dp ? dp : UNKNOWN, a == o.a ? a : UNKNOWN,
-				x == o.x ? x : UNKNOWN, y == o.y ? y : UNKNOWN,
-				stack != null && stack.equals(o.stack) ? stack : null);
+				x == o.x ? x : UNKNOWN, y == o.y ? y : UNKNOWN, meetStack(stack, o.stack));
+		}
+
+		/**
+		 * The items both stacks agree on, counted from the top, over a {@link #FLOOR} when they
+		 * differ beneath that; poisoned when not even the top agrees.
+		 */
+		private static List<Pushed> meetStack(List<Pushed> p, List<Pushed> q) {
+			if (p == null || q == null) {
+				return null;
+			}
+			if (p.equals(q)) {
+				return p;
+			}
+			int k = 0;
+			while (k < p.size() && k < q.size() &&
+				p.get(p.size() - 1 - k).equals(q.get(q.size() - 1 - k))) {
+				k++;
+			}
+			if (k == 0) {
+				return null;
+			}
+			List<Pushed> top = p.subList(p.size() - k, p.size());
+			if (top.get(0).equals(FLOOR)) {
+				return List.copyOf(top);
+			}
+			List<Pushed> out = new ArrayList<>(k + 1);
+			out.add(FLOOR);
+			out.addAll(top);
+			return List.copyOf(out);
 		}
 	}
 
@@ -136,13 +178,10 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 		Walker w = new Walker(program);
 		int stamped = 0;
 		int refs = 0;
-		Set<Function> seen = new HashSet<>();
-		for (Function f : program.getFunctionManager().getFunctions(set, true)) {
+		// Program-wide, not just `set`: a function's entry DP depends on its callers anywhere.
+		Map<Function, Map<Address, State>> all = w.solve(monitor);
+		for (Map<Address, State> states : all.values()) {
 			monitor.checkCancelled();
-			if (!seen.add(f)) {
-				continue;
-			}
-			Map<Address, State> states = w.walk(f);
 			for (Map.Entry<Address, State> e : states.entrySet()) {
 				int dp = e.getValue().dp;
 				if (dp == UNKNOWN) {
@@ -171,6 +210,8 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 		private final Register ctxM;
 		private final Register ctxX;
 		private final Map<Address, Boolean> preserves = new HashMap<>();
+		private final Map<Address, Integer> exitDp = new HashMap<>();
+		private final Set<Address> exitInProgress = new HashSet<>();
 
 		Walker(Program program) {
 			this.program = program;
@@ -181,10 +222,135 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 			ctxX = program.getRegister("ctx_XF");
 		}
 
-		Map<Address, State> walk(Function f) {
+		/**
+		 * Slice 2 (grm-9nxj.26): every function's walk, with its entry DP seeded from its
+		 * entries. A function is seeded once, with DP d, when every way in is known to carry d:
+		 * each flow reference to its entry (call, jump, branch, computed jump) and a fall-through
+		 * from the instruction before it, judged at the source in the source function's walk (a
+		 * call carries the DP before it; anything else the DP after it). An external entry point,
+		 * a source outside every function or not reached by its walk, a data reference to the
+		 * entry (a pointer or vector) unless a computed jump also resolved to it, and disagreeing
+		 * or unknown sources all leave it UNKNOWN. Seeding only ever turns UNKNOWN into a value,
+		 * and a source's value can only gain from it, so the worklist terminates.
+		 */
+		Map<Function, Map<Address, State>> solve(TaskMonitor monitor) throws CancelledException {
+			var fm = program.getFunctionManager();
+			Map<Function, Map<Address, State>> states = new LinkedHashMap<>();
+			for (Function f : fm.getFunctions(true)) {
+				monitor.checkCancelled();
+				states.put(f, walk(f, ENTRY));
+			}
+			// Sources into each entry, and which functions' seeds read each function's states.
+			Map<Function, List<Address>> sources = new HashMap<>();
+			Map<Function, Set<Function>> dependents = new HashMap<>();
+			Set<Function> blocked = new HashSet<>();
+			for (Function g : states.keySet()) {
+				monitor.checkCancelled();
+				List<Address> src = entrySources(g);
+				if (src == null) {
+					blocked.add(g);
+					continue;
+				}
+				sources.put(g, src);
+				for (Address s : src) {
+					for (Function f : functionsAt(s)) {
+						dependents.computeIfAbsent(f, k -> new LinkedHashSet<>()).add(g);
+					}
+				}
+			}
+			ArrayDeque<Function> work = new ArrayDeque<>(sources.keySet());
+			Set<Function> queued = new HashSet<>(work);
+			Set<Function> seeded = new HashSet<>();   // each at most once: what bounds the loop
+			while (!work.isEmpty()) {
+				monitor.checkCancelled();
+				Function g = work.poll();
+				queued.remove(g);
+				if (seeded.contains(g)) {
+					continue;
+				}
+				int d = entryDp(sources.get(g), states);
+				if (d == UNKNOWN) {
+					continue;
+				}
+				seeded.add(g);
+				states.put(g, walk(g, new State(d, UNKNOWN, UNKNOWN, UNKNOWN, List.of())));
+				for (Function c : dependents.getOrDefault(g, Set.of())) {
+					if (!blocked.contains(c) && queued.add(c)) {
+						work.add(c);
+					}
+				}
+			}
+			return states;
+		}
+
+		/** Every function whose body holds {@code a} (bodies may overlap). */
+		private List<Function> functionsAt(Address a) {
+			List<Function> out = new ArrayList<>();
+			program.getFunctionManager().getFunctionsOverlapping(new AddressSet(a))
+					.forEachRemaining(out::add);
+			return out;
+		}
+
+		/** The addresses control enters {@code g}'s entry from, or null if one is unknowable. */
+		private List<Address> entrySources(Function g) {
+			Address entry = g.getEntryPoint();
+			if (program.getSymbolTable().isExternalEntryPoint(entry)) {
+				return null;
+			}
+			List<Address> out = new ArrayList<>();
+			boolean data = false;
+			boolean computed = false;
+			for (Reference r : program.getReferenceManager().getReferencesTo(entry)) {
+				RefType t = r.getReferenceType();
+				if (!t.isFlow()) {
+					data = true;
+				}
+				else {
+					computed |= t.isComputed();
+					out.add(r.getFromAddress());
+				}
+			}
+			if (data && !computed) {
+				return null;
+			}
+			Instruction before = program.getListing().getInstructionBefore(entry);
+			if (before != null && entry.equals(before.getFallThrough())) {
+				out.add(before.getMinAddress());
+			}
+			return out.isEmpty() ? null : out;
+		}
+
+		private int entryDp(List<Address> src, Map<Function, Map<Address, State>> states) {
+			int d = UNKNOWN;
+			for (Address s : src) {
+				Instruction ins = program.getListing().getInstructionAt(s);
+				if (ins == null) {
+					return UNKNOWN;
+				}
+				boolean any = false;
+				for (Function f : functionsAt(s)) {
+					State st = states.get(f) == null ? null : states.get(f).get(s);
+					if (st == null) {
+						return UNKNOWN;
+					}
+					int v = ins.getFlowType().isCall() ? st.dp : transfer(ins, st).dp;
+					if (v == UNKNOWN || (d != UNKNOWN && v != d)) {
+						return UNKNOWN;
+					}
+					d = v;
+					any = true;
+				}
+				if (!any) {
+					return UNKNOWN;
+				}
+			}
+			return d;
+		}
+
+		Map<Address, State> walk(Function f, State entry) {
 			Map<Address, State> in = new LinkedHashMap<>();
 			ArrayDeque<Address> work = new ArrayDeque<>();
-			in.put(f.getEntryPoint(), ENTRY);
+			in.put(f.getEntryPoint(), entry);
 			work.add(f.getEntryPoint());
 			int steps = 0;
 			while (!work.isEmpty() && steps++ < STEP_LIMIT) {
@@ -239,11 +405,17 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 			return v == null ? UNKNOWN : (v.signum() == 0 ? 2 : 1);
 		}
 
+		/**
+		 * A push onto a poisoned stack starts a fresh one: whatever lies beneath is unknown either
+		 * way (a pop past the bottom yields UNKNOWN), but this item pulls back exactly. Without
+		 * it, a merge with one poisoned path (FF2's RESET loops back to its entry after TXS)
+		 * would lose every later PHX/PLD pair too.
+		 */
 		private static State push(State s, Pushed p) {
-			if (s.stack == null || s.stack.size() >= STACK_LIMIT) {
+			if (s.stack != null && s.stack.size() >= STACK_LIMIT) {
 				return new State(s.dp, s.a, s.x, s.y, null);
 			}
-			List<Pushed> l = new ArrayList<>(s.stack);
+			List<Pushed> l = new ArrayList<>(s.stack == null ? List.of(FLOOR) : s.stack);
 			l.add(p);
 			return new State(s.dp, s.a, s.x, s.y, List.copyOf(l));
 		}
@@ -254,7 +426,9 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				return new Object[] { UNKNOWN, new State(s.dp, s.a, s.x, s.y, null) };
 			}
 			if (s.stack.isEmpty()) {
-				return new Object[] { UNKNOWN, s };   // the caller's data
+				// The caller's data (its return address, say): unknown, and the stack below is
+				// no longer the entry's, so an RTS after this is not a plain return.
+				return new Object[] { UNKNOWN, new State(s.dp, s.a, s.x, s.y, null) };
 			}
 			Pushed top = s.stack.get(s.stack.size() - 1);
 			if (top.width != width) {
@@ -348,8 +522,71 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 
 		private State afterCall(Instruction ins, State s) {
 			Address[] flows = ins.getFlows();
-			boolean keeps = flows.length == 1 && preserves(flows[0]);
-			return new State(keeps ? s.dp : UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN, s.stack);
+			int dp = UNKNOWN;
+			if (flows.length == 1) {
+				dp = preserves(flows[0]) ? s.dp : exitDp(flows[0]);
+			}
+			return new State(dp, UNKNOWN, UNKNOWN, UNKNOWN, s.stack);
+		}
+
+		/**
+		 * The DP a call to {@code target} returns with whatever DP it was entered with, or
+		 * UNKNOWN: the function's walk from an unknown entry must reach at least one RTS/RTL, every
+		 * one with the same known DP and an empty, unpoisoned stack (so it returns to the caller);
+		 * and it must have no other way out -- no RTI, no jump leaving its body, no jump without a
+		 * target. A callee that sets DP itself ({@code LDX #$0600 / PHX / PLD ... RTS}) so passes
+		 * its constant back. Recursion is judged UNKNOWN.
+		 */
+		private int exitDp(Address target) {
+			Integer known = exitDp.get(target);
+			if (known != null) {
+				return known;
+			}
+			Function callee = program.getFunctionManager().getFunctionAt(target);
+			if (callee == null || !exitInProgress.add(target)) {
+				return UNKNOWN;
+			}
+			int d = UNKNOWN;
+			boolean ok = true;
+			Map<Address, State> states = walk(callee, ENTRY);
+			if (states.isEmpty()) {
+				ok = false;
+			}
+			for (Map.Entry<Address, State> e : states.entrySet()) {
+				Instruction i = program.getListing().getInstructionAt(e.getKey());
+				if (i == null) {
+					continue;
+				}
+				String mn = i.getMnemonicString().toUpperCase(Locale.ROOT);
+				var ft = i.getFlowType();
+				State st = e.getValue();
+				if (mn.equals("RTS") || mn.equals("RTL")) {
+					if (st.dp == UNKNOWN || st.stack == null || !st.stack.isEmpty() ||
+						(d != UNKNOWN && d != st.dp)) {
+						ok = false;
+					}
+					d = st.dp;
+				}
+				else if (mn.equals("RTI")) {
+					ok = false;
+				}
+				else if (!ft.isCall() && (ft.isJump() || ft.isComputed())) {
+					Address[] fl = i.getFlows();
+					if (fl.length == 0 && !ft.isConditional()) {
+						ok = false;
+					}
+					for (Address t : fl) {
+						ok &= callee.getBody().contains(t);
+					}
+				}
+				if (!ok) {
+					break;
+				}
+			}
+			exitInProgress.remove(target);
+			int result = ok ? d : UNKNOWN;
+			exitDp.put(target, result);
+			return result;
 		}
 
 		/** Whether a call to {@code target} leaves DP alone, as far as its code visibly shows. */

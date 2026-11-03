@@ -125,8 +125,8 @@ REALROM computed JMP (!$0xn,X) sites=14 withTargets=14
 REALROM computed JSR (!$0xn,X) sites=3 withTargets=3
 REALROM computed RTI <UNSUPPORTn> sites=1 withTargets=0
 REALROM plp sites=173 paired=166 ambiguous=0 unpaired=7 stale=0
-REALROM dp operands=2561 known=5 withRef=5 knownWithRef=5
+REALROM dp operands=2561 known=115 withRef=115 knownWithRef=115
 REALROM dp writer PLD sites=1 knownAfter=0
 REALROM dp writer TCD sites=2 knownAfter=2
-REALROM dp value 0000=5
+REALROM dp value 0000=115
 === REALROM END ===

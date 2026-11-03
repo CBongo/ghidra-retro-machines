@@ -545,8 +545,8 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 	 * $03:869C}).</li>
 	 * </ul>
 	 * {@code JMP (abs)} reads its pointer from bank 0 and jumps within the program bank; a
-	 * direct-page store matches by its low byte, since D is not known (FF2 stores {@code $3D}
-	 * and jumps through {@code ($063D)}). An abs table is taken to be in the program bank.
+	 * direct-page store matches DP + dp exactly where DP is stamped there, and otherwise by its
+	 * low byte (FF2 stores {@code $3D} and jumps through {@code ($063D)}). An abs table is taken to be in the program bank.
 	 * Anything else -- another write to a pointer byte, a source that is not an X-indexed load
 	 * (or an immediate, for the bank byte), X changing between the loads -- is not matched.
 	 */
@@ -649,8 +649,10 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 
 	/**
 	 * Which pointer byte (0..bytes-1) a plain dp/abs store writes first, or -1. A direct-page
-	 * store is matched by its LOW BYTE only, because DP is not tracked: a stand-in until
-	 * grm-9nxj.22 knows DP's value here and can require DP+dp == ptr exactly.
+	 * store is matched exactly, DP + dp == ptr, where {@link W65816DirectPageAnalyzer} has
+	 * stamped DP at it (grm-9nxj.26). Where it has not -- including the usual first pass, since
+	 * this analyzer runs before that one and resolves each dispatch once -- it falls back to
+	 * matching the LOW BYTE only.
 	 */
 	private static int pointerByte(Instruction st, long ptr, int bytes) {
 		String op = st.getDefaultOperandRepresentation(0);
@@ -661,7 +663,16 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 		if (v < 0) {
 			return -1;
 		}
-		long k = op.startsWith("<") ? (v & 0xff) - (ptr & 0xff) : (v & 0xffff) - ptr;
+		long k;
+		if (op.startsWith("<")) {
+			Register dpReg = st.getProgram().getRegister("DP");
+			BigInteger dp = dpReg == null ? null : st.getValue(dpReg, false);
+			k = dp != null ? ((dp.longValue() + (v & 0xff)) & 0xffff) - ptr
+				: (v & 0xff) - (ptr & 0xff);
+		}
+		else {
+			k = (v & 0xffff) - ptr;
+		}
 		return k >= 0 && k < bytes ? (int) k : -1;
 	}
 
