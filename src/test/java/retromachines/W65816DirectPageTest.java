@@ -232,14 +232,99 @@ public class W65816DirectPageTest extends AbstractProgramTest {
 		assertNull(dataRef(0x8200));
 	}
 
-	/** One caller with an unknown DP is enough to leave the callee unknown. */
+	/**
+	 * grm-9nxj.28: a caller with an unknown DP is ignored, so the one known caller seeds the
+	 * callee, and the entry carries a warning saying a way in was ignored.
+	 */
 	@Test
-	public void unknownCallerLeavesEntryUnknown() throws Exception {
+	public void unknownCallerIsIgnoredWithAWarning() throws Exception {
 		lay("0x8200", "85 3d 60", "S");
 		lay("0x8000", SET_600_CALL_8200, "C");
 		lay("0x8100", "20 00 82 60", "D");   // JSR $8200 with D's own (unknown) entry DP
 		analyzeAll();
+		assertEquals(Integer.valueOf(0x600), dpAt(0x8200));
+		assertRef(0x8200, 0x063d, RefType.WRITE);
+		assertEquals("DP assumed $0600 at entry: 1 of 2 ways in carry it, 1 with unknown DP ignored",
+			dpWarning(0x8200));
+	}
+
+	/** Only unknown callers: nothing to seed from. */
+	@Test
+	public void onlyUnknownCallersLeaveEntryUnknown() throws Exception {
+		lay("0x8200", "85 3d 60", "S");
+		lay("0x8100", "20 00 82 60", "D");
+		analyzeAll();
 		assertNull(dpAt(0x8200));
+		assertNull(dpWarning(0x8200));
+	}
+
+	/** Every caller known and agreeing: seeded, and no warning. */
+	@Test
+	public void allKnownCallersSeedWithoutWarning() throws Exception {
+		lay("0x8200", "85 3d 60", "S");
+		lay("0x8000", SET_600_CALL_8200, "C");
+		analyzeAll();
+		assertEquals(Integer.valueOf(0x600), dpAt(0x8200));
+		assertNull(dpWarning(0x8200));
+	}
+
+	/**
+	 * FF2's main-loop shape: the routine is called from a known-DP caller and also jumps back to
+	 * its own entry. The self-jump is unknown until the routine is seeded, then agrees.
+	 */
+	@Test
+	public void loopBackToOwnEntryDoesNotBlockTheSeed() throws Exception {
+		lay("0x8200", "85 3d 4c 00 82", "S");   // STA <$3d ; JMP $8200
+		lay("0x8000", SET_600_CALL_8200, "C");
+		analyzeAll();
+		assertRef(0x8200, 0x063d, RefType.WRITE);
+		assertNull("the self-jump agrees once seeded", dpWarning(0x8200));
+	}
+
+	/**
+	 * A known caller that is only known because of a seed still counts: C (DP $0600) seeds M,
+	 * which then calls S; S's other caller is unknown and ignored.
+	 */
+	@Test
+	public void seededCallerSeedsItsCallee() throws Exception {
+		lay("0x8300", "85 3d 60", "S");
+		lay("0x8200", "20 00 83 60", "M");   // JSR $8300
+		lay("0x8100", "20 00 83 60", "D");   // JSR $8300, DP unknown
+		lay("0x8000", SET_600_CALL_8200, "C");
+		analyzeAll();
+		assertRef(0x8300, 0x063d, RefType.WRITE);
+	}
+
+	/** Known callers that disagree: left unknown, with a conflict warning naming both. */
+	@Test
+	public void disagreeingCallersGetAConflictWarning() throws Exception {
+		lay("0x8200", "85 3d 60", "S");
+		lay("0x8000", SET_600_CALL_8200, "C");
+		lay("0x8100", "a2 00 07 da 2b 20 00 82 60", "D");
+		analyzeAll();
+		assertNull(dpAt(0x8200));
+		assertEquals("DP conflict at entry: ways in carry $0600, $0700; entry DP left unknown",
+			dpWarning(0x8200));
+	}
+
+	/** Re-analysis does not stack a second warning on the same entry. */
+	@Test
+	public void reanalysisReplacesTheWarning() throws Exception {
+		lay("0x8200", "85 3d 60", "S");
+		lay("0x8000", SET_600_CALL_8200, "C");
+		lay("0x8100", "20 00 82 60", "D");
+		analyzeAll();
+		analyzeAll();
+		assertEquals(1, program.getBookmarkManager().getBookmarks(addr(0x8200)).length);
+	}
+
+	private String dpWarning(long at) {
+		for (var b : program.getBookmarkManager().getBookmarks(addr(at))) {
+			if (b.getCategory().equals(W65816DirectPageAnalyzer.BOOKMARK_CATEGORY)) {
+				return b.getComment();
+			}
+		}
+		return null;
 	}
 
 	/** A callee that sets DP to a constant and returns hands that DP back to its caller. */

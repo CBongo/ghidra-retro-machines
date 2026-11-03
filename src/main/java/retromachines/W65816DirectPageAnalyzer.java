@@ -35,6 +35,8 @@ import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.address.AddressSetView;
 import ghidra.program.model.lang.Register;
+import ghidra.program.model.listing.BookmarkManager;
+import ghidra.program.model.listing.BookmarkType;
 import ghidra.program.model.listing.ContextChangeException;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Instruction;
@@ -87,13 +89,17 @@ import ghidra.util.task.TaskMonitor;
  * memory reference to that address. The index register is not applied: indexed forms reference
  * the base.
  *
- * <p><b>Entry DP (slice 2, grm-9nxj.26).</b> A function's walk starts with DP unknown unless every
- * way into its entry is known to carry the same DP (see {@code Walker.solve}); each run solves
- * the whole program, since an entry's DP depends on callers outside the analyzed set.
+ * <p><b>Entry DP (slice 2, grm-9nxj.26; loosened by grm-9nxj.28).</b> A function's walk starts
+ * with DP d when at least one way into its entry carries a known DP and every known one carries
+ * d; ways in with an unknown DP are ignored, and each entry seeded past one gets a Warning
+ * bookmark ({@value #BOOKMARK_CATEGORY}, "DP assumed ..."), as does an entry whose known ways in
+ * disagree ("DP conflict ...", left unknown). See {@code Walker.solve}. Each run solves the whole
+ * program, since an entry's DP depends on callers outside the analyzed set.
  *
- * <p><b>Limits.</b> A function reached from anywhere unknown -- an unresolved computed jump, a
- * vector, a pointer table no dispatch resolved, a recursive self-call -- keeps an unknown
- * entry; a {@code PHD} whose {@code PLD} is in another
+ * <p><b>Limits.</b> A function reached only from somewhere unknown -- an unresolved computed jump,
+ * a vector, a pointer table no dispatch resolved -- keeps an unknown entry, and a vector target
+ * or pointer-table entry never seeds; a routine that really is entered with several DPs is
+ * seeded wrongly if only one of them is known (hence the bookmark); a {@code PHD} whose {@code PLD} is in another
  * function is not paired; transfers ({@code TAX}, {@code TXA}...) and arithmetic forget the
  * constant; calls forget A/X/Y; a callee is assumed to preserve DP unless its body visibly
  * changes it. Stamps from an earlier run are not cleared where DP later becomes unknown.
@@ -114,6 +120,10 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 	 * "the caller's DP" rather than unknown (grm-9nxj.27, FF2 {@code $04:8008}).
 	 */
 	private static final int ENTRY_DP = -2;
+	/** An entry whose known ways in carry different DPs (grm-9nxj.28); never a walk's DP. */
+	private static final int CONFLICT = -3;
+	/** Bookmark category for the entry-seeding warnings (grm-9nxj.28). */
+	static final String BOOKMARK_CATEGORY = "65816 DP";
 	private static final int STACK_LIMIT = 16;
 	private static final int STEP_LIMIT = 50_000;
 
@@ -215,11 +225,48 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				refs += w.reference(in, dp) ? 1 : 0;
 			}
 		}
+		int[] warned = bookmarkSeeds(program, w.seeds, monitor);
 		if (stamped > 0 || refs > 0) {
 			AnalyzerLog.info(this, "DP stamped over " + stamped + " instructions, " + refs +
-				" dp operand references added");
+				" dp operand references added; " + warned[0] + " entries seeded past unknown " +
+				"ways in, " + warned[1] + " with disagreeing ways in");
 		}
 		return true;
+	}
+
+	/**
+	 * Warning bookmarks at each function entry seeded while ignoring ways in with unknown DP, and
+	 * at each entry whose known ways in disagree (grm-9nxj.28). Program-wide like the solve, so
+	 * the previous run's are cleared first. The message prefixes {@code "DP assumed"} and
+	 * {@code "DP conflict"} are what W65816WidthDump counts.
+	 *
+	 * @return {assumed, conflict} counts
+	 */
+	private static int[] bookmarkSeeds(Program program, Map<Function, Walker.Seed> seeds,
+			TaskMonitor monitor) throws CancelledException {
+		BookmarkManager bm = program.getBookmarkManager();
+		bm.removeBookmarks(program.getMemory(), BookmarkType.WARNING, BOOKMARK_CATEGORY, monitor);
+		int[] n = new int[2];
+		for (Map.Entry<Function, Walker.Seed> e : seeds.entrySet()) {
+			Walker.Seed s = e.getValue();
+			Address at = e.getKey().getEntryPoint();
+			if (s.dp() == CONFLICT) {
+				StringBuilder vs = new StringBuilder();
+				s.seen().stream().sorted().forEach(v ->
+					vs.append(vs.length() == 0 ? "" : ", ").append(String.format("$%04X", v)));
+				bm.setBookmark(at, BookmarkType.WARNING, BOOKMARK_CATEGORY,
+					"DP conflict at entry: ways in carry " + vs + "; entry DP left unknown");
+				n[1]++;
+			}
+			else if (s.unknown() > 0) {
+				bm.setBookmark(at, BookmarkType.WARNING, BOOKMARK_CATEGORY,
+					String.format("DP assumed $%04X at entry: %d of %d ways in carry it, %d with " +
+						"unknown DP ignored", s.dp(), s.known(), s.known() + s.unknown(),
+						s.unknown()));
+				n[0]++;
+			}
+		}
+		return n;
 	}
 
 	/** The walk, with per-program register handles. */
@@ -242,16 +289,27 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 			ctxX = program.getRegister("ctx_XF");
 		}
 
+		/** How each seeded or conflicted entry was judged, for the bookmarks (grm-9nxj.28). */
+		record Seed(int dp, Set<Integer> seen, int known, int unknown) {}
+
+		final Map<Function, Seed> seeds = new LinkedHashMap<>();
+
 		/**
-		 * Slice 2 (grm-9nxj.26): every function's walk, with its entry DP seeded from its
-		 * entries. A function is seeded once, with DP d, when every way in is known to carry d:
-		 * each flow reference to its entry (call, jump, branch, computed jump) and a fall-through
-		 * from the instruction before it, judged at the source in the source function's walk (a
-		 * call carries the DP before it; anything else the DP after it). An external entry point,
-		 * a source outside every function or not reached by its walk, a data reference to the
-		 * entry (a pointer or vector) unless a computed jump also resolved to it, and disagreeing
-		 * or unknown sources all leave it UNKNOWN. Seeding only ever turns UNKNOWN into a value,
-		 * and a source's value can only gain from it, so the worklist terminates.
+		 * Slice 2 (grm-9nxj.26), loosened by grm-9nxj.28: every function's walk, with its entry DP
+		 * seeded from its ways in -- each flow reference to its entry (call, jump, branch,
+		 * computed jump) and a fall-through from the instruction before it, judged at the source
+		 * in the source function's walk (a call carries the DP before it; anything else the DP
+		 * after it). A way in whose DP is unknown (or that lies outside every function, or that
+		 * its walk does not reach) is IGNORED; the entry is seeded with d once at least one way in
+		 * carries a known DP and every known one carries d (owner ruling 2026-11-03: a routine
+		 * entered with arbitrary DPs is judged unlikely; {@link #seeds} records how many were
+		 * ignored, for a warning). Known ways in that disagree make the entry a CONFLICT, which is
+		 * sticky. An external entry point, and a data reference to the entry (a pointer or vector)
+		 * unless a computed jump also resolved to it, still leave it UNKNOWN.
+		 *
+		 * <p>Termination: the known values each entry has ever seen only accumulate (an
+		 * observation is never retracted, even if its source later goes back to unknown), so each
+		 * entry moves at most twice, unseeded -> d -> CONFLICT, and is re-walked only on a move.
 		 */
 		Map<Function, Map<Address, State>> solve(TaskMonitor monitor) throws CancelledException {
 			var fm = program.getFunctionManager();
@@ -261,7 +319,7 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				states.put(f, walk(f, ENTRY));
 			}
 			// Sources into each entry, and which functions' seeds read each function's states.
-			Map<Function, List<Address>> sources = new HashMap<>();
+			Map<Function, List<Address>> sources = new LinkedHashMap<>();
 			Map<Function, Set<Function>> dependents = new HashMap<>();
 			Set<Function> blocked = new HashSet<>();
 			for (Function g : states.keySet()) {
@@ -280,25 +338,40 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 			}
 			ArrayDeque<Function> work = new ArrayDeque<>(sources.keySet());
 			Set<Function> queued = new HashSet<>(work);
-			Set<Function> seeded = new HashSet<>();   // each at most once: what bounds the loop
+			Map<Function, Set<Integer>> seen = new HashMap<>();
+			Map<Function, Integer> entry = new LinkedHashMap<>();   // absent: unseeded
 			while (!work.isEmpty()) {
 				monitor.checkCancelled();
 				Function g = work.poll();
 				queued.remove(g);
-				if (seeded.contains(g)) {
+				Integer was = entry.get(g);
+				if (was != null && was == CONFLICT) {
 					continue;
 				}
-				int d = entryDp(sources.get(g), states);
-				if (d == UNKNOWN) {
+				Set<Integer> s = seen.computeIfAbsent(g, k -> new LinkedHashSet<>());
+				knownEntryDpsBySource(sources.get(g), states).values().forEach(s::addAll);
+				if (s.isEmpty()) {
 					continue;
 				}
-				seeded.add(g);
+				int now = s.size() == 1 ? s.iterator().next() : CONFLICT;
+				if (was != null && was == now) {
+					continue;
+				}
+				entry.put(g, now);
+				int d = now == CONFLICT ? UNKNOWN : now;
 				states.put(g, walk(g, new State(d, UNKNOWN, UNKNOWN, UNKNOWN, List.of())));
 				for (Function c : dependents.getOrDefault(g, Set.of())) {
 					if (!blocked.contains(c) && queued.add(c)) {
 						work.add(c);
 					}
 				}
+			}
+			// The final count of known and ignored ways in, against the final walks.
+			for (Map.Entry<Function, Integer> e : entry.entrySet()) {
+				List<Address> src = sources.get(e.getKey());
+				int known = knownEntryDpsBySource(src, states).size();
+				seeds.put(e.getKey(), new Seed(e.getValue(), Set.copyOf(seen.get(e.getKey())),
+					known, src.size() - known));
 			}
 			return states;
 		}
@@ -340,31 +413,31 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 			return out.isEmpty() ? null : out;
 		}
 
-		private int entryDp(List<Address> src, Map<Function, Map<Address, State>> states) {
-			int d = UNKNOWN;
+		/**
+		 * The known DPs each way in carries, keyed by source; a source with no known DP (no
+		 * instruction, outside every function, not reached by its walk, or DP unknown there) is
+		 * absent. A source inside overlapping bodies may carry more than one.
+		 */
+		private Map<Address, Set<Integer>> knownEntryDpsBySource(List<Address> src,
+				Map<Function, Map<Address, State>> states) {
+			Map<Address, Set<Integer>> out = new LinkedHashMap<>();
 			for (Address s : src) {
 				Instruction ins = program.getListing().getInstructionAt(s);
 				if (ins == null) {
-					return UNKNOWN;
+					continue;
 				}
-				boolean any = false;
 				for (Function f : functionsAt(s)) {
 					State st = states.get(f) == null ? null : states.get(f).get(s);
 					if (st == null) {
-						return UNKNOWN;
+						continue;
 					}
 					int v = ins.getFlowType().isCall() ? st.dp : transfer(ins, st).dp;
-					if (v == UNKNOWN || (d != UNKNOWN && v != d)) {
-						return UNKNOWN;
+					if (v != UNKNOWN) {
+						out.computeIfAbsent(s, k -> new LinkedHashSet<>()).add(v);
 					}
-					d = v;
-					any = true;
-				}
-				if (!any) {
-					return UNKNOWN;
 				}
 			}
-			return d;
+			return out;
 		}
 
 		Map<Address, State> walk(Function f, State entry) {

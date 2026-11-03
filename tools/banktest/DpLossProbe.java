@@ -43,6 +43,19 @@ public class DpLossProbe extends GhidraScript {
 			}
 		}
 		println("DPL lossEdges=" + kinds);
+		// grm-9nxj.28: every entry whose known ways in disagree, with each way in and its DP.
+		var bi = currentProgram.getBookmarkManager().getBookmarksIterator("Warning");
+		while (bi.hasNext()) {
+			Bookmark b = bi.next();
+			if (b.getCategory().equals("65816 DP") && b.getComment().startsWith("DP conflict")) {
+				Function cf = fm.getFunctionAt(b.getAddress());
+				println("DPL conflict " + b.getAddress() + " " +
+					(cf == null ? "<no function>" : cf.getName()) + ": " + b.getComment());
+				if (cf != null) {
+					entryWays(cf, "DPL   ");
+				}
+			}
+		}
 		List<Map.Entry<Address, Integer>> top = new ArrayList<>(byCallee.entrySet());
 		top.sort((a, b) -> b.getValue() != a.getValue().intValue() ? b.getValue() - a.getValue()
 			: a.getKey().compareTo(b.getKey()));

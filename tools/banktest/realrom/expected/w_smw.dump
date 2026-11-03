@@ -44,4 +44,5 @@ REALROM plp sites=3 paired=3 ambiguous=0 unpaired=0 stale=0
 REALROM dp operands=121 known=6 withRef=6 knownWithRef=6
 REALROM dp writer TCD sites=1 knownAfter=1
 REALROM dp value 0000=6
+REALROM dp entry assumedPastUnknown=0 conflict=0
 === REALROM END ===

@@ -708,6 +708,24 @@ public class W65816WidthDump extends GhidraScript {
 		writers.forEach((k, w) -> println("REALROM dp writer " + k + " sites=" + w[0] +
 			" knownAfter=" + w[1]));
 		hist.forEach((k, c) -> println("REALROM dp value " + k + "=" + c));
+		// grm-9nxj.28: entries seeded past ways in with unknown DP, and entries whose known ways
+		// in disagree (the corpus check for routines entered with several DPs).
+		int assumed = 0;
+		int conflict = 0;
+		var bi = currentProgram.getBookmarkManager().getBookmarksIterator("Warning");
+		while (bi.hasNext()) {
+			Bookmark b = bi.next();
+			if (!b.getCategory().equals("65816 DP")) {
+				continue;
+			}
+			if (b.getComment().startsWith("DP assumed")) {
+				assumed++;
+			}
+			else if (b.getComment().startsWith("DP conflict")) {
+				conflict++;
+			}
+		}
+		println("REALROM dp entry assumedPastUnknown=" + assumed + " conflict=" + conflict);
 	}
 
 	private String ctx(Instruction instr) {
