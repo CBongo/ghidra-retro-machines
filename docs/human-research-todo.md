@@ -215,25 +215,18 @@ Each is minutes of work and settles something specific. Highest value per unit e
   they decide whether `grm-c9d.8.8` adds a "table bytes decode as code" end test or leaves the
   table alone.
 
-### 1.11 FF2 `$00:E0D0`: where does the direct page get lost on the way from RESET? (`grm-9nxj.27`)
+### 1.12 FF2 `$01:82bb`: what does it do to the direct page? (`grm-9nxj.27`)
 
-- [ ] **Question.** `$00:E0D0` (`STA <$3d` / `STA <$3e` / `LDX <$b3`, then `JMP (!$063d)`) should
-  run with DP=`$0600`, but the analyzer can't prove it. The only way in is `JSR $E01A` at
-  `$00:E00F` in `FUN_00df63`. That function has six callers, and all of them show DP unknown:
-  RESET `$8083`, `FUN_0081f4` `$8287`, `FUN_009409` `$9424`, `FUN_0099b1` `$9a11`, `FUN_00efa5`
-  `$f039` and `FUN_00f03f` `$f0ea`.
-  RESET sets DP=`$0600` at `$8021`–`$8025` (`LDX #$0600 / PHX / PLD`), and the analyzer now sees
-  that. It then loses DP at one of the calls between there and `$8083`: `JSR $87cf`,
-  `JSL $15c8e5`, `JSL $01800c`, `JSR $8290`, `JSR $92d0`, `JSL $15c23e`, `JSR $8302` or
-  `JSR $f1aa`. A callee keeps DP for the analyzer only if it visibly leaves DP alone (no `TCD`, no
-  more `PLD`s than `PHD`s), or if every return sets the same constant.
-  - Which of those callees changes DP, and does it come back to RESET with `$0600` anyway? For
-    example, `PHD` ... `PLD` on some paths only, or a `PLD` in a helper it jumps to.
-  - Do all six callers of `FUN_00df63` really enter it with DP=`$0600`?
-
-  The answer says what call summary `grm-9nxj.27` needs: something narrow for one idiom, or a
-  summary of "returns the DP it was given", which needs the caller's DP. If the callers don't all
-  agree, `$E0D0`'s DP is decided at run time, and the bead's FF2 acceptance should change.
+- [ ] **Question.** 1.11's answer is now handled: the analyzer keeps DP=`$0600` across
+  `JSL $048000` at `$8035`. RESET now loses DP one call later, at `JSL $01801c` (`$8039`).
+  `$01:801c` is another thunk (`JSR $82bb` / `RTL`, in a thunk table at `$01:800c`-`$01:8027`).
+  What does `$01:82bb` do to DP? Does it return with the DP it was given (and if so, what is the
+  analyzer missing, such as a `PLD` in a helper it jumps to, a `TCD` from a saved value, or an
+  early exit), or does it really leave a different DP? After `$8039`, RESET still calls `$85fa`,
+  `$01:800c`, `$8290`, `$92d0`, `$15:c23e`, `$8302` and `$f1aa` before `$8083`. Any of those
+  that visibly changes DP is worth a note too. `$01:800c` is a thunk to `$01:9598`, and `$85fa`
+  calls `$04:8004`, which thunks to `$04:8107` (a `PHD` ... `LDX #$1e00 / PHX / PLD` body like
+  `$04:8008`).
 
 ---
 
@@ -535,3 +528,4 @@ Agents don't write into your ROM library or other personal directories.
 | Do the loader option tooltips actually show in the 12.2 import dialog (including our `RomFileOption` path fields)? | **Yes, every one (owner, 2026-10-25)** — but each showed as one long line. They are now built by `OptionTooltip`: HTML wrapped at about 70 characters, with the `Headless: -loader-…` usage on its own line, which the owner asked for in particular. `LoaderOptionContractTest` now fails any of our options whose description skips it (Ghidra's two stock label options are exempt). The Browse button having no tooltip was not raised; leave it. | `grm-vrkk.1` |
 | Post the fall-through-into-overlay issue (`grm-p3dy`) now that 12.2 carries GP-7010? | **Posted 2026-10-26 as [ghidra#10030](https://github.com/NationalSecurityAgency/ghidra/issues/10030).** 12.2 did not make it moot: `callReturnFlowOverrideDoesNotRescueIt` still passes, so a fall-through override into an overlay still makes the function undecompilable. Waiting on a maintainer, tracked in section 5's table; the RFC addendum and #10030's link went to #9349 the same day. Do not start a local `flow.cc` patch before the answer | `grm-p3dy` |
 | Install ruff, the Python linter? | **Done (owner, 2026-11-02):** `ruff --version` in git bash prints `0.17.1`. `grm-l9s7` (ruff audit of tracked Python + the standing "ruff what you edit" rule) is unblocked. | `grm-o8id` **closed**; `grm-l9s7` |
+| FF2 `$00:E0D0`: which RESET callee before `$8083` loses the direct page? (1.11) | **`JSL $048000` at `$8035` (owner, 2026-11-02).** The UI shows DP=`$0600` after the `PLD` at `$8025` and UNKNOWN after the call at `$8035`. `$04:8000` is a JSR thunk to `$04:8008`, which saves DP with `PHD` at `$04:8009`, sets DP=`$1E00` at `$04:801C` for most of its body, and restores it with `PLD` at `$04:8104` just before it returns. So it hands back the DP it was given. The analyzer had only two call summaries, "visibly leaves DP alone" (no `TCD`) and "returns one constant", and this callee fits neither. It now also summarizes a callee as "returns its entry DP", walking it from a symbolic entry DP. That needs no caller context, so **no context-sensitive summary is needed.** Whether all six callers of `FUN_00df63` agree was left to the analyzer to measure (see the bead). | `grm-9nxj.27` |

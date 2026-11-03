@@ -74,8 +74,9 @@ import ghidra.util.task.TaskMonitor;
  * stays unknown: DP is never defaulted, and at a merge DP survives only if every incoming path
  * agrees. A call ({@code JSR/JSL}) keeps DP only when its target is a function whose body (and the
  * direct callees' bodies, transitively) contains no {@code TCD} and no more {@code PLD} than
- * {@code PHD}; an indirect call or a target with no function makes DP unknown. A/X/Y are
- * unknown after any call.
+ * {@code PHD}, or when the callee's exit summary (walked from a symbolic entry DP) is a constant
+ * or "the DP it was entered with" ({@code PHD ... TCD ... PLD}, grm-9nxj.27); an indirect call or
+ * a target with no function makes DP unknown. A/X/Y are unknown after any call.
  *
  * <p><b>The output.</b> Where DP is known at an instruction, (1) DP is stamped as an assumed
  * register value over that instruction ({@code ProgramContext.setValue}; downstream consumers
@@ -107,6 +108,12 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 			"PLD, PHD ... PLD, TCD), stamps it as an assumed register value, and references " +
 			"direct-page operands at DP + dp in bank 0 (grm-9nxj.22).";
 	private static final int UNKNOWN = -1;
+	/**
+	 * Symbolic DP: "whatever DP this function was entered with". Used only by a callee's
+	 * exit-DP summary walk (never stamped), so that {@code PHD ... TCD ... PLD} returns as
+	 * "the caller's DP" rather than unknown (grm-9nxj.27, FF2 {@code $04:8008}).
+	 */
+	private static final int ENTRY_DP = -2;
 	private static final int STACK_LIMIT = 16;
 	private static final int STEP_LIMIT = 50_000;
 
@@ -524,18 +531,27 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 			Address[] flows = ins.getFlows();
 			int dp = UNKNOWN;
 			if (flows.length == 1) {
-				dp = preserves(flows[0]) ? s.dp : exitDp(flows[0]);
+				if (preserves(flows[0])) {
+					dp = s.dp;
+				}
+				else {
+					int e = exitDp(flows[0]);
+					dp = e == ENTRY_DP ? s.dp : e;
+				}
 			}
 			return new State(dp, UNKNOWN, UNKNOWN, UNKNOWN, s.stack);
 		}
 
 		/**
-		 * The DP a call to {@code target} returns with whatever DP it was entered with, or
-		 * UNKNOWN: the function's walk from an unknown entry must reach at least one RTS/RTL, every
-		 * one with the same known DP and an empty, unpoisoned stack (so it returns to the caller);
-		 * and it must have no other way out -- no RTI, no jump leaving its body, no jump without a
-		 * target. A callee that sets DP itself ({@code LDX #$0600 / PHX / PLD ... RTS}) so passes
-		 * its constant back. Recursion is judged UNKNOWN.
+		 * The DP a call to {@code target} returns with, whatever DP it was entered with: a
+		 * constant, {@link #ENTRY_DP} (it hands back the DP it was given), or UNKNOWN. The
+		 * function is walked from a symbolic entry DP; it must reach at least one RTS/RTL, every
+		 * one with the same known-or-entry DP and an empty, unpoisoned stack (so it returns to the
+		 * caller); and it must have no other way out -- no RTI, no jump leaving its body, no jump
+		 * without a target. A callee that sets DP itself ({@code LDX #$0600 / PHX / PLD ... RTS})
+		 * so passes its constant back, and one that brackets its own DP change
+		 * ({@code PHD ... TCD ... PLD ... RTS}, FF2 {@code $04:8008}) returns the caller's DP.
+		 * Recursion is judged UNKNOWN.
 		 */
 		private int exitDp(Address target) {
 			Integer known = exitDp.get(target);
@@ -548,7 +564,8 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 			}
 			int d = UNKNOWN;
 			boolean ok = true;
-			Map<Address, State> states = walk(callee, ENTRY);
+			Map<Address, State> states =
+				walk(callee, new State(ENTRY_DP, UNKNOWN, UNKNOWN, UNKNOWN, List.of()));
 			if (states.isEmpty()) {
 				ok = false;
 			}

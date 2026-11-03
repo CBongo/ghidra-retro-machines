@@ -260,6 +260,36 @@ public class W65816DirectPageTest extends AbstractProgramTest {
 		assertNull(dataRef(0x8003));
 	}
 
+	// ---- slice 3 (grm-9nxj.27): a callee that returns the DP it was given ----
+
+	private static final String SET_600_CALL_8200_STA = "a2 00 06 da 2b 20 00 82 85 3d 60";
+
+	/**
+	 * FF2's {@code $04:8000} shape: a thunk JSRs a body that brackets its own DP change with
+	 * PHD ... TCD ... PLD. The caller keeps its DP across the call.
+	 */
+	@Test
+	public void bracketedDpChangeReturnsCallersDp() throws Exception {
+		lay("0x8200", "20 00 83 60", "THUNK");   // JSR $8300 ; RTS
+		// PHD ; LDA #$1e00 ; TCD ; STA <$10 ; PLD ; RTS
+		lay("0x8300", "0b a9 00 1e 5b 85 10 2b 60", "BODY");
+		lay("0x8000", SET_600_CALL_8200_STA, "C");
+		analyzeAll();
+		assertRef(0x8008, 0x063d, RefType.WRITE);
+		assertRef(0x8305, 0x1e10, RefType.WRITE);   // the body itself, seeded with $0600 then TCD
+	}
+
+	/** A path that skips the PLD returns the callee's own DP, not the caller's: unknown. */
+	@Test
+	public void bracketSkippedOnOnePathIsUnknown() throws Exception {
+		lay("0x8200", "20 00 83 60", "THUNK");
+		// PHD ; LDA #$1e00 ; TCD ; BEQ +1 ; PLD ; RTS
+		lay("0x8300", "0b a9 00 1e 5b f0 01 2b 60", "BODY");
+		lay("0x8000", SET_600_CALL_8200_STA, "C");
+		analyzeAll();
+		assertNull(dataRef(0x8008));
+	}
+
 	/** A pointer to the entry that no dispatch resolved is an unknown way in. */
 	@Test
 	public void dataReferenceToEntryLeavesItUnknown() throws Exception {
