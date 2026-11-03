@@ -215,6 +215,26 @@ Each is minutes of work and settles something specific. Highest value per unit e
   they decide whether `grm-c9d.8.8` adds a "table bytes decode as code" end test or leaves the
   table alone.
 
+### 1.11 FF2 `$00:E0D0`: where does the direct page get lost on the way from RESET? (`grm-9nxj.27`)
+
+- [ ] **Question.** `$00:E0D0` (`STA <$3d` / `STA <$3e` / `LDX <$b3`, then `JMP (!$063d)`) should
+  run with DP=`$0600`, but the analyzer can't prove it. The only way in is `JSR $E01A` at
+  `$00:E00F` in `FUN_00df63`. That function has six callers, and all of them show DP unknown:
+  RESET `$8083`, `FUN_0081f4` `$8287`, `FUN_009409` `$9424`, `FUN_0099b1` `$9a11`, `FUN_00efa5`
+  `$f039` and `FUN_00f03f` `$f0ea`.
+  RESET sets DP=`$0600` at `$8021`–`$8025` (`LDX #$0600 / PHX / PLD`), and the analyzer now sees
+  that. It then loses DP at one of the calls between there and `$8083`: `JSR $87cf`,
+  `JSL $15c8e5`, `JSL $01800c`, `JSR $8290`, `JSR $92d0`, `JSL $15c23e`, `JSR $8302` or
+  `JSR $f1aa`. A callee keeps DP for the analyzer only if it visibly leaves DP alone (no `TCD`, no
+  more `PLD`s than `PHD`s), or if every return sets the same constant.
+  - Which of those callees changes DP, and does it come back to RESET with `$0600` anyway? For
+    example, `PHD` ... `PLD` on some paths only, or a `PLD` in a helper it jumps to.
+  - Do all six callers of `FUN_00df63` really enter it with DP=`$0600`?
+
+  The answer says what call summary `grm-9nxj.27` needs: something narrow for one idiom, or a
+  summary of "returns the DP it was given", which needs the caller's DP. If the callers don't all
+  agree, `$E0D0`'s DP is decided at run time, and the bead's FF2 acceptance should change.
+
 ---
 
 ## 2. Def-use passes on untraced titles
