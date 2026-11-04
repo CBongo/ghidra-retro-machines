@@ -99,7 +99,7 @@
 27.E  AND [<$0x9a]  PASS  8/8
 27.N  AND [<$0x62]  PASS  8/8
 28.E  PLP  PASS  8/8
-28.N  PLP  FAIL  0/8  execution
+28.N  PLP  PASS  8/8
 29.E  AND #$0xa2  PASS  8/8
 29.N  AND #$0xc6  PASS  8/8
 2A.E  ROL A  PASS  8/8
@@ -147,7 +147,7 @@
 3F.E  AND !>$0xb16e01,X  PASS  8/8
 3F.N  AND !>$0x6d8cb5,X  PASS  8/8
 40.E  RTI  PASS  8/8
-40.N  RTI  FAIL  0/8  execution
+40.N  RTI  PASS  8/8
 41.E  EOR (<$0xa,X)  PASS  8/8
 41.N  EOR (<$0x8f,X)  PASS  8/8
 42.E  WDM  PASS  8/8

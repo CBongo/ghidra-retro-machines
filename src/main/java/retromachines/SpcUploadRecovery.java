@@ -80,8 +80,8 @@ import ghidra.util.task.TaskMonitor;
  * accesses to {@code $00-$3F/$80-$BF:0000-1FFF} are redirected to {@code $7E:xxxx}.</li>
  * <li>M/X/E context: {@code SEP}/{@code REP} flow through emulation correctly, but {@code XCE},
  * {@code PLP} and {@code RTI} change context bits the decoder cannot know, so the thread's
- * context is overridden after each from the carry flag / pulled status byte, and the
- * {@code unknown_native_status_pull} userop is answered.</li>
+ * context is overridden after each from the carry flag / pulled status byte (the sleigh itself
+ * derives the index-register shrink from that byte since grm-9nxj.4).</li>
  * <li>NMI is injected when {@code $4200} bit 7 is set (and on {@code WAI}), a timer IRQ when
  * {@code $4200} bits 4-5 are set and the I flag is clear. Reads of other I/O registers
  * ({@code $2100-$21FF}, {@code $4000-$43FF}) alternate {@code $FF}/{@code $00} per address so
@@ -567,7 +567,6 @@ public class SpcUploadRecovery {
 		Integer pendingE;
 		Integer pendingM;
 		Integer pendingX;
-		int pulledP = -1;
 		Register rS, rCF, rNF, rVF, rDF, rIF, rZF, rMF, rXF, rEF;
 
 		Session(ProvenanceLog log) {
@@ -787,14 +786,6 @@ public class SpcUploadRecovery {
 		@Override
 		public boolean handleMissingUserop(PcodeThread<byte[]> t, PcodeOp op, PcodeFrame frame,
 				String opName, PcodeUseropLibrary<byte[]> library) {
-			if (opName.equals("unknown_native_status_pull")) {
-				// X-flag of the status byte just pulled, for the sleigh that sizes the index regs.
-				int x16 = (pulledP >= 0 && (pulledP & 0x10) == 0) ? 1 : 0;
-				if (op.getOutput() != null) {
-					t.getState().setVar(op.getOutput(), b1(x16));
-				}
-				return true;
-			}
 			if (opName.equals("wai")) {
 				waiPending = true;
 				return true;
@@ -811,7 +802,6 @@ public class SpcUploadRecovery {
 			lastPc = t.getCounter().getOffset();
 			String m = ins.getMnemonicString();
 			pendingE = pendingM = pendingX = null;
-			pulledP = -1;
 			if (m.equals("XCE")) {
 				int cf = reg(t, rCF);
 				int e = ctx(t, rEF);
@@ -831,7 +821,7 @@ public class SpcUploadRecovery {
 				long pa = e == 1 ? (0x0100 | ((sp + 1) & 0xFF)) : ((sp + 1) & 0xFFFF);
 				byte[] v =
 					t.getState().getVar(ram, 0x7E0000L | (pa & 0x1FFF), 1, true, Reason.INSPECT);
-				pulledP = v[0] & 0xFF;
+				int pulledP = v[0] & 0xFF;
 				if (e == 1) {
 					pendingM = 1;
 					pendingX = 1;

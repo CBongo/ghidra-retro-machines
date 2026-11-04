@@ -190,6 +190,11 @@ define pcodeop unknown_native_status_pull;
 }
 ```
 
+> **Update (grm-9nxj.4, 2026-11-04):** half of this had a SLEIGH-level fix after all. The only
+> semantic effect of the pulled X bit, clearing `XHigh`/`YHigh`, depends on the pulled byte, which
+> p-code has; `PLP`/`RTI` now compute it from that byte and the pcodeop is gone. What remains
+> unreachable from SLEIGH is the decode context for the *next* instruction, below.
+
 Interrupt handlers that restore mode by stack pull are unmodelled. There is no SLEIGH-level fix —
 this is precisely the case that needs a Java analyzer stamping `ProgramContext.setValue(...)`, the
 way `ArmAnalyzer` does for TMode at computed flows.

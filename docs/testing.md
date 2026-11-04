@@ -430,9 +430,10 @@ look identical if you only skim the tally.)
 
 **EXPECT FAILURES in both baselines.** Exactly like SPC700 before `grm-c9d.3`, this language's
 p-code semantics had never been checked against an oracle when this tier was built. `grm-9nxj.4`'s
-two passes have since taken the sample baseline from 8 passing rows to 28 PASS / 4 N/A / 2 red;
-the two remaining red rows (`PLP.N`, `RTI.N`) throw on the language's own
-`unknown_native_status_pull` pcodeop and stay sequenced behind `grm-9nxj.5`. A baseline `FAIL` row records reality; only a *regression*
+passes have since taken both baselines to **zero `FAIL` rows** (only the `N/A` rows remain). The
+last two, `PLP.N` and `RTI.N`, threw on an opaque `unknown_native_status_pull` pcodeop until the
+fourth pass derived the index-register shrink from the pulled status byte itself. A baseline
+`FAIL` row records reality; only a *regression*
 (a row moving `PASS` → `FAIL`) is a hard failure, per `OpcodeBaseline`'s rules.
 
 **Measured runtime, 2026-09-05.** A full `w65816-vectors` run — all 512 files, 5,120,000 cases —
@@ -462,10 +463,12 @@ failed, which is why 4 rows moved from `10000/10000` to `9999/9999` rather than 
 Classifying by symptom instead — "the case failed and `PBR` was its only mismatched field" — is
 cheaper and was rejected, because it would hide a genuine `PBR` defect in the language forever.
 
-**The residue is now the whole story, which was the point of the exercise.** The 3 remaining
-`FAIL` rows are `PLP.N` and `RTI.N` (0/10,000, throwing on the language's own
-`unknown_native_status_pull` pcodeop, sequenced behind `grm-9nxj.5`) and `AB.E` (`PLB`) at
-9,964/10,000. Two more were corpus defects and are now classified (below): `E1.E` (`SBC (dp,X)`)
+**The residue is now the whole story, which was the point of the exercise.** As of
+`grm-9nxj.4`'s fourth pass there are **no `FAIL` rows left**. The last three were `PLP.N` and
+`RTI.N` (0/10,000, throwing on an opaque `unknown_native_status_pull` pcodeop; fixed by deriving
+the X-bit's register effect from the pulled byte, since only the decode *context* is out of
+p-code's reach) and `AB.E` (`PLB`) at 9,964/10,000 (fixed: `PLB` computes its stack address with
+the full 16-bit S in emulation mode, like `PLD`, then clamps the high byte to `$01`). Two more were corpus defects and are now classified (below): `E1.E` (`SBC (dp,X)`)
 at 9,999/10,000, which had been sitting invisibly among the 142 and only became legible once the
 bank-wrap noise was removed, and `FC.E` (`JSR (a,x)`, emulation) at 9,956/9,999.
 

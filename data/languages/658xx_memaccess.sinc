@@ -179,9 +179,11 @@ macro push_status_emulation() {
     push8_emulation(status);
 }
 
-# UNSUPPORTED: pulling the context flags MF and XF.
-macro pull_status_native() {
-    local status:1;
+# MF and XF are decode CONTEXT, which p-code cannot write, so they are not assigned here.
+# The pulled byte is handed back instead (grm-9nxj.4): the one semantic effect of the X bit --
+# clearing XHigh/YHigh when it switches the index registers to 8 bits -- is computed from it by
+# the caller, and the next instruction's decode context is the analyzer's/emulator's job.
+macro pull_status_native(status) {
     pull8_native(status);
     NF = status[7,1];
     VF = status[6,1];
