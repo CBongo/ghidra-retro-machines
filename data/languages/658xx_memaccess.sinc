@@ -184,15 +184,17 @@ macro push_status_emulation() {
 # clearing XHigh/YHigh when it switches the index registers to 8 bits -- is computed from it by
 # the caller, and the next instruction's decode context is the analyzer's/emulator's job.
 macro pull_status_native(status) {
-    pull8_native(status);
-    NF = status[7,1];
-    VF = status[6,1];
-    # MF = status[5,1];
-    # XF = status[4,1];
-    DF = status[3,1];
-    IF = status[2,1];
-    ZF = status[1,1];
-    CF = status[0,1];
+    local pulled:1;
+    pull8_native(pulled);
+    NF = pulled[7,1];
+    VF = pulled[6,1];
+    # MF = pulled[5,1];
+    # XF = pulled[4,1];
+    DF = pulled[3,1];
+    IF = pulled[2,1];
+    ZF = pulled[1,1];
+    CF = pulled[0,1];
+    status = pulled;
 }
 
 macro pull_status_emulation() {
