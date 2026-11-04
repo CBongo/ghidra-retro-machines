@@ -237,6 +237,24 @@ Each is minutes of work and settles something specific. Highest value per unit e
   outer loop (`$e00f JSR $00e01a` ... `$e017 JMP $df7e`), and the back edge carries the call's
   failed summary. If that call keeps DP, the whole chain to E0D0 resolves at `$0600`.
 
+### 1.14 cv3: are the three "table bytes decode as code" cuts right? (`grm-c9d.8.9`)
+
+- [ ] **Question.** `grm-c9d.8.8` added a tail rule that ends a word jump table at the first slot
+  whose own bytes decode as a code run with at least 3 absolute calls. On cv3 it cuts three tables,
+  and the cv3 golden is **held, not blessed**, until you say, so `realrom-test.sh check nes` fails
+  on cv3 meanwhile. **Please check each:**
+  - **`e137`, table `RAM:9f31`**, 128 read, cut to **16**. Slot 16's bytes: `f1 07 c9 06 f0 04 …`.
+    Is 16 the real end, or one slot late?
+  - **`80a1`, table `W8000_B4::8277`**, 128 read, cut to 64, and the existing code-prefix rule
+    trims that to **23**. The code seems to start around slot 56. Is 23 right?
+  - **`e137`, table `W8000_B22::9f31`**, cut at **20** on `20 8e 9f 20 9b 9f d0 14 …` (`JSR $9F8E /
+    JSR $9F9B / BNE`). The bytes before it (`03 00 01 02 …`) look like byte values, not pointers.
+    Is this a pointer table at all in bank 22? If not, the cut is only half a fix, and the real
+    question is why the bank-22 reading of `e137` exists.
+
+  Your answers decide whether cv3 is blessed as-is or the rule needs another guard. The dump moved
+  `refs.intoOverlay.retargeted` 154→122 and `instrs.inOverlay` 19401→19151.
+
 ---
 
 ## 2. Def-use passes on untraced titles

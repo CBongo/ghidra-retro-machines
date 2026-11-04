@@ -19,6 +19,8 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.function.BiFunction;
+import java.util.function.LongFunction;
+import java.util.function.LongPredicate;
 import java.util.function.LongUnaryOperator;
 import java.util.function.Predicate;
 
@@ -834,6 +836,119 @@ public final class JumpTableBound {
 		return Result.bounded(cut, lowestOf(walk.targets()), Rule.EXTENT_OVERLAP);
 	}
 
+	/** A linear decode of the bytes at one address, for {@link #boundBySlotCode}: {@code legal} is
+	 *  false when any instruction was undefined, a {@code BRK}, or ran off the readable bytes;
+	 *  {@code terminated} when the run ended at a return or unconditional jump (rather than the
+	 *  step cap); {@code end} the exclusive end of the last instruction decoded; {@code
+	 *  callTargets} the targets of its absolute (non-computed) calls and unconditional jumps. */
+	public record CodeRun(boolean legal, boolean terminated, long end, List<Long> callTargets) {
+	}
+
+	/** The two byte-level probes the slot-code rules need, supplied by the caller so the rules stay
+	 *  pure: {@code run} decodes from an address, {@code isCode} says a call target lies in
+	 *  initialized, non-volatile memory and itself decodes as an instruction. */
+	public record SlotCodeProbe(LongFunction<CodeRun> run, LongPredicate isCode) {
+	}
+
+	/** Absolute calls/jumps into outside, decodable code a slot's run must hold to read as code
+	 *  rather than as a coincidence of table bytes. One lone {@code $20 xx yy} at a slot boundary
+	 *  is a plausible accident (a low byte of {@code $20}); two are not enough either: deadly_towers
+	 *  bbfd's REAL entries {@code bcd1 bcde bceb ..} followed by its routine decode as a legal run
+	 *  holding exactly two (a JSR and a JMP), which cut a 10-entry table at 3. Three is what
+	 *  dragonpower 803e, dbz_saiyan d1aa and the other true cuts clear. */
+	static final int SLOT_CODE_MIN_CALLS = 3;
+
+	/** The earliest slot the slot-code tail rule may cut at: fewer than 2 kept entries is nothing
+	 *  trustworthy (as for every other tail rule). */
+	static final int SLOT_CODE_MIN_SLOT = 2;
+
+	/**
+	 * Whether {@code run} reads as real code for the slot-code rules: legal throughout and holding
+	 * at least {@link #SLOT_CODE_MIN_CALLS} absolute calls/jumps whose targets lie OUTSIDE
+	 * {@code [lo, hi)} (the kept table's own bytes) and satisfy {@code isCode}.
+	 */
+	private static boolean coherentRun(CodeRun run, long lo, long hi, LongPredicate isCode) {
+		if (run == null || !run.legal()) {
+			return false;
+		}
+		int good = 0;
+		for (long t : run.callTargets()) {
+			if ((t < lo || t >= hi) && isCode.test(t)) {
+				good++;
+			}
+		}
+		return good >= SLOT_CODE_MIN_CALLS;
+	}
+
+	/**
+	 * Apply the slot-code bound (grm-c9d.8.8): cut a word table at the first slot {@code k >= 2}
+	 * whose own bytes, read as instructions from the slot's address, form a coherent code run
+	 * (see {@link #coherentRun}): every instruction legal, at least {@link #SLOT_CODE_MIN_CALLS}
+	 * absolute calls/jumps to decodable code outside the table, the run ending at a return/jump or
+	 * the caller's step cap. dragonpower 803e is the case: 9 real entries, then {@code 20 fb 99 a0
+	 * 18 20 8b 98 20 a2 ..} (JSR $99FB / LDY #$18 / JSR $988B / JSR ..) -- the table's own bytes
+	 * are the routine that follows it, and no extent / below-table / valid-target rule reaches
+	 * the cut, so the decompiler's 128 cases stood.
+	 *
+	 * <p>Why this is safe, as far as it is: in a real word table a {@code JSR} at a slot boundary
+	 * means an entry's low byte is {@code $20} and the call target is built from that entry's high
+	 * byte plus the NEXT entry's low byte; two such calls both landing on decodable code outside
+	 * the table, inside a legal run with no undefined opcode or {@code BRK}, are unlikely. It is
+	 * still a heuristic: the real-ROM tier is its evidence, and a tighter call count is the lever
+	 * if it ever fires wrongly. CPU-agnostic: the probe classifies calls by flow type, not mnemonic.
+	 *
+	 * <p>Two-ended by owner ruling (grm-c9d.8): the leading analog is {@link #leadingBySlotCode}
+	 * (log-only). Runs as the last fallback, after {@link #boundByExtentOverlap}. Declines for
+	 * anything but a single moving 2-byte-entry (word) table.
+	 *
+	 * @param targets as for {@link #bound}
+	 * @param loadTables as for {@link #bound}
+	 * @param probe byte-level decode of the table's slots
+	 * @return a bounded result, or a decline
+	 */
+	public static Result boundBySlotCode(List<Long> targets, List<LoadTableEntry> loadTables,
+			SlotCodeProbe probe) {
+		Shape shape = Shape.of(targets.size(), loadTables);
+		if (shape == null || !shape.isSingleWordTable()) {
+			return Result.decline();
+		}
+		int n = targets.size();
+		long lo = shape.tableStart;
+		for (int k = SLOT_CODE_MIN_SLOT; k < n; k++) {
+			// "Inside the table" is the part that would be KEPT, [lo, slot k): the over-read tail is
+			// the code itself, and a branch back into it (dbz_saiyan d1aa's JMP $d1e6) is a loop in
+			// that code, not table data.
+			if (coherentRun(probe.run().apply(lo + 2L * k), lo, lo + 2L * k, probe.isCode())) {
+				return Result.bounded(k, lowestOf(targets.subList(0, k)), Rule.SLOT_CODE);
+			}
+		}
+		return Result.decline();
+	}
+
+	/**
+	 * Leading form of {@link #boundBySlotCode} (grm-c9d.8.8), LOG-ONLY like every leading rule
+	 * (grm-c9d.8.4): when the bytes from slot 0 are a coherent code run that TERMINATES exactly on
+	 * a slot boundary, the first {@code d} slots are that routine, not entries. A run that merely
+	 * hits the step cap proves nothing about where it stops, so it is not enough here. Not part of
+	 * {@link LeadingRule#CASCADE}: the total stays what the applied rules would drop.
+	 */
+	public static Leading leadingBySlotCode(List<Long> targets, List<LoadTableEntry> view,
+			SlotCodeProbe probe) {
+		Shape shape = Shape.of(targets.size(), view);
+		if (shape == null || !shape.isSingleWordTable()) {
+			return Leading.none(LeadingRule.SLOT_CODE);
+		}
+		int n = targets.size();
+		long lo = shape.tableStart;
+		long hi = lo + 2L * n;
+		CodeRun run = probe.run().apply(lo);
+		if (run == null || !run.terminated() || (run.end() - lo) % 2 != 0 ||
+			!coherentRun(run, lo, hi, probe.isCode())) {
+			return Leading.none(LeadingRule.SLOT_CODE);
+		}
+		return checked(LeadingRule.SLOT_CODE, (int) ((run.end() - lo) / 2), n);
+	}
+
 	/**
 	 * How many of a bounded table's kept cases to keep once each one's target bytes have been
 	 * judged as code (grm-0pen): the cases up to, but not including, the first whose target does
@@ -986,7 +1101,10 @@ public final class JumpTableBound {
 		INDEX_GUARD,
 		/** {@link #boundByExtentOverlap}: grm-c9d.8.6 -- cut at the first entry whose bytes lie in
 		 *  an earlier target's decoded code (the table runs into its own handler). */
-		EXTENT_OVERLAP
+		EXTENT_OVERLAP,
+		/** {@link #boundBySlotCode}: grm-c9d.8.8 -- cut at the first slot whose own bytes decode
+		 *  as a coherent code run (the table runs into the routine that follows it). */
+		SLOT_CODE
 	}
 
 	/**
@@ -1111,6 +1229,9 @@ public final class JumpTableBound {
 		EXTENT_OVERLAP_UNANCHORED,
 		/** {@link #leadingByDistinctWords}: grm-uzep's table, read as words. */
 		DISTINCT_WORDS_EXTENT,
+		/** {@link #leadingBySlotCode}: grm-c9d.8.8's slot-bytes-are-code, from slot 0. Reported
+		 *  only; not part of {@link #CASCADE}. */
+		SLOT_CODE,
 		/** All of the above applied in sequence (EXTENT, KNOWN_CODE, BELOW_TABLE, WINDOW,
 		 *  VALID_TARGET, NEIGHBOUR_END, CODE_PREFIX): the total a stage-4 cascade would drop. */
 		CASCADE
@@ -1174,7 +1295,17 @@ public final class JumpTableBound {
 	 */
 	public record LeadingFacts(long switchAddr, Block block, LongUnaryOperator extentEnd,
 			Collection<Long> foreignCodeStarts, Collection<Long> otherTableEnds,
-			List<Boolean> inCode, List<Boolean> decodes, boolean overlappingByte, Rule tailRule) {
+			List<Boolean> inCode, List<Boolean> decodes, boolean overlappingByte, Rule tailRule,
+			SlotCodeProbe slotCode) {
+
+		/** Without a slot-code probe (the {@link LeadingRule#SLOT_CODE} check is skipped). */
+		public LeadingFacts(long switchAddr, Block block, LongUnaryOperator extentEnd,
+				Collection<Long> foreignCodeStarts, Collection<Long> otherTableEnds,
+				List<Boolean> inCode, List<Boolean> decodes, boolean overlappingByte,
+				Rule tailRule) {
+			this(switchAddr, block, extentEnd, foreignCodeStarts, otherTableEnds, inCode, decodes,
+				overlappingByte, tailRule, null);
+		}
 
 		/** Whether a leading form gated on the tail rules {@code allowed} (or none) may run. */
 		boolean gate(Rule... allowed) {
@@ -1297,13 +1428,15 @@ public final class JumpTableBound {
 				: leadingByNeighbourEnd(targets, view, f.otherTableEnds(), f.inCode());
 		Leading prefix = f.decodes() == null ? Leading.none(LeadingRule.CODE_PREFIX)
 				: leadingByCodePrefix(f.decodes());
+		Leading slotCode = f.slotCode() == null ? Leading.none(LeadingRule.SLOT_CODE)
+				: leadingBySlotCode(targets, view, f.slotCode());
 		for (Leading l : List.of(extent, unanchored, known, below, window, validCut, neighbour,
-			prefix)) {
+			prefix, slotCode)) {
 			if (l.applies()) {
 				out.add(l);
 			}
 		}
-		if (out.isEmpty() || (out.size() == 1 && out.get(0) == unanchored)) {
+		if (out.isEmpty() || (out.size() == 1 && (out.get(0) == unanchored || out.get(0) == slotCode))) {
 			return out;
 		}
 		// The cascade: sequential, each rule on the remainder. Window comes after extent and known
@@ -1665,6 +1798,13 @@ public final class JumpTableBound {
 				tableStart = Math.min(tableStart, t.start());
 			}
 			return new Shape(start, chunk, tableStart);
+		}
+
+		/** Exactly one moving table, with 2 bytes per case. The decompiler may describe a word
+		 *  table as 256 byte loads (dragonpower 803e), so this is the per-case chunk, not the
+		 *  load's {@code entrySize}. */
+		boolean isSingleWordTable() {
+			return start.length == 1 && chunk[0] == 2;
 		}
 
 		/** One past the last byte entry {@code i} occupies, across every moving table. */

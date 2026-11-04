@@ -33,6 +33,15 @@ underscores or asterisks may render oddly. Each was true when written, and later
 supersede earlier ones. A bead id or commit hash in an entry is the authoritative record of
 that change.
 
+## 2026-11-04 -- cv3 HELD, not blessed (grm-c9d.8.8 SLOT_CODE, owner ruling)
+
+grm-c9d.8.8's slot-bytes-decode-as-code tail rule moves five NES rows. The owner approved
+blessing dragonpower, dbz_saiyan, dbz2 and deadly_towers (see that commit) and held cv3: of its
+three cuts (e137/RAM:9f31 at 16, 80a1/B4:8277 at 64 then 23, e137/B22:9f31 at 20) the bank-22
+one may not be a pointer table at all. cv3 fails `check nes` on purpose until human TODO 1.14 /
+grm-c9d.8.9 is answered (dump: retargeted 154 -> 122, intraOverlay 4952 -> 4869,
+instrs.inOverlay 19401 -> 19151, sample.jumptable B4::a04f word[18] -> B4::8277 word[23]).
+
 ## 2026-10-17 -- megaman3 re-blessed (grm-gipk.3, task-table dispatch)
 
 IndirectJumpConstantPointerAnalyzer's new task-table mode resolves the cooperative scheduler's

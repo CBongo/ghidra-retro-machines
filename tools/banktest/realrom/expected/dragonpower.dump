@@ -17,14 +17,24 @@ REALROM count instrs.inOverlay 0
 REALROM count bankComments 0
 REALROM count warnings 1
 REALROM count notes 2
-REALROM count symbols 168
-REALROM count jumptable.wordArrays 6
+REALROM count symbols 178
+REALROM count jumptable.wordArrays 7
 REALROM count jumptable.planarArrays 0
 REALROM sample.warn ffc8 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.note 82ba [CopyLoopAnalyzer] copy-shaped loop RAM:ffcc -> RAM:014b (4 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note ffea [NesBankingAnalyzer] Bank value is the inbound argument of FUN_ffe8: the shadow cell $00F2 is stored from register A, which this function never defines; each caller supplies it (a far-call / relay), so it is resolved at the callers, not here.
 REALROM sample.symbol 800b NMI IMPORTED primary=true
+REALROM sample.symbol 803b switch USER_DEFINED primary=true
 REALROM sample.symbol 8096 IRQ IMPORTED primary=true
+REALROM sample.symbol 80b4 case_0 USER_DEFINED primary=true
+REALROM sample.symbol 80b4 case_6 USER_DEFINED primary=false
+REALROM sample.symbol 80ba case_5 USER_DEFINED primary=true
+REALROM sample.symbol 80dd case_7 USER_DEFINED primary=true
+REALROM sample.symbol 81a4 case_2 USER_DEFINED primary=true
+REALROM sample.symbol 81a4 case_4 USER_DEFINED primary=false
+REALROM sample.symbol 81b2 case_1 USER_DEFINED primary=true
+REALROM sample.symbol 81d2 case_3 USER_DEFINED primary=true
+REALROM sample.symbol 81f2 case_8 USER_DEFINED primary=true
 REALROM sample.symbol 8655 switch USER_DEFINED primary=true
 REALROM sample.symbol 869e case_0 USER_DEFINED primary=true
 REALROM sample.symbol 86a2 case_1 USER_DEFINED primary=true
@@ -38,17 +48,8 @@ REALROM sample.symbol 86cd case_10 USER_DEFINED primary=true
 REALROM sample.symbol 86d1 case_15 USER_DEFINED primary=true
 REALROM sample.symbol 86d5 case_11 USER_DEFINED primary=true
 REALROM sample.symbol 86d9 case_27 USER_DEFINED primary=true
-REALROM sample.symbol 86dd case_16 USER_DEFINED primary=true
-REALROM sample.symbol 86e1 case_17 USER_DEFINED primary=true
-REALROM sample.symbol 86e5 case_18 USER_DEFINED primary=true
-REALROM sample.symbol 86e9 case_19 USER_DEFINED primary=true
-REALROM sample.symbol 86f1 case_22 USER_DEFINED primary=true
-REALROM sample.symbol 86f5 case_29 USER_DEFINED primary=true
-REALROM sample.symbol 86f9 case_32 USER_DEFINED primary=true
-REALROM sample.symbol 86fd case_33 USER_DEFINED primary=true
-REALROM sample.symbol 873a case_6 USER_DEFINED primary=true
-REALROM sample.symbol 8765 case_13 USER_DEFINED primary=false
-REALROM sample.symbol.truncated 25 of 156
+REALROM sample.symbol.truncated 25 of 166
+REALROM sample.jumptable 803e word[9]
 REALROM sample.jumptable 8658 word[35]
 REALROM sample.jumptable 88f4 word[54]
 REALROM sample.jumptable 8f00 word[31]

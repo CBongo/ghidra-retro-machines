@@ -780,6 +780,15 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 				o -> extents.computeIfAbsent(o, x -> LeadingShadow.decodedExtentEnd(dis, space, x)),
 				inCode);
 		}
+		if (!result.isBounded() && !mixed && !isCrossBank) {
+			// grm-c9d.8.8: the table's own slot bytes are the code that follows it. Bytes only.
+			// Not for a cross-bank table: its bytes live in another bank's space than the one the
+			// probe reads (cv3 e137 cut a bank-24 table on bank-4 code). The probe decodes in the
+			// space the table's own bytes live in, for the same reason.
+			result = JumpTableBound.boundBySlotCode(targets, loadTables,
+				SlotCodeProbes.of(program, lowestMovingTableAddr != null
+						? lowestMovingTableAddr.getAddressSpace() : targetSpace));
+		}
 		if (!result.isBounded() && deduped != null) {
 			result = deduped; // grm-uzep: nothing else could read this case list
 		}
@@ -1013,6 +1022,9 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		}
 		else if (result.rule() == JumpTableBound.Rule.EXTENT_OVERLAP) {
 			why = "ran into its own handler's code"; // grm-c9d.8.6
+		}
+		else if (result.rule() == JumpTableBound.Rule.SLOT_CODE) {
+			why = "table bytes decode as code"; // grm-c9d.8.8
 		}
 		else if (result.rule() == JumpTableBound.Rule.SEARCH_LOOP) {
 			why = "index from a keyed search loop"; // grm-jt7s

@@ -91,7 +91,7 @@ final class LeadingShadow {
 		Map<Long, Long> extents = new HashMap<>();
 		for (Table t : tables.values()) {
 			try {
-				check(t, dis, extents, originator, source);
+				check(t, dis, extents, originator, source, program);
 			}
 			catch (RuntimeException e) {
 				// Check mode must never disturb the analysis it observes.
@@ -101,7 +101,7 @@ final class LeadingShadow {
 	}
 
 	private void check(Table t, PseudoDisassembler dis, Map<Long, Long> extents, Object originator,
-			String source) {
+			String source, Program program) {
 		LongUnaryOperator extent = offset -> extents.computeIfAbsent(offset,
 			o -> decodedExtentEnd(dis, t.space(), o));
 		long viewStart = lowestStart(t.view());
@@ -125,7 +125,7 @@ final class LeadingShadow {
 		}
 		JumpTableBound.LeadingFacts facts = new JumpTableBound.LeadingFacts(
 			t.switchAddr().getOffset(), t.block(), extent, foreign, ends, t.inCode(), t.decodes(),
-			t.overlapping(), t.tailRule());
+			t.overlapping(), t.tailRule(), SlotCodeProbes.of(program, t.space()));
 		for (JumpTableBound.Leading l : JumpTableBound.leadingChecks(t.targets(), t.view(), facts)) {
 			log(t, viewStart, l, t.targets(), originator, source);
 		}
