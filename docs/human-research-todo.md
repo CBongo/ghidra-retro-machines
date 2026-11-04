@@ -232,6 +232,11 @@ Each is minutes of work and settles something specific. Highest value per unit e
   strict and E0D0 is reached another way (a caller-context walk or a per-game hint). The measured
   chain is in the `grm-9nxj.27` comments.
 
+  **Update 2026-11-03: this is now the only blocker.** Since `grm-9nxj.28`, `FUN_00df63` is
+  seeded with `$0600` from RESET. It loses DP at `$00df7e` only because that is the head of its
+  outer loop (`$e00f JSR $00e01a` ... `$e017 JMP $df7e`), and the back edge carries the call's
+  failed summary. If that call keeps DP, the whole chain to E0D0 resolves at `$0600`.
+
 ---
 
 ## 2. Def-use passes on untraced titles
