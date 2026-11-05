@@ -47,6 +47,26 @@
 //       head=<run head> headBack=<n> origin=<JT(..)|DIRECT(..)|DATA(..)|ENTRY|NONE,...> ins=<instr>
 //   HPC sum <signal> hits=<n> genuineProxy=<n> suspect=<n> reachN=<n> nbrBad=<n> inFnN=<n> overlay=<n>
 //   HPC total instrs=<n>
+// Stage 2 (per-RUN scoring, still measurement only). The CLEAN signals (read_writeonly, ppu_mirror,
+// write_readonly, ram_mirror) are grouped by fall-through run head (same walk as `origin`):
+//   HPC bitskip <signal> exempted=<n>   hits on a `BIT abs` at A where A+1 is the target of a flow
+//       reference or the start of an instruction (the 6502 BIT-skip idiom: the operand hides real
+//       code). Such hits are dropped from the run scoring below; the `hit`/`sum` lines above are
+//       unchanged. Exemption is never by operand byte value.
+//   HPC run head=<sp::addr> origin=<..> len=<instrs in run> hits=<clean hits> signals=<csv>
+//       distinctSites=<n> reach=<Y|N of head> inFn=<Y|N of head> fn=<head's fn|none>
+//       [jt=<site> slot=<k> of=<n> tableBounded=<n> boundComment=<Y|N>]...
+//     of = flow references the computed jump currently carries; tableBounded = the entry count the
+//     [JumpTableBound] EOL comment on the jump reports ("... -> N entries"), `?` when no such
+//     comment (the bound analyzer never pinned it). They can differ: the comment records the
+//     bound analyzer's decision, `of` is what the reference manager holds now.
+//     boundComment=Y when the comment is present.
+//   HPC runsum origin=<JT|DIRECT|DATA|ENTRY|NONE> runs=<n> multiHit=<runs with >=2 clean hits>
+//       genuineProxyHead=<runs whose head is reach=Y inFn=Y>
+//     A run's class: JT if any head reference is a computed flow; else ENTRY if the head is an
+//     external entry; else DIRECT, DATA, NONE.
+//   HPC jtsum site=<jt> flaggedSlots=<k1,k2,..> minFlagged=<k> n=<n> tableBounded=<n>
+//     per jump table: which slots' runs carry a clean hit (tail = overrun-shaped, early = not).
 // Field meanings are MapperWriteCensus's: `reach` = flow-closure from external entry points
 // (ProbeSupport.reachable); nbr = +/-4 code units along fall-through; origin = what disassembled
 // the head of the fall-through run. genuineProxy = reach=Y AND inFn=Y AND nbr=ok; suspect = every
@@ -227,6 +247,190 @@ public class PlausibilityCensus extends GhidraScript {
 				" inFnN=" + s.inFnN + " overlay=" + s.overlay);
 		}
 		println("HPC total instrs=" + total);
+		reportRuns();
+	}
+
+	// ---------------------------------------------------------------- stage 2: per-run scoring
+
+	private static final Set<String> CLEAN = Set.of("read_writeonly", "ppu_mirror", "write_readonly",
+		"ram_mirror");
+
+	private record Jt(String site, int k, int n, boolean boundComment, int bounded) {
+	}
+
+	private static final class Run {
+		String head;
+		String originStr;
+		String cls;
+		int len;
+		boolean reach;
+		boolean inFn;
+		String fn;
+		int hits;
+		final Set<String> signals = new java.util.TreeSet<>();
+		final Set<String> sites = new HashSet<>();
+		final List<Jt> jts = new ArrayList<>();
+	}
+
+	private final Map<String, Run> runs = new LinkedHashMap<>();
+	private final Map<String, Integer> bitExempt = new LinkedHashMap<>();
+
+	private void recordClean(Ctx c, String signal) {
+		if (!CLEAN.contains(signal)) {
+			return;
+		}
+		Instruction instr = c.instr();
+		Listing listing = c.listing();
+		Address site = instr.getMinAddress();
+		if ("BIT".equals(c.mnem()) && bitSkip(c, site)) {
+			bitExempt.merge(signal, 1, Integer::sum);
+			return;
+		}
+		Instruction head = instr;
+		for (int i = 0; i < 4096; i++) {
+			Instruction p = listing.getInstructionBefore(head.getMinAddress());
+			if (p == null || !head.getMinAddress().equals(p.getFallThrough())) {
+				break;
+			}
+			head = p;
+		}
+		Address h = head.getMinAddress();
+		Run r = runs.get(fmt(h));
+		if (r == null) {
+			r = new Run();
+			r.head = fmt(h);
+			r.originStr = origin(listing, head, c.seeds()).replaceFirst("^.*origin=", "");
+			r.reach = c.reached().contains(h);
+			Function fn = listing.getFunctionContaining(h);
+			r.inFn = fn != null;
+			r.fn = fn == null ? "none" : fn.getName() + "@" + fmt(fn.getEntryPoint());
+			int len = 0;
+			Instruction cur = head;
+			while (cur != null && len < 100000) {
+				len++;
+				Address ft = cur.getFallThrough();
+				cur = ft == null ? null : listing.getInstructionAt(ft);
+			}
+			r.len = len;
+			boolean jt = false;
+			boolean direct = false;
+			boolean data = false;
+			ReferenceIterator refs = c.program().getReferenceManager().getReferencesTo(h);
+			while (refs.hasNext()) {
+				Reference ref = refs.next();
+				Instruction fi = listing.getInstructionAt(ref.getFromAddress());
+				if (fi != null && ref.getReferenceType().isFlow() &&
+					ref.getReferenceType().isComputed()) {
+					jt = true;
+					int n = 0;
+					int k = -1;
+					for (Reference o : fi.getReferencesFrom()) {
+						if (o.getReferenceType().isFlow()) {
+							if (o.getToAddress().equals(h) && k < 0) {
+								k = n;
+							}
+							n++;
+						}
+					}
+					String eol = listing.getComment(
+						ghidra.program.model.listing.CommentType.EOL, ref.getFromAddress());
+					int bounded = -1;
+					if (eol != null) {
+						java.util.regex.Matcher m = java.util.regex.Pattern
+							.compile("->\\s*(\\d+)\\s+entries").matcher(eol);
+						if (m.find()) {
+							bounded = Integer.parseInt(m.group(1));
+						}
+					}
+					r.jts.add(new Jt(fmt(ref.getFromAddress()), k, n,
+						eol != null && eol.contains("[JumpTableBound]"), bounded));
+				}
+				else if (ref.getReferenceType().isFlow()) {
+					direct = true;
+				}
+				else {
+					data = true;
+				}
+			}
+			r.cls = jt ? "JT" : c.seeds().contains(h) ? "ENTRY" : direct ? "DIRECT" : data ? "DATA"
+					: "NONE";
+			runs.put(r.head, r);
+		}
+		r.hits++;
+		r.signals.add(signal);
+		r.sites.add(fmt(site));
+	}
+
+	/** BIT-skip idiom: the operand's first byte (A+1) is a flow target or an instruction start. */
+	private static boolean bitSkip(Ctx c, Address a) {
+		Address b;
+		try {
+			b = a.add(1);
+		}
+		catch (ghidra.program.model.address.AddressOutOfBoundsException e) {
+			return false;
+		}
+		if (c.listing().getInstructionAt(b) != null) {
+			return true;
+		}
+		ReferenceIterator refs = c.program().getReferenceManager().getReferencesTo(b);
+		while (refs.hasNext()) {
+			if (refs.next().getReferenceType().isFlow()) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private void reportRuns() {
+		for (String s : new String[] { "read_writeonly", "ppu_mirror", "write_readonly",
+			"ram_mirror" }) {
+			println("HPC bitskip " + s + " exempted=" + bitExempt.getOrDefault(s, 0));
+		}
+		Map<String, int[]> cls = new LinkedHashMap<>();
+		for (String k : new String[] { "JT", "DIRECT", "DATA", "ENTRY", "NONE" }) {
+			cls.put(k, new int[3]);
+		}
+		Map<String, java.util.TreeSet<Integer>> flagged = new LinkedHashMap<>();
+		Map<String, int[]> jtN = new LinkedHashMap<>();
+		for (Run r : runs.values()) {
+			StringBuilder sb = new StringBuilder();
+			for (Jt j : r.jts) {
+				sb.append(" jt=").append(j.site()).append(" slot=").append(j.k()).append(" of=")
+					.append(j.n()).append(" tableBounded=").append(j.bounded() < 0 ? "?" : j.bounded())
+					.append(" boundComment=")
+					.append(j.boundComment() ? "Y" : "N");
+				flagged.computeIfAbsent(j.site(), x -> new java.util.TreeSet<>()).add(j.k());
+				jtN.put(j.site(), new int[] { j.n(), j.boundComment() ? 1 : 0, j.bounded() });
+			}
+			println("HPC run head=" + r.head + " origin=" + r.originStr + " len=" + r.len + " hits=" +
+				r.hits + " signals=" + String.join(",", r.signals) + " distinctSites=" +
+				r.sites.size() + " reach=" + (r.reach ? "Y" : "N") + " inFn=" + (r.inFn ? "Y" : "N") +
+				" fn=" + r.fn + sb);
+			int[] a = cls.get(r.cls);
+			a[0]++;
+			if (r.hits >= 2) {
+				a[1]++;
+			}
+			if (r.reach && r.inFn) {
+				a[2]++;
+			}
+		}
+		for (Map.Entry<String, int[]> e : cls.entrySet()) {
+			int[] a = e.getValue();
+			println("HPC runsum origin=" + e.getKey() + " runs=" + a[0] + " multiHit=" + a[1] +
+				" genuineProxyHead=" + a[2]);
+		}
+		for (Map.Entry<String, java.util.TreeSet<Integer>> e : flagged.entrySet()) {
+			int[] n = jtN.get(e.getKey());
+			StringBuilder sb = new StringBuilder();
+			for (int k : e.getValue()) {
+				sb.append(sb.length() == 0 ? "" : ",").append(k);
+			}
+			println("HPC jtsum site=" + e.getKey() + " flaggedSlots=" + sb + " minFlagged=" +
+				e.getValue().first() + " n=" + n[0] + " tableBounded=" + (n[2] < 0 ? "?" : n[2]) + " boundComment=" +
+				(n[1] == 1 ? "Y" : "N"));
+		}
 	}
 
 	private record Ctx(Program program, Listing listing, Instruction instr, String mnem,
@@ -257,6 +461,7 @@ public class PlausibilityCensus extends GhidraScript {
 		if (site.getAddressSpace().isOverlaySpace()) {
 			s.overlay++;
 		}
+		recordClean(c, signal);
 		println("HPC hit " + signal + " " + fmt(site) + " " + c.mnem() + " target=" +
 			(target == null ? "-" : String.format("%04x", target)) + extra + " fn=" +
 			(fn == null ? "none" : fn.getName() + "@" + fmt(fn.getEntryPoint())) + " inFn=" +
