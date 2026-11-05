@@ -37,7 +37,11 @@ import ghidra.program.model.pcode.EquateSymbol;
 import ghidra.program.model.pcode.HighFunction;
 import ghidra.program.model.pcode.JumpTable;
 import ghidra.program.model.symbol.Namespace;
+import ghidra.program.model.symbol.RefType;
+import ghidra.program.model.symbol.Reference;
+import ghidra.program.model.symbol.ReferenceManager;
 import ghidra.program.model.symbol.SourceType;
+import ghidra.util.task.TaskMonitor;
 
 /**
  * {@link JumpTableBoundAnalyzer#relocateStaleOverride} (grm-v60.1): an override written while a
@@ -51,6 +55,7 @@ public class JumpTableOverrideRelocationProgramTest extends AbstractBundledLangu
 	private static final long CALLEE = 0x8010; // holds the switch
 	private static final long SWITCH = 0x8014;
 	private static final long[] CASES = { 0x8030, 0x8040 };
+	private static final long STALE = 0x8050; // a stock over-read case the override does not keep
 
 	private ProgramBuilder builder;
 
@@ -100,7 +105,7 @@ public class JumpTableOverrideRelocationProgramTest extends AbstractBundledLangu
 
 			assertTrue(JumpTableBoundAnalyzer.relocateStaleOverride(
 				new JumpTableOverrideRelocatorAnalyzer(), program, callee, addr(SWITCH),
-				new MessageLog()));
+				TaskMonitor.DUMMY, new MessageLog()));
 
 			Namespace moved = overrideOf(program, callee);
 			assertNotNull("override should now live under the callee", moved);
@@ -122,9 +127,39 @@ public class JumpTableOverrideRelocationProgramTest extends AbstractBundledLangu
 
 			assertFalse(JumpTableBoundAnalyzer.relocateStaleOverride(
 				new JumpTableOverrideRelocatorAnalyzer(), program, other, addr(SWITCH),
-				new MessageLog()));
+				TaskMonitor.DUMMY, new MessageLog()));
 			assertNotNull(overrideOf(program, caller));
 			assertNull(overrideOf(program, other));
+		});
+	}
+
+	/** grm-91jc: stock switch analysis decompiled the new owner while the override was stranded
+	 *  under the caller, and laid an over-read. Moving the override must retract those stale
+	 *  cases (dragonpower 87d0: 112 targets for a 54-entry bound). */
+	@Test
+	public void relocationRetractsStockOverReadCases() throws Exception {
+		ProgramDB program = build();
+		inTx(program, "t", () -> {
+			Function caller = createFunction(program, "caller", CALLER, 0x801f);
+			writeOverride(caller);
+			caller.setBody(new AddressSet(addr(CALLER), addr(CALLEE - 1)));
+			Function callee = createFunction(program, "callee", CALLEE, 0x801f);
+			ReferenceManager refs = program.getReferenceManager();
+			for (long target : new long[] { CASES[0], CASES[1], STALE }) {
+				refs.addMemoryReference(addr(SWITCH), addr(target), RefType.COMPUTED_JUMP,
+					SourceType.ANALYSIS, Reference.MNEMONIC);
+			}
+
+			assertTrue(JumpTableBoundAnalyzer.relocateStaleOverride(
+				new JumpTableOverrideRelocatorAnalyzer(), program, callee, addr(SWITCH),
+				TaskMonitor.DUMMY, new MessageLog()));
+
+			List<Long> left = new ArrayList<>();
+			for (Reference r : refs.getReferencesFrom(addr(SWITCH))) {
+				left.add(r.getToAddress().getOffset());
+			}
+			left.sort(null);
+			assertEquals(List.of(CASES[0], CASES[1]), left);
 		});
 	}
 

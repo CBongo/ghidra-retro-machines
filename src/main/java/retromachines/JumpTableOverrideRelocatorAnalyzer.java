@@ -89,7 +89,7 @@ public class JumpTableOverrideRelocatorAnalyzer extends AbstractAnalyzer {
 					continue;
 				}
 				if (JumpTableBoundAnalyzer.relocateStaleOverride(this, program, function,
-					instr.getMinAddress(), log)) {
+					instr.getMinAddress(), monitor, log)) {
 					moved++;
 				}
 				else if (!function.isThunk() &&

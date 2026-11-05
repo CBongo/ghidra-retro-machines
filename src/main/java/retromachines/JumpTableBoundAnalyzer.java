@@ -569,7 +569,7 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 			}
 		}
 		if (!isUndefined) {
-			if (relocateStaleOverride(this, program, function, switchAddr, log)) {
+			if (relocateStaleOverride(this, program, function, switchAddr, monitor, log)) {
 				return false;
 			}
 			if (alreadyOverridden(program, function, switchAddr)) {
@@ -965,7 +965,7 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 						e.getMessage());
 				return false;
 			}
-			retractStaleCases(program, function, switchAddr, reached, monitor);
+			retractStaleCases(this, program, function, switchAddr, reached, monitor);
 			if (guarded && !pinByReferences(program, listing, switchAddr, reached, monitor)) {
 				// grm-c9d.8.2: a guard may EXTEND the table past what stock switch analysis read,
 				// and the targets it adds have no reference or disassembly from stock. The override
@@ -1745,11 +1745,15 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 	 * from that target when nothing else reaches it -- the guard and the command
 	 * {@link DecidedBranchAnalyzer} uses for a dead fall-through. A kept case is matched by offset
 	 * alone, so a reference that was retargeted into an overlay copy of a kept target stays. Only
-	 * ever called after {@link JumpTable#writeOverride} succeeded; the pin path retracts the
-	 * references it replaces the same way ({@link #pinByReferences}, grm-vrkk.11).
+	 * ever called after {@link JumpTable#writeOverride} succeeded -- including when
+	 * {@link #relocateStaleOverride} rewrites a stranded override onto the function that now owns
+	 * the switch (grm-91jc: stock had over-read dragonpower 87d0 to 112 targets while its 54-entry
+	 * override sat under FUN_82ac, the function that lost the switch to FUN_87a7); the pin path
+	 * retracts the references it replaces the same way ({@link #pinByReferences}, grm-vrkk.11).
 	 */
-	private void retractStaleCases(Program program, Function function, Address switchAddr,
-			List<Address> keptTargets, TaskMonitor monitor) throws CancelledException {
+	private static void retractStaleCases(Analyzer analyzer, Program program, Function function,
+			Address switchAddr, List<Address> keptTargets, TaskMonitor monitor)
+			throws CancelledException {
 		List<Address> stale = staleCaseTargets(program, switchAddr, keptTargets, true);
 		if (stale.isEmpty()) {
 			return;
@@ -1758,7 +1762,7 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		if (!function.isDeleted()) {
 			CreateFunctionCmd.fixupFunctionBody(program, function, monitor);
 		}
-		AnalyzerLog.info(this, "retracted " + stale.size() + " over-read case(s) at " + switchAddr +
+		AnalyzerLog.info(analyzer, "retracted " + stale.size() + " over-read case(s) at " + switchAddr +
 			"; cleared flow from " + cleared + " of them");
 	}
 
@@ -1896,7 +1900,7 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 	 * which is the event that strands an override, so the result does not depend on order.
 	 */
 	static boolean relocateStaleOverride(Analyzer analyzer, Program program, Function function,
-			Address switchAddr, MessageLog log) {
+			Address switchAddr, TaskMonitor monitor, MessageLog log) throws CancelledException {
 		SymbolTable symtab = program.getSymbolTable();
 		String jmpName = "jmp_" + switchAddr.toString();
 		for (Symbol sym : symtab.getSymbols(switchAddr)) {
@@ -1933,6 +1937,9 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 					" from " + other.getName() + ": " + e.getMessage());
 				return false;
 			}
+			// grm-91jc: while the override sat under the wrong function, stock switch analysis
+			// may already have decompiled the new owner without it and laid its over-read.
+			retractStaleCases(analyzer, program, function, switchAddr, dests, monitor);
 			return true;
 		}
 		return false;
