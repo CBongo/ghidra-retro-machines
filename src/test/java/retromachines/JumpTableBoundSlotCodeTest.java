@@ -103,6 +103,45 @@ public class JumpTableBoundSlotCodeTest {
 		assertFalse(r.isBounded());
 	}
 
+	/** deadly_towers bbfd (grm-c9d.8.10): 8 entries, then two-call routines at slots 8/13/18/25,
+	 *  each ending where the next starts, and the first three-call run at slot 32. Slot 7's decode
+	 *  also ends at slot 13 (ASL zp, then slot 8's routine), and slots 19/26 are the BEQ after
+	 *  each routine's LDA, ending at 25/32 too: neither kind may be stepped to. */
+	@Test
+	public void walksBackThroughAbuttingTwoCallRoutines() {
+		Map<Long, CodeRun> runs = new java.util.HashMap<>();
+		runs.put(slot(7), run(true, true, slot(13), 0xc27aL, 0xbd13L));
+		runs.put(slot(8), run(true, true, slot(13), 0xc27aL, 0xbd13L));
+		runs.put(slot(13), run(true, true, slot(18), 0xc28fL, 0xbd13L));
+		runs.put(slot(18), run(true, true, slot(25), 0xc2b5L, 0xbd13L));
+		runs.put(slot(19), run(true, true, slot(25), 0xc2b5L, 0xbd13L));
+		runs.put(slot(25), run(true, true, slot(32), 0xc2a7L, 0xbd13L));
+		runs.put(slot(26), run(true, true, slot(32), 0xc2a7L, 0xbd13L));
+		runs.put(slot(32), run(true, true, slot(32) + 16, 0xbc7dL, 0xc27aL, 0xc2b5L, 0xbd13L));
+		Result r = JumpTableBound.boundBySlotCode(targets(64), table(64), new SlotCodeProbe(
+			a -> runs.getOrDefault(a, run(false, false, a)), t -> t >= 0xbc00));
+		assertEquals(Rule.SLOT_CODE, r.rule());
+		assertEquals(8, r.count());
+	}
+
+	/** A run that falls through into the cut (step cap, no terminator) does not extend it. */
+	@Test
+	public void aRunThatOnlyFallsIntoTheCutDoesNotExtend() {
+		Result r = JumpTableBound.boundBySlotCode(targets(32), table(32), probe(Map.of(
+			slot(5), run(true, false, slot(9), 0x99fbL, 0x988bL),
+			slot(9), run(true, true, slot(9) + 12, 0x99fbL, 0x988bL, 0x9a1cL))));
+		assertEquals(9, r.count());
+	}
+
+	/** An abutting run with a single outside call is not enough to extend. */
+	@Test
+	public void anAbuttingRunNeedsTwoCalls() {
+		Result r = JumpTableBound.boundBySlotCode(targets(32), table(32), probe(Map.of(
+			slot(5), run(true, true, slot(9), 0x99fbL),
+			slot(9), run(true, true, slot(9) + 12, 0x99fbL, 0x988bL, 0x9a1cL))));
+		assertEquals(9, r.count());
+	}
+
 	/** dbz_saiyan d1aa: a jump back into the over-read tail (the code itself) still counts. */
 	@Test
 	public void aCallIntoTheOverReadTailCounts() {

@@ -854,8 +854,9 @@ public final class JumpTableBound {
 	 *  rather than as a coincidence of table bytes. One lone {@code $20 xx yy} at a slot boundary
 	 *  is a plausible accident (a low byte of {@code $20}); two are not enough either: deadly_towers
 	 *  bbfd's REAL entries {@code bcd1 bcde bceb ..} followed by its routine decode as a legal run
-	 *  holding exactly two (a JSR and a JMP), which cut a 10-entry table at 3. Three is what
-	 *  dragonpower 803e, dbz_saiyan d1aa and the other true cuts clear. */
+	 *  holding exactly two (a JSR and a JMP), which cut an 8-entry table at 3. Three is what
+	 *  dragonpower 803e, dbz_saiyan d1aa and the other true cuts clear; two-call routines laid out
+	 *  just before such a run are recovered by {@link #extendSlotCodeBack}. */
 	static final int SLOT_CODE_MIN_CALLS = 3;
 
 	/** The earliest slot the slot-code tail rule may cut at: fewer than 2 kept entries is nothing
@@ -868,8 +869,14 @@ public final class JumpTableBound {
 	 * {@code [lo, hi)} (the kept table's own bytes) and satisfy {@code isCode}.
 	 */
 	private static boolean coherentRun(CodeRun run, long lo, long hi, LongPredicate isCode) {
+		return outsideCalls(run, lo, hi, isCode) >= SLOT_CODE_MIN_CALLS;
+	}
+
+	/** Absolute calls/jumps in a legal {@code run} that land on decodable code outside
+	 *  {@code [lo, hi)}; {@code -1} for a missing or illegal run. */
+	private static int outsideCalls(CodeRun run, long lo, long hi, LongPredicate isCode) {
 		if (run == null || !run.legal()) {
-			return false;
+			return -1;
 		}
 		int good = 0;
 		for (long t : run.callTargets()) {
@@ -877,7 +884,76 @@ public final class JumpTableBound {
 				good++;
 			}
 		}
-		return good >= SLOT_CODE_MIN_CALLS;
+		return good;
+	}
+
+	/** Absolute calls/jumps an ABUTTING run needs for {@link #extendSlotCodeBack}: one fewer than a
+	 *  run that stands on its own, because ending exactly where proven code starts is evidence a
+	 *  coincidental decode of table bytes almost never supplies. */
+	static final int SLOT_CODE_ABUT_MIN_CALLS = SLOT_CODE_MIN_CALLS - 1;
+
+	/**
+	 * Walk a slot-code cut back toward the table start (grm-c9d.8.10): while some earlier slot's
+	 * bytes decode as a legal run that TERMINATES (return/unconditional jump) exactly at the
+	 * current cut's address and holds at least {@link #SLOT_CODE_ABUT_MIN_CALLS} outside calls,
+	 * that slot is also code -- the routine laid out just before the one that proved the cut.
+	 *
+	 * <p>6502 decode resynchronizes, so several slots usually qualify: the routine's real start,
+	 * and entries partway into it (a {@code BEQ} after its {@code LDA}) or before it (a table
+	 * byte decoding as {@code ASL zp} and then running into the routine). The one taken is the
+	 * latest candidate that is itself where another qualifying run ENDS -- a routine boundary,
+	 * where one routine stops and the next begins -- and, when no candidate is, the latest
+	 * candidate outright: at the head of the chain that is the closest to proven code, so the
+	 * ambiguous case errs toward keeping entries. deadly_towers bbfd is the case: 8 entries,
+	 * then two-call routines at slots 8/13/18/25 ({@code [LDA/BEQ] JSR / DEC $00 / BNE / JMP
+	 * $bd13}), each ending where the next starts, and the first three-call run at slot 32;
+	 * slot 26 (mid-routine) and slot 7 (a table byte) also end on chain boundaries.
+	 */
+	private static int extendSlotCodeBack(int k, long lo, SlotCodeProbe probe) {
+		CodeRun[] runs = new CodeRun[k];
+		int cut = k;
+		while (true) {
+			int latest = -1;
+			int backed = -1;
+			for (int j = cut - 1; j >= SLOT_CODE_MIN_SLOT; j--) {
+				if (!abuts(runs, j, lo + 2L * cut, lo, probe)) {
+					continue;
+				}
+				if (latest < 0) {
+					latest = j;
+				}
+				if (endedAt(runs, j, lo, probe)) {
+					backed = j;
+					break;
+				}
+			}
+			int next = backed >= 0 ? backed : latest;
+			if (next < 0) {
+				return cut;
+			}
+			cut = next;
+		}
+	}
+
+	/** Whether some slot before {@code j} qualifies as a run ending exactly at slot {@code j}. */
+	private static boolean endedAt(CodeRun[] runs, int j, long lo, SlotCodeProbe probe) {
+		for (int i = j - 1; i >= SLOT_CODE_MIN_SLOT; i--) {
+			if (abuts(runs, i, lo + 2L * j, lo, probe)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Slot {@code j}'s run terminates exactly at {@code endAddr} with enough outside calls. */
+	private static boolean abuts(CodeRun[] runs, int j, long endAddr, long lo, SlotCodeProbe probe) {
+		if (runs[j] == null) {
+			CodeRun r = probe.run().apply(lo + 2L * j);
+			runs[j] = r != null ? r : new CodeRun(false, false, lo + 2L * j, List.of());
+		}
+		CodeRun run = runs[j];
+		return run.terminated() && run.end() == endAddr &&
+			outsideCalls(run, lo, lo + 2L * j, probe.isCode()) >= SLOT_CODE_ABUT_MIN_CALLS;
 	}
 
 	/**
@@ -919,7 +995,8 @@ public final class JumpTableBound {
 			// the code itself, and a branch back into it (dbz_saiyan d1aa's JMP $d1e6) is a loop in
 			// that code, not table data.
 			if (coherentRun(probe.run().apply(lo + 2L * k), lo, lo + 2L * k, probe.isCode())) {
-				return Result.bounded(k, lowestOf(targets.subList(0, k)), Rule.SLOT_CODE);
+				int cut = extendSlotCodeBack(k, lo, probe);
+				return Result.bounded(cut, lowestOf(targets.subList(0, cut)), Rule.SLOT_CODE);
 			}
 		}
 		return Result.decline();

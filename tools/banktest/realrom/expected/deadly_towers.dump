@@ -17,7 +17,7 @@ REALROM count instrs.inOverlay 3743
 REALROM count bankComments 186
 REALROM count warnings 1
 REALROM count notes 0
-REALROM count symbols 256
+REALROM count symbols 232
 REALROM count jumptable.wordArrays 13
 REALROM count jumptable.planarArrays 0
 REALROM sample.bankcomment 806b bank -> 0 (bank=0) via FUN_PRG_ALL_B1__fc54
@@ -233,14 +233,6 @@ REALROM sample.ref 8095 -> PRG_ALL_B1::80d4 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8095 -> PRG_ALL_B3::813c UNCONDITIONAL_CALL primary=true
 REALROM sample.ref.truncated 25 of 1226
 REALROM sample.warn 8062 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
-REALROM sample.symbol 00a5 case_18 USER_DEFINED primary=true
-REALROM sample.symbol 00a5 case_25 USER_DEFINED primary=false
-REALROM sample.symbol 07f0 case_19 USER_DEFINED primary=true
-REALROM sample.symbol 4cf9 case_11 USER_DEFINED primary=true
-REALROM sample.symbol 4cf9 case_16 USER_DEFINED primary=false
-REALROM sample.symbol 4cf9 case_23 USER_DEFINED primary=false
-REALROM sample.symbol 4cf9 case_30 USER_DEFINED primary=false
-REALROM sample.symbol 7a20 case_8 USER_DEFINED primary=true
 REALROM sample.symbol 80f5 case_1 USER_DEFINED primary=true
 REALROM sample.symbol 8153 case_0 USER_DEFINED primary=false
 REALROM sample.symbol 827f switch USER_DEFINED primary=true
@@ -258,7 +250,15 @@ REALROM sample.symbol 82fe case_47 USER_DEFINED primary=false
 REALROM sample.symbol 83a6 case_1 USER_DEFINED primary=true
 REALROM sample.symbol 83a6 case_10 USER_DEFINED primary=false
 REALROM sample.symbol 83a6 case_11 USER_DEFINED primary=false
-REALROM sample.symbol.truncated 25 of 244
+REALROM sample.symbol 83a6 case_12 USER_DEFINED primary=false
+REALROM sample.symbol 83a6 case_13 USER_DEFINED primary=false
+REALROM sample.symbol 83a6 case_14 USER_DEFINED primary=false
+REALROM sample.symbol 83a6 case_2 USER_DEFINED primary=false
+REALROM sample.symbol 83a6 case_23 USER_DEFINED primary=false
+REALROM sample.symbol 83a6 case_24 USER_DEFINED primary=false
+REALROM sample.symbol 83a6 case_25 USER_DEFINED primary=false
+REALROM sample.symbol 83a6 case_26 USER_DEFINED primary=false
+REALROM sample.symbol.truncated 25 of 220
 REALROM sample.jumptable 8282 word[62]
 REALROM sample.jumptable 8e16 word[4]
 REALROM sample.jumptable 8e99 word[9]
