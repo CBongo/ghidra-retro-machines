@@ -718,6 +718,13 @@ declare -A _PLAT_MEMO=()
 use_platform() {
 	local p="$1" ia ex
 	PLATFORM="$p"
+	# An unknown platform has no loader or dump script; running on would hand analyzeHeadless an
+	# empty -loader (grm-fumc), which reads as a row FAIL instead of the runner bug it is.
+	if [ -z "$p" ] || ! tsv_field "$PLATFORMS_TSV" "$p" loader >/dev/null; then
+		echo "ERROR: realrom-test.sh: platform '$p' is not in $PLATFORMS_TSV -- a runner bug" \
+			"(a corrupted manifest row?), not a ROM result; aborting." >&2
+		exit 2
+	fi
 	if [ -z "${_PLAT_MEMO[$p]+x}" ]; then
 		# '-' rather than an empty cell, so the column is never ambiguous in a TSV where a
 		# trailing empty field and a missing one look identical.
@@ -1400,6 +1407,11 @@ n_pass=0; n_fail=0; n_skip=0; n_bless=0; n_filtered=0
 # is "the solo invocation with several -import args", and nothing else may differ.
 rr_headless_args() {
 	local opts="$1"
+	if [ -z "$ROM_LOADER" ] || [ -z "$ROM_DUMP_SCRIPT" ]; then
+		echo "ERROR: realrom-test.sh: empty loader/dump script for platform '$PLATFORM'" \
+			"(loader='$ROM_LOADER' dump='$ROM_DUMP_SCRIPT') -- a runner bug, aborting (grm-fumc)." >&2
+		exit 2
+	fi
 	RR_ARGS=(-loader "$ROM_LOADER" ${ROM_IMPORT_ARGS[@]+"${ROM_IMPORT_ARGS[@]}"})
 	# $opts is intentionally unquoted (multi-token loader options), as it always was.
 	# shellcheck disable=SC2206

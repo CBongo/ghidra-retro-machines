@@ -94,7 +94,7 @@ for rom in "$@"; do
 		-scriptPath "$(native "$SCRIPT_DIR")" \
 		-postScript OverlayScaleMeasure.java \
 		-deleteProject \
-		>"$log" 2>&1
+		</dev/null >"$log" 2>&1
 	status=$?
 	end_ns="$(date +%s%N)"
 	wall_s="$(awk -v a="$start_ns" -v b="$end_ns" 'BEGIN { printf "%.2f", (b - a) / 1000000000 }')"

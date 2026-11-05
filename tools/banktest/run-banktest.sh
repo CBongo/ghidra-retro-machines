@@ -765,7 +765,7 @@ run_reject() {
 	"$GHIDRA_HEADLESS" "$(native "$proj")" headless \
 		-import "$(native "$fixture")" \
 		-loader "$loader" \
-		>"$log" 2>&1
+		</dev/null >"$log" 2>&1
 
 	if ! grep -qF "$expect_msg" "$log"; then
 		echo "FAIL: $name log does not mention the expected rejection reason ($expect_msg) (log: $log)"
@@ -821,7 +821,7 @@ run_census() {
 		-loader "$loader" \
 		-scriptPath "$(native "$SCRIPT_DIR")" \
 		-postScript BaseSpaceCensus.java \
-		>"$log_on" 2>&1
+		</dev/null >"$log_on" 2>&1
 
 	echo "== $name: census import #2/2 (analyzer OFF, via SetAnalyzerEnabled.java) via analyzeHeadless ($loader) =="
 	"$GHIDRA_HEADLESS" "$(native "$proj_off")" headless \
@@ -830,7 +830,7 @@ run_census() {
 		-preScript SetAnalyzerEnabled.java analyzer:NES_Bank_State enabled:false \
 		-scriptPath "$(native "$SCRIPT_DIR")" \
 		-postScript BaseSpaceCensus.java \
-		>"$log_off" 2>&1
+		</dev/null >"$log_off" 2>&1
 
 	# Headless wraps script println output as "INFO  <Script.java>> <msg> (GhidraScript)" --
 	# strip that the same way run_one does, so the CENSUS lines below can be grepped plainly.

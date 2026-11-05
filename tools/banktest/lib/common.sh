@@ -859,13 +859,18 @@ run_headless_timed() {
 	else
 		limit=$((GRM_HEADLESS_TIMEOUT_BASE + n * GRM_HEADLESS_TIMEOUT_PER_PROGRAM))
 	fi
+	# stdin is /dev/null (grm-fumc): analyzeHeadless.bat ends in `pause` on a non-zero exit, and
+	# pause reads one byte of stdin. A caller looping `while read ... done < <(manifest)` hands
+	# the headless its manifest stream, so every failed import ate the first byte of the NEXT
+	# row ("nes" -> "es"): unknown platform, empty -loader, the .bat stops parsing at the empty
+	# arg, "-loader requires an argument", which fails and pauses again -- a cascade of FAILs.
 	if [ "$limit" -eq 0 ]; then
-		"$@" >"$log" 2>&1
+		"$@" </dev/null >"$log" 2>&1
 		return $?
 	fi
 	local flag="$log.timedout"
 	rm -f "$flag"
-	"$@" >"$log" 2>&1 &
+	"$@" </dev/null >"$log" 2>&1 &
 	local pid=$!
 	(
 		sleep "$limit" &
