@@ -1,0 +1,164 @@
+=== REALROM BEGIN ===
+REALROM program c64_acs_kernel.prg
+REALROM sha256 719d9167b9abde7eef4f57dc1b6a328c2044e2021132835828cf790e1b469695
+REALROM prgsha256 NONE
+REALROM map machines/c64.map
+REALROM placement NONE
+REALROM block OS_WORKSPACE 0200-03ff overlay=false
+REALROM block PRG 0800-25ff overlay=false
+REALROM block RAM_A000 a000-bfff overlay=true
+REALROM block RAM_C000 c000-cfff overlay=false
+REALROM block RAM_E000 e000-ffff overlay=true
+REALROM block RAM_MAIN_2600 2600-9fff overlay=false
+REALROM block SCREEN_RAM 0400-07ff overlay=false
+REALROM block STACK 0100-01ff overlay=false
+REALROM block ZEROPAGE 0002-00ff overlay=false
+REALROM count blocks.total 21
+REALROM count blocks.overlay 4
+REALROM count spaces.overlay 4
+REALROM count instructions 986
+REALROM count instrs.inOverlay 0
+REALROM count functions 191
+REALROM count loaded.bytes 7680
+REALROM count loaded.undefinedBytes 518
+REALROM count bit.carriers 0
+REALROM count bit.entered 0
+REALROM count bankComments 45
+REALROM count warnings 1
+REALROM count notes 3
+REALROM count symbols 44
+REALROM count decrypt.materialized 0
+REALROM count decrypt.suspect 0
+REALROM count decrypt.candidate 0
+REALROM count decrypt.unbounded 1
+REALROM count decrypt.notApplied 0
+REALROM count decrypt.other 0
+REALROM count copy.declined 0
+REALROM count copy.unbounded 0
+REALROM count copy.other 0
+REALROM count skip.candidateNote 0
+REALROM count skip.offcutInfo 0
+REALROM count forth.words 509
+REALROM count forth.colon 161
+REALROM count forth.code 108
+REALROM count forth.data 236
+REALROM count forth.does 3
+REALROM count forth.vector 1
+REALROM count forth.rejected 3
+REALROM sample.forth 08aa code word LIT
+REALROM sample.forth 08bd code word PUSH
+REALROM sample.forth 08c4 code word NEXT
+REALROM sample.forth 08e2 code word DOCOL
+REALROM sample.forth 0957 code word CALL_stk|CALL stk
+REALROM sample.forth 0966 code word BRANCH
+REALROM sample.forth 097b code word 0BRANCH
+REALROM sample.forth 0993 code word _LOOP_
+REALROM sample.forth 09b9 code word _PLUSLOOP_
+REALROM sample.forth 09e9 code word DO
+REALROM sample.forth 09fe code word FETCHR
+REALROM sample.forth 0a0f code word I
+REALROM sample.forth 0a11 code word J
+REALROM sample.forth 0a3d code word CMOVE
+REALROM sample.forth 0a7d code word UDSTAR
+REALROM sample.forth 0a85 code word USTAR
+REALROM sample.forth 0ad4 code word UDSLASHMOD
+REALROM sample.forth 0adc code word AND
+REALROM sample.forth 0aec code word OR
+REALROM sample.forth 0afc code word XOR
+REALROM sample.forth 0b2e code word EXIT
+REALROM sample.forth 0b39 code word LEAVE
+REALROM sample.forth 0b4f code word GTR
+REALROM sample.forth 0b5c code word RGT
+REALROM sample.forth 0b69 code word 0EQ
+REALROM sample.forth 0b7b code word 0GT
+REALROM sample.forth 0bac code word DPLUS
+REALROM sample.forth 0bca code word PLUS
+REALROM sample.forth 0bd8 code word MINUS
+REALROM sample.forth 0be6 code word NEGATE
+REALROM sample.forth 0bf6 code word OVER
+REALROM sample.forth 0c00 code word DROP
+REALROM sample.forth 0c02 code word DUP
+REALROM sample.forth 0c21 code word SWAP
+REALROM sample.forth 0c29 code word ROT
+REALROM sample.forth 0c44 code word PLUSSTORE
+REALROM sample.forth 0c5c code word XORMINUSCSTORE
+REALROM sample.forth 0c67 code word FETCH
+REALROM sample.forth 0c77 code word CFETCH
+REALROM sample.forth 0c82 code word STORE
+REALROM sample.forth.truncated 40 of 509
+REALROM sample.bankcomment 1135 bank -> 6 (RAM_A000/IO/KERNAL)
+REALROM sample.bankcomment 1140 bank -> 5 (RAM_A000/IO/RAM_E000)
+REALROM sample.bankcomment 1145 bank -> 6 (RAM_A000/IO/KERNAL) via FUN_1131
+REALROM sample.bankcomment 114b bank -> 5 (RAM_A000/IO/RAM_E000) via FUN_113c
+REALROM sample.bankcomment 114e bank -> 6 (RAM_A000/IO/KERNAL) via FUN_1131
+REALROM sample.bankcomment 1154 bank -> 5 (RAM_A000/IO/RAM_E000) via FUN_113c
+REALROM sample.bankcomment 1157 bank -> 6 (RAM_A000/IO/KERNAL) via FUN_1131
+REALROM sample.bankcomment 115d bank -> 5 (RAM_A000/IO/RAM_E000) via FUN_113c
+REALROM sample.bankcomment 1160 bank -> 6 (RAM_A000/IO/KERNAL) via FUN_1131
+REALROM sample.bankcomment 1166 bank -> 5 (RAM_A000/IO/RAM_E000) via FUN_113c
+REALROM sample.bankcomment 1169 bank -> 6 (RAM_A000/IO/KERNAL) via FUN_1131
+REALROM sample.bankcomment 116f bank -> 5 (RAM_A000/IO/RAM_E000) via FUN_113c
+REALROM sample.bankcomment 1172 bank -> 6 (RAM_A000/IO/KERNAL) via FUN_1131
+REALROM sample.bankcomment 1178 bank -> 5 (RAM_A000/IO/RAM_E000) via FUN_113c
+REALROM sample.bankcomment 117b bank -> 6 (RAM_A000/IO/KERNAL) via FUN_1131
+REALROM sample.bankcomment 1181 bank -> 5 (RAM_A000/IO/RAM_E000) via FUN_113c
+REALROM sample.bankcomment 1184 bank -> 6 (RAM_A000/IO/KERNAL) via FUN_1131
+REALROM sample.bankcomment 118a bank -> 5 (RAM_A000/IO/RAM_E000) via FUN_113c
+REALROM sample.bankcomment 118d bank -> 6 (RAM_A000/IO/KERNAL) via FUN_1131
+REALROM sample.bankcomment 1193 bank -> 5 (RAM_A000/IO/RAM_E000) via FUN_113c
+REALROM sample.bankcomment 1196 bank -> 6 (RAM_A000/IO/KERNAL) via FUN_1131
+REALROM sample.bankcomment 119c bank -> 5 (RAM_A000/IO/RAM_E000) via FUN_113c
+REALROM sample.bankcomment 119f bank -> 6 (RAM_A000/IO/KERNAL) via FUN_1131
+REALROM sample.bankcomment 11a5 bank -> 5 (RAM_A000/IO/RAM_E000) via FUN_113c
+REALROM sample.bankcomment 11c4 bank -> 6 (RAM_A000/IO/KERNAL) via FUN_1131
+REALROM sample.bankcomment 11ca bank -> 5 (RAM_A000/IO/RAM_E000) via FUN_113c
+REALROM sample.bankcomment 132a bank -> 6 (RAM_A000/IO/KERNAL) via FUN_1131
+REALROM sample.bankcomment 1330 bank -> 5 (RAM_A000/IO/RAM_E000) via FUN_113c
+REALROM sample.bankcomment 1333 bank -> 6 (RAM_A000/IO/KERNAL) via FUN_1131
+REALROM sample.bankcomment 1339 bank -> 5 (RAM_A000/IO/RAM_E000) via FUN_113c
+REALROM sample.bankcomment 133c bank -> 6 (RAM_A000/IO/KERNAL) via FUN_1131
+REALROM sample.bankcomment 1342 bank -> 5 (RAM_A000/IO/RAM_E000) via FUN_113c
+REALROM sample.bankcomment 1345 bank -> 6 (RAM_A000/IO/KERNAL) via FUN_1131
+REALROM sample.bankcomment 134b bank -> 5 (RAM_A000/IO/RAM_E000) via FUN_113c
+REALROM sample.bankcomment 134e bank -> 6 (RAM_A000/IO/KERNAL) via FUN_1131
+REALROM sample.bankcomment 1354 bank -> 5 (RAM_A000/IO/RAM_E000) via FUN_113c
+REALROM sample.bankcomment 1357 bank -> 6 (RAM_A000/IO/KERNAL) via FUN_1131
+REALROM sample.bankcomment 135d bank -> 5 (RAM_A000/IO/RAM_E000) via FUN_113c
+REALROM sample.bankcomment 1360 bank -> 6 (RAM_A000/IO/KERNAL) via FUN_1131
+REALROM sample.bankcomment 1366 bank -> 5 (RAM_A000/IO/RAM_E000) via FUN_113c
+REALROM sample.bankcomment 1369 bank -> 6 (RAM_A000/IO/KERNAL) via FUN_1131
+REALROM sample.bankcomment 136f bank -> 5 (RAM_A000/IO/RAM_E000) via FUN_113c
+REALROM sample.bankcomment 1372 bank -> 6 (RAM_A000/IO/KERNAL) via FUN_1131
+REALROM sample.bankcomment 1378 bank -> 5 (RAM_A000/IO/RAM_E000) via FUN_113c
+REALROM sample.bankcomment 1817 bank -> 5 (RAM_A000/IO/RAM_E000)
+REALROM sample.warn 0c5e [C64DecryptLoopAnalyzer] decrypt-shaped loop (key=ROLLING(0000)) could not be bounded; not applied
+REALROM sample.note 08e0 [ForthAnalyzer] rejected colon candidate $08E0: cell $7FA5 at $08E2 is not a word
+REALROM sample.note 1834 [ForthAnalyzer] rejected colon candidate $1834: cell $1FBA at $1866 is not a word
+REALROM sample.note 1fba [ForthAnalyzer] rejected colon candidate $1FBA: cell $707A at $1FE2 is not a word
+REALROM sample.symbol 0800 entry IMPORTED primary=true
+REALROM sample.symbol 099f acs_kernel_start IMPORTED primary=true
+REALROM sample.symbol ff87 RAMTAS IMPORTED primary=true
+REALROM sample.symbol ff8a RESTOR IMPORTED primary=true
+REALROM sample.symbol ff8d VECTOR IMPORTED primary=true
+REALROM sample.symbol ff90 SETMSG IMPORTED primary=true
+REALROM sample.symbol ff93 SECOND IMPORTED primary=true
+REALROM sample.symbol ff96 TKSA IMPORTED primary=true
+REALROM sample.symbol ff99 MEMTOP IMPORTED primary=true
+REALROM sample.symbol ff9c MEMBOT IMPORTED primary=true
+REALROM sample.symbol ff9f SCNKEY IMPORTED primary=true
+REALROM sample.symbol ffa2 SETTMO IMPORTED primary=true
+REALROM sample.symbol ffa8 CIOUT IMPORTED primary=true
+REALROM sample.symbol ffab UNTLK IMPORTED primary=true
+REALROM sample.symbol ffae UNLSN IMPORTED primary=true
+REALROM sample.symbol ffb1 LISTEN IMPORTED primary=true
+REALROM sample.symbol ffb4 TALK IMPORTED primary=true
+REALROM sample.symbol ffb7 READST IMPORTED primary=true
+REALROM sample.symbol ffc3 CLOSE IMPORTED primary=true
+REALROM sample.symbol ffc6 CHKIN IMPORTED primary=true
+REALROM sample.symbol ffc9 CHKOUT IMPORTED primary=true
+REALROM sample.symbol ffcc CLRCHN IMPORTED primary=true
+REALROM sample.symbol ffcf CHRIN IMPORTED primary=true
+REALROM sample.symbol ffd8 SAVE IMPORTED primary=true
+REALROM sample.symbol ffdb SETTIM IMPORTED primary=true
+REALROM sample.symbol.truncated 25 of 35
+=== REALROM END ===

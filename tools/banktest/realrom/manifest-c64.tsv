@@ -1,4 +1,4 @@
-id	title	sha256	mapper	board	golden	loader_opts	member
+id	title	sha256	mapper	board	golden	loader_opts	member	member_sha256
 c64_sg_loader	Summer Games loader.prg	067700034545087ea7e5894875c79ce59d8183baa691012d7e677c2a307b47c1	-	-	c64_sg_loader.dump
 c64_sg_a	Summer Games a.prg	69f4cd3e9083a6d211c8e4b4b96682564be58766b1b36d81c7606c9cf5910a99	-	-	c64_sg_a.dump
 c64_sg_h	Summer Games h.prg	926fb4a269089a80bf3cf68f56b487718f3aecbf5043f815b3bc271e921ea0da	-	-	c64_sg_h.dump
@@ -12,3 +12,4 @@ c64_sid_player	Sidplayer sid player.64.prg	5ef3cc9e49dbad61acd3b61c53a45ad21d76a
 c64_acs_g	ACS1 G.PRG	79635850751092768ad757204f5acb69a947ad566a3c5eab72a97022247d85ef	-	-	c64_acs_g.dump
 c64_acs_b	ACS1 B.PRG	99d031beb09a65d095a3b5af1e8660eb11bec20fdcb40f1de86c24558e05c994	-	-	c64_acs_b.dump
 c64_acs_o	ACS1 O.PRG	7621b80676860356c15bbd35ee9a04d2623bcc2f5186a3a9c7ad29cb20c755b5	-	-	c64_acs_o.dump
+c64_acs_kernel	ACS1.D64 EA_BOOT_IMAGE.prg	469d583b4feb375e1407e74e183e3f6eae6c2b89d49e83dc6d7bedeed7bb0a63	-	-	c64_acs_kernel.dump	-	EA_BOOT_IMAGE.prg	719d9167b9abde7eef4f57dc1b6a328c2044e2021132835828cf790e1b469695

@@ -1075,13 +1075,15 @@ fi
 # workflow, and the row walk already reports that as a FAIL with a clearer message.
 if [ "$MODE" = check ]; then
 	mismatched=""
-	while IFS=$'\t' read -r g_plat g_id _ g_sha _ _ g_golden _ _; do
+	while IFS=$'\t' read -r g_plat g_id _ g_sha _ _ g_golden _ g_member g_msha; do
 		case "${g_id:-}" in ""|id|\#*) continue ;; esac
 		g_path="$EXPECTED_DIR/${g_golden:-$g_id.dump}"
 		[ -f "$g_path" ] || continue
 		g_ext="$(tsv_field "$PLATFORMS_TSV" "$g_plat" copy_ext)"
 		g_prog="$(awk '/^REALROM program /{print $3; exit}' "$g_path")"
 		g_gsha="$(awk '/^REALROM sha256 /{print tolower($3); exit}' "$g_path")"
+		# A container row's program is the member, so its golden pins the MEMBER's sha (grm-t3n.3).
+		[ -z "$g_member" ] || g_sha="$g_msha"
 		g_want="$(printf '%s' "$g_sha" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
 		if [ "$g_prog" != "$g_id$g_ext" ] || [ "$g_gsha" != "$g_want" ]; then
 			mismatched="$mismatched  $g_id: $(basename "$g_path") says program=$g_prog sha=${g_gsha:0:12}...
@@ -1164,13 +1166,19 @@ realrom_cache_key() {
 	# meant renaming a row (wizwarr -> ironsword) left the key untouched, so a bless reused
 	# the pre-rename candidate and wrote the old name straight back into the golden. Anything
 	# that can change the dump has to be in here.
-	local id="$1" rom_sha="$2" opts="$3"
+	local id="$1" rom_sha="$2" opts="$3" member="${4:-}" member_sha="${5:-}"
 	[ -n "$EXT_ID" ] || { printf ''; return 0; }
 	[ -n "$TOOLCHAIN_ID" ] || { printf ''; return 0; }
 	{
 		printf 'id:%s\n' "$id"
 		printf 'rom:%s\n' "$rom_sha"
 		printf 'opts:%s\n' "$opts"
+		# Container rows (grm-t3n.3): the member and its own pin shape the imported bytes. Emitted
+		# only when set, so every existing (member-less) row keeps its exact key.
+		if [ -n "$member" ]; then
+			printf 'member:%s:%s\n' "$member" "$member_sha"
+			sha256sum "$SCRIPT_DIR/ExtractContainerMember.java" | cut -d' ' -f1
+		fi
 		# WHICHEVER dump script this row actually uses. Hardcoding RealRomDump.java here
 		# would let a SNES golden be served from a cache entry that predates a change to
 		# SnesRealRomDump.java -- into a `bless`, in the worst case (bead grm-9nxj.15).
@@ -1234,7 +1242,7 @@ if [ "$MODE" = coverage ]; then
 		echo "COVERAGE: REALROM_EXTRA_PRESCRIPT is set -- reporting entries for THAT configuration only."
 	printf '\n%-14s %-6s %s\n' ID CACHE NOTE
 	n_cov=0; n_cov_total=0
-	while IFS=$'\t' read -r row_plat id title sha mapper board golden opts member ||
+	while IFS=$'\t' read -r row_plat id title sha mapper board golden opts member member_sha ||
 		[ -n "${id:-}" ]; do
 		case "${id:-}" in ""|id|\#*) continue ;; esac
 		case "$SET_IDS" in *",$id,"*) ;; *) continue ;; esac
@@ -1244,7 +1252,8 @@ if [ "$MODE" = coverage ]; then
 		fi
 		use_platform "$row_plat"
 		sha="$(printf '%s' "$sha" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
-		key="$(realrom_cache_key "$id" "$sha" "${opts:-}")"
+		member_sha="$(printf '%s' "${member_sha:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+		key="$(realrom_cache_key "$id" "$sha" "$([ "${opts:--}" = "-" ] || printf "%s" "$opts")" "${member:-}" "$member_sha")"
 		n_cov_total=$((n_cov_total + 1))
 		if [ -n "$key" ] && [ -f "$CACHE_DIR/$key.dump" ]; then
 			n_cov=$((n_cov + 1))
@@ -1683,6 +1692,40 @@ finish_row() {
 
 # One row, one analyzeHeadless JVM: the pre-grm-x4y1.3 flow, and still the whole flow at
 # --batch-size 1, with --keep-project, and for batch-crash fallback.
+# Container rows (grm-t3n.3): write one member of a container image to $WORK/member/<id>.bin via a
+# program-less headless run of ExtractContainerMember.java (Ghidra's FileSystemService mounts the
+# container through D64FileSystem), verify the member's own sha256 against the manifest pin, and
+# print the member file's path. Returns nonzero (message on stderr) if the member is missing or
+# its bytes are not the pinned ones, so a changed decrypt FAILs the row loudly.
+extract_member() {
+	local id="$1" container="$2" member="$3" pinned="$4"
+	local safe mdir out proj log got
+	safe="$(sanitize "$id")"
+	mdir="$WORK/member"
+	mkdir -p "$mdir"
+	out="$mdir/${safe}.bin"
+	proj="$WORK/proj_x_${safe}"
+	log="$WORK/${safe}.extract.log"
+	rm -f "$out"
+	mkdir -p "$proj"
+	echo "-- $id: extracting member $member from $(basename "$container")" >&2
+	run_headless_timed 1 "extract $id" "$log" "$(native "$proj")" \
+		"$GHIDRA_HEADLESS" "$(native "$proj")" headless \
+		-scriptPath "$(native "$SCRIPT_DIR")" \
+		-preScript ExtractContainerMember.java "$(native "$container")" "$member" "$(native "$out")" \
+		-deleteProject >&2
+	if [ ! -s "$out" ]; then
+		echo "    FAIL: could not extract member '$member' from $container (log: $log)" >&2
+		return 1
+	fi
+	got="$(sha256sum <"$out" | cut -d" " -f1)"
+	if [ "$got" != "$pinned" ]; then
+		echo "    FAIL: member '$member' sha256 $got != manifest member_sha256 $pinned" >&2
+		return 1
+	fi
+	printf '%s' "$out"
+}
+
 run_row_solo() {
 	local id="$1" title="$2" rom="$3" sha="$4" golden="$5" opts="$6" key="$7"
 	local out="$WORK/${id}.dump"
@@ -1783,8 +1826,8 @@ flush_batch() {
 	use_platform "$saved_plat"
 }
 
-# shellcheck disable=SC2034 # member is the last field: it must exist so opts does not absorb the tail
-while IFS=$'\t' read -r row_plat id title sha mapper board golden opts member ||
+# member_sha is the last field: it must exist so member does not absorb the tail
+while IFS=$'\t' read -r row_plat id title sha mapper board golden opts member member_sha ||
 	[ -n "${id:-}" ]; do
 	# Skip blank lines, the bare header row, and comments. The manifest deliberately carries
 	# no `#` preamble (GitHub's tabular viewer has no comment syntax and would render it as
@@ -1815,6 +1858,7 @@ while IFS=$'\t' read -r row_plat id title sha mapper board golden opts member ||
 	sha="$(printf '%s' "$sha" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
 	golden="${golden:-$id.dump}"
 	opts="${opts:-}"
+	[ "$opts" != "-" ] || opts=""	# "-" holds the opts slot of a row that sets member (read collapses empty tab fields)
 	golden_path="$EXPECTED_DIR/$golden"
 
 	rom="${ROM_BY_SHA[$sha]:-}"
@@ -1825,7 +1869,23 @@ while IFS=$'\t' read -r row_plat id title sha mapper board golden opts member ||
 		continue
 	fi
 
-	key="$(realrom_cache_key "$id" "$sha" "$opts")"
+	# Container row (grm-t3n.3): `sha` pins the CONTAINER image (that is what the index finds), and
+	# the program Ghidra imports is the extracted member, whose own sha is the second pin. psha is
+	# what the dump's `REALROM sha256` must equal; for an ordinary row it is just sha.
+	member="${member:-}"
+	member_sha="$(printf '%s' "${member_sha:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+	psha="$sha"
+	if [ -n "$member" ]; then
+		if [ -z "$member_sha" ]; then
+			ROW_ID+=("$id"); ROW_STATUS+=("FAIL"); ROW_DETAIL+=("container row has no member_sha256 pin")
+			n_fail=$((n_fail + 1))
+			echo "-- $id ($title): FAIL (member '$member' has no member_sha256 column value)"
+			continue
+		fi
+		psha="$member_sha"
+	fi
+
+	key="$(realrom_cache_key "$id" "$sha" "$opts" "$member" "$member_sha")"
 	cached="$CACHE_DIR/$key.dump"
 
 	# bless fast path: reuse the candidate a prior check imported for this exact
@@ -1842,9 +1902,9 @@ while IFS=$'\t' read -r row_plat id title sha mapper board golden opts member ||
 		# failure mode this tier exists to prevent.
 		cached_prog="$(awk '/^REALROM program /{print $3; exit}' "$cached")"
 		cached_sha="$(awk '/^REALROM sha256 /{print tolower($3); exit}' "$cached")"
-		if [ "$cached_prog" != "$id$ROM_COPY_EXT" ] || [ "$cached_sha" != "$sha" ]; then
+		if [ "$cached_prog" != "$id$ROM_COPY_EXT" ] || [ "$cached_sha" != "$psha" ]; then
 			echo "    stale cache entry ignored (program='$cached_prog' want='$id$ROM_COPY_EXT'," \
-				"sha='$cached_sha' want='$sha') -- re-importing" >&2
+				"sha='$cached_sha' want='$psha') -- re-importing" >&2
 			rm -f "$cached"
 		else
 			echo "-- $id ($title): reusing cached candidate from prior check (no re-import)"
@@ -1869,6 +1929,17 @@ while IFS=$'\t' read -r row_plat id title sha mapper board golden opts member ||
 		fi
 	fi
 
+	# Container row: extract the member now (after the bless-from-cache fast path, which needs no
+	# bytes), so `rom` below is the member file and every later step -- batching, the copy to
+	# <id>.prg, the sha recheck -- is identical to an ordinary row's.
+	if [ -n "$member" ]; then
+		if ! rom="$(extract_member "$id" "$rom" "$member" "$member_sha")"; then
+			ROW_ID+=("$id"); ROW_STATUS+=("FAIL"); ROW_DETAIL+=("member extraction failed")
+			n_fail=$((n_fail + 1))
+			continue
+		fi
+	fi
+
 	# Batched path (bead grm-x4y1.3): queue the row; a batch is flushed when the next row cannot
 	# share its import invocation, at the size cap, or after the last row.
 	if [ "$BATCH_ON" -eq 1 ]; then
@@ -1882,12 +1953,12 @@ while IFS=$'\t' read -r row_plat id title sha mapper board golden opts member ||
 		fi
 		[ ${#BQ_ID[@]} -gt 0 ] || BQ_NAMES=""
 		BQ_PLAT="$row_plat"; BQ_OPTS="$opts"; BQ_NAMES="$BQ_NAMES $bq_name"
-		BQ_ID+=("$id"); BQ_TITLE+=("$title"); BQ_ROM+=("$rom"); BQ_SHA+=("$sha")
+		BQ_ID+=("$id"); BQ_TITLE+=("$title"); BQ_ROM+=("$rom"); BQ_SHA+=("$psha")
 		BQ_GOLDEN+=("$golden"); BQ_KEY+=("$key")
 		if [ ${#BQ_ID[@]} -ge "$BATCH_N" ]; then flush_batch "size-cap"; fi
 		continue
 	fi
-	run_row_solo "$id" "$title" "$rom" "$sha" "$golden" "$opts" "$key"
+	run_row_solo "$id" "$title" "$rom" "$psha" "$golden" "$opts" "$key"
 # Process substitution, NOT a pipe: the loop body appends to ROW_ID/ROW_STATUS/ROW_DETAIL
 # and bumps the n_* counters, and a pipe would run it in a subshell that discards every
 # result at `done` -- while still exiting 0. The `tr` is a second layer behind

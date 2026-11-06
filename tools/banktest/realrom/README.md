@@ -65,12 +65,12 @@ safe.
 | `snes-analysis` | snes-analysis | `manifest-snes-analysis.tsv` | every row | SNES 65816 AUTO-ANALYSIS width census (bead `grm-9nxj.5`): the only SNES rows imported WITH analysis. `W65816WidthDump.java` pins instruction and function counts, instructions bucketed by the (E,M,X) context they decoded under, desync opcodes (BRK/COP/WDM/STP), each CPU vector's target and whether code was decoded there, JSR/JSL whose target decoded at a different width than the caller holds, functions returning at a different width than they entered, and computed flows with/without targets -- counts and addresses only, never bytes. Every grm-9nxj.5 increment is judged by its diff here. Does not refresh the NES staleness stamp. |
 | `snes-cart` | snes | `manifest-snes.tsv` | every row | The SNES loader set: cartridges covering the alt-board axis the NES GME corpus does not — SA-1, SuperFX 1/2, DSP-1 in both LoROM and HiROM form, S-DD1, CX4, the one genuine ExHiROM, a clean/copier pair on each of two titles, and one cartridge whose declared map mode contradicts its header location. |
 
-| `c64-prg` | c64 | `manifest-c64.tsv` | every row (13; owner kept the first 10, bead `grm-t3n.1`; ACS G/B/O added by `grm-arbi.3`) | Commodore 64 `.prg` real programs (Summer Games, Seven Cities of Gold, Marble Madness, ACS, Sidplayer), imported with `C64PrgLoader` and analysis ON, dumped by the shared `C64RealRomDump.java` (instruction/function/undefined-byte counts, BIT-skip census, decrypt/copy-loop outcome counts; `RealRomDump.java` hard-codes NES invariants). ROM dirs from `GRM_C64_ROM_DIR` (`;`-separated; depth 1 only). Does not refresh the NES staleness stamp (`stamps_staleness=no`: it says nothing about NES bank-switch analysis). `nominate` is NES-only. |
+| `c64-prg` | c64 | `manifest-c64.tsv` | every row (14; owner kept the first 10, bead `grm-t3n.1`; ACS G/B/O added by `grm-arbi.3`; container row `c64_acs_kernel` by `grm-t3n.3`) | Commodore 64 `.prg` real programs (Summer Games, Seven Cities of Gold, Marble Madness, ACS, Sidplayer), imported with `C64PrgLoader` and analysis ON, dumped by the shared `C64RealRomDump.java` (instruction/function/undefined-byte counts, BIT-skip census, decrypt/copy-loop outcome counts; `RealRomDump.java` hard-codes NES invariants). ROM dirs from `GRM_C64_ROM_DIR` (`;`-separated; depth 1 only). Does not refresh the NES staleness stamp (`stamps_staleness=no`: it says nothing about NES bank-switch analysis). `nominate` is NES-only. |
 
 Platform groups, derived from `platforms.tsv`: **`nes`** (`nes-curated` + `nes-gme`, 35 rows —
 what the removed `--all` flag meant) and **`snes`** (`snes-cart` + `snes-spc`, 22
 rows — what the removed `--snes` flag meant). **`all`** is the driver's own union of every set on every
-platform except opt-in sets (75 rows today, including the 13 `c64-prg` rows) — the word that changed meaning in `grm-ughg`, since before it there was no
+platform except opt-in sets (76 rows today, including the 14 `c64-prg` rows) — the word that changed meaning in `grm-ughg`, since before it there was no
 bare `all` at all, only the `--all` flag meaning "both NES manifests."
 
 ```bash
@@ -289,14 +289,10 @@ headers and every other line becomes a row. Notes belong here, not in the data f
 | `board` | NES: board descriptor the mapper selects. SNES: a descriptive board id (`snes_sa1`, `snes_superfx`, `snes_dsp`, `snes_sdd1`, `snes_cx4`, `snes_lorom`, `snes_hirom`, `snes_exhirom`). **Documentation only**, same as `mapper`. |
 | `golden` | Golden file under `expected/`. Defaults to `<id>.dump` when empty. |
 | `loader_opts` | Optional; extra `analyzeHeadless` arguments for this title. Empty on most rows. |
-| `member` | **Reserved, empty on every row today.** Row identity is currently the whole-file
-  SHA-256 in `sha256` alone. When it is non-empty, identity becomes the pair (container
-  SHA-256 in `sha256`, member path in `member`) — e.g. one file inside a PSX ISO or a C64
-  `.d64` image — rather than a change in meaning of `sha256` itself. Container support is
-  **not implemented**; the column exists so that a future container-based platform is a code
-  change in the row-resolution path, not a schema migration across every existing manifest. |
+| `member` | Container rows only (bead `grm-t3n.3`); empty on every other row. When non-empty, `sha256` pins the **container** image (the `.d64` the ROM-dir index finds) and `member` names one file inside it, e.g. `EA_BOOT_IMAGE.prg`, the synthetic decrypted-kernel member of grm-t3n.6. The runner extracts that member with `ExtractContainerMember.java` (a program-less headless run that mounts the container through `D64FileSystem`) into the work dir and imports the extracted bytes as `<id>.prg`, so the program is named by the row id exactly as for a plain file. Chosen over importing by FSRL because headless `-import` cannot name a member, and the extracted file keeps the existing copy/batch/second-layer-hash path unchanged. The cache key carries the member, its pin and the extract script. Write `-` in `loader_opts` on such a row: the parser (`read` with a tab IFS) collapses adjacent empty fields, so an empty `loader_opts` would shift `member` left. |
+| `member_sha256` | Container rows only: SHA-256 of the extracted **member** bytes. Checked right after extraction (a changed decrypt FAILs the row with `member ... sha256 X != manifest member_sha256 Y` before any import) and again against the dump's `REALROM sha256`; the golden consistency check pins this value, not the container's. Required whenever `member` is set. |
 
-**Every row carries all eight fields**, so a row whose trailing columns are empty (`loader_opts`,
+**Rows may carry up to nine fields** (`member_sha256` was appended by `grm-t3n.3`; manifests whose header lacks it never use it). A row whose trailing columns are empty (`loader_opts`,
 `member`, or both) still ends in the right number of tabs. GitHub's tabular viewer wants a
 uniform column count and renders ragged rows badly. The parser treats a trailing empty field and
 a missing one identically, so an editor that strips trailing whitespace costs you the rendering,

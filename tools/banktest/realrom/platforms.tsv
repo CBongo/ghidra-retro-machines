@@ -4,4 +4,4 @@ snes	GRM_SNES_ROM_DIR	sfc,smc,fig,swc	.sfc	SnesRomLoader	SnesRealRomDump.java	-n
 snes-spc	GRM_SNES_ROM_DIR	sfc,smc,fig,swc	.sfc	SnesRomLoader	SpcUploadRealRomDump.java	-noanalysis	no	no	snes-loader
 snes-analysis	GRM_SNES_ROM_DIR	sfc,smc,fig,swc	.sfc	SnesRomLoader	W65816WidthDump.java	-	no	no	snes-loader
 snes-spc-analysis	GRM_SNES_ROM_DIR	sfc,smc,fig,swc	.sfc	SnesRomLoader	SpcAnalysisRealRomDump.java	-noanalysis	no	no	snes-loader
-c64	GRM_C64_ROM_DIR	prg	.prg	C64PrgLoader	C64RealRomDump.java	-	no	no	c64-loader
+c64	GRM_C64_ROM_DIR	prg,d64	.prg	C64PrgLoader	C64RealRomDump.java	-	no	no	c64-loader
