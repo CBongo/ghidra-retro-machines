@@ -22,7 +22,7 @@ def offset(track, sector):
     return (sum(SECTORS[:track - 1]) + sector) * 256
 
 
-def build():
+def build(extra_prgs=(), base=True):
     img = bytearray(sum(SECTORS) * 256)
     bam = offset(18, 0)
     img[bam:bam + 3] = bytes((18, 1, 0x41))
@@ -50,8 +50,12 @@ def build():
     # $C000 load address, 300 payload bytes: crosses a sector boundary (254 data bytes each).
     payload = bytearray(b"D64F" + bytes(range(256)) + bytes(40))
     prg = bytes((0x00, 0xC0)) + bytes(payload)
-    entry(0, 0x82, "D64FSTEST", write_chain(prg))
-    entry(1, 0x81, "NOTES", write_chain(b"THIS IS A SEQ FILE, NOT A PROGRAM\r"))
+    if base:
+        entry(0, 0x82, "D64FSTEST", write_chain(prg))
+        entry(1, 0x81, "NOTES", write_chain(b"THIS IS A SEQ FILE, NOT A PROGRAM\r"))
+    # Extra PRG members (name, bytes), for fixtures needing a member's exact bytes (grm-hb6.30).
+    for i, (name, data) in enumerate(extra_prgs, start=2 if base else 0):
+        entry(i, 0x82, name, write_chain(data))
     return bytes(img)
 
 

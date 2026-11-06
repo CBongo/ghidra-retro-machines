@@ -392,6 +392,7 @@ fi
 if selected descriptors; then
 	generate mkdescoverlaytest.py "$WORK/nes"
 	generate mkdescbankhinttest.py "$WORK/nes"
+	generate mkc64descrtest.py "$WORK/prg"
 fi
 
 # The ENTIRE tail of a bless, shared by the cached fast path and the fresh-import
@@ -1296,6 +1297,27 @@ if selected descriptors; then
 		unset GRM_KEY_INPUTS
 		flush_batch "dependency:layoutvary-overlay-unplant"
 		unplant_overlay nesmmc1varytest.yaml
+
+		# grm-hb6.30: C64 per-game descriptor, keyed on the PRG member's own content sha256. The
+		# same bytes are imported loose and as a .d64 member with the overlay planted; the
+		# control (c64hintentryctltest, below) imports them with nothing planted.
+		flush_batch "dependency:c64hint-overlay-plant"
+		unplant_overlay c64hintentrytest.yaml
+		cp -f "$WORK/prg/c64hintentrytest.yaml" "$WORK/nes/c64hintentrytest.yaml"
+		plant_overlay c64hintentrytest.yaml
+		GRM_KEY_INPUTS="$WORK/nes/c64hintentrytest.yaml"
+		run_one c64hintentrytest "$WORK/prg/c64hintentrytest.prg" C64PrgLoader
+		run_one HINTD64 "$WORK/prg/c64hintd64test.d64" C64PrgLoader "-recursive"
+		unset GRM_KEY_INPUTS
+		flush_batch "dependency:c64hint-overlay-unplant"
+		unplant_overlay c64hintentrytest.yaml
+		for f in c64hintentrytest HINTD64; do
+			if [ -f "$WORK/$f.log" ] &&
+				! grep -q "C64 game descriptor resolved: .*c64hintentrytest\.yaml ('c64hintentrytest'" 					"$WORK/$f.log"; then
+				echo "FAIL: $f did not log resolving the C64 game descriptor (grm-hb6.30)"
+				fail=1
+			fi
+		done
 	fi
 
 	# grm-hb6.16: DescriptorAnnotationAnalyzer re-run one-shot on an already-imported program.
@@ -1315,6 +1337,8 @@ fi
 if selected descriptors && [ -n "${BANKTEST_SETTINGS_BASE:-}" ] && [ -n "${overlay_settings:-}" ]; then
 	# Control import: runs after the overlay was unplanted (D block above), joins the NES batch.
 	run_one descoverlayctltest "$WORK/nes/descoverlayctltest.nes" NesRomLoader
+	# grm-hb6.30 control: the same C64 bytes, nothing planted (also the C64 overlay leak check).
+	run_one c64hintentryctltest "$WORK/prg/c64hintentryctltest.prg" C64PrgLoader
 fi
 
 if selected nes-banking; then
@@ -1353,6 +1377,11 @@ if selected descriptors; then
 	if [ -f "$WORK/descoverlayctltest.log" ] &&
 		grep -q "game descriptor resolved" "$WORK/descoverlayctltest.log"; then
 		echo "FAIL: control import resolved a game descriptor -- overlay leaked (grm-hb6.15)"
+		fail=1
+	fi
+	if [ -f "$WORK/c64hintentryctltest.log" ] &&
+		grep -q "C64 game descriptor resolved" "$WORK/c64hintentryctltest.log"; then
+		echo "FAIL: C64 control import resolved a game descriptor -- overlay leaked (grm-hb6.30)"
 		fail=1
 	fi
 fi

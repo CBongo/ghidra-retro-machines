@@ -195,6 +195,12 @@ final class GameDescriptorRegistry {
 			return null;
 		}
 		JsonObject game = doc.getAsJsonObject("game");
+		if (game.has("platform") && GameCompiler.PLATFORM_C64.equals(
+			game.get("platform").getAsString())) {
+			// A C64 program descriptor (grm-hb6.30) shares the games/ directories but is read by
+			// C64GameDescriptors; it is not a NES descriptor, so skip it without noise.
+			return null;
+		}
 		if (!game.has("id") || !game.has("board") || !game.has("identity")) {
 			log.appendMsg(path + ": 'game:' section is missing id/board/identity -- skipping");
 			return null;

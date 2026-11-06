@@ -146,6 +146,10 @@ public class GameCompiler {
 				"' -- this GameCompiler builds descriptor schema 2 (see docs/SCHEMA.md)");
 		}
 
+		if (isC64(descriptor)) {
+			return compileC64(descriptor);
+		}
+
 		Map<String, Object> gameDoc = new LinkedHashMap<>();
 		gameDoc.put("schema", 2);
 		gameDoc.put("game", buildGame(descriptor));
@@ -162,6 +166,172 @@ public class GameCompiler {
 			gameDoc.put("comments", comments);
 		}
 		return gameDoc;
+	}
+
+	// ---- C64 game descriptors (bead grm-hb6.30) ----
+
+	/** {@code game.platform} value marking a C64 program descriptor (no board, no ROM identity). */
+	public static final String PLATFORM_C64 = "c64";
+
+	/** True when the descriptor's {@code game:} section declares {@code platform: c64}. */
+	@SuppressWarnings("unchecked")
+	private static boolean isC64(Map<String, Object> descriptor) {
+		return descriptor.get("game") instanceof Map &&
+			PLATFORM_C64.equals(((Map<String, Object>) descriptor.get("game")).get("platform"));
+	}
+
+	/**
+	 * Compiles a C64 game descriptor: {@code game: {id, title, platform: c64, provenance}}, then
+	 * {@code members:} (a list of {@code {sha256, name, [entries], [forth]}}, each keyed on the
+	 * member's OWN content sha256 -- the whole .prg, load address included -- so a program
+	 * resolves identically loose or inside a disk image), plus game-level {@code entries:} and
+	 * {@code forth:} that apply to every member. {@code forth:} is reserved for bead grm-arbi.3
+	 * and passed through verbatim (a mapping, nothing more is checked here).
+	 */
+	@SuppressWarnings("unchecked")
+	private static Map<String, Object> compileC64(Map<String, Object> descriptor) {
+		for (String key : descriptor.keySet()) {
+			if (!Set.of("schema", "game", "members", "entries", "forth").contains(key)) {
+				throw new IllegalArgumentException("C64 game descriptor has unknown top-level " +
+					"key '" + key + "' (schema, game, members, entries, forth)");
+			}
+		}
+		Map<String, Object> game = (Map<String, Object>) descriptor.get("game");
+		for (String key : game.keySet()) {
+			if (!Set.of("id", "title", "platform", "provenance").contains(key)) {
+				throw new IllegalArgumentException("C64 game descriptor 'game:' has unknown key '" +
+					key + "' (a C64 descriptor has no board or ROM identity; members: carry the " +
+					"identity)");
+			}
+		}
+		Map<String, Object> gameOut = new LinkedHashMap<>();
+		gameOut.put("id", MapCompiler.requireString(game, "id", "game"));
+		gameOut.put("title", MapCompiler.requireString(game, "title", "game"));
+		gameOut.put("platform", PLATFORM_C64);
+		gameOut.put("provenance", MapCompiler.requireString(game, "provenance", "game"));
+
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("schema", 2);
+		out.put("game", gameOut);
+		List<Map<String, Object>> entries = buildC64Entries(descriptor.get("entries"), "game");
+		if (entries != null) {
+			out.put("entries", entries);
+		}
+		Map<String, Object> forth = buildForth(descriptor.get("forth"), "game");
+		if (forth != null) {
+			out.put("forth", forth);
+		}
+		Object membersObj = descriptor.get("members");
+		if (!(membersObj instanceof List) || ((List<Object>) membersObj).isEmpty()) {
+			throw new IllegalArgumentException(
+				"C64 game descriptor needs a non-empty 'members:' list of {sha256, name, ...}");
+		}
+		List<Map<String, Object>> members = new ArrayList<>();
+		Set<String> shas = new LinkedHashSet<>();
+		for (Object mo : (List<Object>) membersObj) {
+			if (!(mo instanceof Map)) {
+				throw new IllegalArgumentException("each 'members:' item must be a mapping");
+			}
+			Map<String, Object> member = (Map<String, Object>) mo;
+			for (String key : member.keySet()) {
+				if (!Set.of("sha256", "name", "entries", "forth").contains(key)) {
+					throw new IllegalArgumentException("'members:' item has unknown key '" + key +
+						"' (sha256, name, entries, forth)");
+				}
+			}
+			Map<String, Object> m = new LinkedHashMap<>();
+			String sha = requireSha256(member, "sha256", "members[]");
+			if (!shas.add(sha)) {
+				throw new IllegalArgumentException("members: sha256 " + sha + " listed twice");
+			}
+			m.put("sha256", sha);
+			String name = MapCompiler.requireString(member, "name", "members[]");
+			m.put("name", name);
+			List<Map<String, Object>> mEntries =
+				buildC64Entries(member.get("entries"), "member '" + name + "'");
+			if (mEntries != null) {
+				m.put("entries", mEntries);
+			}
+			Map<String, Object> mForth = buildForth(member.get("forth"), "member '" + name + "'");
+			if (mForth != null) {
+				m.put("forth", mForth);
+			}
+			members.add(m);
+		}
+		out.put("members", members);
+		return out;
+	}
+
+	private static String requireSha256(Map<String, Object> map, String key, String context) {
+		String value = MapCompiler.requireString(map, key, context);
+		if (!value.matches("(?i)[0-9a-f]{64}")) {
+			throw new IllegalArgumentException(
+				context + "." + key + " must be 64 hex digits, got: " + value);
+		}
+		return value.toLowerCase(Locale.ROOT);
+	}
+
+	/** {@code forth:} -- reserved (grm-arbi.3): must be a mapping, passed through verbatim. */
+	@SuppressWarnings("unchecked")
+	private static Map<String, Object> buildForth(Object forthObj, String where) {
+		if (forthObj == null) {
+			return null;
+		}
+		if (!(forthObj instanceof Map)) {
+			throw new IllegalArgumentException(where + " 'forth:' must be a mapping");
+		}
+		return (Map<String, Object>) forthObj;
+	}
+
+	/**
+	 * {@code entries:} of a C64 game descriptor: a non-empty list of {@code {addr, name, [kind],
+	 * [comment]}}, {@code kind} {@code function} (the default: label + entry point + function) or
+	 * {@code label} (label only). CPU addresses, 16-bit; unique within the list.
+	 */
+	@SuppressWarnings("unchecked")
+	private static List<Map<String, Object>> buildC64Entries(Object listObj, String where) {
+		if (listObj == null) {
+			return null;
+		}
+		if (!(listObj instanceof List) || ((List<Object>) listObj).isEmpty()) {
+			throw new IllegalArgumentException(where + " 'entries:' must be a non-empty list");
+		}
+		List<Map<String, Object>> out = new ArrayList<>();
+		Set<Integer> seen = new LinkedHashSet<>();
+		String ctx = where + " entries";
+		for (Object eo : (List<Object>) listObj) {
+			if (!(eo instanceof Map)) {
+				throw new IllegalArgumentException(ctx + " item must be a mapping");
+			}
+			Map<String, Object> entry = (Map<String, Object>) eo;
+			for (String key : entry.keySet()) {
+				if (!Set.of("addr", "name", "kind", "comment").contains(key)) {
+					throw new IllegalArgumentException(
+						ctx + " item has unknown key '" + key + "' (addr, name, kind, comment)");
+				}
+			}
+			int addr = MapCompiler.requireAddr(entry, "addr", ctx);
+			if (addr < 0 || addr > 0xFFFF) {
+				throw new IllegalArgumentException(ctx + ": addr must be a 16-bit CPU address");
+			}
+			if (!seen.add(addr)) {
+				throw new IllegalArgumentException(ctx + ": addr " + addr + " listed twice");
+			}
+			String kind = entry.get("kind") == null ? "function" : entry.get("kind").toString();
+			if (!kind.equals("function") && !kind.equals("label")) {
+				throw new IllegalArgumentException(
+					ctx + " at " + addr + " has unsupported kind '" + kind + "' (function|label)");
+			}
+			Map<String, Object> e = new LinkedHashMap<>();
+			e.put("addr", addr);
+			e.put("name", MapCompiler.requireString(entry, "name", ctx));
+			e.put("kind", kind);
+			if (entry.get("comment") != null) {
+				e.put("comment", entry.get("comment").toString());
+			}
+			out.add(e);
+		}
+		return out;
 	}
 
 	// ---- game: identity block ----

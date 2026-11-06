@@ -416,6 +416,57 @@ mechanisms** — this is the single highest-value cross-link in the beads for th
 
 ---
 
+### 3d. C64 program descriptors: keyed on the member's own content (bead grm-hb6.30)
+
+A C64 `.prg`'s real entry is often neither its load address nor a BASIC `SYS` (a Sidplayer player
+object starts with zeros; Summer Games parts are entered by a loader; Marble Madness's loader is a
+memory image). A C64 game descriptor records those entry points by hand. It shares the `games/`
+directories, the curated/overlay split and the lookup rules above, but not the NES identity:
+
+- **Identity = the member's own content SHA-256** (the whole `.prg`, load address included), not
+  a container path. The same program resolves identically loose, inside a `.d64`, or inside a
+  `.g64`; renaming or re-imaging a disk changes nothing. (NES precedent: identity is the PRG's
+  hash, not the container's.) There is no `board` and no `file_sha256`.
+- **Schema.** `game.platform: c64` marks it (a NES descriptor has `board:`/`identity:` instead).
+  `members:` lists `{sha256, name, entries, forth}`; top-level `entries:` / `forth:` are
+  game-level and apply to every member; member-level ones apply to that member, and a member
+  entry at an address replaces the game entry at that address. Allowed top-level keys are exactly
+  `schema, game, members, entries, forth`; anything else (`banking:`, `symbols:` ...) is rejected.
+  Disk-level facts ("`loader.prg` JMPs to `$8000` in `a.prg`") are written by a human as entries
+  on the file that needs them; because members are listed by content sha under one game, a later
+  cross-member form does not change the schema.
+- **`entries:`** `{addr, name, kind: function|label (default function), comment}`; `addr` is a
+  16-bit CPU address, unique per list. `function` = label + external entry point + function (when
+  the address is in an executable block of the placed PRG); `label` = label (and EOL comment)
+  only.
+- **`forth:` is reserved** for bead grm-arbi.3. `GameCompiler` requires only that it is a mapping
+  and passes it through verbatim (YAML integer keys become decimal JSON string keys). At member
+  level only `forth.names` is expected. `C64GameDescriptors.Resolution.gameForth()` /
+  `memberForth()` return the two mappings for the consumer to merge.
+- **Application** is in `AbstractCbmPrgLoader.load()`: the descriptor is resolved from the
+  provider's bytes, recorded in Program Info (`Retro Machines.C64 Game Descriptor`,
+  `...C64 Game`, `...C64 Game Member`, `...C64 Member SHA256`; analyzers re-resolve with
+  `C64GameDescriptors.forProgram`), and each entry is applied and logged. With no match nothing
+  changes.
+
+```yaml
+schema: 2
+game: { id: demo, title: "Demo", platform: c64, provenance: "hand RE, 2026-11" }
+entries:                                    # every member
+  - { addr: 0xC010, name: game_init }
+  - { addr: 0xC020, name: game_table, kind: label, comment: "voice table" }
+forth: { ip: 0x7E }                         # reserved, passed through
+members:
+  - sha256: "<64 hex of A.PRG's bytes>"
+    name: A.PRG
+    entries: [ { addr: 0xC030, name: a_play } ]
+    forth: { names: { 0x0B2E: { name: EXIT } } }
+```
+
+Coverage: `C64GameDescriptorsTest` (JUnit) and the `descriptors` chunk fixtures `c64hintentrytest`
+(loose PRG), `HINTD64` (same bytes as a `.d64` member) and `c64hintentryctltest` (nothing planted:
+negative control and leak check).
+
 ### 3c. Portability and upgrade: the same file, pointed the other way
 
 A user with months of work in a Ghidra program needs two things. The tier supplies both with no new

@@ -1,0 +1,5 @@
+game=null member=null
+c010 label=false function=false
+c020 label=false function=false eol=
+c030 label=false function=false
+game_init present=false

@@ -438,6 +438,65 @@ public class VerifyCbmCriteria extends VerifyBase {
 			"autostart_* symbols=" + autostartSymbolCount());
 	}
 
+	// grm-hb6.30: C64 game descriptor entries, keyed on the PRG member's own content sha256.
+	// Restated property keys (scripts see no package-private API).
+	private static final String C64_DESCRIPTOR_PROPERTY = "Retro Machines.C64 Game Descriptor";
+	private static final String C64_GAME_PROPERTY = "Retro Machines.C64 Game";
+	private static final String C64_MEMBER_PROPERTY = "Retro Machines.C64 Game Member";
+
+	private boolean hasAnyLabelNamed(String name) {
+		return currentProgram.getSymbolTable().getSymbols(name).hasNext();
+	}
+
+	private String eolAt(long target) {
+		String c = currentProgram.getListing().getComment(CommentType.EOL, addr(target));
+		return c == null ? "" : c;
+	}
+
+	protected void checkC64HintEntry(boolean hinted) {
+		Options info = currentProgram.getOptions(Program.PROGRAM_INFO);
+		String path = info.getString(C64_DESCRIPTOR_PROPERTY, null);
+		String game = info.getString(C64_GAME_PROPERTY, null);
+		String member = info.getString(C64_MEMBER_PROPERTY, null);
+		String norm = path == null ? null : path.replace('\\', '/');
+		boolean initFn = hasFunctionAt(0xC010);
+		boolean memberFn = hasFunctionAt(0xC030);
+		boolean tableFn = hasFunctionAt(0xC020);
+		boolean memberInit = hasLabelAt(addr(0xC010), "member_init");
+		boolean table = hasLabelAt(addr(0xC020), "hint_table");
+		boolean fn2 = hasLabelAt(addr(0xC030), "member_fn");
+		println("=== BANKDUMP BEGIN ===");
+		println("game=" + game + " member=" + member);
+		println("c010 label=" + memberInit + " function=" + initFn);
+		println("c020 label=" + table + " function=" + tableFn + " eol=" + eolAt(0xC020));
+		println("c030 label=" + fn2 + " function=" + memberFn);
+		println("game_init present=" + hasAnyLabelNamed("game_init"));
+		println("=== BANKDUMP END ===");
+		if (hinted) {
+			criterion("c64hint-resolved", norm != null &&
+				norm.endsWith("/retro-machines/games/c64hintentrytest.yaml") &&
+				"c64hintentrytest".equals(game) && "HINT.PRG".equals(member),
+				"descriptor=" + path + " game=" + game + " member=" + member);
+			criterion("c64hint-member-overrides-game", memberInit && !hasAnyLabelNamed("game_init"),
+				"member_init@c010=" + memberInit + " game_init present=" +
+					hasAnyLabelNamed("game_init"));
+			criterion("c64hint-function-entry", initFn && memberFn &&
+				currentProgram.getSymbolTable().isExternalEntryPoint(addr(0xC010)) &&
+				currentProgram.getSymbolTable().isExternalEntryPoint(addr(0xC030)) && fn2,
+				"c010 fn=" + initFn + " c030 fn=" + memberFn);
+			criterion("c64hint-label-only", table && !tableFn &&
+				!currentProgram.getSymbolTable().isExternalEntryPoint(addr(0xC020)) &&
+				eolAt(0xC020).equals("data table"),
+				"hint_table=" + table + " function=" + tableFn + " eol=" + eolAt(0xC020));
+		}
+		else {
+			criterion("c64hint-ctl-no-descriptor", path == null && game == null && member == null,
+				"descriptor=" + path + " (overlay must not outlive its fixture)");
+			criterion("c64hint-ctl-no-hints", !memberInit && !table && !fn2 && !initFn && !memberFn,
+				"member_init=" + memberInit + " hint_table=" + table + " c010 fn=" + initFn);
+		}
+	}
+
 	// grm-z15.1: a 2-byte PRG (load-address header, zero payload) must still import --
 	// the full memory map/symbols get built, but no PRG bytes are placed anywhere.
 	protected void checkPrgEmpty() {

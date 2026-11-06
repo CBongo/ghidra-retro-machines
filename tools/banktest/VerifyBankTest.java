@@ -137,6 +137,10 @@ public class VerifyBankTest extends GhidraScript {
 		focused("autostartvectest", cbm::checkAutostartVector);
 		focused("autostartstacktest", cbm::checkAutostartStack);
 		focused("autostarthwtest", cbm::checkAutostartHardware);
+		// grm-hb6.30: C64 game descriptor entries (overlay planted for the first two, not the third).
+		focused("c64hintentrytest", () -> cbm.checkC64HintEntry(true));
+		focused("HINTD64", () -> cbm.checkC64HintEntry(true));
+		focused("c64hintentryctltest", () -> cbm.checkC64HintEntry(false));
 		focused("prgstraddletest", cbm::checkPrgStraddle);
 		focused("D64FSTEST", cbm::checkD64Member);
 		focused("prgemptytest", cbm::checkPrgEmpty);

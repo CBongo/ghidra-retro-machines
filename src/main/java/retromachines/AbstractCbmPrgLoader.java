@@ -49,6 +49,7 @@ import ghidra.program.database.mem.FileBytes;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.data.FileDataTypeManager;
+import ghidra.program.model.listing.CommentType;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.Memory;
 import ghidra.program.model.mem.MemoryBlock;
@@ -439,6 +440,8 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 
 			labelAutostartEntries(program, baseSpace, provider, map, prgLength, loadedSlices, log);
 
+			applyGameDescriptor(program, baseSpace, provider, loadedSlices, log);
+
 			// Remember the ROM paths used (GUI only) so the next import defaults to them.
 			saveRomPreferences(settings);
 		}
@@ -668,6 +671,67 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 		}
 		catch (Exception e) {
 			log.appendMsg("autostart detection skipped: " + e);
+		}
+	}
+
+	/**
+	 * Resolves a per-game descriptor (grm-hb6.30) from the provider's own content sha256 -- so a
+	 * loose {@code .prg} and the same file inside a disk image resolve alike -- records it in
+	 * Program Info, and applies its {@code entries:} (game level, then member level). With no
+	 * match nothing happens at all. Never throws.
+	 */
+	private void applyGameDescriptor(Program program, AddressSpace baseSpace,
+			ByteProvider provider, List<LoadedSlice> loadedSlices, MessageLog log) {
+		try {
+			C64GameDescriptors.Resolution r = C64GameDescriptors.resolve(provider, log);
+			if (r == null) {
+				return;
+			}
+			C64GameDescriptors.record(program, r);
+			List<JsonObject> entries = r.entries();
+			log.appendMsg("C64 game descriptor resolved: " + r.path() + " ('" + r.gameId() +
+				"', member '" + r.memberName() + "'); applying " + entries.size() + " entries");
+			for (JsonObject entry : entries) {
+				applyGameEntry(program, baseSpace, loadedSlices, entry, log);
+			}
+		}
+		catch (RuntimeException e) {
+			log.appendMsg("C64 game descriptor skipped: " + e);
+		}
+	}
+
+	private void applyGameEntry(Program program, AddressSpace baseSpace,
+			List<LoadedSlice> loadedSlices, JsonObject entry, MessageLog log) {
+		int target = entry.get("addr").getAsInt() & 0xFFFF;
+		String name = entry.get("name").getAsString();
+		boolean function = "function".equals(entry.get("kind").getAsString());
+		String desc = "game descriptor entry " + name + " $" + String.format("%04X", target);
+		try {
+			Address placed = resolvePrgAddress(program, target, loadedSlices);
+			Address addr = placed != null ? placed : baseSpace.getAddress(target);
+			program.getSymbolTable().createLabel(addr, name, SourceType.IMPORTED);
+			if (entry.has("comment")) {
+				program.getListing().setComment(addr, CommentType.EOL,
+					entry.get("comment").getAsString());
+			}
+			if (!function) {
+				log.appendMsg(desc + " (labelled)");
+				return;
+			}
+			program.getSymbolTable().addExternalEntryPoint(addr);
+			MemoryBlock block = program.getMemory().getBlock(addr);
+			if (placed != null && block != null && block.isExecute()) {
+				markAsFunction(program, name, addr);
+				log.appendMsg(desc + " (in " + addr.getAddressSpace().getName() +
+					"; labelled, entry point, function)");
+			}
+			else {
+				log.appendMsg(desc + " (" + (placed == null ? "outside the PRG's placed bytes"
+						: "in a non-executable block") + "; labelled and entry point only)");
+			}
+		}
+		catch (Exception e) {
+			log.appendMsg(desc + ": failed to apply: " + e.getMessage());
 		}
 	}
 

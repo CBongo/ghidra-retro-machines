@@ -1,0 +1,5 @@
+game=c64hintentrytest member=HINT.PRG
+c010 label=true function=true
+c020 label=true function=false eol=data table
+c030 label=true function=true
+game_init present=false
