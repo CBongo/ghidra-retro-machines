@@ -168,16 +168,15 @@ public final class CbmAutostart {
 		}
 		// An autostart redirects a few vectors. When MORE THAN HALF of the declared block
 		// differs from the OS defaults, the PRG is overwriting the block wholesale. That is
-		// still an autostart when the words AGREE (one target) and that target is in the PRG's
-		// own bytes -- an installer pointing every vector at its entry. Otherwise (the words
-		// disagree, or point outside the PRG) each "vector" is just data: a memory image or a
-		// data table (owner ruling 2026-11-06, grm-w0j7).
+		// still an autostart when EVERY target lies in the PRG's own bytes -- an installer
+		// pointing the vectors at its entry or at its own handlers. If any word points outside
+		// the PRG, the "vectors" are just data: a memory image or a data table (owner ruling
+		// 2026-11-06, grm-w0j7).
 		if (vectorEntries.size() * 2 > config.vectors().size() &&
-			!agreeInsidePrg(vectorEntries, bytes)) {
+			!allInsidePrg(vectorEntries, bytes)) {
 			notes.add("autostart: " + vectorEntries.size() + " of " + config.vectors().size() +
-				" RAM vectors differ from their defaults and their words disagree or point " +
-				"outside the PRG; treated as a bulk overwrite (data or memory image), not " +
-				"autostart entries");
+				" RAM vectors differ from their defaults and at least one points outside the " +
+				"PRG; treated as a bulk overwrite (data or memory image), not autostart entries");
 		}
 		else {
 			entries.addAll(vectorEntries);
@@ -195,15 +194,14 @@ public final class CbmAutostart {
 		return new Result(List.copyOf(entries), List.copyOf(notes));
 	}
 
-	/** True when every entry names the same target and the PRG placed a byte at it. */
-	private static boolean agreeInsidePrg(List<Entry> vectorEntries, Bytes bytes) {
-		int target = vectorEntries.get(0).target();
+	/** True when the PRG placed a byte at every entry's target. */
+	private static boolean allInsidePrg(List<Entry> vectorEntries, Bytes bytes) {
 		for (Entry e : vectorEntries) {
-			if (e.target() != target) {
+			if (bytes.at(e.target() & 0xFFFF) < 0) {
 				return false;
 			}
 		}
-		return bytes.at(target & 0xFFFF) >= 0;
+		return true;
 	}
 
 	/** Words that are padding / text fill, never a planted return address. */

@@ -251,6 +251,25 @@ public class CbmAutostartTest {
 	}
 
 	@Test
+	public void bulkOverwriteWithDistinctHandlersInsideThePrgIsAnAutostart() {
+		// An installer pointing each vector at its own handler: all targets hold PRG bytes.
+		Image img = new Image().putWord(0x0326, 0xC000).putWord(0x0314, 0xC010).put(0xC000, 0x78)
+				.put(0xC010, 0x48);
+		Result r = run(img);
+		assertEquals(2, r.entries().size());
+		assertEquals(0xC000, r.entries().get(0).target());
+		assertEquals(0xC010, r.entries().get(1).target());
+	}
+
+	@Test
+	public void bulkOverwriteWithOneTargetOutsideThePrgIsData() {
+		Image img = new Image().putWord(0x0326, 0xC000).putWord(0x0314, 0xD000).put(0xC000, 0x78);
+		Result r = run(img);
+		assertTrue(r.entries().isEmpty());
+		assertEquals(1, r.notes().size());
+	}
+
+	@Test
 	public void bulkOverwriteAgreeingOnATargetOutsideThePrgIsData() {
 		Image img = new Image().putWord(0x0326, 0xC000).putWord(0x0314, 0xC000);
 		Result r = run(img);
