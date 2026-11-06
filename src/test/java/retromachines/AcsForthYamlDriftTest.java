@@ -27,7 +27,7 @@ import java.nio.file.Paths;
 import org.junit.Test;
 
 /**
- * Drift check (bead grm-arbi.1) for {@code tools/forth/generated/acs-forth.yaml}: regenerates it
+ * Drift check (beads grm-arbi.1, grm-arbi.3) for {@code machines/games/acs.yaml}: regenerates it
  * from the {@code external/game-music-extraction} submodule with
  * {@code tools/forth/forthhex2desc.py --check} and fails when the committed file is stale.
  * Assume-skips (green) when the submodule is not checked out or no Python interpreter runs.
@@ -62,7 +62,7 @@ public class AcsForthYamlDriftTest {
 		}
 		assumeTrue("no python interpreter on PATH", p != null);
 		String out = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-		assertEquals("acs-forth.yaml is stale; rerun tools/forth/forthhex2desc.py:\n" + out, 0,
+		assertEquals("machines/games/acs.yaml is stale; rerun tools/forth/forthhex2desc.py:\n" + out, 0,
 			p.waitFor());
 	}
 }
