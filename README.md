@@ -212,6 +212,12 @@ This project was incubated in (and serves the reverse-engineering mission of)
 and converts video game music toward playable sheet music. The machines targeted here
 are the machines whose music drivers that project reverses.
 
+That repository is vendored as the submodule `external/game-music-extraction`; fetch it with
+`git submodule update --init external/game-music-extraction`. It supplies the ACS Forth word
+tables (`c64/acs/forthhex.pl`), which `tools/forth/forthhex2desc.py` converts into the committed
+`tools/forth/generated/acs-forth.yaml` (rerun the script after the submodule moves; the JUnit
+`AcsForthYamlDriftTest` fails on a stale file and skips when the submodule is absent).
+
 ## License
 
 [Apache 2.0](LICENSE). Third-party material bundled here is recorded in
