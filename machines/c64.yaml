@@ -232,6 +232,25 @@ autostart:
     - { name: RESET, addr: 0xFFFC }
     - { name: IRQ,   addr: 0xFFFE }
 
+kernal_load:
+  # The stock KERNAL serial LOAD store loop (STA ($AE),Y / INC $AE / BNE / INC $AF) re-reads its
+  # zero-page store pointer after every byte, so a PRG that covers $AE/$AF redirects its own
+  # remaining bytes (grm-t3n.5; CbmKernalLoad simulates it). $93 (VERCK) nonzero = verify, no
+  # stores. $00/$01 are the 6510 port: a PRG that rewrites them changes whether $D000-$DFFF is
+  # I/O (LORAM|HIRAM set and CHAREN set -> bit2 and bits0-1) where the loop's stores are lost.
+  # `drop_before_port_write: false` keeps the project's convention that a PRG placed at $D000+
+  # without touching the port is an image of the RAM beneath the I/O (it is not dropped); the
+  # drop applies only after the PRG itself wrote $00 or $01. Initial values: power-on port
+  # ($2F DDR, $37 data) and $93=0; $AE/$AF always start at the PRG's load address.
+  pointer: 0xAE
+  verify: 0x93
+  port: { ddr: 0x00, data: 0x01 }
+  io: { start: 0xD000, end: 0xDFFF, mask: 0x04, any: 0x03, drop_before_port_write: false }
+  initial:
+    - { addr: 0x00, value: 0x2F }
+    - { addr: 0x01, value: 0x37 }
+    - { addr: 0x93, value: 0x00 }
+
 symbols:
   # Bulk sets are generated from mist64/c64ref (clean license) — see gib.1.2 notes.
   # Sets are user-toggleable at import; defaults tuned for game RE (KERNAL API on,

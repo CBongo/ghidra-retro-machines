@@ -62,7 +62,13 @@ the extension zip alongside the corresponding `.gdt`.
   "formats"?: { "<formatName>": { /* loader-policy metadata */ } },
   "autostart"?: { "vectors"?: [ { "name", "addr", "default" } ],   // RAM vectors + OS default word
                   "stack"?:   { "start", "end" },                  // page whose return addresses a PRG may plant
-                  "hardware"?: [ { "name", "addr" } ] }            // 6502 hardware vectors (grm-w0j7)
+                  "hardware"?: [ { "name", "addr" } ] },           // 6502 hardware vectors (grm-w0j7)
+  "kernal_load"?: { "pointer",                                     // zero-page LOW byte of the LOAD store pointer (high = +1)
+                    "verify"?:  <zp addr>,                         // verify-flag cell (nonzero = no stores)
+                    "port"?:    { "ddr", "data" },                 // CPU-port cells
+                    "io"?:      { "start", "end", "mask", "any",   // writes lost while (port&mask)!=0 && (port&any)!=0
+                                  "drop_before_port_write" },      // false: drop only once the PRG itself wrote the port
+                    "initial"?: [ { "addr", "value" } ] }          // starting values of the cells above (grm-t3n.5)
 }
 ```
 

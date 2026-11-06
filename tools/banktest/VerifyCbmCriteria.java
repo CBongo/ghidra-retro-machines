@@ -349,6 +349,28 @@ public class VerifyCbmCriteria extends VerifyBase {
 		criterion("d64-last-byte", "00".equals(tail), tail);
 	}
 
+	// grm-t3n.6: synthetic EA boot disk; mkeabootd64test.py's plain image is
+	// (i*13 + (i>>8) + 5) & 0xFF over 5 pages at $0800.
+	protected void checkEaBootImage() {
+		MemoryBlock b = currentProgram.getMemory().getBlock(addr(0x0800));
+		String head = bytesAt(null, 0x0800, 4);
+		String page1 = bytesAt(null, 0x0900, 2);
+		long size = b == null ? -1 : b.getSize();
+
+		println("=== BANKDUMP BEGIN ===");
+		println("0800 " + describeBlock(b) + " BYTES " + head);
+		println("0900 BYTES " + page1);
+		println("=== BANKDUMP END ===");
+
+		criterion("eaboot-member-name", "EA_BOOT_IMAGE.prg".equals(currentProgram.getName()),
+			currentProgram.getName());
+		// i=0..3: 5, 18, 31, 44 ; i=256,257: 13*256+1+5 = 3334 -> 0x06, 0x13
+		criterion("eaboot-head-bytes", "05 12 1f 2c".equals(head), head);
+		criterion("eaboot-page1-bytes", "06 13".equals(page1), page1);
+		criterion("eaboot-length", b != null && b.isInitialized() && size >= 0x500,
+			describeBlock(b));
+	}
+
 	// grm-z15.1: load address $0000 lands in the non-executable P6510 io block --
 	// an external entry point must still be recorded there (the label was already
 	// unconditional), but no function should be marked on non-executable memory.
@@ -436,6 +458,41 @@ public class VerifyCbmCriteria extends VerifyBase {
 		println("=== BANKDUMP END ===");
 		criterion("autostarthw-only-three", autostartSymbolCount() == 3,
 			"autostart_* symbols=" + autostartSymbolCount());
+	}
+
+	// grm-t3n.5: a PRG that loads over the KERNAL LOAD store pointer $AE/$AF redirects its own
+	// remaining bytes. kloadredirecttest.prg loads at $00AC; payload by file offset:
+	// +0 $AC=11, +1 $AD=12, +2 $AE=AC (pointer back to $AD), +3 $AD=13 (a later store wins over
+	// +1), +4 $AE=AE (pointer to $AF), +5 $AF=03 (pointer hi), then +6.. land at $03B0: A9 07 60.
+	// Nothing is placed at $00B0 where contiguous placement would have put +6.
+	protected void checkKernalLoadRedirect() {
+		MemoryBlock zp = currentProgram.getMemory().getBlock(addr(0xAC));
+		MemoryBlock code = currentProgram.getMemory().getBlock(addr(0x3B0));
+		MemoryBlock contiguous = currentProgram.getMemory().getBlock(addr(0xB0));
+		println("=== BANKDUMP BEGIN ===");
+		println("ZP " + describeBlock(zp) + " BYTES " + bytesAt(null, 0xAC, 4));
+		println("CODE " + describeBlock(code) + " BYTES " + bytesAt(null, 0x3B0, 3));
+		println("B0 " + describeBlock(contiguous));
+		println("=== BANKDUMP END ===");
+		criterion("kload-zp-bytes", "11 13 ae 03".equals(bytesAt(null, 0xAC, 4)),
+			bytesAt(null, 0xAC, 4));
+		long[] zpOffsets = new long[4];
+		for (int i = 0; i < 4; i++) {
+			zpOffsets[i] = fileOffset(currentProgram.getMemory().getBlock(addr(0xAC + i)), 0xAC + i);
+		}
+		criterion("kload-zp-offsets",
+			zpOffsets[0] == 2 && zpOffsets[1] == 2 + 3 && zpOffsets[2] == 2 + 4 &&
+				zpOffsets[3] == 2 + 5,
+			java.util.Arrays.toString(zpOffsets));
+		criterion("kload-redirected-code",
+			code != null && code.isInitialized() && "a9 07 60".equals(bytesAt(null, 0x3B0, 3)),
+			describeBlock(code));
+		criterion("kload-code-offset", code != null && fileOffset(code, 0x3B0) == 2 + 6,
+			String.valueOf(code == null ? -1 : fileOffset(code, 0x3B0)));
+		criterion("kload-no-contiguous-copy",
+			contiguous == null || !contiguous.isInitialized() ||
+				!"a9".equals(bytesAt(null, 0xB0, 1)),
+			describeBlock(contiguous));
 	}
 
 	// grm-hb6.30: C64 game descriptor entries, keyed on the PRG member's own content sha256.

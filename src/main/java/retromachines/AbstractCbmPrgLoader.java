@@ -19,7 +19,6 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.AccessMode;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -378,7 +377,16 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 					" bytes; a 16-bit CBM image may contain at most 65536 bytes");
 			}
 			boolean wrapped = prgLength > 0x10000 - loadAddr;
-			List<PrgSlice> prgSlices = planPrgSlices(map, loadAddr, prgLength);
+			// grm-t3n.5: where the bytes finally land is decided by simulating the KERNAL
+			// store loop (a machine whose descriptor declares no kernal_load: section gets a
+			// plain contiguous, wrapping copy). Blocks are built from this final image, not
+			// from the file layout.
+			CbmKernalLoad.Result kernalLoad = CbmKernalLoad.load(CbmKernalLoad.fromMap(map),
+				(int) loadAddr, prgLength == 0 ? new byte[0] : provider.readBytes(2, prgLength));
+			for (String note : kernalLoad.notes()) {
+				log.appendMsg(note);
+			}
+			List<PrgSlice> prgSlices = planPrgSlices(map, kernalLoad);
 			Map<String, List<PrgSlice>> slicesByTarget = new HashMap<>();
 			for (PrgSlice slice : prgSlices) {
 				slicesByTarget.computeIfAbsent(slice.target().name(), k -> new ArrayList<>())
@@ -438,7 +446,8 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 			labelEntryPoint(program, baseSpace, provider, loadAddr, prgLength, wrapped,
 				loadedSlices, log);
 
-			labelAutostartEntries(program, baseSpace, provider, map, prgLength, loadedSlices, log);
+			labelAutostartEntries(program, baseSpace, kernalLoad.image(), map, prgLength,
+				loadedSlices, log);
 
 			applyGameDescriptor(program, baseSpace, provider, loadedSlices, log);
 
@@ -645,20 +654,12 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 	 * log line.
 	 */
 	private void labelAutostartEntries(Program program, AddressSpace baseSpace,
-			ByteProvider provider, JsonObject map, long prgLength, List<LoadedSlice> loadedSlices,
+			int[] image, JsonObject map, long prgLength, List<LoadedSlice> loadedSlices,
 			MessageLog log) {
 		try {
 			CbmAutostart.Config config = CbmAutostart.fromMap(map);
 			if (config.isEmpty() || prgLength == 0) {
 				return;
-			}
-			int[] image = new int[0x10000];
-			Arrays.fill(image, -1);
-			for (LoadedSlice slice : loadedSlices) {
-				for (long i = 0; i < slice.length(); i++) {
-					image[(int) ((slice.start() + i) & 0xFFFF)] =
-						provider.readByte(slice.fileOffset() + i) & 0xFF;
-				}
 			}
 			CbmAutostart.Result result = CbmAutostart.detect(config,
 				a -> a < 0 || a > 0xFFFF ? -1 : image[a]);
@@ -822,9 +823,33 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 	// Descriptor-derived PRG placement (grm-dvx)
 	// ------------------------------------------------------------------
 
-	private List<PrgSlice> planPrgSlices(JsonObject map, long loadAddr, long length)
+	/** The final image as source spans: maximal runs ascending in address AND file offset, in
+	 *  file order. A contiguous load gives the same one or two spans (the second after a wrap)
+	 *  the loader always planned. */
+	private static List<SourceSpan> spansOf(CbmKernalLoad.Result load) {
+		List<SourceSpan> spans = new ArrayList<>();
+		int[] source = load.source();
+		int a = 0;
+		while (a < source.length) {
+			if (source[a] < 0) {
+				a++;
+				continue;
+			}
+			int b = a;
+			while (b + 1 < source.length && source[b + 1] == source[b] + 1) {
+				b++;
+			}
+			spans.add(new SourceSpan(a, b - a + 1, 2L + source[a]));
+			a = b + 1;
+		}
+		spans.sort((x, y) -> Long.compare(x.fileOffset(), y.fileOffset()));
+		return spans;
+	}
+
+	private List<PrgSlice> planPrgSlices(JsonObject map, CbmKernalLoad.Result load)
 			throws IOException {
-		if (length == 0) {
+		List<SourceSpan> spans = spansOf(load);
+		if (spans.isEmpty()) {
 			return List.of();
 		}
 
@@ -865,13 +890,6 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 						String.format("%04X", Math.max(left.start(), right.start())));
 				}
 			}
-		}
-
-		long firstLength = Math.min(length, 0x10000 - loadAddr);
-		List<SourceSpan> spans = new ArrayList<>();
-		spans.add(new SourceSpan(loadAddr, firstLength, 2));
-		if (length > firstLength) {
-			spans.add(new SourceSpan(0, length - firstLength, 2 + firstLength));
 		}
 
 		List<PrgSlice> slices = new ArrayList<>();

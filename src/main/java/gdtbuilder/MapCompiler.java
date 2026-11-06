@@ -220,6 +220,10 @@ public class MapCompiler {
 		if (autostart != null) {
 			mapDoc.put("autostart", autostart);
 		}
+		Map<String, Object> kernalLoad = buildKernalLoad(descriptor);
+		if (kernalLoad != null) {
+			mapDoc.put("kernal_load", kernalLoad);
+		}
 
 		return mapDoc;
 	}
@@ -1795,6 +1799,106 @@ public class MapCompiler {
 			o.put("start", start);
 			o.put("end", end);
 			out.put("stack", o);
+		}
+		return out;
+	}
+
+	// ---- kernal_load (grm-t3n.5) ----
+
+	private static int requireByte(Map<String, Object> map, String key, String context) {
+		int v = requireAddr(map, key, context);
+		if (v < 0 || v > 0xFF) {
+			throw new IllegalArgumentException(context + " '" + key + "' 0x" +
+				Integer.toHexString(v) + " is not a zero-page address/byte");
+		}
+		return v;
+	}
+
+	/**
+	 * Optional {@code kernal_load:} section: the zero-page cells the stock KERNAL serial LOAD
+	 * store loop reads, so a loader can simulate it (see CbmKernalLoad). {@code pointer} is the
+	 * low byte of the store pointer (high byte follows), {@code verify} the verify-flag cell,
+	 * {@code port} the CPU-port DDR and data cells, {@code io} the window whose writes the loop
+	 * loses while the port maps I/O there, {@code initial} the cells' starting values. A machine
+	 * that omits the section keeps contiguous placement.
+	 */
+	@SuppressWarnings("unchecked")
+	private static Map<String, Object> buildKernalLoad(Map<String, Object> descriptor) {
+		Object raw = descriptor.get("kernal_load");
+		if (raw == null) {
+			return null;
+		}
+		if (!(raw instanceof Map)) {
+			throw new IllegalArgumentException("descriptor 'kernal_load:' must be a mapping");
+		}
+		Map<String, Object> in = (Map<String, Object>) raw;
+		Map<String, Object> out = new LinkedHashMap<>();
+		int pointer = requireAddr(in, "pointer", "kernal_load");
+		if (pointer < 0 || pointer > 0xFE) {
+			throw new IllegalArgumentException("kernal_load.pointer 0x" +
+				Integer.toHexString(pointer) + " must be a zero-page address <= 0xFE");
+		}
+		out.put("pointer", pointer);
+		if (in.get("verify") != null) {
+			out.put("verify", requireByte(in, "verify", "kernal_load"));
+		}
+		Object port = in.get("port");
+		if (port != null) {
+			if (!(port instanceof Map)) {
+				throw new IllegalArgumentException("kernal_load.port must be a mapping");
+			}
+			Map<String, Object> pm = (Map<String, Object>) port;
+			Map<String, Object> o = new LinkedHashMap<>();
+			o.put("ddr", requireByte(pm, "ddr", "kernal_load.port"));
+			o.put("data", requireByte(pm, "data", "kernal_load.port"));
+			out.put("port", o);
+		}
+		Object io = in.get("io");
+		if (io != null) {
+			if (!(io instanceof Map)) {
+				throw new IllegalArgumentException("kernal_load.io must be a mapping");
+			}
+			if (port == null) {
+				throw new IllegalArgumentException("kernal_load.io needs kernal_load.port");
+			}
+			Map<String, Object> im = (Map<String, Object>) io;
+			Map<String, Object> o = new LinkedHashMap<>();
+			int start = requireAddr(im, "start", "kernal_load.io");
+			int end = requireAddr(im, "end", "kernal_load.io");
+			if (start < 0 || end < start || end > 0xFFFF) {
+				throw new IllegalArgumentException("kernal_load.io range is invalid");
+			}
+			o.put("start", start);
+			o.put("end", end);
+			o.put("mask", requireByte(im, "mask", "kernal_load.io"));
+			o.put("any", requireByte(im, "any", "kernal_load.io"));
+			o.put("drop_before_port_write",
+				Boolean.TRUE.equals(im.get("drop_before_port_write")));
+			out.put("io", o);
+		}
+		Object initial = in.get("initial");
+		if (initial != null) {
+			if (!(initial instanceof List)) {
+				throw new IllegalArgumentException("kernal_load.initial must be a list");
+			}
+			List<Map<String, Object>> rows = new ArrayList<>();
+			Set<Integer> seen = new LinkedHashSet<>();
+			for (Object item : (List<Object>) initial) {
+				if (!(item instanceof Map)) {
+					throw new IllegalArgumentException("kernal_load.initial[] entries must be mappings");
+				}
+				Map<String, Object> row = (Map<String, Object>) item;
+				Map<String, Object> o = new LinkedHashMap<>();
+				int addr = requireByte(row, "addr", "kernal_load.initial[]");
+				if (!seen.add(addr)) {
+					throw new IllegalArgumentException("kernal_load.initial[] repeats addr 0x" +
+						Integer.toHexString(addr));
+				}
+				o.put("addr", addr);
+				o.put("value", requireByte(row, "value", "kernal_load.initial[]"));
+				rows.add(o);
+			}
+			out.put("initial", rows);
 		}
 		return out;
 	}

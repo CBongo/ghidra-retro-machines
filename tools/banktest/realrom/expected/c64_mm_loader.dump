@@ -4,30 +4,33 @@ REALROM sha256 23899583700b3671790274932d20786e1e553c7346d8937990b2d15268107ff2
 REALROM prgsha256 NONE
 REALROM map machines/c64.map
 REALROM placement NONE
-REALROM block PRG_0002 0002-00ff overlay=false
-REALROM block PRG_0100 0100-01ff overlay=false
-REALROM block PRG_0200 0200-03ff overlay=false
-REALROM block PRG_0400 0400-07ff overlay=false
-REALROM block PRG_0800 0800-146b overlay=false
-REALROM block PRG_FFFA fffa-ffff overlay=true
+REALROM block OS_WORKSPACE_0267 0267-03ff overlay=false
+REALROM block PRG_0002 0002-00ac overlay=false
+REALROM block PRG_00AD 00ad-00af overlay=false
+REALROM block PRG_01B0 01b0-01ff overlay=false
+REALROM block PRG_0200 0200-0266 overlay=false
+REALROM block PRG_EDB0 edb0-ffff overlay=true
 REALROM block RAM_A000 a000-bfff overlay=true
 REALROM block RAM_C000 c000-cfff overlay=false
-REALROM block RAM_E000 e000-fff9 overlay=true
-REALROM block RAM_MAIN_146C 146c-9fff overlay=false
-REALROM count blocks.total 22
+REALROM block RAM_E000 e000-edaf overlay=true
+REALROM block RAM_MAIN 0800-9fff overlay=false
+REALROM block SCREEN_RAM 0400-07ff overlay=false
+REALROM block STACK_0100 0100-01af overlay=false
+REALROM block ZEROPAGE_00B0 00b0-00ff overlay=false
+REALROM count blocks.total 25
 REALROM count blocks.overlay 5
 REALROM count spaces.overlay 4
-REALROM count instructions 1
-REALROM count instrs.inOverlay 1
-REALROM count functions 40
-REALROM count loaded.bytes 5232
-REALROM count loaded.undefinedBytes 5088
+REALROM count instructions 9
+REALROM count instrs.inOverlay 9
+REALROM count functions 43
+REALROM count loaded.bytes 5045
+REALROM count loaded.undefinedBytes 4957
 REALROM count bit.carriers 0
 REALROM count bit.entered 0
 REALROM count bankComments 0
 REALROM count warnings 1
 REALROM count notes 0
-REALROM count symbols 44
+REALROM count symbols 47
 REALROM count decrypt.materialized 0
 REALROM count decrypt.suspect 0
 REALROM count decrypt.candidate 0
@@ -47,6 +50,9 @@ REALROM count forth.does 0
 REALROM count forth.vector 0
 REALROM count forth.rejected 0
 REALROM sample.warn 0000 [no bank-switch write observed] Board declares 1 bank-switch mechanism(s) [register-write] but no mechanism write was observed in analyzed code; no bank annotations were produced. The switch routine may be unreached (e.g. entered only via an indirect/table jump auto-analysis did not disassemble).
+REALROM sample.symbol f252 autostart_IRQ IMPORTED primary=true
+REALROM sample.symbol f26e autostart_NMI IMPORTED primary=true
+REALROM sample.symbol f274 autostart_RESET IMPORTED primary=true
 REALROM sample.symbol ff87 RAMTAS IMPORTED primary=true
 REALROM sample.symbol ff8a RESTOR IMPORTED primary=true
 REALROM sample.symbol ff8d VECTOR IMPORTED primary=true
@@ -69,8 +75,5 @@ REALROM sample.symbol ffc9 CHKOUT IMPORTED primary=true
 REALROM sample.symbol ffcc CLRCHN IMPORTED primary=true
 REALROM sample.symbol ffcf CHRIN IMPORTED primary=true
 REALROM sample.symbol ffd8 SAVE IMPORTED primary=true
-REALROM sample.symbol ffdb SETTIM IMPORTED primary=true
-REALROM sample.symbol ffde RDTIM IMPORTED primary=true
-REALROM sample.symbol ffe1 STOP IMPORTED primary=true
-REALROM sample.symbol.truncated 25 of 35
+REALROM sample.symbol.truncated 25 of 38
 === REALROM END ===

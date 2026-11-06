@@ -47,6 +47,12 @@ def wrapping_payload():
     payload[0:4] = bytes((0xfc, 0xfd, 0xfe, 0xff))
     payload[4:8] = bytes((0xd0, 0xd1, 0x02, 0x03))  # $0000-$0003
     payload[4 + 0x300:4 + 0x304] = b"VECT"          # $0300-$0303
+    # grm-t3n.5: this payload runs over the KERNAL LOAD store pointer $AE/$AF, and a store
+    # there steers the rest of the load. Keep the pointer's own bytes consistent with plain
+    # sequential loading ($AE <- $AE so the INC leaves $AF; $AF <- 0 so the high byte stays 0).
+    payload[4 + 0x93] = 0x00  # the verify flag $93 must stay clear or LOAD stops storing
+    payload[4 + 0xAE] = 0xAE
+    payload[4 + 0xAF] = 0x00
     return payload
 
 
@@ -79,7 +85,11 @@ def full_space_payload():
     -- the byte at any address directly encodes that address's high byte, and
     "source offsets preserved" reduces to reading a handful of addresses back
     (bead grm-gea)."""
-    return bytes(((i >> 8) & 0xff) for i in range(0x10000))
+    payload = bytearray(((i >> 8) & 0xff) for i in range(0x10000))
+    # grm-t3n.5: the file covers the KERNAL LOAD store pointer $AE/$AF, so those two bytes must
+    # keep it moving sequentially ($AE <- $AE, then the INC leaves $AF; $AF stays 0 = high byte).
+    payload[0xAE] = 0xAE
+    return bytes(payload)
 
 
 def overflow_payload():
@@ -118,11 +128,20 @@ def autostart_hardware_payload():
     return bytes((0x43, 0xfe, 0xe2, 0xfc, 0x48, 0xff))
 
 
+def kload_redirect_payload():
+    """Loaded at $00AC (grm-t3n.5): the file covers the KERNAL LOAD store pointer $AE/$AF, so
+    it steers its own remaining bytes. +2 stores $AC at $AE (pointer back to $AD), +3 stores
+    again at $AD (the later store wins over +1), +4 stores $AE at $AE (pointer to $AF),
+    +5 stores $03 at $AF (pointer hi) so +6.. land at $03B0, not at $00B0."""
+    return bytes((0x11, 0x12, 0xac, 0x13, 0xae, 0x03, 0xa9, 0x07, 0x60))
+
+
 def main():
     outdir = bankgen.outdir_arg(__file__)
     write_prg(outdir, "autostartvectest.prg", 0x0326, autostart_vector_payload())
     write_prg(outdir, "autostartstacktest.prg", 0x0100, autostart_stack_payload())
     write_prg(outdir, "autostarthwtest.prg", 0xfffa, autostart_hardware_payload())
+    write_prg(outdir, "kloadredirecttest.prg", 0x00ac, kload_redirect_payload())
     write_prg(outdir, "prgplacementtest.prg", 0xa000, placement_payload())
     write_prg(outdir, "prgwraptest.prg", 0xfffc, wrapping_payload())
     # grm-z15.2: 0x101-byte payload at $FF00 wraps exactly 1 byte to $0000,

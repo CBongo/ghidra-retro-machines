@@ -290,6 +290,42 @@ public final class D64Image {
 			}
 			members.add(new Member(uniqueName(base, k, used), k, data));
 		}
+		addEaBootImage(used);
+	}
+
+	/**
+	 * grm-t3n.6: when the disk carries the early EA loader, exposes the sector-loaded, encrypted
+	 * boot image as a synthetic PRG member. A recognized loader whose image fails verification
+	 * adds a problem and no member.
+	 */
+	private void addEaBootImage(Set<String> used) {
+		EaBootImage.Outcome o = EaBootImage.recover(this);
+		if (o == null) {
+			return;
+		}
+		if (o.result() == null) {
+			problems.add(EaBootImage.MEMBER_BASE_NAME + ": " + o.problem());
+			return;
+		}
+		members.add(new Member(uniqueName(EaBootImage.MEMBER_BASE_NAME, Kind.PRG, used), Kind.PRG,
+			o.result().prg()));
+	}
+
+	/**
+	 * The 256 raw bytes of a sector, or null when track/sector is out of range or the error-info
+	 * table flags it.
+	 */
+	byte[] rawSector(int track, int sector) {
+		int index = sectorIndex(track, sector, tracks);
+		if (index < 0) {
+			return null;
+		}
+		if (hasErrorInfo && (image[(tracks == 35 ? SIZE_35 : SIZE_40) + index] & 0xff) > 1) {
+			return null;
+		}
+		byte[] out = new byte[SECTOR_SIZE];
+		System.arraycopy(image, index * SECTOR_SIZE, out, 0, SECTOR_SIZE);
+		return out;
 	}
 
 	private String uniqueName(String base, Kind kind, Set<String> used) {

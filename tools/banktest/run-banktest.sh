@@ -359,6 +359,7 @@ if selected c64-loader; then
 	generate mkromtest.py "$WORK/prg"
 	generate mkprgloadtest.py "$WORK/prg"
 	generate mkd64test.py "$WORK/prg"
+	generate mkeabootd64test.py "$WORK/prg"
 fi
 if selected c64-recovery; then
 	# copybankedrom needs kernal.bin, which mkromtest.py generates. Only the c64-loader branch
@@ -999,11 +1000,19 @@ if selected c64-loader; then
 	run_one autostartstacktest "$WORK/prg/autostartstacktest.prg" C64PrgLoader
 	run_one autostarthwtest "$WORK/prg/autostarthwtest.prg" C64PrgLoader
 
+	# grm-t3n.5: a PRG loading over the KERNAL LOAD store pointer $AE/$AF redirects itself.
+	run_one kloadredirecttest "$WORK/prg/kloadredirecttest.prg" C64PrgLoader
+
 	# grm-t3n.2: a synthetic .d64 drilled into with -recursive. Proves the extension jar's
 	# D64FileSystem is discovered in the isolated install and C64PrgLoader imports the PRG member
 	# (the program is named after the member, "D64FSTEST.prg", which is also the fixture name
 	# VerifyBankTest dispatches on); the SEQ member is not a program.
 	run_one D64FSTEST "$WORK/prg/d64fstest.d64" C64PrgLoader "-recursive"
+
+	# grm-t3n.6: a synthetic EA-style boot disk. The loader is a USR member (not imported); the
+	# only program is the synthetic "EA_BOOT_IMAGE.prg" -- raw T1S0.. sectors decrypted with the
+	# key the loader implies, checksum-verified, placed at $0800.
+	run_one "EA_BOOT_IMAGE" "$WORK/prg/eabootd64test.d64" C64PrgLoader "-recursive"
 
 	cp -f "$WORK/prg/romload.prg" "$WORK/prg/copyhintnorom.prg"
 	run_one copyhintnorom "$WORK/prg/copyhintnorom.prg" C64PrgLoader
