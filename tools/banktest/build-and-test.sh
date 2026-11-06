@@ -64,7 +64,8 @@ basic-petscii C64 BASIC headless fixture
 basic-dialects PET BASIC 4/C128 BASIC 7 token dialects plus C64 BASIC 2 regression
 pet-loader    PET 4032 descriptor, PRG placement, IO types, and fixed ROM slots
 snes-loader   SNES cartridge loader: header detection, static LoROM/HiROM layout, byte-mapped
-              mirrors, IO typing, and the reset entry point
+              mirrors, IO typing, and the reset entry point; plus the SPC700 .spc snapshot
+              loader (grm-c9d.4: DSP block, IO names, IPL window, entry override)
 c128-loader   C128 native BASIC PRG placement, fixed ROM slots, and MMU IO
 nes-banking   NES banking and MMC fixtures
 petscii-strings PetsciiStringAnalyzer C64 PRG fixture

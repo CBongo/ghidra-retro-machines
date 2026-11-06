@@ -2287,6 +2287,183 @@ public class VerifyCbmCriteria extends VerifyBase {
 		return i + " len=" + i.getLength() + " M=" + ctxBit(addr(offset), "ctx_MF");
 	}
 
+	// ------------------------------------------------------------------
+	// SPC700 .spc snapshot loader (grm-c9d.4)
+	// ------------------------------------------------------------------
+
+	private static final String[] SPC_IO_NAMES = { "TEST", "CONTROL", "DSPADDR", "DSPDATA",
+		"CPUIO0", "CPUIO1", "CPUIO2", "CPUIO3", "AUXIO4", "AUXIO5", "T0TARGET", "T1TARGET",
+		"T2TARGET", "T0OUT", "T1OUT", "T2OUT" };
+
+	private String spcNamesAt(Address a) {
+		StringBuilder sb = new StringBuilder();
+		for (Symbol s : currentProgram.getSymbolTable().getSymbols(a)) {
+			if (sb.length() > 0) {
+				sb.append("|");
+			}
+			sb.append(s.getName());
+		}
+		return sb.length() == 0 ? "-" : sb.toString();
+	}
+
+	/**
+	 * @param variant "plain" (header PC is the entry), "entry" (-loader-entry 0400 overrides the
+	 *        header PC $0410) or "ipl" (CONTROL bit 7 set, file lacks the stock IPL)
+	 */
+	protected void checkSpcSnapshot(String variant) throws Exception {
+		boolean ipl = variant.equals("ipl");
+		boolean override = variant.equals("entry");
+		long expectedEntry = override ? 0x0400 : 0x0410;
+		boolean format = "SPC700 Sound Snapshot (.spc)".equals(currentProgram.getExecutableFormat());
+		boolean language = currentProgram.getLanguageID().getIdAsString()
+			.equals("SPC700:LE:16:retro");
+
+		println("=== BANKDUMP BEGIN ===");
+		println("FORMAT spc=" + format + " language=" + language);
+		for (MemoryBlock b : currentProgram.getMemory().getBlocks()) {
+			println("BLOCK " + b.getName() + " " + b.getStart() + "-" + b.getEnd() + " init=" +
+				b.isInitialized() + " volatile=" + b.isVolatile() + " overlay=" + b.isOverlay() +
+				" rwx=" + (b.isRead() ? "r" : "-") + (b.isWrite() ? "w" : "-") +
+				(b.isExecute() ? "x" : "-") + " fileOffset=" + fileOffset(b));
+		}
+		StringBuilder io = new StringBuilder();
+		boolean ioNamed = true;
+		for (int i = 0; i < 16; i++) {
+			String n = spcNamesAt(addr(0xF0 + i));
+			ioNamed &= n.equals(SPC_IO_NAMES[i]);
+			io.append(String.format("%02X=%s(%s) ", 0xF0 + i, n, hx(readByteAt(0xF0 + i))));
+		}
+		println("IO " + io.toString().trim());
+
+		MemoryBlock dsp = currentProgram.getMemory().getBlock("DSP_REGS");
+		boolean dspShape = dsp != null && dsp.isOverlay() && dsp.getSize() == 0x80 &&
+			dsp.isInitialized() && dsp.isVolatile();
+		boolean dspNamed = dspShape;
+		if (dsp != null) {
+			for (int row = 0; row < 8; row++) {
+				StringBuilder sb = new StringBuilder();
+				for (int c = 0; c < 16; c++) {
+					Address a = dsp.getStart().add(row * 16 + c);
+					sb.append(spcNamesAt(a)).append(":").append(hx(readByteAt2(a))).append(" ");
+				}
+				println("DSP " + String.format("%02X", row * 16) + " " + sb.toString().trim());
+			}
+			dspNamed &= spcNamesAt(dsp.getStart().add(0x00)).equals("V0VOLL");
+			dspNamed &= spcNamesAt(dsp.getStart().add(0x02)).equals("V0PITCH");
+			dspNamed &= spcNamesAt(dsp.getStart().add(0x03)).equals("V0PITCHH");
+			dspNamed &= spcNamesAt(dsp.getStart().add(0x34)).equals("V3SRCN");
+			dspNamed &= spcNamesAt(dsp.getStart().add(0x4C)).equals("KON");
+			dspNamed &= spcNamesAt(dsp.getStart().add(0x6C)).equals("FLG");
+			dspNamed &= spcNamesAt(dsp.getStart().add(0x5D)).equals("DIR");
+			dspNamed &= spcNamesAt(dsp.getStart().add(0x6D)).equals("ESA");
+			dspNamed &= spcNamesAt(dsp.getStart().add(0x7D)).equals("EDL");
+			dspNamed &= spcNamesAt(dsp.getStart().add(0x7F)).equals("COEF7");
+			dspNamed &= readByteAt2(dsp.getStart().add(0x00)) == 0x7F &&
+				readByteAt2(dsp.getStart().add(0x6C)) == 0x20;
+			Data pitch = currentProgram.getListing().getDefinedDataAt(dsp.getStart().add(2));
+			dspNamed &= pitch != null && pitch.getDataType().getName().equals("word");
+		}
+
+		Options info = currentProgram.getOptions(Program.PROGRAM_INFO);
+		String[] keys = { "SPC.Header PC", "SPC.A", "SPC.X", "SPC.Y", "SPC.PSW", "SPC.SP",
+			"SPC.Direct page", "SPC.IPL mapped in", "SPC.File version", "SPC.ID666",
+			"SPC.Song title", "SPC.Game title", "SPC.Dumper", "SPC.Comments", "SPC.Dump date",
+			"SPC.Seconds to play", "SPC.Fade length (ms)", "SPC.Artist",
+			"SPC.Default channel disable", "SPC.Emulator used", "SPC.Entry", "SPC.Entry source" };
+		for (String k : keys) {
+			println("INFO " + k + " = " + info.getString(k, "<unset>"));
+		}
+		boolean tagOk = "Test Song".equals(info.getString("SPC.Song title", "")) &&
+			"Test Game".equals(info.getString("SPC.Game title", "")) &&
+			"Nobody".equals(info.getString("SPC.Artist", "")) &&
+			"123".equals(info.getString("SPC.Seconds to play", "")) &&
+			"present".equals(info.getString("SPC.ID666", ""));
+		boolean regsOk = "$0410".equals(info.getString("SPC.Header PC", "")) &&
+			"$12".equals(info.getString("SPC.A", "")) &&
+			"$02".equals(info.getString("SPC.PSW", ""));
+
+		Address entryAddr = addr(expectedEntry);
+		boolean entryPoint = currentProgram.getSymbolTable().isExternalEntryPoint(entryAddr) &&
+			hasSymbol(expectedEntry, "SPC_ENTRY");
+		boolean entryFn = currentProgram.getFunctionManager().getFunctionAt(entryAddr) != null;
+		boolean entryInfo = String.format("$%04X", expectedEntry).equals(
+			info.getString("SPC.Entry", "")) &&
+			(override ? "option" : "header PC").equals(info.getString("SPC.Entry source", ""));
+		println("ENTRY addr=" + entryAddr + " entryPoint=" + entryPoint + " function=" + entryFn);
+		StringBuilder code = new StringBuilder();
+		for (long a : new long[] { 0x400, 0x402, 0x403, 0x406, 0x409, 0x40b, 0x40d, 0x410, 0x420,
+			0x422, 0x424 }) {
+			Instruction i = currentProgram.getListing().getInstructionAt(addr(a));
+			code.append(String.format("%04X:%s; ", a, i == null ? "-" : i.toString()));
+		}
+		println("CODE " + code.toString().trim());
+		long instructions = currentProgram.getListing().getNumInstructions();
+		println("INSTRUCTIONS " + instructions);
+		println("=== BANKDUMP END ===");
+
+		boolean ramPlaced = readByteAt(0x400) == 0xCD && readByteAt(0x420) == 0xE4 &&
+			currentProgram.getMemory().getBlock("RAM_0100") != null &&
+			currentProgram.getMemory().getBlock("RAM_0000") != null;
+		boolean ioVolatile = currentProgram.getMemory().getBlock("IO_F0") != null &&
+			currentProgram.getMemory().getBlock("IO_F0").isVolatile();
+		boolean noTimer3 = true;
+		for (String bad : new String[] { "TIMER3", "COUNTER3", "TIMER2", "COUNTER2" }) {
+			noTimer3 &= currentProgram.getSymbolTable().getSymbols(bad).hasNext() == false;
+		}
+		MemoryBlock top = currentProgram.getMemory().getBlock(ipl ? "IPL_ROM" : "RAM_FFC0");
+		MemoryBlock hidden = currentProgram.getMemory().getBlock(ipl ? "RAM_UNDER_IPL"
+				: "EXTRA_RAM");
+		boolean topOk;
+		if (ipl) {
+			// Not the stock IPL: uninitialized, executable, read-only; the file's bytes survive
+			// in an overlay.
+			topOk = top != null && !top.isInitialized() && top.isExecute() && !top.isWrite() &&
+				hidden != null && hidden.isOverlay() &&
+				readByte(hidden, 0) == 0x30 && readByte(hidden, 0x3f) == 0x6f;
+		}
+		else {
+			topOk = top != null && top.isInitialized() && top.isWrite() &&
+				readByteAt(0xFFC0) == 0x30 && readByteAt(0xFFFF) == 0x6f &&
+				hidden != null && hidden.isOverlay() && readByte(hidden, 0) == 0xC0;
+		}
+		println("SPC TOP " + describeBlock(top) + " hidden=" + describeBlock(hidden));
+
+		criterion("spc-format-language", format && language,
+			currentProgram.getExecutableFormat() + " / " + currentProgram.getLanguageID());
+		criterion("spc-ram-placement", ramPlaced, "RAM blocks hold the file's bytes");
+		criterion("spc-io-names", ioNamed && noTimer3,
+			"$F0-$FF named TEST..T2OUT; $FC=T2TARGET, $FF=T2OUT; no TIMER3/COUNTER3");
+		criterion("spc-io-volatile", ioVolatile, "IO_F0 volatile");
+		criterion("spc-dsp-block", dspShape && dspNamed,
+			"DSP_REGS overlay, 128 typed named registers with the file's values");
+		criterion("spc-ipl-window", topOk, "CONTROL bit 7 " + (ipl ? "set" : "clear") +
+			": $FFC0 window and hidden RAM as expected");
+		criterion("spc-entry-point", entryPoint && entryFn && entryInfo,
+			"entry $" + Long.toHexString(expectedEntry) + (override ? " (override)"
+					: " (header PC)") + " is an entry point, function and SPC_ENTRY");
+		criterion("spc-header-and-id666", tagOk && regsOk, "ID666 tag and registers in Program Info");
+		if (override) {
+			boolean driver = currentProgram.getListing().getInstructionAt(addr(0x400)) != null &&
+				currentProgram.getFunctionManager().getFunctionAt(addr(0x420)) != null;
+			criterion("spc-driver-decoded", driver,
+				"override entry $0400 decodes the driver and finds the callee at $0420");
+		}
+		else {
+			criterion("spc-header-pc-only",
+				currentProgram.getListing().getInstructionAt(addr(0x400)) == null,
+				"the header PC ($0410, mid-driver) seeds only its own flow");
+		}
+	}
+
+	private int readByteAt2(Address a) {
+		try {
+			return currentProgram.getMemory().getByte(a) & 0xFF;
+		}
+		catch (Exception e) {
+			return -1;
+		}
+	}
+
 	protected int countOverlayBlocks() {
 		int overlays = 0;
 		for (MemoryBlock b : currentProgram.getMemory().getBlocks()) {

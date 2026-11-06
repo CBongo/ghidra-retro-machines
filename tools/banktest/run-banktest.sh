@@ -25,7 +25,8 @@
 #   basic-dialects PET BASIC 4/C128 BASIC 7 token dialects, plus C64 BASIC 2 regression
 #   pet-loader    PET 4032 descriptor, PRG placement, IO types, and fixed ROM slots
 #   snes-loader   SNES cartridge loader: header detection, static LoROM/HiROM layout,
-#                 byte-mapped mirrors, IO typing, and the reset entry point
+#                 byte-mapped mirrors, IO typing, and the reset entry point; plus the
+#                 SPC700 .spc snapshot loader (grm-c9d.4)
 #   c128-loader   C128 native BASIC PRG placement, fixed ROM slots, and MMU IO
 #   nes-banking   all NES banking/MMC fixtures
 #   petscii-strings PetsciiStringAnalyzer C64 PRG fixture
@@ -379,7 +380,10 @@ if selected basic-dialects; then
 	generate mkdialectbasictest.py "$WORK/prg"
 fi
 if selected pet-loader; then generate mkpettest.py "$WORK/prg"; fi
-if selected snes-loader; then generate mksnestest.py "$WORK/snes"; fi
+if selected snes-loader; then
+	generate mksnestest.py "$WORK/snes"
+	generate mkspctest.py "$WORK/spc"
+fi
 if selected c128-loader; then generate mkc128test.py "$WORK/prg"; fi
 if selected nes-banking; then
 	generate mknesbanktest.py "$WORK/nes"
@@ -1129,6 +1133,11 @@ if selected snes-loader; then
 	run_one snestramp "$WORK/snes/snestramp.smc" SnesRomLoader
 	# grm-9nxj.5.6: two handlers installed into one trampoline, an RTL store and a RAM-target group.
 	run_one snestramp2 "$WORK/snes/snestramp2.smc" SnesRomLoader
+	# grm-c9d.4: SPC700 .spc snapshot loader. The header PC ($0410) is mid-driver; the second
+	# run overrides it to the real entry ($0400); the third has the IPL mapped in (CONTROL bit 7).
+	run_one spcsnaptest "$WORK/spc/spcsnaptest.spc" SpcSnapshotLoader
+	run_one spcsnapentry "$WORK/spc/spcsnapentry.spc" SpcSnapshotLoader "-loader-entry 0400"
+	run_one spcsnapipl "$WORK/spc/spcsnapipl.spc" SpcSnapshotLoader
 fi
 
 if selected nes-text; then

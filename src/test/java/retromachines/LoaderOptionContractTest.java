@@ -82,6 +82,11 @@ public class LoaderOptionContractTest extends AbstractBundledLanguageTest {
 	}
 
 	@Test
+	public void spcSnapshotOptionsHonourContract() {
+		assertContract(new SpcSnapshotLoader());
+	}
+
+	@Test
 	public void cbmOptionsHonourContract() {
 		assertContract(new C64PrgLoader());
 		assertContract(new C128PrgLoader());

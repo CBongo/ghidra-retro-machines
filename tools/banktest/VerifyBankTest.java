@@ -184,6 +184,10 @@ public class VerifyBankTest extends GhidraScript {
 		focused("snestestcopier", cbm::checkSnes);
 		focused("snestestinterleaved", cbm::checkSnesInterleaved);
 		focused("sneswidth", cbm::checkSnesWidth);
+		// grm-c9d.4: the .spc snapshot loader (header PC, -loader-entry override, IPL mapped in).
+		focused("spcsnaptest", () -> cbm.checkSpcSnapshot("plain"));
+		focused("spcsnapentry", () -> cbm.checkSpcSnapshot("entry"));
+		focused("spcsnapipl", () -> cbm.checkSpcSnapshot("ipl"));
 		focused("snesjtab", cbm::checkSnesJumpTables);
 		focused("snestramp", cbm::checkSnesTramp);
 		focused("snestramp2", cbm::checkSnesTramp2);
