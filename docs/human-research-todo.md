@@ -356,6 +356,20 @@ Blocked on judgment, not effort.
       nothing unless the next 2 cases also fail (`codePrefix`'s confirm rule). The bead holds
       the full analysis, plus a cheap measurement an agent can run to size the missed population.
 
+- [ ] **Find a "tricky code" example to measure the analysis posture against** (`grm-8v6y` P4,
+      parked 2026-11-06). The well-behaved/tricky posture switch has no test vector: the NES corpus
+      is well-behaved and the repo holds no deliberately tricky code, so none of its consumers
+      (`grm-8v6y.2`–`.4`) can be measured. Wanted: one or more programs that do on purpose what the
+      default posture treats as a misdecode. That means jumps into the middle of an instruction,
+      undocumented opcodes as live code, self-modifying or decrypt-in-place code, and odd
+      mapper/I/O access. C64 copy-protected loaders and fast loaders are the obvious candidates. A
+      demo-scene production or homebrew with a known license would sidestep the redistribution
+      question (`grm-5ioo`). For each candidate, note: title · platform · image format (PRG/D64/
+      G64) · which tricks it uses and roughly where · whether it can be redistributed or only
+      hash-pinned like the real-ROM tier (`grm-t3n`). One good example is enough to unpark
+      `grm-8v6y`. An agent then builds the posture plumbing (`.1`) together with its first
+      consumer.
+
 ---
 
 ## 5. Upstream (needs your GitHub identity)
