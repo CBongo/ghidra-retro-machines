@@ -51,7 +51,7 @@ public record ForthConfig(int ip, int w, int next, int docol, List<Integer> exit
 		Map<Integer, Handler> handlers, Map<Integer, InlineMode> inline,
 		Map<Integer, Name> names) {
 
-	/** Program-Info property that holds the config JSON until the descriptor section lands. */
+	/** Program-Info property holding an explicit config JSON; it overrides the C64 descriptor. */
 	public static final String PROPERTY = "Retro Machines.Forth Config";
 
 	/** Behaviour of a handler code-field value. */
@@ -63,7 +63,12 @@ public record ForthConfig(int ip, int w, int next, int docol, List<Integer> exit
 		/** Pushes {@code [CFA+2]} plus the 16-bit word at zero page {@code base}. */
 		DOUSER,
 		/** Layout {@code [handler][does-thread address][data...]}. */
-		DODOES
+		DODOES,
+		/**
+		 * Vector table: pops {@code n} and executes body cell {@code n} (0-based) of the word.
+		 * The body is a run of word cells after the code field; its length is not encoded.
+		 */
+		EXECVEC
 	}
 
 	/**
@@ -195,6 +200,44 @@ public record ForthConfig(int ip, int w, int next, int docol, List<Integer> exit
 		}
 		return new ForthConfig(ip, w, next, docol, List.copyOf(exits), Map.copyOf(handlers),
 			Map.copyOf(inline), Map.copyOf(names));
+	}
+
+	/**
+	 * Merges a member's {@code forth:} mapping over the game-level one: every sub-mapping the
+	 * member carries ({@code names}, {@code inline}, {@code handlers}) is merged key by key with the
+	 * member winning, and keys are normalised to decimal strings first so a hex spelling in one
+	 * and a decimal in the other cannot both survive. Scalars the member carries replace the
+	 * game's. Neither argument is modified.
+	 *
+	 * @param game the game-level mapping, or null
+	 * @param member the member-level mapping, or null
+	 * @return the merged mapping, or null when both are null
+	 */
+	public static JsonObject merge(JsonObject game, JsonObject member) {
+		if (game == null && member == null) {
+			return null;
+		}
+		JsonObject out = new JsonObject();
+		for (JsonObject src : new JsonObject[] { game, member }) {
+			if (src == null) {
+				continue;
+			}
+			for (Map.Entry<String, JsonElement> e : src.entrySet()) {
+				JsonElement v = e.getValue();
+				if (v.isJsonObject() && !e.getKey().equals("forth")) {
+					JsonObject dst = out.has(e.getKey()) ? out.getAsJsonObject(e.getKey())
+							: new JsonObject();
+					for (Map.Entry<String, JsonElement> k : v.getAsJsonObject().entrySet()) {
+						dst.add(String.valueOf(parseInt(k.getKey())), k.getValue());
+					}
+					out.add(e.getKey(), dst);
+				}
+				else {
+					out.add(e.getKey(), v);
+				}
+			}
+		}
+		return out;
 	}
 
 	private static JsonObject obj(JsonObject f, String key) {

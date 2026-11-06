@@ -10,9 +10,10 @@ property "Retro Machines.Forth Config", set by SetProgramInfo.java as a -preScri
 A tiny headerless indirect-threaded Forth for the 6502 in the shape of Adventure Construction
 Set's: IP=$7E, W=$81 (so "JMP $0080" is JMP (W) once $80 holds $6C). Loaded at $2000:
 
-  NEXT (code), DOCOL, DOCON, DOVAR, DODOES handlers
+  NEXT (code), DOCOL, DOCON, DOVAR, DODOES, EXECVEC handlers
   code words : EXIT LIT BRANCH 0BRANCH (.") DUP DROP + EMIT
-  constant FIVE, variable COUNTER, DODOES word ARRAY (does-thread: DUP + EXIT)
+  constant FIVE, variable COUNTER, DODOES word ARRAY (does-thread: DUP + EXIT),
+  EXECVEC vector table VEC (entries DUP DROP EXIT, run ends at the next word's DOCOL)
   colon words: DOUBLE, SHOW (forward 0BRANCH, EXIT mid-body), GREET (inline string), TWICE,
                MAIN (backward BRANCH), HIDDEN (unnamed, only referenced)
   a DECOY: the DOCOL value in a data table followed by non-words (must NOT become a word)
@@ -185,6 +186,18 @@ def build():
     m.word(0x1234)
     m.word(0x0000)
     m.raw(0x05, 0x06, 0x07, 0x08)
+    m.label("EXECVEC")                                        # pop n, execute body cell n
+    m.raw(0xB5, 0, 0x0A, 0x18, 0x69, 2, 0xA8, 0xE8, 0xE8, 0xB1, W, 0x48, 0xC8, 0xB1, W,
+          sta_zp, W + 1, 0x68, sta_zp, W)
+    m.raw(0x4C, 0x80, 0x00)
+
+    # VEC: a vector table; its run ends at the DOCOL cell of VECUSER
+    m.label("VEC")
+    m.ref("EXECVEC")
+    for w in ("DUP", "DROP", "EXIT"):
+        m.ref(w)
+
+    colon("VECUSER", [("w", "VEC"), ("w", "EXIT")])
     m.resolve()
     return m
 
@@ -197,13 +210,13 @@ def main():
     cfg = {"forth": {
         "ip": IP, "w": W, "next": s["NEXT"], "docol": s["DOCOL"], "exit": [s["EXIT"]],
         "handlers": {str(s["DOCON"]): "DOCON", str(s["DOVAR"]): "DOVAR",
-                     str(s["DODOES"]): "DODOES"},
+                     str(s["DODOES"]): "DODOES", str(s["EXECVEC"]): "EXECVEC"},
         "inline": {str(s["LIT"]): "lit16", str(s["BRANCH"]): "branch",
                    str(s["0BRANCH"]): "branch", str(s["STRP"]): "counted_string"},
         "names": {str(s[n]): {"name": nm} for n, nm in (
             ("EXIT", "EXIT"), ("LIT", "LIT"), ("BRANCH", "BRANCH"), ("0BRANCH", "0BRANCH"),
             ("STRP", '(.")'), ("DUP", "DUP"), ("DROP", "DROP"), ("PLUS", "+"),
-            ("EMIT", "EMIT"), ("FIVE", "FIVE"), ("COUNTER", "COUNTER"), ("ARRAY", "ARRAY"),
+            ("EMIT", "EMIT"), ("FIVE", "FIVE"), ("COUNTER", "COUNTER"), ("ARRAY", "ARRAY"), ("VEC", "VEC"),
             ("DOUBLE", "DOUBLE"), ("SHOW", "SHOW"), ("TWICE", "TWICE"), ("MAIN", "MAIN"))},
     }}
     cfg["forth"]["names"][str(s["DUP"])]["comment"] = "( n -- n n )"

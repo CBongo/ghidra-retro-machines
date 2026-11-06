@@ -1,0 +1,167 @@
+=== REALROM BEGIN ===
+REALROM program c64_acs_b.prg
+REALROM sha256 99d031beb09a65d095a3b5af1e8660eb11bec20fdcb40f1de86c24558e05c994
+REALROM prgsha256 NONE
+REALROM map machines/c64.map
+REALROM placement NONE
+REALROM block OS_WORKSPACE 0200-03ff overlay=false
+REALROM block PRG 99c6-9fff overlay=false
+REALROM block PRG_C000 c000-c90b overlay=false
+REALROM block RAM_A000 a000-bfff overlay=true
+REALROM block RAM_C000_C90C c90c-cfff overlay=false
+REALROM block RAM_E000 e000-ffff overlay=true
+REALROM block RAM_MAIN_0800 0800-99c5 overlay=false
+REALROM block SCREEN_RAM 0400-07ff overlay=false
+REALROM block STACK 0100-01ff overlay=false
+REALROM block ZEROPAGE 0002-00ff overlay=false
+REALROM count blocks.total 22
+REALROM count blocks.overlay 4
+REALROM count spaces.overlay 4
+REALROM count instructions 0
+REALROM count instrs.inOverlay 0
+REALROM count functions 40
+REALROM count loaded.bytes 12102
+REALROM count loaded.undefinedBytes 11058
+REALROM count bit.carriers 0
+REALROM count bit.entered 0
+REALROM count bankComments 0
+REALROM count warnings 0
+REALROM count notes 52
+REALROM count symbols 43
+REALROM count decrypt.materialized 0
+REALROM count decrypt.suspect 0
+REALROM count decrypt.candidate 0
+REALROM count decrypt.unbounded 0
+REALROM count decrypt.notApplied 0
+REALROM count decrypt.other 0
+REALROM count copy.declined 0
+REALROM count copy.unbounded 0
+REALROM count copy.other 0
+REALROM count skip.candidateNote 0
+REALROM count skip.offcutInfo 0
+REALROM count forth.words 40
+REALROM count forth.colon 28
+REALROM count forth.code 2
+REALROM count forth.data 10
+REALROM count forth.does 0
+REALROM count forth.vector 0
+REALROM count forth.rejected 52
+REALROM sample.forth 99c6 : read_std_acs_gfx_genre_--  set_VAR_3D94_DISKREQ_to_2_ACS_BACK set_RWFLAG_to_read_1 push_2800_custom_charset_for_game_gfx SWAP LIT $0010 U* push_1B + push_1000 r_w_bytes_from_disk_addr_sector_len_-- ; |read std acs gfx (genre --)
+REALROM sample.forth 99e0 : copy_gfx_from_another_adv  clear_VAR_3D68_source_adv_disk_sig set_VAR_3D94_DISKREQ_from_VAR_3D90 set_RWFLAG_to_read_1 read_or_write_gfx_data_to_disk set_VAR_3D94_DISKREQ_to_1_current_adv push_1_1039 store_CVAR_39D2_gfx_dirty ; |copy gfx from another adv
+REALROM sample.forth 99f2 : menu_item_copy_gfx_from_another_adv  verify_drastic_changes_return_true_if_OK 0BRANCH L1 copy_gfx_from_another_adv L1: print_YOUR_REQUEST_IS_DONE._buttonwait ; |menu item: copy gfx from another adv
+REALROM sample.forth 9a00 : menu_item_copy_std_acs_fantasy_gfx  push_0 copy_std_acs_gfx_w_confirm_genre_-- ; |menu item: copy std acs fantasy gfx
+REALROM sample.forth 9a08 : menu_item_copy_std_acs_futuristic_gfx  push_2 copy_std_acs_gfx_w_confirm_genre_-- ; |menu item: copy std acs futuristic gfx
+REALROM sample.forth 9a10 : menu_item_copy_std_acs_contemporary_gfx  push_1_0DE1 copy_std_acs_gfx_w_confirm_genre_-- ; |menu item: copy std acs contemporary gfx
+REALROM sample.forth 9a18 : copy_std_acs_gfx_genre_--  read_std_acs_gfx_genre_-- set_VAR_3D94_DISKREQ_to_1_current_adv push_1_1039 store_CVAR_39D2_gfx_dirty ; |copy std acs gfx (genre --)
+REALROM sample.forth 9a24 : copy_std_acs_gfx_w_confirm_genre_--  verify_drastic_changes_return_true_if_OK 0BRANCH L1 copy_std_acs_gfx_genre_-- print_YOUR_REQUEST_IS_DONE._buttonwait L1: ; |copy std acs gfx w/confirm (genre --)
+REALROM sample.forth 9a32 VARIABLE menu_text_copy_gfx_menu|menu text: copy gfx menu
+REALROM sample.forth 9aac : menu_init_copy_gfx_menu  restore_nonsplit_mode_clear_screen menu_text_copy_gfx_menu print_strings_at_stk_r_c_len_str_..._FF print_ADVENTURE_CONSTRUCTION_SET_0_7 ; |menu init: copy gfx menu
+REALROM sample.forth 9ab8 VARIABLE menu_data_copy_gfx_menu|menu data: copy gfx menu
+REALROM sample.forth 9b0c : run_copy_gfx_from_another_adv_menu  push_0 menu_data_copy_gfx_menu run_menu_x_menuaddr_-- ; |run copy gfx from another adv menu
+REALROM sample.forth 9b16 : print_YOUR_REQUEST_IS_DONE._buttonwait  move_cursor_to_R21_C0_and_clear_4_lines LIT $000A move_cursor_to_R22_C_stk print_inline_ctstr "\x19\x0F\x15\x12 \x12\x05\x11\x15\x05\x13\x14 \x09\x13 \x04\x0F\x0E\x05." print_PRESS_BUTTON_and_wait_for_button move_cursor_to_R21_C0_and_clear_4_lines ; |print "YOUR REQUEST IS DONE.", buttonwait
+REALROM sample.forth 9b3e : print_ACS_WILL_PICK_NAME_at_screenaddr  get_current_screen_position >R push_addr_of_VAR_SCREENPOS_257F ! LIT $0014 write_stk_spaces_at_current_screen print_inline_ctstr "\x01\x03\x13 \x17\x09\x0C\x0C \x10\x09\x03\x0B \x0E\x01\x0D\x05" R> push_addr_of_VAR_SCREENPOS_257F ! ; |print "ACS WILL PICK NAME" at screenaddr stk
+REALROM sample.forth 9b6b : FORTH_9B6B  set_VAR_3D94_DISKREQ_to_2_ACS_BACK DUP LIT $0005 U* push_010A + push_F100 SWAP push_0474 set_RWFLAG_to_read_1 r_w_bytes_from_disk_addr_sector_len_-- LIT $0005 U* push_0119 + push_EC00 SWAP push_0500 r_w_bytes_from_disk_addr_sector_len_-- push_1_1039 store_CVAR_39E5 set_VAR_3D94_DISKREQ_to_1_current_adv ; 
+REALROM sample.forth 9b9f : FORTH_9B9F  set_VAR_3D94_DISKREQ_to_2_ACS_BACK set_RWFLAG_to_read_1 LIT $0001 U* push_15_199E + push_FE63 SWAP push_A7 r_w_bytes_from_disk_addr_sector_len_-- push_1_1039 store_CVAR_39BF set_VAR_3D94_DISKREQ_to_1_current_adv ; 
+REALROM sample.forth 9bbf : FORTH_9BBF  load_goto_world_map_saving_current set_VAR_3D94_DISKREQ_to_2_ACS_BACK set_RWFLAG_to_read_1 push_E662 SWAP push_18 + LIT $00F0 r_w_bytes_from_disk_addr_sector_len_-- set_VAR_3D94_DISKREQ_to_1_current_adv ; 
+REALROM sample.forth 9bd9 : FORTH_9BD9  push_E000_region_data_area push_4B push_0C00 r_w_bytes_from_disk_addr_sector_len_-- push_2800_custom_charset_for_game_gfx push_4B LIT $000C + push_1000 r_w_bytes_from_disk_addr_sector_len_-- push_EC00 push_4B LIT $001C + push_0500 r_w_bytes_from_disk_addr_sector_len_-- ; 
+REALROM sample.forth 9c01 : FORTH_9C01  set_VAR_3D94_DISKREQ_to_2_ACS_BACK set_RWFLAG_to_read_1 FORTH_9BD9 set_VAR_3D94_DISKREQ_to_1_current_adv set_RWFLAG_to_write_0 FORTH_9BD9 ; 
+REALROM sample.forth 9c11 : FORTH_9C11  set_VAR_3D94_DISKREQ_to_2_ACS_BACK set_RWFLAG_to_read_1 >R push_E000_region_data_area push_0137 @R LIT $0011 *+ DUP >R push_0100 r_w_bytes_from_disk_addr_sector_len_-- push_2800_custom_charset_for_game_gfx R> 1+ push_1000 r_w_bytes_from_disk_addr_sector_len_-- push_F8E3 push_0128 R> LIT $0005 *+ push_0580 push_0100 - r_w_bytes_from_disk_addr_sector_len_-- push_1_1039 store_CVAR_39F8 set_VAR_3D94_DISKREQ_to_1_current_adv set_RWFLAG_to_write_0 push_E000_region_data_area push_0194 push_0100 r_w_bytes_from_disk_addr_sector_len_-- push_2800_custom_charset_for_game_gfx push_0194 1+ push_1000 r_w_bytes_from_disk_addr_sector_len_-- ; 
+REALROM sample.forth 9cc7 : zero_sectors_01AA-_01B1_of_current_adv  set_VAR_3D94_DISKREQ_to_1_current_adv check_disk_sig_prompt_until_DISKREQ push_2600_disk_buffer push_0100 ZEROFILL set_RWFLAG_to_write_0 push_01B2 push_01AA DO L1: push_2600_disk_buffer I read_write_abs_sector_with_retry_prompts (LOOP) L1 ; |zero sectors $01AA-$01B1 of current adv disk
+REALROM sample.forth 9ce7 : print_MESSAGE_stk_OF_254_in_disk_buffer  push_2600_disk_buffer push_addr_of_VAR_SCREENPOS_257F ! print_inline_ctstr "\x0D\x05\x13\x13\x01\x07\x05 " DUP print_number_n_-- print_inline_ctstr " \x0F\x06 " push_FE print_number_n_-- push_FE 1+ = 0BRANCH L1 push_2600_disk_buffer push_0100 FILLSPACES_addr_len_-- L1: ; |print "MESSAGE stk OF 254" in disk buffer
+REALROM sample.forth 9d1b : FORTH_9D1B  set_VAR_3D94_DISKREQ_to_1_current_adv check_disk_sig_prompt_until_DISKREQ set_RWFLAG_to_write_0 push_FEEA push_20_1B28 ZEROFILL push_1_1039 store_CVAR_39BF push_2600_disk_buffer push_0100 FILLSPACES_addr_len_-- push_FE 2+ push_1_0DE1 DO L1: I print_MESSAGE_stk_OF_254_in_disk_buffer push_2600_disk_buffer I stk_stk_-_1_+_6C read_write_abs_sector_with_retry_prompts (LOOP) L1 ; 
+REALROM sample.forth 9d4d : FORTH_9D4D  push_E7F2 LIT $0014 ZEROFILL push_E806 push_8 ZEROFILL push_4_0DF3 push_0 DO L1: push_40_1936 1+ I + push_E806 I 2* + 1+ C! (LOOP) L1 push_0832 push_E80E ! push_2 push_E810 ! push_4_0DF3 push_0 DO L2: push_E810 2+ I push_5_1B20 U* + push_5_1B20 OVER ! push_5_1B20 OVER 2+ C! push_52 OVER 3+ C! I SWAP push_4_0DF3 + C! (LOOP) L2 push_E0A2 push_8 LIT $0029 FILL ; 
+REALROM sample.forth 9e99 VARIABLE push_VAR_9E9B_GOLD|push VAR $9E9B  ("GOLD")
+REALROM sample.forth 9ea0 VARIABLE push_VAR_9EA2_STANDARD_DOOR|push VAR $9EA2  ("STANDARD DOOR")
+REALROM sample.forth 9eb0 VARIABLE push_VAR_9EB2_STORE|push VAR $9EB2  ("STORE")
+REALROM sample.forth 9eb8 VARIABLE push_VAR_9EBA_EMPTY_FLOOR|push VAR $9EBA  ("EMPTY FLOOR")
+REALROM sample.forth 9ec6 VARIABLE push_VAR_9EC6_DO_NOTHING|push VAR $9EC6  ("DO NOTHING")
+REALROM sample.forth 9ed3 VARIABLE push_VAR_9ED5_TRINKET|push VAR $9ED5  ("TRINKET")
+REALROM sample.forth 9edd VARIABLE push_VAR_9EDF_ONE_WAY_DOOR|push VAR $9EDF  ("ONE WAY DOOR")
+REALROM sample.forth 9eec : erase_master_creature_list  set_VAR_3D94_DISKREQ_to_1_current_adv push_F8E3 push_80 push_8_1926 FILL push_F963 push_80 push_10_18D6 U* ZEROFILL push_1_1039 store_CVAR_39F8 ; |erase master creature list
+REALROM sample.forth 9f08 : menu_item_erase_master_creature_list  verify_drastic_changes_return_true_if_OK 0BRANCH L1 erase_master_creature_list print_YOUR_REQUEST_IS_DONE._buttonwait L1: ; |menu item: erase master creature list
+REALROM sample.forth 9f16 : menu_item_erase_everything_but_graphics  verify_drastic_changes_return_true_if_OK 0BRANCH L1 erase_everything_but_graphics print_YOUR_REQUEST_IS_DONE._buttonwait L1: ; |menu item: erase everything but graphics
+REALROM sample.forth c24a code word edit_world_map|edit world map
+REALROM sample.forth c4c4 : FORTH_C4C4  return_true_if_CVAR_25d7_.lo_2 0BRANCH L1 fetch_VAR_3816 BRANCH L2 L1: fetch_VAR_25D7 2+ L2: ; 
+REALROM sample.forth c558 : FORTH_C558  fetch_lo_nybble_of_CVAR_25d7 return_CVAR_25d7_+1_6_3 OVER push_7_3AB5 = OVER push_1_0DE1 > AND >R OVER push_8_3AB9 = OVER push_1_0DE1 > AND R> OR >R push_1_0DE1 <> SWAP push_9 = AND return_true_if_CVAR_25d7_bit_7_set AND R> OR ; 
+REALROM sample.forth c7c6 VARIABLE FORTH_C7C6
+REALROM sample.forth c8e4 code word edit_world_map_creatures|edit world map creatures
+REALROM sample.forth c902 : edit_things  push_0 FORTH_C7C6 run_menu_x_menuaddr_-- ; |edit things
+REALROM sample.note 9c67 [ForthAnalyzer] rejected colon candidate $9C67: cell $6102 at $9C6F is not a word
+REALROM sample.note 9c77 [ForthAnalyzer] rejected colon candidate $9C77: cell $42DD at $9C85 is not a word
+REALROM sample.note 9dc9 [ForthAnalyzer] rejected colon candidate $9DC9: cell $629E at $9E21 is not a word
+REALROM sample.note 9f24 [ForthAnalyzer] rejected colon candidate $9F24: cell $9DC9 at $9F2C is not a word
+REALROM sample.note 9f32 [ForthAnalyzer] rejected colon candidate $9F32: cell $5527 at $9F36 is not a word
+REALROM sample.note c02c [ForthAnalyzer] rejected colon candidate $C02C: cell $BFDE at $C02E is not a word
+REALROM sample.note c072 [ForthAnalyzer] rejected colon candidate $C072: cell $C02C at $C074 is not a word
+REALROM sample.note c0b5 [ForthAnalyzer] rejected colon candidate $C0B5: cell $BF88 at $C0B9 is not a word
+REALROM sample.note c11d [ForthAnalyzer] rejected colon candidate $C11D: cell $BF50 at $C11F is not a word
+REALROM sample.note c14b [ForthAnalyzer] rejected colon candidate $C14B: cell $BF2E at $C14F is not a word
+REALROM sample.note c155 [ForthAnalyzer] rejected colon candidate $C155: cell $BF2E at $C159 is not a word
+REALROM sample.note c15f [ForthAnalyzer] rejected colon candidate $C15F: cell $BEEF at $C163 is not a word
+REALROM sample.note c167 [ForthAnalyzer] rejected colon candidate $C167: cell $BEEF at $C16D is not a word
+REALROM sample.note c171 [ForthAnalyzer] rejected colon candidate $C171: cell $B19E at $C183 is not a word
+REALROM sample.note c1cb [ForthAnalyzer] rejected colon candidate $C1CB: cell $C171 at $C1D1 is not a word
+REALROM sample.note c1d5 [ForthAnalyzer] rejected colon candidate $C1D5: cell $C171 at $C1D9 is not a word
+REALROM sample.note c1dd [ForthAnalyzer] rejected colon candidate $C1DD: cell $B382 at $C1ED is not a word
+REALROM sample.note c20f [ForthAnalyzer] rejected colon candidate $C20F: cell $B2BB at $C21F is not a word
+REALROM sample.note c243 [ForthAnalyzer] rejected colon candidate $C243: cell $AFA8 at $C245 is not a word
+REALROM sample.note c278 [ForthAnalyzer] rejected colon candidate $C278: cell $C243 at $C27C is not a word
+REALROM sample.note c280 [ForthAnalyzer] rejected colon candidate $C280: cell $AFA8 at $C282 is not a word
+REALROM sample.note c2bb [ForthAnalyzer] rejected colon candidate $C2BB: cell $AFA8 at $C2BD is not a word
+REALROM sample.note c349 [ForthAnalyzer] rejected colon candidate $C349: cell $5441 at $C34B is not a word
+REALROM sample.note c392 [ForthAnalyzer] rejected colon candidate $C392: cell $5441 at $C394 is not a word
+REALROM sample.note c3a6 [ForthAnalyzer] rejected colon candidate $C3A6: cell $C243 at $C3AA is not a word
+REALROM sample.note c3ae [ForthAnalyzer] rejected colon candidate $C3AE: cell $C243 at $C3B2 is not a word
+REALROM sample.note c3b6 [ForthAnalyzer] rejected colon candidate $C3B6: cell $5441 at $C3B8 is not a word
+REALROM sample.note c3cc [ForthAnalyzer] rejected colon candidate $C3CC: cell $5441 at $C3CE is not a word
+REALROM sample.note c3f2 [ForthAnalyzer] rejected colon candidate $C3F2: cell $5441 at $C3F4 is not a word
+REALROM sample.note c420 [ForthAnalyzer] rejected colon candidate $C420: cell $AF90 at $C428 is not a word
+REALROM sample.note c436 [ForthAnalyzer] rejected colon candidate $C436: cell $C444 at $C438 is not a word
+REALROM sample.note c444 [ForthAnalyzer] rejected colon candidate $C444: cell $547B at $C446 is not a word
+REALROM sample.note c46a [ForthAnalyzer] rejected colon candidate $C46A: cell $C444 at $C46C is not a word
+REALROM sample.note c480 [ForthAnalyzer] rejected colon candidate $C480: cell $B28D at $C494 is not a word
+REALROM sample.note c4b2 [ForthAnalyzer] rejected colon candidate $C4B2: cell $C480 at $C4B8 is not a word
+REALROM sample.note c4bc [ForthAnalyzer] rejected colon candidate $C4BC: cell $C480 at $C4C0 is not a word
+REALROM sample.note c4d8 [ForthAnalyzer] rejected colon candidate $C4D8: cell $9477 at $C4DA is not a word
+REALROM sample.note c4ee [ForthAnalyzer] rejected colon candidate $C4EE: cell $C4D8 at $C4F2 is not a word
+REALROM sample.note c4f6 [ForthAnalyzer] rejected colon candidate $C4F6: cell $C4D8 at $C4FC is not a word
+REALROM sample.note c500 [ForthAnalyzer] rejected colon candidate $C500: cell $B279 at $C51C is not a word
+REALROM sample.note c546 [ForthAnalyzer] rejected colon candidate $C546: cell $C500 at $C54C is not a word
+REALROM sample.note c550 [ForthAnalyzer] rejected colon candidate $C550: cell $C500 at $C554 is not a word
+REALROM sample.note c598 [ForthAnalyzer] rejected colon candidate $C598: cell $B230 at $C5B2 is not a word
+REALROM sample.note c5fc [ForthAnalyzer] rejected colon candidate $C5FC: cell $C598 at $C602 is not a word
+REALROM sample.note c606 [ForthAnalyzer] rejected colon candidate $C606: cell $C598 at $C60A is not a word
+REALROM sample.note c60e [ForthAnalyzer] rejected colon candidate $C60E: cell $AFA8 at $C62A is not a word
+REALROM sample.note c6e1 [ForthAnalyzer] rejected colon candidate $C6E1: cell $C60E at $C6E7 is not a word
+REALROM sample.note c6eb [ForthAnalyzer] rejected colon candidate $C6EB: cell $C60E at $C6EF is not a word
+REALROM sample.note c6f3 [ForthAnalyzer] rejected colon candidate $C6F3: cell $AFA8 at $C701 is not a word
+REALROM sample.note c7b2 [ForthAnalyzer] rejected colon candidate $C7B2: cell $C6F3 at $C7B4 is not a word
+REALROM sample.note c7b8 [ForthAnalyzer] rejected colon candidate $C7B8: cell $C6F3 at $C7BA is not a word
+REALROM sample.note c7be [ForthAnalyzer] rejected colon candidate $C7BE: cell $22E7 at $C7C0 is not a word
+REALROM sample.symbol 99c6 entry IMPORTED primary=true
+REALROM sample.symbol ff87 RAMTAS IMPORTED primary=true
+REALROM sample.symbol ff8a RESTOR IMPORTED primary=true
+REALROM sample.symbol ff8d VECTOR IMPORTED primary=true
+REALROM sample.symbol ff90 SETMSG IMPORTED primary=true
+REALROM sample.symbol ff93 SECOND IMPORTED primary=true
+REALROM sample.symbol ff96 TKSA IMPORTED primary=true
+REALROM sample.symbol ff99 MEMTOP IMPORTED primary=true
+REALROM sample.symbol ff9c MEMBOT IMPORTED primary=true
+REALROM sample.symbol ff9f SCNKEY IMPORTED primary=true
+REALROM sample.symbol ffa2 SETTMO IMPORTED primary=true
+REALROM sample.symbol ffa8 CIOUT IMPORTED primary=true
+REALROM sample.symbol ffab UNTLK IMPORTED primary=true
+REALROM sample.symbol ffae UNLSN IMPORTED primary=true
+REALROM sample.symbol ffb1 LISTEN IMPORTED primary=true
+REALROM sample.symbol ffb4 TALK IMPORTED primary=true
+REALROM sample.symbol ffb7 READST IMPORTED primary=true
+REALROM sample.symbol ffc3 CLOSE IMPORTED primary=true
+REALROM sample.symbol ffc6 CHKIN IMPORTED primary=true
+REALROM sample.symbol ffc9 CHKOUT IMPORTED primary=true
+REALROM sample.symbol ffcc CLRCHN IMPORTED primary=true
+REALROM sample.symbol ffcf CHRIN IMPORTED primary=true
+REALROM sample.symbol ffd8 SAVE IMPORTED primary=true
+REALROM sample.symbol ffdb SETTIM IMPORTED primary=true
+REALROM sample.symbol ffde RDTIM IMPORTED primary=true
+REALROM sample.symbol.truncated 25 of 34
+=== REALROM END ===

@@ -22,6 +22,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
+import com.google.gson.JsonObject;
+
 import ghidra.app.cmd.disassemble.DisassembleCommand;
 import ghidra.app.cmd.function.CreateFunctionCmd;
 import ghidra.app.services.AbstractAnalyzer;
@@ -51,9 +53,10 @@ import ghidra.util.task.TaskMonitor;
 
 /**
  * Presents an indirect-threaded Forth layer in the listing (bead grm-arbi.2). Entirely driven by
- * a {@link ForthConfig}; without one it does nothing. The config is read, until the descriptor
- * section lands (grm-arbi.3), from the Program-Info string property
- * {@value ForthConfig#PROPERTY}. Discovery is {@link ForthThreads}; this class only writes the
+ * a {@link ForthConfig}; without one it does nothing. The config is the program's C64 game
+ * descriptor ({@link C64GameDescriptors}): game-level {@code forth} with the member's
+ * {@code forth} merged over it (grm-arbi.3). An explicit config in the Program-Info string
+ * property {@value ForthConfig#PROPERTY} overrides the descriptor when present. Discovery is {@link ForthThreads}; this class only writes the
  * result: labels, 16-bit pointer data with references, inline operand typing, functions at
  * machine-code entry points, and a plate comment carrying the Forth rendering of each word.
  *
@@ -80,7 +83,7 @@ public class C64ForthAnalyzer extends AbstractAnalyzer {
 			"pointers with call references, decodes inline operands and adds a Forth rendering.";
 	static final String CATEGORY = "ForthAnalyzer";
 	static final String PLATE_MARKER = "[Forth]";
-	private static final int MAX_REJECT_BOOKMARKS = 100;
+	private static final int MAX_REJECT_BOOKMARKS = 1000;
 
 	/** Creates the Forth thread analyzer. */
 	public C64ForthAnalyzer() {
@@ -101,14 +104,26 @@ public class C64ForthAnalyzer extends AbstractAnalyzer {
 	@Override
 	public boolean added(Program program, AddressSetView set, TaskMonitor monitor,
 			MessageLog log) {
+		ForthConfig cfg;
 		String json = program.getOptions(Program.PROGRAM_INFO).getString(ForthConfig.PROPERTY,
 			null);
-		if (json == null || json.isBlank()) {
-			return false;
-		}
-		ForthConfig cfg;
 		try {
-			cfg = ForthConfig.fromJson(json);
+			if (json != null && !json.isBlank()) {
+				cfg = ForthConfig.fromJson(json);
+			}
+			else {
+				C64GameDescriptors.Resolution res = C64GameDescriptors.forProgram(program, log);
+				if (res == null) {
+					return false;
+				}
+				JsonObject merged = ForthConfig.merge(res.gameForth(), res.memberForth());
+				if (merged == null) {
+					return false;
+				}
+				cfg = ForthConfig.fromMap(merged);
+				log.appendMsg(NAME, "Forth config from descriptor '" + res.gameId() + "' member " +
+					res.memberName());
+			}
 		}
 		catch (IllegalArgumentException e) {
 			log.appendMsg(NAME, e.getMessage());
@@ -216,6 +231,10 @@ public class C64ForthAnalyzer extends AbstractAnalyzer {
 				for (String line : r.log()) {
 					log.appendMsg(NAME, line);
 				}
+				log.appendMsg(NAME, "accepted " + r.words().size() + " words, rejected " +
+					r.log().stream().filter(l -> l.startsWith("rejected colon candidate"))
+							.count() +
+					" colon candidates");
 				bookmarkRejects();
 				entryPoints();
 			}
@@ -302,6 +321,9 @@ public class C64ForthAnalyzer extends AbstractAnalyzer {
 				return;
 			}
 			label(cfa, labelFor(w));
+			if (w.kind() == ForthThreads.Kind.EXTERNAL) {
+				return; // name only: its bytes are not in this image
+			}
 			String plate = null;
 			// The code field itself: a pointer to what executes.
 			int handlerValue = readWord(w.cfa());
@@ -338,6 +360,13 @@ public class C64ForthAnalyzer extends AbstractAnalyzer {
 					type(addr(w.cfa() + 2), WordDataType.dataType, 2);
 					plate = String.format(Locale.ROOT, "$%04X USER %s", w.param(),
 						r.label(w.cfa()));
+				}
+				case EXTERNAL -> {
+					// handled before the switch
+				}
+				case VECTOR -> {
+					typeThread(w.body(), w);
+					plate = ForthThreads.renderVector(w, r);
 				}
 				case DOES -> {
 					Address pf = addr(w.cfa() + 2);

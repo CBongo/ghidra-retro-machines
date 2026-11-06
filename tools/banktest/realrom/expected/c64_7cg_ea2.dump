@@ -38,6 +38,13 @@ REALROM count copy.unbounded 0
 REALROM count copy.other 0
 REALROM count skip.candidateNote 0
 REALROM count skip.offcutInfo 0
+REALROM count forth.words 0
+REALROM count forth.colon 0
+REALROM count forth.code 0
+REALROM count forth.data 0
+REALROM count forth.does 0
+REALROM count forth.vector 0
+REALROM count forth.rejected 0
 REALROM sample.warn 0000 [no bank-switch write observed] Board declares 1 bank-switch mechanism(s) [register-write] but no mechanism write was observed in analyzed code; no bank annotations were produced. The switch routine may be unreached (e.g. entered only via an indirect/table jump auto-analysis did not disassemble).
 REALROM sample.symbol c000 entry IMPORTED primary=true
 REALROM sample.symbol ff87 RAMTAS IMPORTED primary=true

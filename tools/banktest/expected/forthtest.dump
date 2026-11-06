@@ -24,6 +24,8 @@ WORD 2167 label=MAIN type=pointer16 refs=COMPUTED_JUMP->2019 plate=[Forth] : MAI
 WORD 2175 label=FORTH_2175 type=pointer16 refs=COMPUTED_JUMP->2019 plate=[Forth] : FORTH_2175  LIT $2019 DUP DROP ;  bm=<none>
 WORD 2179 label=<none> type=word refs=<none> plate=<none> bm=Note
 WORD 2181 label=<none> type=<undefined> refs=<none> plate=<none> bm=Note
+WORD 21a2 label=VEC type=pointer16 refs=COMPUTED_JUMP->218b plate=[Forth] VECTOR: VEC  DUP DROP EXIT  bm=<none>
+WORD 21aa label=FORTH_21AA type=pointer16 refs=COMPUTED_JUMP->2019 plate=[Forth] : FORTH_21AA  VEC ;  bm=<none>
 CELL 212e type=pointer16 refs=COMPUTED_CALL->20e0
 CELL 2136 type=pointer16 refs=COMPUTED_CALL->20e0
 CELL 2138 type=pointer16 refs=COMPUTED_CALL->20b3
@@ -37,6 +39,9 @@ CELL 2177 type=pointer16 refs=COMPUTED_CALL->207f
 CELL 2179 type=word refs=<none>
 CELL 2120 type=pointer16 refs=COMPUTED_CALL->2126
 CELL 2122 type=<undefined> refs=<none>
+CELL 21a4 type=pointer16 refs=COMPUTED_CALL->20e0
+CELL 21a6 type=pointer16 refs=COMPUTED_CALL->20ef
+CELL 21a8 type=pointer16 refs=COMPUTED_CALL->2074
 FUNC 2000 true label=entry
 FUNC 2019 true label=FORTH_DOCOL
 FUNC 202f true label=FORTH_DOCON
@@ -44,6 +49,7 @@ FUNC 2076 true label=EXIT_code
 FUNC 209e true label=BRANCH_code
 FUNC 20e2 true label=DUP_code
 FUNC 20f8 true label=PLUS_code
+FUNC 218b true label=FORTH_EXECVEC
 LABEL 2126 ARRAY_does
 LABEL 2144 SHOW_L1
 LABEL 2169 MAIN_L1

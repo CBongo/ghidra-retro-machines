@@ -9,3 +9,6 @@ c64_mm_ea	Marble Madness ea.prg	1a3eec6b610c8ec395abc95de9668d11d65e8af4ebb846b6
 c64_acs_a	ACS1 A.PRG	5b7b94850864ebe4c590ad890df1543515347ea42f883f80480429b0c6d621d3	-	-	c64_acs_a.dump
 c64_sid_obj	Sidplayer sid.obj.64.prg	848a6de43b834061e371b2af5252eaf8275bb292a5972eb641040eb79d368979	-	-	c64_sid_obj.dump
 c64_sid_player	Sidplayer sid player.64.prg	5ef3cc9e49dbad61acd3b61c53a45ad21d76af0c8d90df5ad11bf8bfedd29984	-	-	c64_sid_player.dump
+c64_acs_g	ACS1 G.PRG	79635850751092768ad757204f5acb69a947ad566a3c5eab72a97022247d85ef	-	-	c64_acs_g.dump
+c64_acs_b	ACS1 B.PRG	99d031beb09a65d095a3b5af1e8660eb11bec20fdcb40f1de86c24558e05c994	-	-	c64_acs_b.dump
+c64_acs_o	ACS1 O.PRG	7621b80676860356c15bbd35ee9a04d2623bcc2f5186a3a9c7ad29cb20c755b5	-	-	c64_acs_o.dump

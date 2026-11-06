@@ -1,0 +1,121 @@
+=== REALROM BEGIN ===
+REALROM program c64_acs_o.prg
+REALROM sha256 7621b80676860356c15bbd35ee9a04d2623bcc2f5186a3a9c7ad29cb20c755b5
+REALROM prgsha256 NONE
+REALROM map machines/c64.map
+REALROM placement NONE
+REALROM block OS_WORKSPACE 0200-03ff overlay=false
+REALROM block PRG 708c-7fc5 overlay=false
+REALROM block RAM_A000 a000-bfff overlay=true
+REALROM block RAM_C000 c000-cfff overlay=false
+REALROM block RAM_E000 e000-ffff overlay=true
+REALROM block RAM_MAIN_0800 0800-708b overlay=false
+REALROM block RAM_MAIN_7FC6 7fc6-9fff overlay=false
+REALROM block SCREEN_RAM 0400-07ff overlay=false
+REALROM block STACK 0100-01ff overlay=false
+REALROM block ZEROPAGE 0002-00ff overlay=false
+REALROM count blocks.total 22
+REALROM count blocks.overlay 4
+REALROM count spaces.overlay 4
+REALROM count instructions 0
+REALROM count instrs.inOverlay 0
+REALROM count functions 40
+REALROM count loaded.bytes 3898
+REALROM count loaded.undefinedBytes 1979
+REALROM count bit.carriers 0
+REALROM count bit.entered 0
+REALROM count bankComments 0
+REALROM count warnings 0
+REALROM count notes 5
+REALROM count symbols 43
+REALROM count decrypt.materialized 0
+REALROM count decrypt.suspect 0
+REALROM count decrypt.candidate 0
+REALROM count decrypt.unbounded 0
+REALROM count decrypt.notApplied 0
+REALROM count decrypt.other 0
+REALROM count copy.declined 0
+REALROM count copy.unbounded 0
+REALROM count copy.other 0
+REALROM count skip.candidateNote 0
+REALROM count skip.offcutInfo 0
+REALROM count forth.words 94
+REALROM count forth.colon 75
+REALROM count forth.code 0
+REALROM count forth.data 12
+REALROM count forth.does 7
+REALROM count forth.vector 0
+REALROM count forth.rejected 5
+REALROM sample.forth 708c : VAR_1A5E_menu_stack_ptr_+_4  push_4_0DF3 push_VAR_1A5E_menu_stk_ptr +! ; |VAR $1A5E (menu stack ptr) += 4
+REALROM sample.forth 7096 : VAR_1A5E_menu_stack_ptr_-_4  LIT $FFFC push_VAR_1A5E_menu_stk_ptr +! ; |VAR $1A5E (menu stack ptr) -= 4
+REALROM sample.forth 70a2 : fetch_VAR_1A5E_menu_stk_ptr  push_VAR_1A5E_menu_stk_ptr @ ; |fetch VAR $1A5E (menu stk ptr)
+REALROM sample.forth 70aa : fetch_VAR_1A5E_menu_stk_ptr_then_add_2  push_VAR_1A5E_menu_stk_ptr @ 2+ ; |fetch VAR $1A5E (menu stk ptr), then add 2
+REALROM sample.forth 70b4 : fetch_VAR_1A5E_menu_stk_ptr_then_add_1  push_VAR_1A5E_menu_stk_ptr @ 1+ ; |fetch VAR $1A5E (menu stk ptr), then add 1
+REALROM sample.forth 70be : store_1_in_CVAR_1A5E_+1_exit_menu  push_1_0DE1 fetch_VAR_1A5E_menu_stk_ptr_then_add_1 C! ; |store 1 in CVAR($1A5E)+1  (exit menu)
+REALROM sample.forth 70c8 : return_addr_of_current_menupos_data  fetch_VAR_1A5E_menu_stk_ptr_then_add_2 @ fetch_VAR_1A5E_menu_stk_ptr C@ push_8 *+ ; |return addr of current menupos data
+REALROM sample.forth 70d8 : get_column_of_current_menu_position  return_addr_of_current_menupos_data 1+ C@ MOD-40 ; |get column of current menu position
+REALROM sample.forth 70e4 : get_sprite_x_coord_for_current_menupos  LIT $0014 get_column_of_current_menu_position push_8 *+ ; |get sprite x coord for current menupos
+REALROM sample.forth 70f2 : get_row_of_current_menu_position  return_addr_of_current_menupos_data C@ ; |get row of current menu position
+REALROM sample.forth 70fa : get_sprite_y_coord_for_current_menupos  LIT $002F get_row_of_current_menu_position push_8 *+ ; |get sprite y coord for current menupos
+REALROM sample.forth 7108 : get_new_menupos_based_on_movement  DUP 0BRANCH L1 return_addr_of_current_menupos_data 1+ + C@ BRANCH L2 L1: DROP push_FF L2: ; |get new menupos based on movement
+REALROM sample.forth 7122 : move_sprite_0_to_current_menupos_and  get_sprite_x_coord_for_current_menupos get_sprite_y_coord_for_current_menupos push_0 set_sprite_position_to_x_y_x_y_sprnum_-- push_0 enable_sprite_sprnum_-- ; |move sprite 0 to current menupos and enable
+REALROM sample.forth 7132 : wait_for_joymove_in_menu  wait_for_joymove_return_1up_2rt_3dn_4lf get_new_menupos_based_on_movement DUP push_FF < 0BRANCH L1 fetch_VAR_1A5E_menu_stk_ptr C! move_sprite_0_to_current_menupos_and push_1_1039 BRANCH L2 L1: DROP push_0_103D L2: ; |wait for joymove in menu
+REALROM sample.forth 7154 : get_confirmation_of_menu_item_if  return_addr_of_current_menupos_data 1+ C@ LIT $0027 > 0BRANCH L1 print_PRESS_BUTTON_TO_CONFIRM_--_f BRANCH L2 L1: push_1_1039 L2: ; |get confirmation of menu item if required (-- f)
+REALROM sample.forth 7170 : get_action_addr_for_current_menu_item  return_addr_of_current_menupos_data push_6_1B24 + @ ; |get action addr for current menu item
+REALROM sample.forth 717c : get_action_addr_for_current_menu_item_717C  get_action_addr_for_current_menu_item ; |get action addr for current menu item
+REALROM sample.forth 7182 : invoke_action_addr_for_current_menu_item  get_action_addr_for_current_menu_item CALL_stk ; |invoke action addr for current menu item
+REALROM sample.forth 718a : run_menu_x_menuaddr_--  setup_sprite_0_as_cursor VAR_1A5E_menu_stack_ptr_+_4 SWAP DROP DUP 2+ fetch_VAR_1A5E_menu_stk_ptr_then_add_2 ! fetch_VAR_1A5E_menu_stk_ptr_then_add_1 C0! fetch_VAR_1A5E_menu_stk_ptr C0! @ CALL_stk fetch_VAR_1A5E_menu_stk_ptr_then_add_1 C@ 0= 0BRANCH L4 draw_all_connecting_menu_lines wait_for_current_joystick_to_be_centered L1: move_sprite_0_to_current_menupos_and fetch_VAR_1A5E_menu_stk_ptr C@ >R wait_for_joymove_in_menu 0BRANCH L3 get_action_addr_for_current_menu_item_717C 0BRANCH L3 get_confirmation_of_menu_item_if 0BRANCH L2 invoke_action_addr_for_current_menu_item L2: @R fetch_VAR_1A5E_menu_stk_ptr C! L3: R> DROP fetch_VAR_1A5E_menu_stk_ptr_then_add_1 C@ 0BRANCH L1 L4: push_0 disable_sprite_sprnum_-- VAR_1A5E_menu_stack_ptr_-_4 ; |run menu (x menuaddr --)
+REALROM sample.forth 71ec : draw_all_connecting_menu_lines  fetch_VAR_1A5E_menu_stk_ptr C@ fetch_VAR_1A5E_menu_stk_ptr C0! push_FF15 C0! L1: draw_connecting_lines_from_current fetch_VAR_1A5E_menu_stk_ptr 1+! fetch_VAR_1A5E_menu_stk_ptr C@ push_FF15 C@ > 0BRANCH L1 fetch_VAR_1A5E_menu_stk_ptr C! ; |draw all connecting menu lines
+REALROM sample.forth 7214 CREATE FORTH_7214  DOES> 
+REALROM sample.forth 7228 : draw_connecting_lines_from_current  push_0 push_5_1B20 push_1_0DE1 DO L1: I get_new_menupos_based_on_movement DUP push_FF <> 0BRANCH L6 SWAP I FORTH_72BE + SWAP DUP push_FF15 C@ MAX push_FF15 C! DUP fetch_VAR_1A5E_menu_stk_ptr C@ > 0BRANCH L4 I 1AND 0BRANCH L2 push_5_1B20 BRANCH L3 L2: LIT $000A L3: FORTH_7214 push_FF15 1+ C! fetch_VAR_1A5E_menu_stk_ptr C@ >R get_column_of_current_menu_position get_row_of_current_menu_position ROT fetch_VAR_1A5E_menu_stk_ptr C! get_column_of_current_menu_position SWAP get_row_of_current_menu_position connect_menuposes_with_C_FF16_Cnow R> fetch_VAR_1A5E_menu_stk_ptr C! BRANCH L5 L4: DROP L5: BRANCH L7 L6: DROP L7: (LOOP) L1 FORTH_7214 ?DUP 0BRANCH L8 get_column_of_current_menu_position get_row_of_current_menu_position move_cursor_to_c_r_-- get_current_screen_position C! L8: ; |draw connecting lines from current menupos
+REALROM sample.forth 72be CREATE FORTH_72BE  DOES> 
+REALROM sample.forth 72c7 : connect_menuposes_with_C_FF16_Cnow  SWAP 2DUP < 0BRANCH L1 LIT $FFFF BRANCH L2 L1: push_1_0DE1 L2: push_FF17 ! DO L3: 2DUP SWAP 2DUP < 0BRANCH L5 DO L4: I J write_C_FF16_at_row_column_c_r_-- LIT $FFFF (+LOOP) L4 BRANCH L7 L5: DO L6: I J write_C_FF16_at_row_column_c_r_-- (LOOP) L6 L7: push_FF17 @ (+LOOP) L3 2DROP ; |connect menuposes with C@FF16 (Cnow Cdest Rn Rd --)
+REALROM sample.forth 731b : write_C_FF16_at_row_column_c_r_--  move_cursor_to_c_r_-- push_FF15 1+ C@ get_current_screen_position C! ; |write C@($FF16) at row,column (c r --)
+REALROM sample.forth 732b VARIABLE push_addr_of_text_for_edit_things_creat|push addr of text for edit things/creat/gfx menu
+REALROM sample.forth 7393 : menu_item_edit_things  load_program_files_to_make_an_adv_disk edit_things restart_edit_things_creatures_gfx_menu ; |menu item: edit things
+REALROM sample.forth 739d : menu_item_edit_graphics  load_program_files_to_make_an_adv_disk edit_graphics restart_edit_things_creatures_gfx_menu ; |menu item: edit graphics
+REALROM sample.forth 73a7 : menu_item_edit_master_list_of_creatures  load_C_O_R_S_if_not_loaded menu_item_save_your_work_and_continue edit_master_list_of_creatures restart_edit_things_creatures_gfx_menu ; |menu item: edit master list of creatures
+REALROM sample.forth 73b3 : menu_init_for_edit_things_creatures_gfx  restore_nonsplit_mode_clear_screen push_addr_of_text_for_edit_things_creat print_strings_at_stk_r_c_len_str_..._FF print_ADVENTURE_CONSTRUCTION_SET_0_7 ; |menu init for edit things/creatures/gfx
+REALROM sample.forth 73bf : restart_edit_things_creatures_gfx_menu  menu_init_for_edit_things_creatures_gfx draw_all_connecting_menu_lines ; |restart edit things/creatures/gfx menu
+REALROM sample.forth 73c7 : menu_item_copy_or_erase_adventure  load_program_files_to_make_an_adv_disk copy_or_erase_some_all_of_an_adventure restart_edit_things_creatures_gfx_menu ; |menu item: copy or erase adventure
+REALROM sample.forth 73d1 VARIABLE FORTH_73D1
+REALROM sample.forth 740d : run_edit_things_creatures_gfx_menu  push_0 FORTH_73D1 run_menu_x_menuaddr_-- ; |run edit things/creatures/gfx menu
+REALROM sample.forth 7417 : print_region_number_and_name_n_--  DUP print_number_n_-- push_2 push_addr_of_VAR_SCREENPOS_257F +! return_F7A1_+_stk_14_region_name copy_20_bytes_from_stk_to_current ; |print region number and name (n --)
+REALROM sample.forth 7429 : print_region_number_and_name_16_10  LIT $000A push_10_1B18 move_cursor_to_c_r_-- LIT $001C write_stk_spaces_at_current_screen print_region_number_and_name_n_-- ; |print region number and name @(16,10)
+REALROM sample.forth 743d : menu_item_select_region  load_goto_region_stk_saving_current store_1_in_CVAR_1A5E_+1_exit_menu ; |menu item: select region
+REALROM sample.forth 7445 : menu_item_prev_region_oldreg_--_newreg  1- push_1_0DE1 MAX DUP print_region_number_and_name_16_10 ; |menu item: prev region (oldreg -- newreg)
+REALROM sample.forth 7453 : menu_item_next_region_oldreg_--_newreg  1+ push_F59D_number_of_regions @ MIN DUP print_region_number_and_name_16_10 ; |menu item: next region (oldreg -- newreg)
+REALROM sample.forth 7463 VARIABLE push_VAR_7465_text_of_pick_region_menu|push VAR $7465 (text of pick region menu)
+REALROM sample.forth.truncated 40 of 94
+REALROM sample.note 75da [ForthAnalyzer] rejected colon candidate $75DA: cell $55D7 at $7614 is not a word
+REALROM sample.note 767f [ForthAnalyzer] rejected colon candidate $767F: cell $75DA at $7693 is not a word
+REALROM sample.note 76df [ForthAnalyzer] rejected colon candidate $76DF: cell $767F at $7717 is not a word
+REALROM sample.note 798b [ForthAnalyzer] rejected colon candidate $798B: cell $9EAE at $7993 is not a word
+REALROM sample.note 7f19 [ForthAnalyzer] rejected colon candidate $7F19: cell $92B8 at $7F55 is not a word
+REALROM sample.symbol 708c entry IMPORTED primary=true
+REALROM sample.symbol ff87 RAMTAS IMPORTED primary=true
+REALROM sample.symbol ff8a RESTOR IMPORTED primary=true
+REALROM sample.symbol ff8d VECTOR IMPORTED primary=true
+REALROM sample.symbol ff90 SETMSG IMPORTED primary=true
+REALROM sample.symbol ff93 SECOND IMPORTED primary=true
+REALROM sample.symbol ff96 TKSA IMPORTED primary=true
+REALROM sample.symbol ff99 MEMTOP IMPORTED primary=true
+REALROM sample.symbol ff9c MEMBOT IMPORTED primary=true
+REALROM sample.symbol ff9f SCNKEY IMPORTED primary=true
+REALROM sample.symbol ffa2 SETTMO IMPORTED primary=true
+REALROM sample.symbol ffa8 CIOUT IMPORTED primary=true
+REALROM sample.symbol ffab UNTLK IMPORTED primary=true
+REALROM sample.symbol ffae UNLSN IMPORTED primary=true
+REALROM sample.symbol ffb1 LISTEN IMPORTED primary=true
+REALROM sample.symbol ffb4 TALK IMPORTED primary=true
+REALROM sample.symbol ffb7 READST IMPORTED primary=true
+REALROM sample.symbol ffc3 CLOSE IMPORTED primary=true
+REALROM sample.symbol ffc6 CHKIN IMPORTED primary=true
+REALROM sample.symbol ffc9 CHKOUT IMPORTED primary=true
+REALROM sample.symbol ffcc CLRCHN IMPORTED primary=true
+REALROM sample.symbol ffcf CHRIN IMPORTED primary=true
+REALROM sample.symbol ffd8 SAVE IMPORTED primary=true
+REALROM sample.symbol ffdb SETTIM IMPORTED primary=true
+REALROM sample.symbol ffde RDTIM IMPORTED primary=true
+REALROM sample.symbol.truncated 25 of 34
+=== REALROM END ===

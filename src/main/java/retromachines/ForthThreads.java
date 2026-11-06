@@ -65,7 +65,14 @@ public final class ForthThreads {
 		/** DOUSER: parameter field is a user-area offset. */
 		USER,
 		/** DODOES: parameter field is [does-thread][data]. */
-		DOES
+		DOES,
+		/**
+		 * A declared word whose code field is not in the image (e.g. a kernel word when only an
+		 * overlay file is loaded), known by name only and referenced from an accepted thread.
+		 */
+		EXTERNAL,
+		/** EXECVEC: a vector table; {@code body} holds the entries (word cells). */
+		VECTOR
 	}
 
 	/** Kind of thread cell. */
@@ -182,18 +189,44 @@ public final class ForthThreads {
 		boolean isWord(int c) {
 			int v = word(c);
 			if (v < 0) {
-				return false;
+				// Not in the image: a declared word (named, EXIT or inline) is still a word.
+				return declared(c);
 			}
 			if (v == cfg.docol()) {
 				return validColon(c);
 			}
-			if (cfg.handlers().containsKey(v)) {
+			ForthConfig.Handler h = cfg.handlers().get(v);
+			if (h != null && h.role() == ForthConfig.Role.EXECVEC) {
+				return !vectorRun(c).isEmpty();
+			}
+			if (h != null) {
 				return word(c + 2) >= 0;
 			}
 			if (declared(c)) {
 				return true;
 			}
 			return v == c + 2 && mem.at(c + 2) >= 0;
+		}
+
+		/**
+		 * The entries of the EXECVEC word at {@code cfa}: word cells from {@code cfa + 2} while
+		 * each is a valid thread target. The run stops at the first cell that is not, at a cell
+		 * holding the DOCOL or a handler value (the code field of the next word), or at a
+		 * declared name's address (the next word starts there). An EXIT value is a legal entry.
+		 * The length is not encoded in the image, so this is a heuristic; a run needs at least
+		 * one entry.
+		 */
+		List<Cell> vectorRun(int cfa) {
+			List<Cell> cells = new ArrayList<>();
+			for (int a = cfa + 2; cells.size() < MAX_BODY_CELLS; a += 2) {
+				int c = word(a);
+				if (c < 0 || c == cfg.docol() || cfg.handlers().containsKey(c) ||
+					cfg.names().containsKey(a) || !isWord(c)) {
+					break;
+				}
+				cells.add(new Cell(a, Op.WORD, c, -1, null));
+			}
+			return cells;
 		}
 
 		boolean validColon(int cfa) {
@@ -389,6 +422,15 @@ public final class ForthThreads {
 					}
 				}
 			}
+			if (hw.kind() == Kind.VECTOR) {
+				hw.body().forEach(c -> refd.add(c.value()));
+			}
+		}
+		for (int c : refd) {
+			if (!out.containsKey(c) && w.word(c) < 0 && w.declared(c)) {
+				out.put(c, new Word(c, Kind.EXTERNAL, nameOf(cfg, c), commentOf(cfg, c), -1, -1,
+					List.of(), List.of()));
+			}
 		}
 		List<Integer> codeSeeds = new ArrayList<>(refd);
 		codeSeeds.addAll(cfg.names().keySet());
@@ -434,6 +476,11 @@ public final class ForthThreads {
 				List.of(), List.of()));
 			case DOUSER -> out.put(cfa, new Word(cfa, Kind.USER, name, comment, -1, p,
 				List.of(), List.of()));
+			case EXECVEC -> {
+				List<Cell> run = w.vectorRun(cfa);
+				run.forEach(c -> w.referenced.add(c.value()));
+				out.put(cfa, new Word(cfa, Kind.VECTOR, name, comment, -1, -1, run, List.of()));
+			}
 			case DODOES -> {
 				String[] why = new String[1];
 				List<Cell> thread = w.walkThread(p, why);
@@ -499,6 +546,21 @@ public final class ForthThreads {
 	 */
 	public static String renderDoes(Word word, Result r) {
 		return "CREATE " + r.label(word.cfa()) + "  DOES> " + renderThread(word.doesBody(), r);
+	}
+
+	/**
+	 * Renders an EXECVEC word: its entries in order.
+	 *
+	 * @param word a VECTOR word
+	 * @param r the walk result
+	 * @return the rendering
+	 */
+	public static String renderVector(Word word, Result r) {
+		StringBuilder sb = new StringBuilder("VECTOR: ").append(r.label(word.cfa())).append("  ");
+		for (Cell c : word.body()) {
+			sb.append(r.label(c.value())).append(' ');
+		}
+		return sb.toString();
 	}
 
 	/** Renders a cell list; the final EXIT cell prints as {@code ;}. */

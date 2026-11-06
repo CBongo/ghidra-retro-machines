@@ -1,0 +1,127 @@
+=== REALROM BEGIN ===
+REALROM program c64_acs_g.prg
+REALROM sha256 79635850751092768ad757204f5acb69a947ad566a3c5eab72a97022247d85ef
+REALROM prgsha256 NONE
+REALROM map machines/c64.map
+REALROM placement NONE
+REALROM block OS_WORKSPACE 0200-03ff overlay=false
+REALROM block PRG 5000-708b overlay=false
+REALROM block RAM_A000 a000-bfff overlay=true
+REALROM block RAM_C000 c000-cfff overlay=false
+REALROM block RAM_E000 e000-ffff overlay=true
+REALROM block RAM_MAIN_0800 0800-4fff overlay=false
+REALROM block RAM_MAIN_708C 708c-9fff overlay=false
+REALROM block SCREEN_RAM 0400-07ff overlay=false
+REALROM block STACK 0100-01ff overlay=false
+REALROM block ZEROPAGE 0002-00ff overlay=false
+REALROM count blocks.total 22
+REALROM count blocks.overlay 4
+REALROM count spaces.overlay 4
+REALROM count instructions 37
+REALROM count instrs.inOverlay 0
+REALROM count functions 41
+REALROM count loaded.bytes 8332
+REALROM count loaded.undefinedBytes 971
+REALROM count bit.carriers 0
+REALROM count bit.entered 0
+REALROM count bankComments 0
+REALROM count warnings 1
+REALROM count notes 10
+REALROM count symbols 43
+REALROM count decrypt.materialized 0
+REALROM count decrypt.suspect 0
+REALROM count decrypt.candidate 0
+REALROM count decrypt.unbounded 0
+REALROM count decrypt.notApplied 0
+REALROM count decrypt.other 0
+REALROM count copy.declined 0
+REALROM count copy.unbounded 0
+REALROM count copy.other 0
+REALROM count skip.candidateNote 0
+REALROM count skip.offcutInfo 0
+REALROM count forth.words 402
+REALROM count forth.colon 376
+REALROM count forth.code 1
+REALROM count forth.data 16
+REALROM count forth.does 5
+REALROM count forth.vector 4
+REALROM count forth.rejected 10
+REALROM sample.forth 500d : disable_cursor_unRVSing_current_pos  push_VAR_4a09_cursor_enable_L_counter_H C0! get_current_screen_position DUP C@ 7F-AND SWAP C! ; |disable cursor, unRVSing current pos
+REALROM sample.forth 5021 : turn_off_cursor_and_wait_for_idle_stick  disable_cursor_unRVSing_current_pos wait_for_curjoy_to_be_centered_button_up ; |turn off cursor and wait for idle stick
+REALROM sample.forth 5029 : store_stk_at_current_input_field  push_VAR_4F4B_addr @ fetch_VAR_4F4F_offset + C! ; |store stk at current input field location
+REALROM sample.forth 5037 : FORTH_5037  fetch_VAR_4F57 push_15 = 0BRANCH L1 convert_screen_code_to_ACS_char_code_s convert_ACS_char_code_to_screen_code_c BRANCH L2 L1: convert_ASCII_digit_to_screen_code L2: ; 
+REALROM sample.forth 504f : handle_keypress_while_in_input_field  DUP LIT $001D = 0BRANCH L1 DROP move_cursor_one_right BRANCH L7 L1: DUP LIT $009D = 0BRANCH L3 DROP fetch_VAR_4F4F_offset 0BRANCH L2 move_cursor_one_left L2: BRANCH L7 L3: DUP LIT $0085 = return_true_if_VAR_4F57_space AND 0BRANCH L4 DROP fill_inputfield_with_and_destaddr_with BRANCH L7 L4: DUP fetch_value_of_DELKEY_20 = 0BRANCH L5 DROP delete_char_to_left_in_input_field BRANCH L7 L5: DUP LIT $000D = 0BRANCH L6 DROP FORTH_50EB BRANCH L7 L6: FORTH_5037 DUP store_stk_at_screenpos store_stk_at_current_input_field move_cursor_one_right L7: ; |handle keypress while in input field
+REALROM sample.forth 50c9 : move_cursor_one_left  LIT $FFFF push_VAR_4F4F_offset +! move_cursor_to_new_location ; |move cursor one left
+REALROM sample.forth 50d7 : delete_char_to_left_in_input_field  fetch_VAR_4F4F_offset 0BRANCH L1 move_cursor_one_left BL_push_20_2579 store_stk_at_screenpos BL_push_20_2579 store_stk_at_current_input_field L1: ; |delete char to left in input field
+REALROM sample.forth 50eb : FORTH_50EB  fetch_VAR_4F4F_offset fetch_VAR_4F57 +MOD_n1_n2_--_n3_n3_n1+n2_MOD_n2 fetch_VAR_4F57 SWAP DO L1: move_cursor_one_right (LOOP) L1 ; 
+REALROM sample.forth 5101 : make_and_run_input_field_addr_len_--  DUP DUP make_and_run_an_input_field_addr_len_-- ; |make and run input field (addr len --)
+REALROM sample.forth 510b : combine_nybbles_to_make_byte_hinyb  C-0F-AND SWAP C-0F-AND C<<4 + ; |combine nybbles to make byte (hinyb lonyb -- b)
+REALROM sample.forth 5119 : fetch_CVAR_25d7  fetch_VAR_25D7 C@ ; |fetch CVAR @($25d7)
+REALROM sample.forth 5121 : fetch_CVAR_25d7_+1  fetch_VAR_25D7 1+ C@ ; |fetch CVAR @($25d7)+1
+REALROM sample.forth 512b : fetch_CVAR_25d7_+2  fetch_VAR_25D7 2+ C@ ; |fetch CVAR @($25d7)+2
+REALROM sample.forth 5135 : fetch_CVAR_25d7_+3  fetch_VAR_25D7 3+ C@ ; |fetch CVAR @($25d7)+3
+REALROM sample.forth 513f : fetch_lo_nybble_of_CVAR_25d7  fetch_CVAR_25d7 C-0F-AND ; |fetch lo nybble of CVAR @($25d7)
+REALROM sample.forth 5147 : FORTH_5147  fetch_CVAR_25d7_+1 fetch_CVAR_25d7 push_40_1B30 AND 0BRANCH L1 LIT $0014 U* L1: fetch_CVAR_25d7 push_20_1B28 AND 0BRANCH L2 NEGATE L2: ; 
+REALROM sample.forth 5169 : FORTH_5169  fetch_CVAR_25d7_+2 fetch_CVAR_25d7 push_80_1B38 AND 0BRANCH L1 LIT $0014 U* L1: ; 
+REALROM sample.forth 517f : fetch_CVAR_3816  fetch_VAR_3816 C@ ; |fetch CVAR @($3816)
+REALROM sample.forth 5187 : fetch_CVAR_3816_+1  fetch_VAR_3816 1+ C@ ; |fetch CVAR @($3816)+1
+REALROM sample.forth 5191 : fetch_CVAR_3816_+2  fetch_VAR_3816 2+ C@ ; |fetch CVAR @($3816)+2
+REALROM sample.forth 519b VECTOR: FORTH_519B  fetch_CVAR_25d7_+1 fetch_CVAR_25d7_+3 fetch_CVAR_3816_+1 fetch_CVAR_3816_+2 fetch_CVAR_3816_+2 fetch_CVAR_3816_+2 push_0 fetch_CVAR_25d7_+1 fetch_CVAR_25d7_+1 fetch_CVAR_25d7_+1 fetch_CVAR_25d7_+1 fetch_CVAR_25d7_+1 fetch_CVAR_25d7_+1 FORTH_0B2E 
+REALROM sample.forth 51b9 : FORTH_51B9  fetch_lo_nybble_of_CVAR_25d7 FORTH_519B 3F-AND 2+ ; 
+REALROM sample.forth 51c5 : return_true_if_CVAR_25d7_.lo_stk  fetch_lo_nybble_of_CVAR_25d7 = ; |return true if CVAR@($25d7).lo == stk
+REALROM sample.forth 51cd : return_EC00_+_10_CVAR_25EB_-_1  push_EC00_1B00 fetch_CVAR_25EB 1- push_10_18D6 *+ ; |return $EC00 + 10*(CVAR $25EB - 1)
+REALROM sample.forth 51db : FORTH_51DB  return_EC00_+_10_CVAR_25EB_-_1 convert_acschars_at_stk_to_ctstr_in_3788 push_3788 ; 
+REALROM sample.forth 51e5 : return_F0FC_+_4_stk  2* 2* LIT $F0FC + ; |return $F0FC + 4*stk
+REALROM sample.forth 51f3 : FORTH_51F3  return_true_if_CVAR_25d7_.lo_2 0BRANCH L1 fetch_CVAR_3816 BRANCH L2 L1: fetch_CVAR_25d7_+2 L2: 7F-AND push_15_18F2 +MOD_n1_n2_--_n3_n3_n1+n2_MOD_n2 ; 
+REALROM sample.forth 520b : return_CVAR_3816_5_+2  fetch_CVAR_3816 C>>5 2+ ; |return CVAR @($3816) >>5 +2
+REALROM sample.forth 5215 : return_CVAR_3816_1F  fetch_CVAR_3816 1F-AND ; |return CVAR @($3816) & $1F
+REALROM sample.forth 521d : return_lo_nyb_of_CVAR_3816_+1  fetch_CVAR_3816_+1 C-0F-AND ; |return lo nyb of CVAR @($3816)+1
+REALROM sample.forth 5225 : return_true_if_CVAR_3816_+2_7F  fetch_CVAR_3816_+2 push_7F > ; |return true if CVAR @($3816)+2 > $7F
+REALROM sample.forth 522f : return_CVAR_3816_+1_4_-_7_5  fetch_CVAR_3816_+1 C>>4 push_7 - push_5_1B20 U* ; |return ((CVAR @($3816)+1)>>4 - 7) * 5
+REALROM sample.forth 523f : return_true_if_CVAR_3816_+2_bit_6_set  fetch_CVAR_3816_+2 C>>6 1AND ; |return true if CVAR @($3816)+2 bit 6 set
+REALROM sample.forth 5249 : return_CVAR_3816_1F_5249  return_CVAR_3816_1F ; |return CVAR @($3816) & $1F
+REALROM sample.forth 524f : return_CVAR_3816_+1_4_-_7_5_-_1E  return_CVAR_3816_+1_4_-_7_5 LIT $001E - ; |return ((CVAR @($3816)+1)>>4 - 7) * 5 - $1E
+REALROM sample.forth 525b : fetch_CVAR_25d7_+1_525B  fetch_CVAR_25d7_+1 ; |fetch CVAR @($25d7)+1
+REALROM sample.forth 5261 : return_true_if_CVAR_25d7_bit_5_set  fetch_CVAR_25d7 C>>5 1AND ; |return true if CVAR @($25d7) bit 5 set
+REALROM sample.forth 526b : return_true_if_CVAR_25d7_.lo_6  push_6_3AB1 return_true_if_CVAR_25d7_.lo_stk ; |return true if CVAR@($25d7).lo == 6
+REALROM sample.forth 5273 : return_true_if_CVAR_25d7_.lo_2  push_2_3AA1 return_true_if_CVAR_25d7_.lo_stk ; |return true if CVAR@($25d7).lo == 2
+REALROM sample.forth 527b : return_true_if_CVAR_25d7_.lo_1  push_1_3A9D return_true_if_CVAR_25d7_.lo_stk ; |return true if CVAR@($25d7).lo == 1
+REALROM sample.forth.truncated 40 of 402
+REALROM sample.warn 0000 [no bank-switch write observed] Board declares 1 bank-switch mechanism(s) [register-write] but no mechanism write was observed in analyzed code; no bank annotations were produced. The switch routine may be unreached (e.g. entered only via an indirect/table jump auto-analysis did not disassemble).
+REALROM sample.note 623e [ForthAnalyzer] rejected colon candidate $623E: cell $9487 at $624C is not a word
+REALROM sample.note 673c [ForthAnalyzer] rejected colon candidate $673C: cell $7F36 at $6752 is not a word
+REALROM sample.note 6d69 [ForthAnalyzer] rejected colon candidate $6D69: cell $472E at $6D89 is not a word
+REALROM sample.note 6fb4 [ForthAnalyzer] rejected colon candidate $6FB4: cell $7DBA at $6FDA is not a word
+REALROM sample.note 6fde [ForthAnalyzer] rejected colon candidate $6FDE: cell $A570 at $6FE4 is not a word
+REALROM sample.note 6fe8 [ForthAnalyzer] rejected colon candidate $6FE8: cell $CF29 at $6FF8 is not a word
+REALROM sample.note 6ffc [ForthAnalyzer] rejected colon candidate $6FFC: cell $7AE5 at $7000 is not a word
+REALROM sample.note 7060 [ForthAnalyzer] rejected colon candidate $7060: cell $7054 at $7062 is not a word
+REALROM sample.note 7066 [ForthAnalyzer] rejected colon candidate $7066: cell $7060 at $7072 is not a word
+REALROM sample.note 707a [ForthAnalyzer] rejected colon candidate $707A: cell $6FB4 at $7086 is not a word
+REALROM sample.symbol 5000 entry IMPORTED primary=true
+REALROM sample.symbol ff87 RAMTAS IMPORTED primary=true
+REALROM sample.symbol ff8a RESTOR IMPORTED primary=true
+REALROM sample.symbol ff8d VECTOR IMPORTED primary=true
+REALROM sample.symbol ff90 SETMSG IMPORTED primary=true
+REALROM sample.symbol ff93 SECOND IMPORTED primary=true
+REALROM sample.symbol ff96 TKSA IMPORTED primary=true
+REALROM sample.symbol ff99 MEMTOP IMPORTED primary=true
+REALROM sample.symbol ff9c MEMBOT IMPORTED primary=true
+REALROM sample.symbol ff9f SCNKEY IMPORTED primary=true
+REALROM sample.symbol ffa2 SETTMO IMPORTED primary=true
+REALROM sample.symbol ffa8 CIOUT IMPORTED primary=true
+REALROM sample.symbol ffab UNTLK IMPORTED primary=true
+REALROM sample.symbol ffae UNLSN IMPORTED primary=true
+REALROM sample.symbol ffb1 LISTEN IMPORTED primary=true
+REALROM sample.symbol ffb4 TALK IMPORTED primary=true
+REALROM sample.symbol ffb7 READST IMPORTED primary=true
+REALROM sample.symbol ffc3 CLOSE IMPORTED primary=true
+REALROM sample.symbol ffc6 CHKIN IMPORTED primary=true
+REALROM sample.symbol ffc9 CHKOUT IMPORTED primary=true
+REALROM sample.symbol ffcc CLRCHN IMPORTED primary=true
+REALROM sample.symbol ffcf CHRIN IMPORTED primary=true
+REALROM sample.symbol ffd8 SAVE IMPORTED primary=true
+REALROM sample.symbol ffdb SETTIM IMPORTED primary=true
+REALROM sample.symbol ffde RDTIM IMPORTED primary=true
+REALROM sample.symbol.truncated 25 of 34
+=== REALROM END ===

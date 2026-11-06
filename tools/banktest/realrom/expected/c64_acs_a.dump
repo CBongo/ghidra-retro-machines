@@ -17,16 +17,16 @@ REALROM block ZEROPAGE 0002-00ff overlay=false
 REALROM count blocks.total 22
 REALROM count blocks.overlay 4
 REALROM count spaces.overlay 4
-REALROM count instructions 0
+REALROM count instructions 95
 REALROM count instrs.inOverlay 0
-REALROM count functions 40
+REALROM count functions 50
 REALROM count loaded.bytes 6144
-REALROM count loaded.undefinedBytes 6012
+REALROM count loaded.undefinedBytes 2577
 REALROM count bit.carriers 0
 REALROM count bit.entered 0
-REALROM count bankComments 0
-REALROM count warnings 0
-REALROM count notes 0
+REALROM count bankComments 1
+REALROM count warnings 1
+REALROM count notes 55
 REALROM count symbols 43
 REALROM count decrypt.materialized 0
 REALROM count decrypt.suspect 0
@@ -39,6 +39,111 @@ REALROM count copy.unbounded 0
 REALROM count copy.other 0
 REALROM count skip.candidateNote 0
 REALROM count skip.offcutInfo 0
+REALROM count forth.words 279
+REALROM count forth.colon 173
+REALROM count forth.code 10
+REALROM count forth.data 92
+REALROM count forth.does 2
+REALROM count forth.vector 2
+REALROM count forth.rejected 55
+REALROM sample.forth 3800 : store_VAR_FF15  push_FF15 ! ; |store VAR $FF15
+REALROM sample.forth 3808 $FF17 CONSTANT push_FF17|push $FF17
+REALROM sample.forth 380c : fetch_VAR_FF15  push_FF15 @ ; |fetch VAR $FF15
+REALROM sample.forth 3814 VARIABLE push_VAR_3816|push VAR $3816
+REALROM sample.forth 3818 : store_VAR_3816  push_VAR_3816 ! ; |store VAR $3816
+REALROM sample.forth 3820 : fetch_VAR_3816  push_VAR_3816 @ ; |fetch VAR $3816
+REALROM sample.forth 3828 VARIABLE push_VAR_382A|push VAR $382A
+REALROM sample.forth 382c : store_VAR_382A  push_VAR_382A ! ; |store VAR $382A
+REALROM sample.forth 3834 : fetch_VAR_382A  push_VAR_382A @ ; |fetch VAR $382A
+REALROM sample.forth 383c VARIABLE push_VAR_383E|push VAR $383E
+REALROM sample.forth 3840 : store_VAR_383E  push_VAR_383E ! ; |store VAR $383E
+REALROM sample.forth 3848 : fetch_VAR_383E  push_VAR_383E @ ; |fetch VAR $383E
+REALROM sample.forth 3850 VARIABLE push_VAR_3852_ptr|push VAR $3852 (ptr)
+REALROM sample.forth 3854 : store_VAR_3852  push_VAR_3852_ptr ! ; |store VAR $3852
+REALROM sample.forth 385c : fetch_VAR_3852  push_VAR_3852_ptr @ ; |fetch VAR $3852
+REALROM sample.forth 3864 VARIABLE push_VAR_3866|push VAR $3866
+REALROM sample.forth 3868 : store_VAR_3866  push_VAR_3866 ! ; |store VAR $3866
+REALROM sample.forth 3870 : fetch_VAR_3866  push_VAR_3866 @ ; |fetch VAR $3866
+REALROM sample.forth 3878 VARIABLE push_CVAR_387A|push CVAR $387A
+REALROM sample.forth 387b : store_CVAR_387A  push_CVAR_387A C! ; |store CVAR $387A
+REALROM sample.forth 3883 : fetch_CVAR_387A  push_CVAR_387A C@ ; |fetch CVAR $387A
+REALROM sample.forth 388b VARIABLE push_CVAR_388D|push CVAR $388D
+REALROM sample.forth 388e : store_CVAR_388D  push_CVAR_388D C! ; |store CVAR $388D
+REALROM sample.forth 3896 : fetch_CVAR_388D  push_CVAR_388D C@ ; |fetch CVAR $388D
+REALROM sample.forth 389e VARIABLE push_VAR_38A0|push VAR $38A0
+REALROM sample.forth 38a2 : store_VAR_38A0  push_VAR_38A0 ! ; |store VAR $38A0
+REALROM sample.forth 38aa : fetch_VAR_38A0  push_VAR_38A0 @ ; |fetch VAR $38A0
+REALROM sample.forth 38b2 VARIABLE push_CVAR_38B4|push CVAR $38B4
+REALROM sample.forth 38b5 : store_CVAR_38B4  push_CVAR_38B4 C! ; |store CVAR $38B4
+REALROM sample.forth 38bd : fetch_CVAR_38B4  push_CVAR_38B4 C@ ; |fetch CVAR $38B4
+REALROM sample.forth 38c5 VARIABLE push_VAR_38C7|push VAR $38C7
+REALROM sample.forth 38c9 : store_VAR_38C7  push_VAR_38C7 ! ; |store VAR $38C7
+REALROM sample.forth 38d1 : fetch_VAR_38C7  push_VAR_38C7 @ ; |fetch VAR $38C7
+REALROM sample.forth 38d9 VARIABLE push_CVAR_38DB|push CVAR $38DB
+REALROM sample.forth 38dc : store_CVAR_38DB  push_CVAR_38DB C! ; |store CVAR $38DB
+REALROM sample.forth 38e4 : fetch_CVAR_38DB  push_CVAR_38DB C@ ; |fetch CVAR $38DB
+REALROM sample.forth 38ec VARIABLE push_VAR_38EE|push VAR $38EE
+REALROM sample.forth 38f0 : store_VAR_38EE  push_VAR_38EE ! ; |store VAR $38EE
+REALROM sample.forth 38f8 : fetch_VAR_38EE  push_VAR_38EE @ ; |fetch VAR $38EE
+REALROM sample.forth 3900 VARIABLE push_VAR_3902|push VAR $3902
+REALROM sample.forth.truncated 40 of 279
+REALROM sample.bankcomment 3c12 bank -> 6 (RAM_A000/IO/KERNAL)
+REALROM sample.warn 3c19 [C64BankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.note 3b1f [ForthAnalyzer] rejected colon candidate $3B1F: cell $3BF5 at $3B21 is not a word
+REALROM sample.note 3b37 [ForthAnalyzer] rejected colon candidate $3B37: cell $3B1F at $3B39 is not a word
+REALROM sample.note 3b57 [ForthAnalyzer] rejected colon candidate $3B57: cell $3BF5 at $3B59 is not a word
+REALROM sample.note 3b6b [ForthAnalyzer] rejected colon candidate $3B6B: cell $3B57 at $3B6D is not a word
+REALROM sample.note 3b75 [ForthAnalyzer] rejected colon candidate $3B75: cell $3B6B at $3B77 is not a word
+REALROM sample.note 3bb3 [ForthAnalyzer] rejected colon candidate $3BB3: cell $3B37 at $3BB5 is not a word
+REALROM sample.note 3bbf [ForthAnalyzer] rejected colon candidate $3BBF: cell $3BF5 at $3BC1 is not a word
+REALROM sample.note 3bcd [ForthAnalyzer] rejected colon candidate $3BCD: cell $3BBF at $3BCF is not a word
+REALROM sample.note 3bf5 [ForthAnalyzer] rejected colon candidate $3BF5: cell $255F at $3BF7 is not a word
+REALROM sample.note 3cac [ForthAnalyzer] rejected colon candidate $3CAC: cell $3B57 at $3CB6 is not a word
+REALROM sample.note 3cc8 [ForthAnalyzer] rejected colon candidate $3CC8: cell $3B57 at $3CCA is not a word
+REALROM sample.note 3d18 [ForthAnalyzer] rejected colon candidate $3D18: cell $3CC8 at $3D1C is not a word
+REALROM sample.note 3ea5 [ForthAnalyzer] rejected colon candidate $3EA5: cell $463E at $3F00 is not a word
+REALROM sample.note 3f0c [ForthAnalyzer] rejected colon candidate $3F0C: cell $3F30 at $3F24 is not a word
+REALROM sample.note 3f30 [ForthAnalyzer] rejected colon candidate $3F30: cell $409E at $3F60 is not a word
+REALROM sample.note 3f94 [ForthAnalyzer] rejected colon candidate $3F94: cell $3EA5 at $3FCE is not a word
+REALROM sample.note 3fe4 [ForthAnalyzer] rejected colon candidate $3FE4: cell $3EA5 at $3FF6 is not a word
+REALROM sample.note 4018 [ForthAnalyzer] rejected colon candidate $4018: cell $3EA5 at $4026 is not a word
+REALROM sample.note 4032 [ForthAnalyzer] rejected colon candidate $4032: cell $4018 at $4048 is not a word
+REALROM sample.note 409e [ForthAnalyzer] rejected colon candidate $409E: cell $463E at $40CB is not a word
+REALROM sample.note 40d1 [ForthAnalyzer] rejected colon candidate $40D1: cell $463E at $4109 is not a word
+REALROM sample.note 410f [ForthAnalyzer] rejected colon candidate $410F: cell $40D1 at $413F is not a word
+REALROM sample.note 415d [ForthAnalyzer] rejected colon candidate $415D: cell $3FE4 at $415F is not a word
+REALROM sample.note 4177 [ForthAnalyzer] rejected colon candidate $4177: cell $454B at $417D is not a word
+REALROM sample.note 4181 [ForthAnalyzer] rejected colon candidate $4181: cell $410F at $4189 is not a word
+REALROM sample.note 4191 [ForthAnalyzer] rejected colon candidate $4191: cell $410F at $4199 is not a word
+REALROM sample.note 41a9 [ForthAnalyzer] rejected colon candidate $41A9: cell $410F at $41B1 is not a word
+REALROM sample.note 41b9 [ForthAnalyzer] rejected colon candidate $41B9: cell $410F at $41C1 is not a word
+REALROM sample.note 41c9 [ForthAnalyzer] rejected colon candidate $41C9: cell $410F at $41D5 is not a word
+REALROM sample.note 41d9 [ForthAnalyzer] rejected colon candidate $41D9: cell $5563 at $41E5 is not a word
+REALROM sample.note 41fb [ForthAnalyzer] rejected colon candidate $41FB: cell $41C9 at $4203 is not a word
+REALROM sample.note 420d [ForthAnalyzer] rejected colon candidate $420D: cell $41A9 at $4215 is not a word
+REALROM sample.note 4219 [ForthAnalyzer] rejected colon candidate $4219: cell $41FB at $4231 is not a word
+REALROM sample.note 4257 [ForthAnalyzer] rejected colon candidate $4257: cell $4219 at $4277 is not a word
+REALROM sample.note 427b [ForthAnalyzer] rejected colon candidate $427B: cell $4257 at $427F is not a word
+REALROM sample.note 4283 [ForthAnalyzer] rejected colon candidate $4283: cell $410F at $429B is not a word
+REALROM sample.note 42ab [ForthAnalyzer] rejected colon candidate $42AB: cell $4283 at $42AF is not a word
+REALROM sample.note 42b3 [ForthAnalyzer] rejected colon candidate $42B3: cell $4283 at $42B7 is not a word
+REALROM sample.note 42bb [ForthAnalyzer] rejected colon candidate $42BB: cell $4219 at $42C9 is not a word
+REALROM sample.note 42cd [ForthAnalyzer] rejected colon candidate $42CD: cell $410F at $42D5 is not a word
+REALROM sample.note 42dd [ForthAnalyzer] rejected colon candidate $42DD: cell $410F at $42F3 is not a word
+REALROM sample.note 4387 [ForthAnalyzer] rejected colon candidate $4387: cell $40D1 at $438B is not a word
+REALROM sample.note 43a5 [ForthAnalyzer] rejected colon candidate $43A5: cell $410F at $43BD is not a word
+REALROM sample.note 454b [ForthAnalyzer] rejected colon candidate $454B: cell $7473 at $455D is not a word
+REALROM sample.note 463e [ForthAnalyzer] rejected colon candidate $463E: cell $3BB3 at $4642 is not a word
+REALROM sample.note 472e [ForthAnalyzer] rejected colon candidate $472E: cell $623E at $4730 is not a word
+REALROM sample.note 4c17 [ForthAnalyzer] rejected colon candidate $4C17: cell $4CA0 at $4C27 is not a word
+REALROM sample.note 4ca0 [ForthAnalyzer] rejected colon candidate $4CA0: cell $CAE4 at $4CFA is not a word
+REALROM sample.note 4eb5 [ForthAnalyzer] rejected colon candidate $4EB5: cell $410F at $4ECB is not a word
+REALROM sample.note 4f1d [ForthAnalyzer] rejected colon candidate $4F1D: cell $4F5D at $4F1F is not a word
+REALROM sample.note 4f5d [ForthAnalyzer] rejected colon candidate $4F5D: cell $3BBF at $4F79 is not a word
+REALROM sample.note 4f7f [ForthAnalyzer] rejected colon candidate $4F7F: cell $4FA9 at $4F81 is not a word
+REALROM sample.note 4fa9 [ForthAnalyzer] rejected colon candidate $4FA9: cell $4FCD at $4FB5 is not a word
+REALROM sample.note 4fcd [ForthAnalyzer] rejected colon candidate $4FCD: cell $4FEB at $4FE7 is not a word
+REALROM sample.note 4feb [ForthAnalyzer] rejected colon candidate $4FEB: unreadable cell at $4FFF
 REALROM sample.symbol 3800 entry IMPORTED primary=true
 REALROM sample.symbol ff87 RAMTAS IMPORTED primary=true
 REALROM sample.symbol ff8a RESTOR IMPORTED primary=true

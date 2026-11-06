@@ -1,19 +1,24 @@
 #!/usr/bin/env python3
-"""Convert the ACS Forth label tables in forthhex.pl into acs-forth.yaml (bead grm-arbi.1).
+"""Convert the ACS Forth label tables in forthhex.pl into the curated ACS C64 game
+descriptor machines/games/acs.yaml (beads grm-arbi.1, grm-arbi.3).
 
 Input : external/game-music-extraction/c64/acs/forthhex.pl (git submodule; owner's disassembler
         helper). Perl hashes %ops (global) and %ops_b %ops_f %ops_o %ops_r %ops_s, each
         `0xADDR => ['label text', "mode"]`, mode in imm/var/rel/doe/ics or absent.
-Output: tools/forth/generated/acs-forth.yaml (deterministic: sorted by address / letter).
+Output: machines/games/acs.yaml (deterministic), a C64 game descriptor (docs/per-game-descriptors-
+        design.md section 3d) compiled by the build to data/games/acs.gmap.
 
     python -I tools/forth/forthhex2desc.py            # (re)write the committed file
     python -I tools/forth/forthhex2desc.py --check    # exit 1 if the committed file is stale
 
-Layout: `forth:` (hand-declared kernel facts incl. handlers and inline operand kinds, plus
-`names:` from %ops), `members:` (keyed by FILE LETTER, each `{forth: {names:, inline:}}`;
-`inline:` only when the member's table carries modes). forthhex.pl picks tables by the first letter of the file name
-(b/o/r/s share; d/p; w; c; f; everything falls back to %ops); mapping letters to member content
-is a later bead, so letters are emitted as-is. Only tables present in the .pl are emitted.
+Layout: game-level `forth:` (hand-declared kernel facts incl. handlers and inline operand kinds,
+plus `names:` from %ops) and `members:` (a list; each ACS1 file keyed by the sha256 of its whole
+.prg). forthhex.pl picks tables by the first letter of the file name; the hand-declared MEMBERS
+table below mirrors that lookup chain (b/o/r/s consult tables b,o,r,s in that order; d/p consult
+d,p; w w; c c; f f; everything falls back to %ops). A member's `forth.names`/`inline` is the merge
+of its chain, first table wins; a member with an empty chain (A G M) has no `forth:` and takes the
+game-level config. All twelve Forth files are listed so each resolves. EA/EA2 (loader) and X/Y/Z
+(unknown data) are not Forth and are not listed.
 
 Heuristics (every one applied, in order):
  H1 Entries at 0x08F9, 0x0906, 0x0CA0 (labelled imm/var/doe) are code-field HANDLERS (DOCON,
@@ -51,7 +56,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SUB = os.path.join(ROOT, "external", "game-music-extraction")
 SRC = os.path.join(SUB, "c64", "acs", "forthhex.pl")
-OUT = os.path.join(ROOT, "tools", "forth", "generated", "acs-forth.yaml")
+OUT = os.path.join(ROOT, "machines", "games", "acs.yaml")
 SRC_REL = "external/game-music-extraction/c64/acs/forthhex.pl"
 
 HANDLER_ADDRS = {0x08F9: "DOCON", 0x0906: "DOVAR", 0x0CA0: "DODOES"}
@@ -59,6 +64,22 @@ FIXED_NAMES = {"BRA": "BRANCH", "BEQ": "0BRANCH", "LOOP": "(LOOP)", "LOOP+": "(+
 MODE_KIND = {"imm": "lit16", "rel": "branch", "ics": "counted_string"}
 HAND_INLINE = {0x08AA: "lit16", 0x0966: "branch", 0x097B: "branch", 0x0993: "branch",
                0x09B9: "branch", 0x45EE: "counted_string"}
+# ACS1 files (letter, sha256 of the whole .prg, load address, forthhex.pl table chain).
+MEMBERS = [
+    ("A", "5b7b94850864ebe4c590ad890df1543515347ea42f883f80480429b0c6d621d3", 0x3800, ""),
+    ("B", "99d031beb09a65d095a3b5af1e8660eb11bec20fdcb40f1de86c24558e05c994", 0x99C6, "bors"),
+    ("C", "633369bd1b8eac5e5d69f3760fa175d0b179460f2336b57006164a6bd033235e", 0x99C6, "c"),
+    ("D", "13cf3b459d4ee65afa424f937a6ac5c788dc3ee50d1802e700a718b9e9ab1910", 0x8DC0, "dp"),
+    ("F", "d88a36c2593144af7045055911ddb128672ac58cf262b439c5d63055fe9a92f5", 0x99C6, "f"),
+    ("G", "79635850751092768ad757204f5acb69a947ad566a3c5eab72a97022247d85ef", 0x5000, ""),
+    ("M", "ea08a95770cfd257a4907a71bc9114aba776126ce582671fb125aa1c38e4153c", 0x8009, ""),
+    ("O", "7621b80676860356c15bbd35ee9a04d2623bcc2f5186a3a9c7ad29cb20c755b5", 0x708C, "bors"),
+    ("P", "428379100f14a643079da36d6daba019b0be38816a8c9415ac02039f60344910", 0x708C, "dp"),
+    ("R", "87ff923a9f1919e228eb9f6fe304d3fb5c10fa5170f11f0a4950510c89a451bb", 0x8009, "bors"),
+    ("S", "68d9165846169068d75a6aae3cd8efc92548193f67b001c59f84e1cbc3661cff", 0x90AE, "bors"),
+    ("W", "ef1046aae4bbd73d473141beda0e313e2264e02f208b266da827a632fc532fd5", 0x708C, "w"),
+]
+
 HAND_NAMES = {0x08C4: "NEXT", 0x08E2: "DOCOL", 0x08BD: "PUSH"}
 
 TABLE_RE = re.compile(r"^\s*%(ops(?:_([a-z]))?)\s*=\s*\(?", re.M)
@@ -179,12 +200,12 @@ def generate(text, commit):
             warn("derived inline 0x%04X %s not in hand-declared set; included" % (a, k))
     inline.update(HAND_INLINE)
 
-    members = {}
+    built = {}
     letters = sorted(k for k in tables if k)
     for letter in letters:
         t = tables[letter]
         minline = {}
-        members[letter] = (build_names(t, tname(letter), minline), minline)
+        built[letter] = (build_names(t, tname(letter), minline), minline)
         for a, ent in t.items():
             if a in glob and glob[a] != ent:
                 warn("CONFLICT %s vs %%ops at 0x%04X: %r vs %r" % (tname(letter), a, ent, glob[a]))
@@ -195,9 +216,33 @@ def generate(text, commit):
                         warn("CONFLICT %s vs %s at 0x%04X: %r vs %r"
                              % (tname(letter), tname(l2), a, ent, tables[l2][a]))
 
+    # Per-member merged chain: the first table in the chain that has an address wins.
+    members = {}
+    for letter, _sha, _load, chain in MEMBERS:
+        mn, mi = {}, {}
+        for c in chain:
+            if c not in built:
+                continue  # forthhex.pl has no such table (c d p w): the member takes %ops only
+                continue
+            for a, v in built[c][0].items():
+                mn.setdefault(a, v)
+            for a, k in built[c][1].items():
+                mi.setdefault(a, k)
+        members[letter] = (mn, mi)
+    for c in letters:
+        if not any(c in m[3] for m in MEMBERS):
+            warn("table %%ops_%s is used by no listed member" % c)
+
     L = ["# GENERATED by tools/forth/forthhex2desc.py -- do not edit.",
          "# Source: %s" % SRC_REL,
          "# Submodule external/game-music-extraction commit: %s" % commit,
+         "schema: 2",
+         "game:",
+         "  id: acs",
+         '  title: "Adventure Construction Set (C64)"',
+         "  platform: c64",
+         '  provenance: "ACS1 file shas verified by the project owner 2026-11-06; names from '
+         'forthhex.pl, kernel facts from ripsectors.pl"',
          "forth:",
          "  ip: 0x007E",
          "  w: 0x0081",
@@ -209,15 +254,22 @@ def generate(text, commit):
          "    0x0906: {role: DOVAR}",
          "    0x0914: {role: DOUSER, base: 0x0083}",
          "    0x0CA0: {role: DODOES}",
+         "    0x1872: {role: EXECVEC}  # forthhex: ON STK GOTO next Nth word (pop n, execute "
+         "body cell n; length not encoded)",
          "  inline:"]
     for a in sorted(inline):
         L.append("    0x%04X: %s" % (a, inline[a]))
     L.append("  names:")
     L += emit_names(gnames, 4)
     L.append("members:")
-    for letter in sorted(members):
+    for letter, sha, load, chain in MEMBERS:
         mnames, minl = members[letter]
-        L.append("  %s:" % letter)
+        L.append("  # load $%04X, forthhex.pl tables: %s" % (
+            load, ", ".join(tname(c) for c in chain) if chain else "(global only)"))
+        L.append("  - sha256: %s" % q(sha))
+        L.append("    name: %s" % q(letter + ".PRG"))
+        if not mnames and not minl:
+            continue
         L.append("    forth:")
         if minl:
             L.append("      inline:")
@@ -250,7 +302,7 @@ def main(argv):
         with open(OUT, encoding="utf-8", newline="") as f:
             cur = f.read().replace("\r\n", "\n")
         if cur != out:
-            print("acs-forth.yaml is stale; rerun tools/forth/forthhex2desc.py", file=sys.stderr)
+            print("machines/games/acs.yaml is stale; rerun tools/forth/forthhex2desc.py", file=sys.stderr)
             return 1
         return 0
     with open(OUT, "w", encoding="utf-8", newline="\n") as f:

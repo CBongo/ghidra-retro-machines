@@ -732,18 +732,18 @@ public class VerifyCbmCriteria extends VerifyBase {
 		java.util.List<String> out = new java.util.ArrayList<>();
 		long[] words = {0x2000, 0x2019, 0x202f, 0x203f, 0x2051, 0x2074, 0x207f, 0x209c, 0x20b3,
 			0x20ce, 0x20e0, 0x20ef, 0x20f6, 0x210a, 0x2116, 0x211a, 0x211e, 0x212c, 0x2134,
-			0x2148, 0x2151, 0x215f, 0x2167, 0x2175, 0x2179, 0x2181};
+			0x2148, 0x2151, 0x215f, 0x2167, 0x2175, 0x2179, 0x2181, 0x21a2, 0x21aa};
 		for (long w : words) {
 			out.add("WORD " + fmt(addr(w)) + " label=" + primaryLabel(w) + " type=" +
 				dataTypeAt(w) + " refs=" + refsFrom(w) + " plate=" + plate(w) + " bm=" +
 				forthBookmark(w));
 		}
 		long[] cells = {0x212e, 0x2136, 0x2138, 0x213a, 0x213c, 0x213e, 0x214a, 0x214c, 0x2169,
-			0x2177, 0x2179, 0x2120, 0x2122};
+			0x2177, 0x2179, 0x2120, 0x2122, 0x21a4, 0x21a6, 0x21a8};
 		for (long c : cells) {
 			out.add("CELL " + fmt(addr(c)) + " type=" + dataTypeAt(c) + " refs=" + refsFrom(c));
 		}
-		for (long f : new long[] {0x2000, 0x2019, 0x202f, 0x2076, 0x209e, 0x20e2, 0x20f8}) {
+		for (long f : new long[] {0x2000, 0x2019, 0x202f, 0x2076, 0x209e, 0x20e2, 0x20f8, 0x218b}) {
 			out.add("FUNC " + fmt(addr(f)) + " " + hasFunctionAt(f) + " label=" + primaryLabel(f));
 		}
 		out.add("LABEL 2126 " + primaryLabel(0x2126));
@@ -795,6 +795,18 @@ public class VerifyCbmCriteria extends VerifyBase {
 		criterion("forth-code-functions", hasFunctionAt(0x2076) && hasFunctionAt(0x20e2) &&
 			hasFunctionAt(0x2000) && hasFunctionAt(0x2019),
 			"exit=" + hasFunctionAt(0x2076) + " dup=" + hasFunctionAt(0x20e2));
+		// EXECVEC (grm-arbi.3): VEC = handler, DUP DROP EXIT; the run ends at VECUSER's DOCOL cell.
+		criterion("forth-vector-plate",
+			plate(0x21a2).contains("VECTOR: VEC  DUP DROP ;") ||
+				plate(0x21a2).contains("VECTOR: VEC  DUP DROP EXIT "),
+			plate(0x21a2));
+		criterion("forth-vector-cells",
+			dataTypeAt(0x21a4).startsWith("pointer") && dataTypeAt(0x21a8).startsWith("pointer") &&
+				refsFrom(0x21a6).equals("COMPUTED_CALL->20ef") &&
+				dataTypeAt(0x21aa).startsWith("pointer"),
+			refsFrom(0x21a4) + " / " + refsFrom(0x21a6) + " / " + refsFrom(0x21a8));
+		criterion("forth-vector-caller", plate(0x21aa).contains(": FORTH_21AA  VEC"),
+			plate(0x21aa));
 		criterion("forth-decoy-not-a-word", primaryLabel(0x2181).equals("<none>") &&
 			dataTypeAt(0x2181).equals("<undefined>") && "Note".equals(forthBookmark(0x2181)),
 			"label=" + primaryLabel(0x2181) + " type=" + dataTypeAt(0x2181) + " bm=" +

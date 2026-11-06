@@ -67,6 +67,10 @@ public class C64RealRomDump extends GhidraScript {
 	private static final String CAT_COPY = "CopyLoopAnalyzer";
 	private static final String CAT_SKIP = "Skip Idiom Candidate";
 	private static final String CAT_OFFCUT = "Offcut Instruction";
+	// C64ForthAnalyzer (grm-arbi.3): its rejected-candidate bookmarks and [Forth] plate comments.
+	private static final String CAT_FORTH = "ForthAnalyzer";
+	private static final String FORTH_PLATE = "[Forth] ";
+	private static final int SAMPLE_FORTH = 40;
 
 	// Fixed by c64.map on EVERY row (identical in all ten first-run dumps): checked, not printed.
 	// They still count toward `count blocks.total`.
@@ -192,6 +196,44 @@ public class C64RealRomDump extends GhidraScript {
 			}
 		}
 
+		// Forth words by kind (from the plate comment each accepted word gets) and rejections.
+		long forthWords = 0;
+		long forthColon = 0;
+		long forthCode = 0;
+		long forthData = 0;
+		long forthDoes = 0;
+		long forthVector = 0;
+		List<String> forthLines = new ArrayList<>();
+		Iterator<Address> plates = currentProgram.getListing()
+				.getCommentAddressIterator(CommentType.PLATE, currentProgram.getMemory(), true);
+		while (plates.hasNext()) {
+			Address pa = plates.next();
+			String plate = currentProgram.getListing().getComment(CommentType.PLATE, pa);
+			if (plate == null || !plate.startsWith(FORTH_PLATE)) {
+				continue;
+			}
+			String body = plate.substring(FORTH_PLATE.length());
+			forthWords++;
+			if (body.startsWith(": ")) {
+				forthColon++;
+			}
+			else if (body.startsWith("code word ")) {
+				forthCode++;
+			}
+			else if (body.contains(" CONSTANT ") || body.startsWith("VARIABLE ") ||
+				body.contains(" USER ")) {
+				forthData++;
+			}
+			else if (body.startsWith("VECTOR: ")) {
+				forthVector++;
+			}
+			else {
+				forthDoes++;
+			}
+			forthLines.add(fmt(pa) + " " + body.replace('\n', '|'));
+		}
+		long forthRejected = outcomes.getOrDefault("forth.rejected", 0L);
+
 		List<String> symbols = out.deliberateSymbols(4, true);
 		long symbolCount = symbols.size();
 		symbols = out.requireAndRemove("symbol", symbols, FIXED_SYMBOLS);
@@ -246,6 +288,14 @@ public class C64RealRomDump extends GhidraScript {
 			"skip.offcutInfo" }) {
 			println("REALROM count " + key + " " + outcomes.getOrDefault(key, 0L));
 		}
+		println("REALROM count forth.words " + forthWords);
+		println("REALROM count forth.colon " + forthColon);
+		println("REALROM count forth.code " + forthCode);
+		println("REALROM count forth.data " + forthData);
+		println("REALROM count forth.does " + forthDoes);
+		println("REALROM count forth.vector " + forthVector);
+		println("REALROM count forth.rejected " + forthRejected);
+		out.emitSample("sample.forth", forthLines, SAMPLE_FORTH);
 		out.emitSample("sample.bankcomment", bankComments, SAMPLE_BANKCOMMENTS);
 		out.emitSample("sample.warn", warnings, SAMPLE_WARNINGS);
 		out.emitSample("sample.note", notes, SAMPLE_NOTES);
@@ -290,6 +340,9 @@ public class C64RealRomDump extends GhidraScript {
 		}
 		if (CAT_SKIP.equals(cat)) {
 			return "skip.candidateNote";
+		}
+		if (CAT_FORTH.equals(cat) && c.startsWith("rejected colon candidate")) {
+			return "forth.rejected";
 		}
 		if (CAT_OFFCUT.equals(cat)) {
 			return "skip.offcutInfo";
