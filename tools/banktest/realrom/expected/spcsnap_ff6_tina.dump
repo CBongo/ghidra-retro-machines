@@ -1,0 +1,28 @@
+=== REALROM BEGIN ===
+REALROM program spcsnap_ff6_tina.spc
+REALROM sha256 062795c3cc1f9b7e611e1b84f5bd42baf7eeda50b4ee740787e58aba97dfe396
+REALROM language SPC700:LE:16:retro
+REALROM format SPC700 Sound Snapshot (.spc)
+REALROM block RAM_0000 0000-00ef overlay=false init=true
+REALROM block IO_F0 00f0-00ff overlay=false init=true
+REALROM block RAM_0100 0100-ffbf overlay=false init=true
+REALROM block RAM_FFC0 ffc0-ffff overlay=false init=true
+REALROM block DSP_REGS 0000-007f overlay=true init=true
+REALROM id666 present game=[] emulator=$00
+REALROM header pc=$05CF sp=$F9 (stack at $01F9) psw=$01 ipl=false
+REALROM entry $05CF source=header PC
+REALROM stack frames 3
+REALROM stack chain $03DC < $033D < $02C2
+REALROM stack end reached the top of the stack page
+REALROM seed SPC_CALLEE_1 05c9 fn=true op=MOV
+REALROM seed SPC_CALLEE_2 03d9 fn=true op=CALL
+REALROM seed SPC_CALLEE_3 0308 fn=true op=BBS
+REALROM seed SPC_ENTRY 05cf fn=true op=BNE
+REALROM seed SPC_RET_1 03dc fn=true op=CMP
+REALROM seed SPC_RET_2 033d fn=true op=BRA
+REALROM seed SPC_RET_3 02c2 fn=true op=MOV
+REALROM stack outermost 02c2 backward-flow=no
+REALROM count instructions 2023
+REALROM count functions 57
+REALROM count bookmarks.error 3
+=== REALROM END ===

@@ -96,7 +96,17 @@ public class SpcSnapshotLoader extends AbstractProgramWrapperLoader {
 	/** Option holding an entry-point override (hex address); empty means use the header PC. */
 	public static final String OPTION_ENTRY = "Entry point override";
 
+	/** Option switching stack-chain recovery (on by default). */
+	public static final String OPTION_STACK = "Recover call chain from the stack";
+
+	/** Prefix of the labels placed at recovered return addresses ({@code SPC_RET_1}...). */
+	public static final String RET_LABEL_PREFIX = "SPC_RET_";
+
+	/** Prefix of the labels placed at the callee each recovered call targeted. */
+	public static final String CALLEE_LABEL_PREFIX = "SPC_CALLEE_";
+
 	private static final String ENTRY_CMD_ARG = Loader.COMMAND_LINE_ARG_PREFIX + "-entry";
+	private static final String STACK_CMD_ARG = Loader.COMMAND_LINE_ARG_PREFIX + "-stack";
 
 	/** Prefix of the Program Info properties this loader writes. */
 	public static final String INFO_PREFIX = "SPC.";
@@ -163,6 +173,13 @@ public class SpcSnapshotLoader extends AbstractProgramWrapperLoader {
 					"the PC stored in the .spc header. The header PC is wherever the CPU was " +
 					"when the snapshot was taken, not the driver's entry. Empty keeps the " +
 					"header PC.", ENTRY_CMD_ARG + " 0400"))
+				.build());
+		options.add(Option.newBoolean(OPTION_STACK)
+				.value(true)
+				.commandLineArgument(STACK_CMD_ARG)
+				.description(OptionTooltip.of("Walk the captured stack page above SP and seed the " +
+					"return addresses of the calls in flight as entry points (SPC_RET_n). The " +
+					"header PC alone is often a poor entry.", STACK_CMD_ARG + " true|false"))
 				.build());
 		return options;
 	}
@@ -288,7 +305,16 @@ public class SpcSnapshotLoader extends AbstractProgramWrapperLoader {
 		}
 		info.setString(INFO_PREFIX + "Entry", String.format("$%04X", entry));
 		info.setString(INFO_PREFIX + "Entry source", overridden ? "option" : "header PC");
-		createEntry(program, space, entry, headerPc, psw, overridden, log);
+		SpcStackChain.Result chain = null;
+		if (settings.options() == null ||
+			OptionUtils.getOption(OPTION_STACK, settings.options(), true)) {
+			chain = SpcStackChain.recover(ram, headerPc, sp, (ram[0xF1] & 0x80) != 0);
+			recordChain(info, chain);
+		}
+		createEntry(program, space, entry, headerPc, psw, overridden, chainNote(chain), log);
+		if (chain != null) {
+			seedFrames(program, space, chain, log);
+		}
 		RetroAnalysisDefaults.apply(program, log, NAME);
 	}
 
@@ -522,8 +548,80 @@ public class SpcSnapshotLoader extends AbstractProgramWrapperLoader {
 
 	// ---- entry -------------------------------------------------------------------------
 
+	private static void recordChain(Options info, SpcStackChain.Result chain) {
+		StringBuilder sb = new StringBuilder();
+		for (SpcStackChain.Frame f : chain.frames()) {
+			if (sb.length() > 0) {
+				sb.append(" < ");
+			}
+			sb.append(String.format("$%04X", f.ret()));
+		}
+		info.setString(INFO_PREFIX + "Stack frames", Integer.toString(chain.frames().size()));
+		info.setString(INFO_PREFIX + "Stack chain", sb.length() == 0 ? "(none)" : sb.toString());
+		info.setString(INFO_PREFIX + "Stack chain end", chain.stop());
+	}
+
+	/** Plate-comment text naming the chain (empty when recovery is off or found nothing). */
+	private static String chainNote(SpcStackChain.Result chain) {
+		if (chain == null || chain.frames().isEmpty()) {
+			return "";
+		}
+		StringBuilder sb = new StringBuilder(
+			"\nCall chain recovered from the stack (innermost first):");
+		int n = 1;
+		for (SpcStackChain.Frame f : chain.frames()) {
+			sb.append(String.format("\n  %s%d: returns to $%04X (%s at $%04X -> $%04X)",
+				RET_LABEL_PREFIX, n++, f.ret(), f.kind(), f.callAt(), f.target()));
+		}
+		return sb.toString();
+	}
+
+	private void seedFrames(Program program, AddressSpace space, SpcStackChain.Result chain,
+			MessageLog log) {
+		int n = 1;
+		for (SpcStackChain.Frame f : chain.frames()) {
+			String name = RET_LABEL_PREFIX + n++;
+			Address a = space.getAddress(f.ret());
+			try {
+				program.getSymbolTable().addExternalEntryPoint(a);
+				program.getSymbolTable().createLabel(a, name, SourceType.IMPORTED);
+				markAsFunction(program, name, a);
+				AnalyzerCommentRecord.set(program, a, CommentType.PLATE,
+					String.format("Return address of a call in flight, recovered from the stack " +
+						"page ($01%02X): %s at $%04X to $%04X.", f.slot(), f.kind(), f.callAt(),
+						f.target()));
+			}
+			catch (Exception e) {
+				log.appendMsg(NAME + ": could not seed " + name + " at " + a + ": " +
+					e.getMessage());
+			}
+		}
+		n = 1;
+		for (SpcStackChain.Frame f : chain.frames()) {
+			String name = CALLEE_LABEL_PREFIX + n++;
+			Address a = space.getAddress(f.target());
+			if (program.getSymbolTable().hasSymbol(a)) {
+				continue;   // already the entry or another frame's return address
+			}
+			try {
+				program.getSymbolTable().addExternalEntryPoint(a);
+				program.getSymbolTable().createLabel(a, name, SourceType.IMPORTED);
+				markAsFunction(program, name, a);
+				AnalyzerCommentRecord.set(program, a, CommentType.PLATE,
+					String.format("Target of a call in flight (%s at $%04X), recovered from the " +
+						"stack page.", f.kind(), f.callAt()));
+			}
+			catch (Exception e) {
+				log.appendMsg(NAME + ": could not seed " + name + " at " + a + ": " +
+					e.getMessage());
+			}
+		}
+		log.appendMsg(NAME + ": stack chain " + chain.frames().size() + " frame(s); " +
+			chain.stop());
+	}
+
 	private void createEntry(Program program, AddressSpace space, int entry, int headerPc,
-			int psw, boolean overridden, MessageLog log) {
+			int psw, boolean overridden, String chainNote, MessageLog log) {
 		Address a = space.getAddress(entry);
 		try {
 			program.getSymbolTable().addExternalEntryPoint(a);
@@ -540,7 +638,7 @@ public class SpcSnapshotLoader extends AbstractProgramWrapperLoader {
 				note += " The captured PSW has P set (direct page $0100); the language models " +
 					"P at run time, so direct-page operands decode relative to P=0.";
 			}
-			AnalyzerCommentRecord.set(program, a, CommentType.PLATE, note);
+			AnalyzerCommentRecord.set(program, a, CommentType.PLATE, note + chainNote);
 		}
 		catch (Exception e) {
 			log.appendMsg(NAME + ": could not create the entry point at " + a + ": " +

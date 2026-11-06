@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate the deterministic SPC700 .spc snapshot loader fixtures (bead grm-c9d.4).
 
-Three tiny synthetic snapshots (no real music data, no Sony IPL bytes):
+Four tiny synthetic snapshots (no real music data, no Sony IPL bytes):
 
   spcsnaptest.spc      IPL disabled (CONTROL bit 7 clear). Header PC $0410 -- deliberately the
                        middle of the driver, as a real snapshot's PC is -- while the driver's
@@ -13,6 +13,14 @@ Three tiny synthetic snapshots (no real music data, no Sony IPL bytes):
   spcsnapipl.spc       CONTROL bit 7 set (IPL mapped in) but the file does NOT carry the stock
                        IPL at $FFC0, so the loader must make an uninitialized IPL_ROM block
                        (the project redistributes no IPL) and keep the file's bytes in an overlay.
+
+  spcsnapstack.spc     Stack-chain recovery (grm-c9d.9). The header PC ($FF21) is a bare RET inside
+                       routine C ($FF20), like FF2 Town/Battle. The stack page holds the live chain:
+                       main loop $0403 CALL !$0440 -> A; A $0442 TCALL 3 (table word $0460) -> B;
+                       B $0461 PCALL $20 (= $FF20) -> C; plus a DECOY return address $0415 above the
+                       outermost frame whose preceding bytes are a CALL to $9000 (a target that
+                       cannot contain the main loop), which the walk must refuse. Run once as-is
+                       (3 frames) and once with -loader-stack false (0 frames, the "before").
 
 The DSP block carries recognisable values in registers whose names the loader must get right
 (V0VOLL, V0PITCH, V3SRCN, MVOLL, KON, FLG, DIR, ESA, EDL, COEF7), and the I/O page carries
@@ -57,10 +65,36 @@ def callee():
     ])
 
 
-def snapshot(control):
+def stack_driver(ram):
+    """Plant the call chain of spcsnapstack and return (pc, sp)."""
+    def put(at, *b):
+        ram[at:at + len(b)] = bytes(b)
+
+    put(0x0400, 0xCD, 0xCF, 0xBD)            # MOV X,#$CF ; MOV SP,X
+    put(0x0403, 0x3F, 0x40, 0x04)            # CALL !$0440   (ret $0406)
+    put(0x0406, 0x2F, 0xFB)                  # BRA $0403     (the main loop)
+    put(0x0440, 0xE8, 0x01)                  # A: MOV A,#1
+    put(0x0442, 0x31)                        #    TCALL 3    (ret $0443)
+    put(0x0443, 0x6F)                        #    RET
+    put(0x0460, 0x00)                        # B: NOP
+    put(0x0461, 0x4F, 0x20)                  #    PCALL $20  (-> $FF20, ret $0463)
+    put(0x0463, 0x6F)                        #    RET
+    put(0xFF20, 0x00, 0x6F)                  # C: NOP ; RET   (the header PC is the RET)
+    put(0xFFD8, 0x60, 0x04)                  # TCALL 3 table entry -> $0460
+    put(0x0412, 0x3F, 0x00, 0x90)            # decoy: CALL !$9000 (ret $0415)
+    sp = 0xCF
+    for ret in (0x0415, 0x0406, 0x0443, 0x0463):   # decoy outermost, then main, A, B
+        ram[0x100 + sp] = ret >> 8
+        ram[0x100 + sp - 1] = ret & 0xFF
+        sp -= 2
+    return 0xFF21, sp
+
+
+def snapshot(control, stack=False):
     ram = bytearray(0x10000)
-    ram[ENTRY:ENTRY + len(program())] = program()
-    ram[CALLEE:CALLEE + len(callee())] = callee()
+    if not stack:
+        ram[ENTRY:ENTRY + len(program())] = program()
+        ram[CALLEE:CALLEE + len(callee())] = callee()
     # The I/O page as captured: a distinct byte per register.
     for i in range(16):
         ram[0xF0 + i] = 0xA0 + i
@@ -69,6 +103,10 @@ def snapshot(control):
     for i in range(0x40):
         ram[0xFFC0 + i] = (0x30 + i) & 0xFF
     extra = bytes((0xC0 - i) & 0xFF for i in range(0x40))
+
+    pc, sp = HEADER_PC, 0xEF
+    if stack:
+        pc, sp = stack_driver(ram)
 
     dsp = bytearray(0x80)
     dsp[0x00] = 0x7F                 # V0VOLL
@@ -86,12 +124,12 @@ def snapshot(control):
     hdr[0x21:0x23] = b"\x1a\x1a"
     hdr[0x23] = 26                   # ID666 tag present
     hdr[0x24] = 30
-    hdr[0x25:0x27] = bytes([HEADER_PC & 0xFF, HEADER_PC >> 8])
+    hdr[0x25:0x27] = bytes([pc & 0xFF, pc >> 8])
     hdr[0x27] = 0x12                 # A
     hdr[0x28] = 0x34                 # X
     hdr[0x29] = 0x56                 # Y
     hdr[0x2A] = 0x02                 # PSW
-    hdr[0x2B] = 0xEF                 # SP
+    hdr[0x2B] = sp                   # SP
     hdr[0x2E:0x4E] = text("Test Song", 32)
     hdr[0x4E:0x6E] = text("Test Game", 32)
     hdr[0x6E:0x7E] = text("grm", 16)
@@ -113,6 +151,9 @@ def main():
     bankgen.write_bytes(outdir, "spcsnaptest.spc", plain)
     bankgen.write_bytes(outdir, "spcsnapentry.spc", plain)
     bankgen.write_bytes(outdir, "spcsnapipl.spc", snapshot(0x80))
+    stack = snapshot(0x00, stack=True)
+    bankgen.write_bytes(outdir, "spcsnapstack.spc", stack)
+    bankgen.write_bytes(outdir, "spcsnapnostack.spc", stack)
     print("wrote SPC700 snapshot fixtures to " + outdir)
 
 

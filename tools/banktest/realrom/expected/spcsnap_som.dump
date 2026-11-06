@@ -1,0 +1,21 @@
+=== REALROM BEGIN ===
+REALROM program spcsnap_som.spc
+REALROM sha256 85fce56910cc5d97dc86be91fb80e028fc0b5222d04122a11f0939a872ffceb2
+REALROM language SPC700:LE:16:retro
+REALROM format SPC700 Sound Snapshot (.spc)
+REALROM block RAM_0000 0000-00ef overlay=false init=true
+REALROM block IO_F0 00f0-00ff overlay=false init=true
+REALROM block RAM_0100 0100-ffbf overlay=false init=true
+REALROM block RAM_FFC0 ffc0-ffff overlay=false init=true
+REALROM block DSP_REGS 0000-007f overlay=true init=true
+REALROM id666 present game=[] emulator=$00
+REALROM header pc=$028E sp=$FF (stack at $01FF) psw=$81 ipl=false
+REALROM entry $028E source=header PC
+REALROM stack frames 0
+REALROM stack chain (none)
+REALROM stack end reached the top of the stack page
+REALROM seed SPC_ENTRY 028e fn=true op=DBNZ
+REALROM count instructions 1706
+REALROM count functions 27
+REALROM count bookmarks.error 0
+=== REALROM END ===

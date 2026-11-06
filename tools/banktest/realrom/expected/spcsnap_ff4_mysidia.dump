@@ -1,0 +1,28 @@
+=== REALROM BEGIN ===
+REALROM program spcsnap_ff4_mysidia.spc
+REALROM sha256 881da81c6107e4fdee32b3038f7dced2c5e63644e902a91efde356d62831aeb2
+REALROM language SPC700:LE:16:retro
+REALROM format SPC700 Sound Snapshot (.spc)
+REALROM block RAM_0000 0000-00ef overlay=false init=true
+REALROM block IO_F0 00f0-00ff overlay=false init=true
+REALROM block RAM_0100 0100-ffbf overlay=false init=true
+REALROM block RAM_FFC0 ffc0-ffff overlay=false init=true
+REALROM block DSP_REGS 0000-007f overlay=true init=true
+REALROM id666 present game=[] emulator=$00
+REALROM header pc=$0C8B sp=$C9 (stack at $01C9) psw=$00 ipl=false
+REALROM entry $0C8B source=header PC
+REALROM stack frames 3
+REALROM stack chain $09D0 < $090A < $08EC
+REALROM stack end no valid return address at $01D0
+REALROM seed SPC_CALLEE_1 0c85 fn=true op=MOV
+REALROM seed SPC_CALLEE_2 09cd fn=true op=CALL
+REALROM seed SPC_CALLEE_3 08ef fn=true op=MOV
+REALROM seed SPC_ENTRY 0c8b fn=true op=BNE
+REALROM seed SPC_RET_1 09d0 fn=true op=CMP
+REALROM seed SPC_RET_2 090a fn=true op=MOV
+REALROM seed SPC_RET_3 08ec fn=true op=JMP
+REALROM stack outermost 08ec backward-flow=no
+REALROM count instructions 1462
+REALROM count functions 20
+REALROM count bookmarks.error 0
+=== REALROM END ===

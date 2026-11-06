@@ -1147,6 +1147,10 @@ if selected snes-loader; then
 	run_one spcsnaptest "$WORK/spc/spcsnaptest.spc" SpcSnapshotLoader
 	run_one spcsnapentry "$WORK/spc/spcsnapentry.spc" SpcSnapshotLoader "-loader-entry 0400"
 	run_one spcsnapipl "$WORK/spc/spcsnapipl.spc" SpcSnapshotLoader
+	# grm-c9d.9: the call chain recovered from the stack page (3 real frames, 1 decoy), and the
+	# same file with recovery switched off.
+	run_one spcsnapstack "$WORK/spc/spcsnapstack.spc" SpcSnapshotLoader
+	run_one spcsnapnostack "$WORK/spc/spcsnapnostack.spc" SpcSnapshotLoader "-loader-stack false"
 fi
 
 if selected nes-text; then

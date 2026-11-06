@@ -190,6 +190,9 @@ public class VerifyBankTest extends GhidraScript {
 		focused("spcsnaptest", () -> cbm.checkSpcSnapshot("plain"));
 		focused("spcsnapentry", () -> cbm.checkSpcSnapshot("entry"));
 		focused("spcsnapipl", () -> cbm.checkSpcSnapshot("ipl"));
+		// grm-c9d.9: stack-chain entry recovery (on, and -loader-stack false as the "before").
+		focused("spcsnapstack", () -> cbm.checkSpcStack(true));
+		focused("spcsnapnostack", () -> cbm.checkSpcStack(false));
 		focused("snesjtab", cbm::checkSnesJumpTables);
 		focused("snestramp", cbm::checkSnesTramp);
 		focused("snestramp2", cbm::checkSnesTramp2);

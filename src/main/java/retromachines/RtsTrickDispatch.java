@@ -104,6 +104,18 @@ final class RtsTrickDispatch {
 	/** Cap on interleaved entries (the index is a doubled byte, but nothing ends it for sure). */
 	static final int MAX_INTERLEAVED_ENTRIES = 128;
 
+	/**
+	 * Entries a table must keep, when its entry 0 is unusable, to be read from entry 1 instead
+	 * (grm-gipk.13). A command number that starts at 1 leaves slot 0 holding whatever bytes lie
+	 * at the table's nominal base (Al Unser, Speed Racer, Cannondale, Pugsley: the byte before
+	 * the table, a BRK or a stray word); reading from slot 0 then declined the whole table. The
+	 * shifted table must still be ended by a real cut, and must keep this many valid targets,
+	 * so a table that is merely garbage at both ends is still declined. Start-side only: the end
+	 * side is the ordinary bound. SPC700 only: the evidence is all SPC700, and on the 6502 it laid an
+	 * unverified extra table in adventure_island (check nes), so the 6502 keeps the old behaviour.
+	 */
+	static final int MIN_ONE_BASED_ENTRIES = 4;
+
 	/** Cap on planar entries: the index register is a byte. */
 	static final int MAX_PLANAR_ENTRIES = 256;
 
@@ -175,6 +187,11 @@ final class RtsTrickDispatch {
 			this.transferY = transferY;
 			this.aslA = aslA;
 			this.andImm = andImm;
+		}
+
+		/** The dialect's {@code BRK} opcode, which a driver may use as a placeholder; -1 if none. */
+		int trapOpcode() {
+			return this == SPC700 ? 0x0f : -1;
 		}
 
 		/** True when {@code instr} writes the X (or Y) index register. */
@@ -459,6 +476,47 @@ final class RtsTrickDispatch {
 		if (masked) {
 			cap = shape.maskCap();
 		}
+		Site site = scanFrom(program, shape, loBase, hiBase, cap, masked, neighbourStarts);
+		if (site != null || !interleaved || cap <= MIN_ONE_BASED_ENTRIES ||
+			Dialect.of(program) != Dialect.SPC700) {
+			return site;
+		}
+		// Entry 0 unusable (see MIN_ONE_BASED_ENTRIES): retry one entry up, the table of a
+		// 1-based command number. Only when entry 0 itself is the invalid one.
+		Site shifted = scanFrom(program, shape, loBase.add(stride), hiBase.add(stride), cap - 1,
+			masked, neighbourStarts);
+		if (shifted == null || shifted.targets.size() < MIN_ONE_BASED_ENTRIES ||
+			isValidEntry(program, shape, loBase, hiBase)) {
+			return null;
+		}
+		return shifted;
+	}
+
+	/**
+	 * Whether entry 0 of the table at {@code loBase}/{@code hiBase} is a usable target.
+	 */
+	private static boolean isValidEntry(Program program, Shape shape, Address loBase,
+			Address hiBase) {
+		Memory memory = program.getMemory();
+		try {
+			int lo = memory.getByte(loBase) & 0xff;
+			int hi = memory.getByte(hiBase) & 0xff;
+			long target = (lo | (hi << 8)) + shape.bias() & 0xffff;
+			return usableTarget(program, shape.rts().getAddressSpace(), loBase, target, loBase,
+				hiBase, 0, shape.interleaved() ? 2 : 1) != null;
+		}
+		catch (MemoryAccessException | RuntimeException e) {
+			return false;
+		}
+	}
+
+	private static Site scanFrom(Program program, Shape shape, Address loBase, Address hiBase,
+			int cap, boolean masked, Collection<Address> neighbourStarts) {
+		AddressSpace space = shape.rts().getAddressSpace();
+		Memory memory = program.getMemory();
+		boolean interleaved = shape.interleaved();
+		int stride = interleaved ? 2 : 1;
+		Dialect dialect = Dialect.of(program);
 		long tableStart = Math.min(loBase.getOffset(), hiBase.getOffset());
 		long nextNeighbour = Long.MAX_VALUE;
 		for (Address n : neighbourStarts) {
@@ -509,6 +567,9 @@ final class RtsTrickDispatch {
 			Address targetAddr = usableTarget(program, space, loBase, target, loBase, hiBase, i,
 				stride);
 			if (targetAddr == null) {
+				targetAddr = trapTarget(program, dialect, space, target, loBase, hiBase, i, stride);
+			}
+			if (targetAddr == null) {
 				return TableScorer.Entry.rejected(Cut.INVALID_TARGET);
 			}
 			EntryReferences.Hit hit = i >= 1 ? entryRef.apply(i) : null;
@@ -518,7 +579,10 @@ final class RtsTrickDispatch {
 			return TableScorer.Entry.accepted(targetAddr, hit == null ? List.of()
 					: List.of(new TableScorer.Term<>(Cut.ENTRY_REFERENCED, W65816JumpTables.LABEL_P)));
 		}, TableScorer.HARD_ONLY);
-		List<Address> kept = walked.targets();
+		List<Address> kept = new ArrayList<>(walked.targets());
+		while (!kept.isEmpty() && isTrap(program, dialect, kept.get(kept.size() - 1))) {
+			kept.remove(kept.size() - 1); // a table never ends on a placeholder
+		}
 		Cut cut = walked.endedBy() != null ? walked.endedBy() : capCut;
 		if (cut == Cut.DECLINED || kept.size() < 2) {
 			return null;
@@ -529,6 +593,40 @@ final class RtsTrickDispatch {
 			endNote = h == null ? null : h.describe();
 		}
 		return new Site(shape, loBase, cut, List.copyOf(kept), endNote);
+	}
+
+	/**
+	 * The target of an unused-command slot (grm-gipk.13): the SPC700 AKAO-family drivers (Al Unser,
+	 * Speed Racer) point unused commands at a stray {@code BRK} byte ($0f) laid just before a
+	 * handler, which does not decode as a plausible handler but is a deliberate placeholder. Such an
+	 * entry is kept so the table runs on to its real end, and a table never ENDS on one (see
+	 * {@link #scanFrom}); null for any other implausible target.
+	 */
+	private static Address trapTarget(Program program, Dialect d, AddressSpace space, long target,
+			Address loBase, Address hiBase, int i, int stride) {
+		if (d.trapOpcode() < 0) {
+			return null;
+		}
+		long span = (long) stride * i + stride - 1;
+		if (inRange(target, loBase.getOffset(), span) || inRange(target, hiBase.getOffset(), span)) {
+			return null;
+		}
+		Memory memory = program.getMemory();
+		Address t = InlineJumpTableDispatch.resolveTarget(space, memory, target);
+		return isReadable(memory, t) && isTrap(program, d, t) ? t : null;
+	}
+
+	private static boolean isTrap(Program program, Dialect d, Address t) {
+		try {
+			if (d.trapOpcode() < 0 || (program.getMemory().getByte(t) & 0xff) != d.trapOpcode()) {
+				return false;
+			}
+			Instruction in = program.getListing().getInstructionContaining(t);
+			return in == null || in.getMinAddress().equals(t); // not mid-instruction
+		}
+		catch (MemoryAccessException | RuntimeException e) {
+			return false;
+		}
 	}
 
 	/** The lowest of {@code before} lying past {@code tableStart}, else MAX_VALUE. */

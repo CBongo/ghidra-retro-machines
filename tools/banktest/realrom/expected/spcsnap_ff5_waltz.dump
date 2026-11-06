@@ -1,0 +1,26 @@
+=== REALROM BEGIN ===
+REALROM program spcsnap_ff5_waltz.spc
+REALROM sha256 485658b2db06ea4698daa98e1af55f2aca7dac57c631afe4f45aa90ae2575ca3
+REALROM language SPC700:LE:16:retro
+REALROM format SPC700 Sound Snapshot (.spc)
+REALROM block RAM_0000 0000-00ef overlay=false init=true
+REALROM block IO_F0 00f0-00ff overlay=false init=true
+REALROM block RAM_0100 0100-ffbf overlay=false init=true
+REALROM block RAM_FFC0 ffc0-ffff overlay=false init=true
+REALROM block DSP_REGS 0000-007f overlay=true init=true
+REALROM id666 present game=[] emulator=$00
+REALROM header pc=$13D3 sp=$FB (stack at $01FB) psw=$00 ipl=false
+REALROM entry $13D3 source=header PC
+REALROM stack frames 2
+REALROM stack chain $0E37 < $028F
+REALROM stack end reached the top of the stack page
+REALROM seed SPC_CALLEE_1 13c8 fn=true op=MOV
+REALROM seed SPC_CALLEE_2 0d68 fn=true op=MOV
+REALROM seed SPC_ENTRY 13d3 fn=true op=INC
+REALROM seed SPC_RET_1 0e37 fn=true op=BBC
+REALROM seed SPC_RET_2 028f fn=true op=MOV
+REALROM stack outermost 028f backward-flow=yes at 0291 -> 028c
+REALROM count instructions 2168
+REALROM count functions 37
+REALROM count bookmarks.error 0
+=== REALROM END ===

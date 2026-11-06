@@ -1,0 +1,24 @@
+=== REALROM BEGIN ===
+REALROM program spcsnap_fzero.spc
+REALROM sha256 949f0b200a67e83daf460d5b9df92280aa27415883691bfcd257a21928044c79
+REALROM language SPC700:LE:16:retro
+REALROM format SPC700 Sound Snapshot (.spc)
+REALROM block RAM_0000 0000-00ef overlay=false init=true
+REALROM block IO_F0 00f0-00ff overlay=false init=true
+REALROM block RAM_0100 0100-ffbf overlay=false init=true
+REALROM block RAM_FFC0 ffc0-ffff overlay=false init=true
+REALROM block DSP_REGS 0000-007f overlay=true init=true
+REALROM id666 absent game=[] emulator=NONE
+REALROM header pc=$0925 sp=$CD (stack at $01CD) psw=$01 ipl=false
+REALROM entry $0925 source=header PC
+REALROM stack frames 1
+REALROM stack chain $08BF
+REALROM stack end no valid return address at $01D0
+REALROM seed SPC_CALLEE_1 08fa fn=true op=MOV
+REALROM seed SPC_ENTRY 0925 fn=true op=MOV
+REALROM seed SPC_RET_1 08bf fn=true op=MOV
+REALROM stack outermost 08bf backward-flow=no
+REALROM count instructions 2361
+REALROM count functions 69
+REALROM count bookmarks.error 0
+=== REALROM END ===

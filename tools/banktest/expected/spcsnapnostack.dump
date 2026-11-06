@@ -1,0 +1,10 @@
+INFO SPC.Header PC = $FF21
+INFO SPC.SP = $C7 (stack at $01C7)
+INFO SPC.Entry = $FF21
+INFO SPC.Stack frames = <unset>
+INFO SPC.Stack chain = <unset>
+INFO SPC.Stack chain end = <unset>
+SEEDS SPC_ENTRY@ff21 ep=true fn=true;
+CODE 0400:-; 0403:-; 0406:-; 0412:-; 0415:-; 0440:-; 0442:-; 0443:-; 0460:-; 0461:-; 0463:-; FF20:-; FF21:RET;
+INSTRUCTIONS 1
+FUNCTIONS 1

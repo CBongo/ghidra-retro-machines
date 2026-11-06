@@ -2512,6 +2512,73 @@ public class VerifyCbmCriteria extends VerifyBase {
 		}
 	}
 
+	/**
+	 * grm-c9d.9: stack-chain recovery on spcsnapstack.spc. {@code on} = the default import (frames
+	 * $0463, $0443, $0406 recovered, the $0415 decoy refused); off = {@code -loader-stack false}.
+	 */
+	protected void checkSpcStack(boolean on) throws Exception {
+		Options info = currentProgram.getOptions(Program.PROGRAM_INFO);
+		println("=== BANKDUMP BEGIN ===");
+		for (String k : new String[] { "SPC.Header PC", "SPC.SP", "SPC.Entry", "SPC.Stack frames",
+			"SPC.Stack chain", "SPC.Stack chain end" }) {
+			println("INFO " + k + " = " + info.getString(k, "<unset>"));
+		}
+		StringBuilder syms = new StringBuilder();
+		for (Symbol s : currentProgram.getSymbolTable().getAllSymbols(false)) {
+			String n = s.getName();
+			if (n.startsWith("SPC_RET_") || n.startsWith("SPC_CALLEE_") || n.equals("SPC_ENTRY")) {
+				Function f = currentProgram.getFunctionManager().getFunctionAt(s.getAddress());
+				syms.append(String.format("%s@%s ep=%s fn=%s; ", n, s.getAddress(),
+					currentProgram.getSymbolTable().isExternalEntryPoint(s.getAddress()),
+					f != null));
+			}
+		}
+		println("SEEDS " + syms.toString().trim());
+		StringBuilder code = new StringBuilder();
+		for (long a : new long[] { 0x400, 0x403, 0x406, 0x412, 0x415, 0x440, 0x442, 0x443, 0x460,
+			0x461, 0x463, 0xff20, 0xff21 }) {
+			Instruction i = currentProgram.getListing().getInstructionAt(addr(a));
+			code.append(String.format("%04X:%s; ", a, i == null ? "-" : i.toString()));
+		}
+		println("CODE " + code.toString().trim());
+		println("INSTRUCTIONS " + currentProgram.getListing().getNumInstructions());
+		println("FUNCTIONS " + currentProgram.getFunctionManager().getFunctionCount());
+		println("=== BANKDUMP END ===");
+
+		if (on) {
+			boolean frames = "3".equals(info.getString("SPC.Stack frames", "")) &&
+				"$0463 < $0443 < $0406".equals(info.getString("SPC.Stack chain", ""));
+			criterion("spc-stack-frames", frames, "three frames recovered, innermost first");
+			boolean seeded = true;
+			long[] rets = { 0x463, 0x443, 0x406 };
+			for (int i = 0; i < rets.length; i++) {
+				Function f = currentProgram.getFunctionManager().getFunctionAt(addr(rets[i]));
+				seeded &= hasSymbol(rets[i], "SPC_RET_" + (i + 1)) && f != null &&
+					currentProgram.getSymbolTable().isExternalEntryPoint(addr(rets[i]));
+			}
+			criterion("spc-stack-seeds", seeded, "SPC_RET_1..3 are labelled entry-point functions");
+			criterion("spc-stack-decoy",
+				!hasSymbol(0x415, "SPC_RET_4") &&
+					currentProgram.getSymbolTable().getSymbols(addr(0x415)).length == 0,
+				"the $0415 decoy (call target $9000 cannot contain the main loop) is refused");
+			boolean decoded = true;
+			for (long a : new long[] { 0x403, 0x406, 0x440, 0x442, 0x460, 0x461, 0xff20 }) {
+				decoded &= currentProgram.getListing().getInstructionAt(addr(a)) != null;
+			}
+			criterion("spc-stack-decoded", decoded,
+				"the main loop, A, B and C decode from the seeded return addresses and callees");
+		}
+		else {
+			criterion("spc-stack-off", "0".equals(info.getString("SPC.Stack frames", "<unset>")) ||
+				"<unset>".equals(info.getString("SPC.Stack frames", "<unset>")),
+				"-loader-stack false recovers nothing");
+			criterion("spc-stack-off-code",
+				currentProgram.getListing().getInstructionAt(addr(0x406)) == null &&
+					currentProgram.getListing().getInstructionAt(addr(0x403)) == null,
+				"without the chain the main loop is never reached from the RET at the header PC");
+		}
+	}
+
 	private int readByteAt2(Address a) {
 		try {
 			return currentProgram.getMemory().getByte(a) & 0xFF;

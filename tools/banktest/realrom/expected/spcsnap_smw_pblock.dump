@@ -1,0 +1,28 @@
+=== REALROM BEGIN ===
+REALROM program spcsnap_smw_pblock.spc
+REALROM sha256 fd4b45b5a4e1e44ec39443d01304ed7428310833951c782497cbe7586f172347
+REALROM language SPC700:LE:16:retro
+REALROM format SPC700 Sound Snapshot (.spc)
+REALROM block RAM_0000 0000-00ef overlay=false init=true
+REALROM block IO_F0 00f0-00ff overlay=false init=true
+REALROM block RAM_0100 0100-ffbf overlay=false init=true
+REALROM block RAM_FFC0 ffc0-ffff overlay=false init=true
+REALROM block DSP_REGS 0000-007f overlay=true init=true
+REALROM id666 absent game=[] emulator=NONE
+REALROM header pc=$108F sp=$C8 (stack at $01C8) psw=$00 ipl=false
+REALROM entry $108F source=header PC
+REALROM stack frames 3
+REALROM stack chain $09D6 < $07B1 < $055E
+REALROM stack end no valid return address at $01CF
+REALROM seed SPC_CALLEE_1 1075 fn=true op=MOVW
+REALROM seed SPC_CALLEE_2 09cd fn=true op=MOV
+REALROM seed SPC_CALLEE_3 06ae fn=true op=CMP
+REALROM seed SPC_ENTRY 108f fn=true op=MOV
+REALROM seed SPC_RET_1 09d6 fn=true op=MOV
+REALROM seed SPC_RET_2 07b1 fn=true op=BRA
+REALROM seed SPC_RET_3 055e fn=true op=MOV
+REALROM stack outermost 055e backward-flow=no
+REALROM count instructions 1416
+REALROM count functions 48
+REALROM count bookmarks.error 0
+=== REALROM END ===

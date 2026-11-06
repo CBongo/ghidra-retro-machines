@@ -1,0 +1,21 @@
+=== REALROM BEGIN ===
+REALROM program spcsnap_lemmings.spc
+REALROM sha256 0117612f1b7033d5bc9db6939ba37eb7fa5e3999f3f8b75700f2bc247aa51e5d
+REALROM language SPC700:LE:16:retro
+REALROM format SPC700 Sound Snapshot (.spc)
+REALROM block RAM_0000 0000-00ef overlay=false init=true
+REALROM block IO_F0 00f0-00ff overlay=false init=true
+REALROM block RAM_0100 0100-ffbf overlay=false init=true
+REALROM block RAM_FFC0 ffc0-ffff overlay=false init=true
+REALROM block DSP_REGS 0000-007f overlay=true init=true
+REALROM id666 present game=[] emulator=$00
+REALROM header pc=$0861 sp=$CF (stack at $01CF) psw=$01 ipl=false
+REALROM entry $0861 source=header PC
+REALROM stack frames 0
+REALROM stack chain (none)
+REALROM stack end no valid return address at $01D0
+REALROM seed SPC_ENTRY 0861 fn=true op=DBNZ
+REALROM count instructions 979
+REALROM count functions 34
+REALROM count bookmarks.error 0
+=== REALROM END ===

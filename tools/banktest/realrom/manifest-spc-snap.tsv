@@ -1,0 +1,12 @@
+id	title	sha256	mapper	board	golden	loader_opts	member
+spcsnap_ff2_town	Town.spc	408f75f0c71f01d866d890f0e66aada1821a6612a75c1f31bda7601770bbf315	-	spc700	spcsnap_ff2_town.dump		
+spcsnap_ff2_battle	Battle.spc	422a77a5de2de77cbcbbcf817b79a0d58728f90d16841070f87e28810f6f255f	-	spc700	spcsnap_ff2_battle.dump		
+spcsnap_ff4_mysidia	Mysidia.spc	881da81c6107e4fdee32b3038f7dced2c5e63644e902a91efde356d62831aeb2	-	spc700	spcsnap_ff4_mysidia.dump		
+spcsnap_ff5_waltz	2.09 - Waltz Suomi.spc	485658b2db06ea4698daa98e1af55f2aca7dac57c631afe4f45aa90ae2575ca3	-	spc700	spcsnap_ff5_waltz.dump		
+spcsnap_ff6_tina	2_01-Tina.spc	062795c3cc1f9b7e611e1b84f5bd42baf7eeda50b4ee740787e58aba97dfe396	-	spc700	spcsnap_ff6_tina.dump		
+spcsnap_ct_trigger	CT-1-02-ChronoTriggerA.spc	2fa309203858fd57eeff61db5d3a9e04fbdb66fc274b0625742c1106144752b9	-	spc700	spcsnap_ct_trigger.dump		
+spcsnap_som	Boss.spc	85fce56910cc5d97dc86be91fb80e028fc0b5222d04122a11f0939a872ffceb2	-	spc700	spcsnap_som.dump		
+spcsnap_fzero	Big Blue.spc	949f0b200a67e83daf460d5b9df92280aa27415883691bfcd257a21928044c79	-	spc700	spcsnap_fzero.dump		
+spcsnap_smw_pblock	P Block.spc	fd4b45b5a4e1e44ec39443d01304ed7428310833951c782497cbe7586f172347	-	spc700	spcsnap_smw_pblock.dump		
+spcsnap_gd3	GD3 - Boss Music 1.spc	bc253da709daea5a1450bf88f37c8f3797c98f341d0b35c1cb4d5ef5d893cd2e	-	spc700	spcsnap_gd3.dump		
+spcsnap_lemmings	Lemmings - 01 opening.spc	0117612f1b7033d5bc9db6939ba37eb7fa5e3999f3f8b75700f2bc247aa51e5d	-	spc700	spcsnap_lemmings.dump		

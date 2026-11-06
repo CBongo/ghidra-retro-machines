@@ -1,0 +1,24 @@
+=== REALROM BEGIN ===
+REALROM program spcsnap_ct_trigger.spc
+REALROM sha256 2fa309203858fd57eeff61db5d3a9e04fbdb66fc274b0625742c1106144752b9
+REALROM language SPC700:LE:16:retro
+REALROM format SPC700 Sound Snapshot (.spc)
+REALROM block RAM_0000 0000-00ef overlay=false init=true
+REALROM block IO_F0 00f0-00ff overlay=false init=true
+REALROM block RAM_0100 0100-ffbf overlay=false init=true
+REALROM block RAM_FFC0 ffc0-ffff overlay=false init=true
+REALROM block DSP_REGS 0000-007f overlay=true init=true
+REALROM id666 present game=[Chrono Trigger] emulator=$31
+REALROM header pc=$0412 sp=$FD (stack at $01FD) psw=$43 ipl=false
+REALROM entry $0412 source=header PC
+REALROM stack frames 1
+REALROM stack chain $02F2
+REALROM stack end reached the top of the stack page
+REALROM seed SPC_CALLEE_1 0377 fn=true op=BBS
+REALROM seed SPC_ENTRY 0412 fn=true op=BRA
+REALROM seed SPC_RET_1 02f2 fn=true op=CALL
+REALROM stack outermost 02f2 backward-flow=no
+REALROM count instructions 1753
+REALROM count functions 43
+REALROM count bookmarks.error 1
+=== REALROM END ===

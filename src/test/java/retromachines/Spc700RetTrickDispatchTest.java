@@ -132,6 +132,59 @@ public class Spc700RetTrickDispatchTest extends AbstractProgramTest {
 		}
 	}
 
+	/** Al Unser 043e, Speed Racer 0839, Pugsley 053c: command numbers start at 1, slot 0 is junk. */
+	@Test
+	public void oneBasedTableSkipsUnusableEntryZero() throws Exception {
+		long[] t = { 0x2000, 0x2010, 0x2020, 0x2030, 0x2040 };
+		StringBuilder words = new StringBuilder(word(0x16c0)).append(' '); // slot 0: into the table
+		for (long x : t) {
+			builder.setBytes(hex(x), "00 6f", false);
+			words.append(word(x)).append(' ');
+		}
+		words.append(word(0x16c4)); // into the table: ends it
+		builder.setBytes("0x16c0", words.toString(), false);
+		run(CT_DISPATCH);
+		RtsTrickDispatch.Site site = RtsTrickDispatch.scan(program, RtsTrickDispatch.recognize(
+			program, program.getListing().getInstructionAt(addr(RET))));
+		assertNotNull(site);
+		assertEquals(addr(0x16c2), site.loBase);
+		assertEquals(RtsTrickDispatch.Cut.INVALID_TARGET, site.cut);
+		assertEquals(List.of(addr(t[0]), addr(t[1]), addr(t[2]), addr(t[3]), addr(t[4])),
+			computedJumpTargets());
+	}
+
+	/** Too short a run after an unusable entry 0 is still declined: no stop signal to trust. */
+	@Test
+	public void oneBasedTableNeedsAFewEntries() throws Exception {
+		builder.setBytes(hex(0x2000), "00 6f", false);
+		builder.setBytes("0x16c0", word(0x16c0) + " " + word(0x2000) + " " + word(0x16c4), false);
+		run(CT_DISPATCH);
+		assertTrue(computedJumpTargets().isEmpty());
+	}
+
+	/** Al Unser 043e: unused commands point at a stray BRK byte; the table runs on past them. */
+	@Test
+	public void brkPlaceholderEntriesDoNotEndTheTable() throws Exception {
+		builder.setBytes(hex(0x2f00), "0f", false); // the placeholder BRK
+		long[] real = { 0x2000, 0x2010, 0x2020, 0x2030 };
+		for (long x : real) {
+			builder.setBytes(hex(x), "00 6f", false);
+		}
+		long[] words = { 0x2f00, real[0], 0x2f00, real[1], real[2], real[3], 0x2f00, 0x16c4 };
+		StringBuilder w = new StringBuilder();
+		for (long x : words) {
+			w.append(word(x)).append(' ');
+		}
+		builder.setBytes("0x16c0", w.toString().trim(), false);
+		run(CT_DISPATCH);
+		RtsTrickDispatch.Site site = RtsTrickDispatch.scan(program, RtsTrickDispatch.recognize(
+			program, program.getListing().getInstructionAt(addr(RET))));
+		assertNotNull(site);
+		assertEquals("the trailing placeholder is not part of the table", 6, site.targets.size());
+		assertEquals(addr(0x2f00), site.targets.get(0));
+		assertEquals(addr(real[3]), site.targets.get(5));
+	}
+
 	@Test
 	public void andMaskCapsTheTable() throws Exception {
 		// FF3 0a12: AND A,#$0f / ASL A / MOV Y,A allows 16 entries, and the words after them are

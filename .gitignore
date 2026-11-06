@@ -100,3 +100,4 @@ data/descriptor-sources.sha256
 # the bead is the master (see AGENTS.md "Upstream drafts")
 docs/drafts/
 !tools/banktest/realrom/manifest-c64.tsv
+!tools/banktest/realrom/manifest-spc-snap.tsv

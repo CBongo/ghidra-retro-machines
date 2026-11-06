@@ -1,0 +1,10 @@
+INFO SPC.Header PC = $FF21
+INFO SPC.SP = $C7 (stack at $01C7)
+INFO SPC.Entry = $FF21
+INFO SPC.Stack frames = 3
+INFO SPC.Stack chain = $0463 < $0443 < $0406
+INFO SPC.Stack chain end = no valid return address at $01CE
+SEEDS SPC_RET_3@0406 ep=true fn=true; SPC_CALLEE_3@0440 ep=true fn=true; SPC_RET_2@0443 ep=true fn=true; SPC_CALLEE_2@0460 ep=true fn=true; SPC_RET_1@0463 ep=true fn=true; SPC_CALLEE_1@ff20 ep=true fn=true; SPC_ENTRY@ff21 ep=true fn=true;
+CODE 0400:-; 0403:CALL 0x0440; 0406:BRA 0x0403; 0412:-; 0415:-; 0440:MOV A,#0x1; 0442:TCALL 0x3; 0443:RET; 0460:NOP; 0461:PCALL 0x20; 0463:RET; FF20:NOP; FF21:RET;
+INSTRUCTIONS 10
+FUNCTIONS 8
