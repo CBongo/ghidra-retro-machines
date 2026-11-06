@@ -1,0 +1,3 @@
+[submodule "external/game-music-extraction"]
+	path = external/game-music-extraction
+	url = https://github.com/CBongo/game-music-extraction.git
