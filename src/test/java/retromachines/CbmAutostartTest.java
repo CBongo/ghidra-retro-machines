@@ -240,6 +240,25 @@ public class CbmAutostartTest {
 	}
 
 	@Test
+	public void bulkOverwriteAgreeingOnATargetInsideThePrgIsAnAutostart() {
+		// An installer pointing every vector at its own entry: the words agree and the target
+		// holds PRG bytes, so the bulk guard does not fire.
+		Image img = new Image().putWord(0x0326, 0xC000).putWord(0x0314, 0xC000).put(0xC000, 0x78);
+		Result r = run(img);
+		assertEquals(2, r.entries().size());
+		assertEquals(0xC000, r.entries().get(0).target());
+		assertEquals(0xC000, r.entries().get(1).target());
+	}
+
+	@Test
+	public void bulkOverwriteAgreeingOnATargetOutsideThePrgIsData() {
+		Image img = new Image().putWord(0x0326, 0xC000).putWord(0x0314, 0xC000);
+		Result r = run(img);
+		assertTrue(r.entries().isEmpty());
+		assertEquals(1, r.notes().size());
+	}
+
+	@Test
 	public void zeroHardwareVectorIsIgnored() {
 		assertTrue(run(new Image().putWord(0xFFFA, 0).putWord(0xFFFC, 0)).entries().isEmpty());
 	}
