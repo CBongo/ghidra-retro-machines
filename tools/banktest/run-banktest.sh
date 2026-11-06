@@ -357,6 +357,7 @@ if selected c64-banking; then generate mkbanktest.py "$WORK/prg"; fi
 if selected c64-loader; then
 	generate mkromtest.py "$WORK/prg"
 	generate mkprgloadtest.py "$WORK/prg"
+	generate mkd64test.py "$WORK/prg"
 fi
 if selected c64-recovery; then
 	# copybankedrom needs kernal.bin, which mkromtest.py generates. Only the c64-loader branch
@@ -978,6 +979,12 @@ if selected c64-loader; then
 
 	# grm-z15.1: entry point in a non-executable block, and a zero-payload PRG.
 	run_one prgentrytest "$WORK/prg/prgentrytest.prg" C64PrgLoader
+
+	# grm-t3n.2: a synthetic .d64 drilled into with -recursive. Proves the extension jar's
+	# D64FileSystem is discovered in the isolated install and C64PrgLoader imports the PRG member
+	# (the program is named after the member, "D64FSTEST.prg", which is also the fixture name
+	# VerifyBankTest dispatches on); the SEQ member is not a program.
+	run_one D64FSTEST "$WORK/prg/d64fstest.d64" C64PrgLoader "-recursive"
 
 	cp -f "$WORK/prg/romload.prg" "$WORK/prg/copyhintnorom.prg"
 	run_one copyhintnorom "$WORK/prg/copyhintnorom.prg" C64PrgLoader

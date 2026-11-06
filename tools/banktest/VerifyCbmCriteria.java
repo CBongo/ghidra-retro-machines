@@ -327,6 +327,28 @@ public class VerifyCbmCriteria extends VerifyBase {
 		criterion("straddle-ddr-byte", "dd".equals(bytesAt(null, 0, 1)), bytesAt(null, 0, 1));
 	}
 
+	// grm-t3n.2: the PRG member of a synthetic .d64, imported through D64FileSystem with
+	// -recursive. The 300-byte payload at $C000 spans two disk sectors, so a wrong chain follow
+	// or last-sector length shows up as missing/extra bytes.
+	protected void checkD64Member() {
+		MemoryBlock c = currentProgram.getMemory().getBlock(addr(0xc000));
+		String head = bytesAt(null, 0xc000, 8);
+		String tail = bytesAt(null, 0xc000 + 0x12b, 1);
+		long size = c == null ? -1 : c.getSize();
+
+		println("=== BANKDUMP BEGIN ===");
+		println("C000 " + describeBlock(c) + " BYTES " + head);
+		println("TAIL " + tail);
+		println("=== BANKDUMP END ===");
+
+		criterion("d64-member-name", "D64FSTEST.prg".equals(currentProgram.getName()),
+			currentProgram.getName());
+		criterion("d64-head-bytes", "44 36 34 46 00 01 02 03".equals(head), head);
+		criterion("d64-payload-length", c != null && c.isInitialized() && size >= 0x12c,
+			describeBlock(c));
+		criterion("d64-last-byte", "00".equals(tail), tail);
+	}
+
 	// grm-z15.1: load address $0000 lands in the non-executable P6510 io block --
 	// an external entry point must still be recorded there (the label was already
 	// unconditional), but no function should be marked on non-executable memory.
