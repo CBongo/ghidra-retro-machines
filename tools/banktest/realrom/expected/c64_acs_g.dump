@@ -66,7 +66,7 @@ REALROM sample.forth 5169 : FORTH_5169  fetch_CVAR_25d7_+2 fetch_CVAR_25d7 push_
 REALROM sample.forth 517f : fetch_CVAR_3816  fetch_VAR_3816 C@ ; |fetch CVAR @($3816)
 REALROM sample.forth 5187 : fetch_CVAR_3816_+1  fetch_VAR_3816 1+ C@ ; |fetch CVAR @($3816)+1
 REALROM sample.forth 5191 : fetch_CVAR_3816_+2  fetch_VAR_3816 2+ C@ ; |fetch CVAR @($3816)+2
-REALROM sample.forth 519b VECTOR: FORTH_519B  fetch_CVAR_25d7_+1 fetch_CVAR_25d7_+3 fetch_CVAR_3816_+1 fetch_CVAR_3816_+2 fetch_CVAR_3816_+2 fetch_CVAR_3816_+2 push_0 fetch_CVAR_25d7_+1 fetch_CVAR_25d7_+1 fetch_CVAR_25d7_+1 fetch_CVAR_25d7_+1 fetch_CVAR_25d7_+1 fetch_CVAR_25d7_+1 FORTH_0B2E 
+REALROM sample.forth 519b VECTOR: FORTH_519B  fetch_CVAR_25d7_+1 fetch_CVAR_25d7_+3 fetch_CVAR_3816_+1 fetch_CVAR_3816_+2 fetch_CVAR_3816_+2 fetch_CVAR_3816_+2 push_0 fetch_CVAR_25d7_+1 fetch_CVAR_25d7_+1 fetch_CVAR_25d7_+1 fetch_CVAR_25d7_+1 fetch_CVAR_25d7_+1 fetch_CVAR_25d7_+1 EXIT 
 REALROM sample.forth 51b9 : FORTH_51B9  fetch_lo_nybble_of_CVAR_25d7 FORTH_519B 3F-AND 2+ ; 
 REALROM sample.forth 51c5 : return_true_if_CVAR_25d7_.lo_stk  fetch_lo_nybble_of_CVAR_25d7 = ; |return true if CVAR@($25d7).lo == stk
 REALROM sample.forth 51cd : return_EC00_+_10_CVAR_25EB_-_1  push_EC00_1B00 fetch_CVAR_25EB 1- push_10_18D6 *+ ; |return $EC00 + 10*(CVAR $25EB - 1)

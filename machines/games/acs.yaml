@@ -47,6 +47,7 @@ forth:
     0x0ADC: {name: "AND"}
     0x0AEC: {name: "OR"}
     0x0AFC: {name: "XOR"}
+    0x0B2E: {name: "EXIT"}
     0x0B39: {name: "LEAVE"}
     0x0B4F: {name: ">R"}
     0x0B5C: {name: "R>"}
@@ -1742,3 +1743,8 @@ members:
   # load $708C, forthhex.pl tables: %ops_w
   - sha256: "ef1046aae4bbd73d473141beda0e313e2264e02f208b266da827a632fc532fd5"
     name: "W.PRG"
+  # load $0800, not a directory file (global tables only)
+  - sha256: "719d9167b9abde7eef4f57dc1b6a328c2044e2021132835828cf790e1b469695"
+    name: "EA_BOOT_IMAGE.prg"
+    entries:
+      - {addr: 0x099F, name: "acs_kernel_start", comment: "EA loader JMP $099F at $C2EE"}

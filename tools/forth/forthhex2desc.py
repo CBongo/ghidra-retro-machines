@@ -80,7 +80,15 @@ MEMBERS = [
     ("W", "ef1046aae4bbd73d473141beda0e313e2264e02f208b266da827a632fc532fd5", 0x708C, "w"),
 ]
 
-HAND_NAMES = {0x08C4: "NEXT", 0x08E2: "DOCOL", 0x08BD: "PUSH"}
+# Members that are not ACS1 directory files: (name, sha256, load address, entries).
+# EA_BOOT_IMAGE.prg is the synthetic D64 member grm-t3n.6 decrypts from ACS1.D64's boot sectors
+# (the Forth kernel, $0800-$25FF); its entry is the EA loader's JMP $099F at $C2EE.
+EXTRA_MEMBERS = [
+    ("EA_BOOT_IMAGE.prg", "719d9167b9abde7eef4f57dc1b6a328c2044e2021132835828cf790e1b469695",
+     0x0800, [(0x099F, "acs_kernel_start", "EA loader JMP $099F at $C2EE")]),
+]
+
+HAND_NAMES = {0x08C4: "NEXT", 0x08E2: "DOCOL", 0x08BD: "PUSH", 0x0B2E: "EXIT"}
 
 TABLE_RE = re.compile(r"^\s*%(ops(?:_([a-z]))?)\s*=\s*\(?", re.M)
 ENTRY_RE = re.compile(
@@ -277,6 +285,13 @@ def generate(text, commit):
                 L.append("        0x%04X: %s" % (a, minl[a]))
         L.append("      names:")
         L += emit_names(mnames, 8)
+    for name, sha, load, entries in EXTRA_MEMBERS:
+        L.append("  # load $%04X, not a directory file (global tables only)" % load)
+        L.append("  - sha256: %s" % q(sha))
+        L.append("    name: %s" % q(name))
+        L.append("    entries:")
+        for addr, ename, comment in entries:
+            L.append("      - {addr: 0x%04X, name: %s, comment: %s}" % (addr, q(ename), q(comment)))
     stats = "global names %d, inline %d, members %s" % (
         len(gnames), len(inline), {k: len(v[0]) for k, v in members.items()})
     return "\n".join(L) + "\n", stats
