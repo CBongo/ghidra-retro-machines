@@ -1,0 +1,68 @@
+=== REALROM BEGIN ===
+REALROM program c64_acs_a.prg
+REALROM sha256 5b7b94850864ebe4c590ad890df1543515347ea42f883f80480429b0c6d621d3
+REALROM prgsha256 NONE
+REALROM map machines/c64.map
+REALROM placement NONE
+REALROM block OS_WORKSPACE 0200-03ff overlay=false
+REALROM block PRG 3800-4fff overlay=false
+REALROM block RAM_A000 a000-bfff overlay=true
+REALROM block RAM_C000 c000-cfff overlay=false
+REALROM block RAM_E000 e000-ffff overlay=true
+REALROM block RAM_MAIN_0800 0800-37ff overlay=false
+REALROM block RAM_MAIN_5000 5000-9fff overlay=false
+REALROM block SCREEN_RAM 0400-07ff overlay=false
+REALROM block STACK 0100-01ff overlay=false
+REALROM block ZEROPAGE 0002-00ff overlay=false
+REALROM count blocks.total 22
+REALROM count blocks.overlay 4
+REALROM count spaces.overlay 4
+REALROM count instructions 0
+REALROM count instrs.inOverlay 0
+REALROM count functions 40
+REALROM count loaded.bytes 6144
+REALROM count loaded.undefinedBytes 6012
+REALROM count bit.carriers 0
+REALROM count bit.entered 0
+REALROM count bankComments 0
+REALROM count warnings 0
+REALROM count notes 0
+REALROM count symbols 43
+REALROM count decrypt.materialized 0
+REALROM count decrypt.suspect 0
+REALROM count decrypt.candidate 0
+REALROM count decrypt.unbounded 0
+REALROM count decrypt.notApplied 0
+REALROM count decrypt.other 0
+REALROM count copy.declined 0
+REALROM count copy.unbounded 0
+REALROM count copy.other 0
+REALROM count skip.candidateNote 0
+REALROM count skip.offcutInfo 0
+REALROM sample.symbol 3800 entry IMPORTED primary=true
+REALROM sample.symbol ff87 RAMTAS IMPORTED primary=true
+REALROM sample.symbol ff8a RESTOR IMPORTED primary=true
+REALROM sample.symbol ff8d VECTOR IMPORTED primary=true
+REALROM sample.symbol ff90 SETMSG IMPORTED primary=true
+REALROM sample.symbol ff93 SECOND IMPORTED primary=true
+REALROM sample.symbol ff96 TKSA IMPORTED primary=true
+REALROM sample.symbol ff99 MEMTOP IMPORTED primary=true
+REALROM sample.symbol ff9c MEMBOT IMPORTED primary=true
+REALROM sample.symbol ff9f SCNKEY IMPORTED primary=true
+REALROM sample.symbol ffa2 SETTMO IMPORTED primary=true
+REALROM sample.symbol ffa8 CIOUT IMPORTED primary=true
+REALROM sample.symbol ffab UNTLK IMPORTED primary=true
+REALROM sample.symbol ffae UNLSN IMPORTED primary=true
+REALROM sample.symbol ffb1 LISTEN IMPORTED primary=true
+REALROM sample.symbol ffb4 TALK IMPORTED primary=true
+REALROM sample.symbol ffb7 READST IMPORTED primary=true
+REALROM sample.symbol ffc3 CLOSE IMPORTED primary=true
+REALROM sample.symbol ffc6 CHKIN IMPORTED primary=true
+REALROM sample.symbol ffc9 CHKOUT IMPORTED primary=true
+REALROM sample.symbol ffcc CLRCHN IMPORTED primary=true
+REALROM sample.symbol ffcf CHRIN IMPORTED primary=true
+REALROM sample.symbol ffd8 SAVE IMPORTED primary=true
+REALROM sample.symbol ffdb SETTIM IMPORTED primary=true
+REALROM sample.symbol ffde RDTIM IMPORTED primary=true
+REALROM sample.symbol.truncated 25 of 34
+=== REALROM END ===
