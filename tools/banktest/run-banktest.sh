@@ -366,6 +366,7 @@ if selected c64-recovery; then
 	generate mkromtest.py "$WORK/prg"
 	generate mkemutest.py "$WORK/prg"
 	generate mkdecrypttest.py "$WORK/prg"
+	generate mkforthtest.py "$WORK/prg"
 	generate mkrollingtest.py "$WORK/prg"
 	generate mksuspecttest.py "$WORK/prg"
 	generate mkcopytest.py "$WORK/prg"
@@ -931,6 +932,10 @@ if selected c64-recovery; then
 	# grm-k5m: the evidence gate's program-wide half. copyfar's caller sits before the loop
 	# (the reference exists on first sight); copychain's caller is inside ANOTHER copy that is
 	# only materialized later, so the declined loop has to be re-admitted on a later round.
+	# grm-arbi.2: the Forth thread analyzer; its config arrives through a Program-Info property set
+	# by a -preScript (the descriptor route is grm-arbi.3).
+	run_one forthtest "$WORK/prg/forthtest.prg" C64PrgLoader "" \
+		"-preScript SetProgramInfo.java key:Retro_Machines.Forth_Config file:$(native "$WORK/prg/forthtest.forth.json")"
 	run_one copyfar "$WORK/prg/copyfar.prg" C64PrgLoader
 	run_one copychain "$WORK/prg/copychain.prg" C64PrgLoader
 

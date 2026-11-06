@@ -1,0 +1,50 @@
+WORD 2000 label=entry type=<undefined> refs=<none> plate=<none> bm=<none>
+WORD 2019 label=FORTH_DOCOL type=<undefined> refs=READ->007f plate=<none> bm=<none>
+WORD 202f label=FORTH_DOCON type=<undefined> refs=<none> plate=<none> bm=<none>
+WORD 203f label=FORTH_DOVAR type=<undefined> refs=<none> plate=<none> bm=<none>
+WORD 2051 label=FORTH_DODOES type=<undefined> refs=<none> plate=<none> bm=<none>
+WORD 2074 label=EXIT type=pointer16 refs=COMPUTED_JUMP->2076 plate=[Forth] code word EXIT bm=<none>
+WORD 207f label=LIT type=pointer16 refs=COMPUTED_JUMP->2081 plate=[Forth] code word LIT bm=<none>
+WORD 209c label=BRANCH type=pointer16 refs=COMPUTED_JUMP->209e plate=[Forth] code word BRANCH bm=<none>
+WORD 20b3 label=0BRANCH type=pointer16 refs=COMPUTED_JUMP->20b5 plate=[Forth] code word 0BRANCH bm=<none>
+WORD 20ce label=_DOTQUOTE_ type=pointer16 refs=COMPUTED_JUMP->20d0 plate=[Forth] code word _DOTQUOTE_ bm=<none>
+WORD 20e0 label=DUP type=pointer16 refs=COMPUTED_JUMP->20e2 plate=[Forth] code word DUP | ( n -- n n ) bm=<none>
+WORD 20ef label=DROP type=pointer16 refs=COMPUTED_JUMP->20f1 plate=[Forth] code word DROP bm=<none>
+WORD 20f6 label=PLUS type=pointer16 refs=COMPUTED_JUMP->20f8 plate=[Forth] code word PLUS bm=<none>
+WORD 210a label=EMIT type=pointer16 refs=COMPUTED_JUMP->210c plate=[Forth] code word EMIT bm=<none>
+WORD 2116 label=FIVE type=pointer16 refs=COMPUTED_JUMP->202f plate=[Forth] $0005 CONSTANT FIVE bm=<none>
+WORD 211a label=COUNTER type=pointer16 refs=COMPUTED_JUMP->203f plate=[Forth] VARIABLE COUNTER bm=<none>
+WORD 211e label=ARRAY type=pointer16 refs=COMPUTED_JUMP->2051 plate=[Forth] CREATE ARRAY  DOES> DUP + ;  bm=<none>
+WORD 212c label=DOUBLE type=pointer16 refs=COMPUTED_JUMP->2019 plate=[Forth] : DOUBLE  DUP + ;  bm=<none>
+WORD 2134 label=SHOW type=pointer16 refs=COMPUTED_JUMP->2019 plate=[Forth] : SHOW  DUP 0BRANCH L1 LIT $0003 + EXIT L1: EMIT ;  bm=<none>
+WORD 2148 label=FORTH_2148 type=pointer16 refs=COMPUTED_JUMP->2019 plate=[Forth] : FORTH_2148  (.") "HI" ;  bm=<none>
+WORD 2151 label=TWICE type=pointer16 refs=COMPUTED_JUMP->2019 plate=[Forth] : TWICE  DOUBLE DOUBLE FIVE COUNTER ARRAY ;  bm=<none>
+WORD 215f label=FORTH_215F type=pointer16 refs=COMPUTED_JUMP->2019 plate=[Forth] : FORTH_215F  FORTH_2148 DROP ;  bm=<none>
+WORD 2167 label=MAIN type=pointer16 refs=COMPUTED_JUMP->2019 plate=[Forth] : MAIN  L1: TWICE SHOW FORTH_215F BRANCH L1 ;  bm=<none>
+WORD 2175 label=FORTH_2175 type=pointer16 refs=COMPUTED_JUMP->2019 plate=[Forth] : FORTH_2175  LIT $2019 DUP DROP ;  bm=<none>
+WORD 2179 label=<none> type=word refs=<none> plate=<none> bm=Note
+WORD 2181 label=<none> type=<undefined> refs=<none> plate=<none> bm=Note
+CELL 212e type=pointer16 refs=COMPUTED_CALL->20e0
+CELL 2136 type=pointer16 refs=COMPUTED_CALL->20e0
+CELL 2138 type=pointer16 refs=COMPUTED_CALL->20b3
+CELL 213a type=short refs=COMPUTED_JUMP->2144
+CELL 213c type=pointer16 refs=COMPUTED_CALL->207f
+CELL 213e type=word refs=<none>
+CELL 214a type=pointer16 refs=COMPUTED_CALL->20ce
+CELL 214c type=PascalString255 refs=<none>
+CELL 2169 type=pointer16 refs=COMPUTED_CALL->2151
+CELL 2177 type=pointer16 refs=COMPUTED_CALL->207f
+CELL 2179 type=word refs=<none>
+CELL 2120 type=pointer16 refs=COMPUTED_CALL->2126
+CELL 2122 type=<undefined> refs=<none>
+FUNC 2000 true label=entry
+FUNC 2019 true label=FORTH_DOCOL
+FUNC 202f true label=FORTH_DOCON
+FUNC 2076 true label=EXIT_code
+FUNC 209e true label=BRANCH_code
+FUNC 20e2 true label=DUP_code
+FUNC 20f8 true label=PLUS_code
+LABEL 2126 ARRAY_does
+LABEL 2144 SHOW_L1
+LABEL 2169 MAIN_L1
+LABEL 007e FORTH_IP

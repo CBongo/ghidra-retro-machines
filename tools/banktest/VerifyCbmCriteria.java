@@ -690,6 +690,134 @@ public class VerifyCbmCriteria extends VerifyBase {
 	}
 
 	// ------------------------------------------------------------------
+	// C64ForthAnalyzer (bead grm-arbi.2). Fixture contract from mkforthtest.py (addresses are
+	// the generator's symbol listing): headerless ITC Forth at $2000 with the config supplied
+	// by SetProgramInfo.java as a -preScript.
+	// ------------------------------------------------------------------
+
+	private String primaryLabel(long offset) {
+		var s = currentProgram.getSymbolTable().getPrimarySymbol(addr(offset));
+		return s == null ? "<none>" : s.getName();
+	}
+
+	private String plate(long offset) {
+		String c = currentProgram.getListing().getComment(CommentType.PLATE, addr(offset));
+		return c == null ? "<none>" : c.replace("\n", " | ");
+	}
+
+	private String dataTypeAt(long offset) {
+		Data d = currentProgram.getListing().getDataAt(addr(offset));
+		return d == null || !d.isDefined() ? "<undefined>" : d.getDataType().getName();
+	}
+
+	private String refsFrom(long offset) {
+		StringBuilder sb = new StringBuilder();
+		for (Reference r : currentProgram.getReferenceManager().getReferencesFrom(addr(offset))) {
+			sb.append(r.getReferenceType()).append("->").append(fmt(r.getToAddress())).append(' ');
+		}
+		return sb.length() == 0 ? "<none>" : sb.toString().trim();
+	}
+
+	private String forthBookmark(long offset) {
+		for (Bookmark bm : currentProgram.getBookmarkManager().getBookmarks(addr(offset))) {
+			if ("ForthAnalyzer".equals(bm.getCategory())) {
+				return bm.getTypeString();
+			}
+		}
+		return "<none>";
+	}
+
+	/** The dump lines for one pass; computed twice to prove a re-run changes nothing. */
+	private java.util.List<String> forthDump() {
+		java.util.List<String> out = new java.util.ArrayList<>();
+		long[] words = {0x2000, 0x2019, 0x202f, 0x203f, 0x2051, 0x2074, 0x207f, 0x209c, 0x20b3,
+			0x20ce, 0x20e0, 0x20ef, 0x20f6, 0x210a, 0x2116, 0x211a, 0x211e, 0x212c, 0x2134,
+			0x2148, 0x2151, 0x215f, 0x2167, 0x2175, 0x2179, 0x2181};
+		for (long w : words) {
+			out.add("WORD " + fmt(addr(w)) + " label=" + primaryLabel(w) + " type=" +
+				dataTypeAt(w) + " refs=" + refsFrom(w) + " plate=" + plate(w) + " bm=" +
+				forthBookmark(w));
+		}
+		long[] cells = {0x212e, 0x2136, 0x2138, 0x213a, 0x213c, 0x213e, 0x214a, 0x214c, 0x2169,
+			0x2177, 0x2179, 0x2120, 0x2122};
+		for (long c : cells) {
+			out.add("CELL " + fmt(addr(c)) + " type=" + dataTypeAt(c) + " refs=" + refsFrom(c));
+		}
+		for (long f : new long[] {0x2000, 0x2019, 0x202f, 0x2076, 0x209e, 0x20e2, 0x20f8}) {
+			out.add("FUNC " + fmt(addr(f)) + " " + hasFunctionAt(f) + " label=" + primaryLabel(f));
+		}
+		out.add("LABEL 2126 " + primaryLabel(0x2126));
+		out.add("LABEL 2144 " + primaryLabel(0x2144));
+		out.add("LABEL 2169 " + primaryLabel(0x2169));
+		out.add("LABEL 007e " + primaryLabel(0x7e));
+		return out;
+	}
+
+	protected void checkForth() {
+		java.util.List<String> first = forthDump();
+		println("=== BANKDUMP BEGIN ===");
+		first.forEach(this::println);
+		println("=== BANKDUMP END ===");
+
+		criterion("forth-named-label", "DUP".equals(primaryLabel(0x20e0)) &&
+			"DOUBLE".equals(primaryLabel(0x212c)) && "PLUS".equals(primaryLabel(0x20f6)),
+			"labels=" + primaryLabel(0x20e0) + "," + primaryLabel(0x212c) + "," +
+				primaryLabel(0x20f6));
+		criterion("forth-unnamed-label", "FORTH_215F".equals(primaryLabel(0x215f)),
+			"label=" + primaryLabel(0x215f));
+		criterion("forth-plate-double", plate(0x212c).contains("[Forth] : DOUBLE  DUP + ; "),
+			plate(0x212c));
+		criterion("forth-plate-forward-branch",
+			plate(0x2134).contains(": SHOW  DUP 0BRANCH L1 LIT $0003 + EXIT L1: EMIT ; "),
+			plate(0x2134));
+		criterion("forth-plate-string", plate(0x2148).contains(": FORTH_2148  (.\") \"HI\" ; "),
+			plate(0x2148));
+		criterion("forth-plate-backward-branch",
+			plate(0x2167).contains(": MAIN  L1: TWICE SHOW FORTH_215F BRANCH L1 ; "),
+			plate(0x2167));
+		criterion("forth-plate-does", plate(0x211e).contains("CREATE ARRAY  DOES> DUP + ; "),
+			plate(0x211e));
+		criterion("forth-plate-const-var", plate(0x2116).contains("$0005 CONSTANT FIVE") &&
+			plate(0x211a).contains("VARIABLE COUNTER"), plate(0x2116) + " / " + plate(0x211a));
+		criterion("forth-stack-comment", plate(0x20e0).contains("( n -- n n )"), plate(0x20e0));
+		criterion("forth-cell-call-ref",
+			dataTypeAt(0x2169).startsWith("pointer") &&
+				refsFrom(0x2169).equals("COMPUTED_CALL->2151"),
+			"type=" + dataTypeAt(0x2169) + " refs=" + refsFrom(0x2169));
+		criterion("forth-branch-operand",
+			refsFrom(0x213a).equals("COMPUTED_JUMP->2144") &&
+				"SHOW_L1".equals(primaryLabel(0x2144)),
+			"refs=" + refsFrom(0x213a) + " label=" + primaryLabel(0x2144));
+		criterion("forth-inline-string", dataTypeAt(0x214c).startsWith("PascalString"),
+			"type=" + dataTypeAt(0x214c));
+		criterion("forth-does-ref", refsFrom(0x2120).equals("COMPUTED_CALL->2126") &&
+			"ARRAY_does".equals(primaryLabel(0x2126)), "refs=" + refsFrom(0x2120));
+		criterion("forth-code-functions", hasFunctionAt(0x2076) && hasFunctionAt(0x20e2) &&
+			hasFunctionAt(0x2000) && hasFunctionAt(0x2019),
+			"exit=" + hasFunctionAt(0x2076) + " dup=" + hasFunctionAt(0x20e2));
+		criterion("forth-decoy-not-a-word", primaryLabel(0x2181).equals("<none>") &&
+			dataTypeAt(0x2181).equals("<undefined>") && "Note".equals(forthBookmark(0x2181)),
+			"label=" + primaryLabel(0x2181) + " type=" + dataTypeAt(0x2181) + " bm=" +
+				forthBookmark(0x2181));
+		criterion("forth-decoy-inside-word", primaryLabel(0x2179).equals("<none>") &&
+			"Note".equals(forthBookmark(0x2179)) && primaryLabel(0x2175).equals("FORTH_2175"),
+			"inner=" + primaryLabel(0x2179) + " outer=" + primaryLabel(0x2175));
+
+		java.util.List<String> second;
+		int tx = currentProgram.startTransaction("forth rerun");
+		try {
+			new retromachines.C64ForthAnalyzer().added(currentProgram, new AddressSet(), monitor,
+				new MessageLog());
+		}
+		finally {
+			currentProgram.endTransaction(tx, true);
+		}
+		second = forthDump();
+		criterion("forth-idempotent", first.equals(second), "dumps " +
+			(first.equals(second) ? "equal" : "differ"));
+	}
+
+	// ------------------------------------------------------------------
 	// CopyLoopAnalyzer / TransferMaterializer placement check (bead grm-1.7.1, grm-chu)
 	// ------------------------------------------------------------------
 
