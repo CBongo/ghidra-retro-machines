@@ -56,8 +56,39 @@ def build():
     return code + KEYTAB + ciphertext
 
 
+# grm-430b: the Summer Games loader shape -- UP-counting rolling key (key = previous, already
+# decrypted byte) whose own back-branch operand ($200F) is inside the decrypted range and is
+# patched by the loop; it exits by FALLING THROUGH into the range (no JMP).
+#   $2000  A0 0E        LDY #$0E
+#   $2002  B9 01 20     LDA $2001,Y
+#   $2005  59 00 20     EOR $2000,Y
+#   $2008  99 01 20     STA $2001,Y
+#   $200B  C8           INY
+#   $200C  C0 20        CPY #$20
+#   $200E  D0 22        BNE ..       ; operand $22 ^ $D0 = $F2 -> BNE $2002 once decrypted
+#   $2010  <17 bytes>   encrypted; range = $200F..$2020
+SP_CODE = bytes([0xA9, 0x11, 0xA2, 0x22, 0xA0, 0x33, 0x85, 0xFB] + [0xEA] * 8 + [0x60])
+SP_PLAIN = bytes([0xF2]) + SP_CODE                     # $200F..$2020 (18 bytes)
+
+
+def build_selfpatched():
+    code = bytes([
+        0xA0, 0x0E, 0xB9, 0x01, 0x20, 0x59, 0x00, 0x20, 0x99, 0x01, 0x20,
+        0xC8, 0xC0, 0x20, 0xD0,
+    ])
+    prev = 0xD0                                        # byte at $200E, the opcode
+    enc = bytearray()
+    for p in SP_PLAIN:
+        enc.append(p ^ prev)
+        prev = p
+    assert enc[0] == 0x22
+    return code + bytes(enc)
+
+
 def main():
     outdir = bankgen.outdir_arg(__file__)
+    sp = bankgen.write_prg(outdir, "selfpatchdecrypt.prg", LOAD_ADDR, build_selfpatched())
+    print("wrote %s; range $200F-$2020" % sp)
 
     body = build()
     path = bankgen.write_prg(outdir, "rollingdecrypt.prg", LOAD_ADDR, body)

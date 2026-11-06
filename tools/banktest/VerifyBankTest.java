@@ -143,6 +143,8 @@ public class VerifyBankTest extends GhidraScript {
 		focused("decryptloop", cbm::checkDecryptLoop);
 		focused("rollingdecrypt", cbm::checkRollingDecrypt);
 		focused("suspectdecrypt", cbm::checkSuspectDecrypt);
+		focused("upcountconst", cbm::checkUpCountConst);
+		focused("selfpatchdecrypt", cbm::checkSelfPatchDecrypt);
 		focused("copyloop", cbm::checkCopyLoop);
 		focused("copydata", cbm::checkCopyData);
 		focused("copyoverlay", cbm::checkCopyOverlay);

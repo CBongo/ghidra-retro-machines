@@ -921,6 +921,9 @@ if selected c64-recovery; then
 	run_one decryptloop "$WORK/prg/decryptloop.prg" C64PrgLoader
 	run_one rollingdecrypt "$WORK/prg/rollingdecrypt.prg" C64PrgLoader
 	run_one suspectdecrypt "$WORK/prg/suspectdecrypt.prg" C64PrgLoader
+	# grm-430b: up-counting decryptors (constant key falling through; Summer Games self-patched).
+	run_one upcountconst "$WORK/prg/upcountconst.prg" C64PrgLoader
+	run_one selfpatchdecrypt "$WORK/prg/selfpatchdecrypt.prg" C64PrgLoader
 	run_one copyloop "$WORK/prg/copyloop.prg" C64PrgLoader
 	run_one copydata "$WORK/prg/copydata.prg" C64PrgLoader
 	run_one copyoverlay "$WORK/prg/copyoverlay.prg" C64PrgLoader

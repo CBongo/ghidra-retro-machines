@@ -71,6 +71,18 @@ final class LoopIdioms {
 		return "";
 	}
 
+	/** The INX/INY mnemonic that increments index register {@code idx}, or "" if neither. */
+	static String incMnemonic(Register idx) {
+		String n = idx.getName().toUpperCase(Locale.ROOT);
+		if (n.equals("X")) {
+			return "INX";
+		}
+		if (n.equals("Y")) {
+			return "INY";
+		}
+		return "";
+	}
+
 	/** The single base address of an indexed operand (abs,X / abs,Y / zp,X), or null when the
 	 *  operand is not indexed or names more than one base. An indexed operand's base arrives
 	 *  as a {@link Scalar} (no static reference is made for a runtime base+index target), so

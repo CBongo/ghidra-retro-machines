@@ -507,6 +507,33 @@ public class VerifyCbmCriteria extends VerifyBase {
 	 *  an EOL comment cross-links the two. Constant (inline) and rolling (emulated) recovery
 	 *  converge on this same result, so one check covers both. */
 	protected void verifyDecryptRecovery(String idPrefix, long entry, String overlayName, int len) {
+		verifyDecryptRecovery(idPrefix, entry, overlayName, len, new byte[] {1, 2, 3, 4, 5, 6, 7, 8},
+			-1);
+	}
+
+	// grm-430b: up-counting constant key; falls through into its range (no JMP).
+	protected void checkUpCountConst() {
+		verifyDecryptRecovery("upcount", 0x2000, "DECRYPTED_200f", 8,
+			new byte[] {(byte) 0xA9, 0x11, (byte) 0xA2, 0x22, (byte) 0xA0, 0x33, (byte) 0xEA, 0x60},
+			0x200F);
+	}
+
+	// grm-430b: Summer Games shape -- up-count, rolling key, self-patched BNE, fall-through.
+	protected void checkSelfPatchDecrypt() {
+		byte[] exp = new byte[18];
+		exp[0] = (byte) 0xF2;
+		int[] code = {0xA9, 0x11, 0xA2, 0x22, 0xA0, 0x33, 0x85, 0xFB, 0xEA, 0xEA, 0xEA, 0xEA,
+			0xEA, 0xEA, 0xEA, 0xEA, 0x60};
+		for (int i = 0; i < code.length; i++) {
+			exp[i + 1] = (byte) code[i];
+		}
+		verifyDecryptRecovery("selfpatch", 0x2000, "DECRYPTED_200f", 18, exp, 0x2010);
+	}
+
+	/** As above with explicit expected plaintext; {@code codeEntry >= 0} makes the disassembly
+	 *  criterion look at that address in the overlay instead of the overlay start. */
+	protected void verifyDecryptRecovery(String idPrefix, long entry, String overlayName, int len,
+			byte[] expected, long codeEntry) {
 		MemoryBlock overlay = currentProgram.getMemory().getBlock(overlayName);
 		byte[] recovered = null;
 		if (overlay != null) {
@@ -528,7 +555,6 @@ public class VerifyCbmCriteria extends VerifyBase {
 			}
 		}
 		String comment = eol(entry);
-		byte[] expected = {1, 2, 3, 4, 5, 6, 7, 8};
 
 		println("=== BANKDUMP BEGIN ===");
 		println("OVERLAY " + (overlay == null ? "<missing>"
@@ -547,7 +573,9 @@ public class VerifyCbmCriteria extends VerifyBase {
 		criterion(idPrefix + "-comment-links-overlay", comment.contains(overlayName),
 			"eol=" + comment);
 		boolean disassembled = overlay != null &&
-			currentProgram.getListing().getInstructionAt(overlay.getStart()) != null;
+			currentProgram.getListing().getInstructionAt(codeEntry >= 0
+					? overlay.getStart().getAddressSpace().getAddress(codeEntry)
+					: overlay.getStart()) != null;
 		criterion(idPrefix + "-overlay-disassembled", disassembled, "instr@overlay=" + disassembled);
 	}
 

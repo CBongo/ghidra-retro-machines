@@ -56,8 +56,31 @@ def build():
     return code + encrypted
 
 
+# grm-430b: UP-counting constant-key loop that falls through into its range (no JMP).
+#   $2000  A2 00        LDX #$00
+#   $2002  BD 0F 20     LDA $200F,X
+#   $2005  49 AA        EOR #$AA
+#   $2007  9D 0F 20     STA $200F,X
+#   $200A  E8           INX
+#   $200B  E0 08        CPX #$08
+#   $200D  D0 F3        BNE $2002
+#   $200F  <8 bytes>    encrypted payload; execution FALLS THROUGH into it
+UP_PLAINTEXT = bytes([0xA9, 0x11, 0xA2, 0x22, 0xA0, 0x33, 0xEA, 0x60])
+
+
+def build_upcount():
+    code = bytes([
+        0xA2, 0x00, 0xBD, 0x0F, 0x20, 0x49, KEY, 0x9D, 0x0F, 0x20,
+        0xE8, 0xE0, 0x08, 0xD0, 0xF3,
+    ])
+    assert LOAD_ADDR + len(code) == 0x200F
+    return code + bytes(b ^ KEY for b in UP_PLAINTEXT)
+
+
 def main():
     outdir = bankgen.outdir_arg(__file__)
+    up = bankgen.write_prg(outdir, "upcountconst.prg", LOAD_ADDR, build_upcount())
+    print("wrote %s; up-count payload $200F-$2016, key $%02X" % (up, KEY))
 
     body = build()
     path = bankgen.write_prg(outdir, "decryptloop.prg", LOAD_ADDR, body)

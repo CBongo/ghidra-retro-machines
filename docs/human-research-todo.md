@@ -370,6 +370,14 @@ Blocked on judgment, not effort.
       `grm-8v6y`. An agent then builds the posture plumbing (`.1`) together with its first
       consumer.
 
+- [ ] **Forth support: scope and dialect** (`grm-arbi` P3, filed 2026-11-06). Adventure
+      Construction Set is mostly Forth. Decide whether the Forth layer is handled here (layer 1:
+      an analyzer that types threaded code, names words and renders Forth source in comments) or
+      in a separate extension (layer 2: a Forth VM language so the decompiler sees it). The
+      recommendation is layer 1 here first. If you know it, note which Forth ACS uses
+      (fig-Forth, a custom one) and whether it kept its dictionary headers. An agent can
+      survey the ACS rows for NEXT/DOCOL statically either way.
+
 ---
 
 ## 5. Upstream (needs your GitHub identity)

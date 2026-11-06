@@ -4,6 +4,7 @@ REALROM sha256 067700034545087ea7e5894875c79ce59d8183baa691012d7e677c2a307b47c1
 REALROM prgsha256 NONE
 REALROM map machines/c64.map
 REALROM placement NONE
+REALROM block DECRYPTED_c00f c00f-c0b7 overlay=true
 REALROM block OS_WORKSPACE 0200-03ff overlay=false
 REALROM block PRG c000-c37a overlay=false
 REALROM block RAM_A000 a000-bfff overlay=true
@@ -13,24 +14,24 @@ REALROM block RAM_MAIN 0800-9fff overlay=false
 REALROM block SCREEN_RAM 0400-07ff overlay=false
 REALROM block STACK 0100-01ff overlay=false
 REALROM block ZEROPAGE 0002-00ff overlay=false
-REALROM count blocks.total 21
-REALROM count blocks.overlay 4
-REALROM count spaces.overlay 4
-REALROM count instructions 8
-REALROM count instrs.inOverlay 0
-REALROM count functions 40
-REALROM count loaded.bytes 891
-REALROM count loaded.undefinedBytes 838
+REALROM count blocks.total 22
+REALROM count blocks.overlay 5
+REALROM count spaces.overlay 5
+REALROM count instructions 38
+REALROM count instrs.inOverlay 30
+REALROM count functions 41
+REALROM count loaded.bytes 1060
+REALROM count loaded.undefinedBytes 941
 REALROM count bit.carriers 0
 REALROM count bit.entered 0
 REALROM count bankComments 0
-REALROM count warnings 2
-REALROM count notes 0
+REALROM count warnings 1
+REALROM count notes 2
 REALROM count symbols 43
-REALROM count decrypt.materialized 0
+REALROM count decrypt.materialized 2
 REALROM count decrypt.suspect 0
 REALROM count decrypt.candidate 0
-REALROM count decrypt.unbounded 1
+REALROM count decrypt.unbounded 0
 REALROM count decrypt.notApplied 0
 REALROM count decrypt.other 0
 REALROM count copy.declined 0
@@ -39,7 +40,8 @@ REALROM count copy.other 0
 REALROM count skip.candidateNote 0
 REALROM count skip.offcutInfo 0
 REALROM sample.warn 0000 [no bank-switch write observed] Board declares 1 bank-switch mechanism(s) [register-write] but no mechanism write was observed in analyzed code; no bank annotations were produced. The switch routine may be unreached (e.g. entered only via an indirect/table jump auto-analysis did not disassemble).
-REALROM sample.warn c002 [C64DecryptLoopAnalyzer] decrypt-shaped loop (key=ROLLING(c000)) could not be bounded; not applied
+REALROM sample.note c000 [C64DecryptLoopAnalyzer] decrypted [c00f, c0b7] key=ROLLING(c000); emulated (ROLLING); back branch self-patched (operand inside range)
+REALROM sample.note c00f [C64DecryptLoopAnalyzer] decrypted range start; see overlay DECRYPTED_c00f
 REALROM sample.symbol c000 entry IMPORTED primary=true
 REALROM sample.symbol ff87 RAMTAS IMPORTED primary=true
 REALROM sample.symbol ff8a RESTOR IMPORTED primary=true

@@ -125,6 +125,8 @@ public class RecognizedDecryptor {
 	private final KeyModel key;
 	private final Confidence confidence;
 	private final Address jumpInto;
+	private final Address codeEntry;
+	private final boolean selfPatched;
 
 	/**
 	 * Describes one statically recognized in-place decryption loop.
@@ -156,12 +158,47 @@ public class RecognizedDecryptor {
 	 */
 	public RecognizedDecryptor(Address entry, Address anchor, AddressRange target, KeyModel key,
 			Confidence confidence, Address jumpInto) {
+		this(entry, anchor, target, key, confidence, jumpInto, null, false);
+	}
+
+	/**
+	 * Describes one recognized loop that may fall through into its own range and/or patch its
+	 * own back branch (the up-counting form, grm-430b).
+	 *
+	 * @param entry       where recovery starts
+	 * @param anchor      where bookmarks and comments go
+	 * @param target      the in-place range the loop rewrites
+	 * @param key         the key model
+	 * @param confidence  AUTO if the range is executed as code, else CANDIDATE
+	 * @param jumpInto    the branch instruction that enters {@code target}, or null
+	 * @param codeEntry   the address inside {@code target} that execution falls through into
+	 *                    (where the plaintext is disassembled from), or null
+	 * @param selfPatched whether the loop's back-branch operand lies inside {@code target}
+	 */
+	public RecognizedDecryptor(Address entry, Address anchor, AddressRange target, KeyModel key,
+			Confidence confidence, Address jumpInto, Address codeEntry, boolean selfPatched) {
 		this.entry = entry;
 		this.anchor = anchor;
+		this.codeEntry = codeEntry;
+		this.selfPatched = selfPatched;
 		this.target = target;
 		this.key = key;
 		this.confidence = confidence;
 		this.jumpInto = jumpInto;
+	}
+
+	/** Returns where execution falls through into the range, or null.
+	 * @return the fall-through code entry inside the range
+	 */
+	public Address codeEntry() {
+		return codeEntry;
+	}
+
+	/** Returns whether the loop's back-branch operand is inside the rewritten range.
+	 * @return true if the loop patches its own back branch
+	 */
+	public boolean selfPatched() {
+		return selfPatched;
 	}
 
 	/** Returns the recovery entry address.

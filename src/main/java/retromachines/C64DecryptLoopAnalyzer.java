@@ -64,9 +64,26 @@ import ghidra.util.task.TaskMonitor;
  *       BPL loop
  *       JMP base      ; enters the decrypted range -> AUTO confidence
  * </pre>
- * Auto-apply requires a {@code JMP}/{@code JSR} into the rewritten range (proof the bytes
- * run as code); a loop without one is recorded as a candidate bookmark only, never
- * rewritten, so an ordinary indexed table transform is not mistaken for a decryptor.
+ *
+ * <p>The up-counting form (grm-430b) is also recognized, with its range
+ * {@code [base+start, base+end-1]} (INX/INY, then {@code CPX/CPY #end} or nothing for 256, then
+ * {@code BNE loop}), as in the Summer Games loader:
+ * <pre>
+ *       LDY #$0E
+ *  loop: LDA $C001,Y
+ *       EOR $C000,Y   ; rolling key: the previous, already decrypted byte
+ *       STA $C001,Y
+ *       INY
+ *       CPY #$B7
+ *       BNE loop      ; its operand is itself inside the range, so the loop PATCHES this branch
+ *                     ; and the static target is garbage; exit falls through into the range
+ * </pre>
+ * A back-branch operand inside the range is judged by computing the patched operand for a
+ * constant key, or accepted tentatively for a rolling key (the emulated run executes the real
+ * branch). The up-count form uses the far (CFG-dominating) counter init too.
+ * Auto-apply requires a {@code JMP}/{@code JSR} into the rewritten range, or the loop's exit
+ * branch falling through into it (proof the bytes run as code); a loop without one is
+ * recorded as a candidate bookmark only, never rewritten, so an ordinary indexed table transform is not mistaken for a decryptor.
  */
 public class C64DecryptLoopAnalyzer extends AbstractAnalyzer {
 
@@ -167,6 +184,9 @@ public class C64DecryptLoopAnalyzer extends AbstractAnalyzer {
 			init = LoopIdioms.findDominatingCounterInit(program, lda, idx, branch);
 			farInit = init != null;
 		}
+		if (!downCount && tryUpCount(program, listing, lda, step, idx, base, key, monitor, log)) {
+			return;
+		}
 		Integer n = init == null ? null : MosOperands.immediateOperandValue(init);
 		if (!(downCount && bpl && backEdge) || n == null) {
 			program.getBookmarkManager().setBookmark(lda.getAddress(), BookmarkType.WARNING,
@@ -185,14 +205,132 @@ public class C64DecryptLoopAnalyzer extends AbstractAnalyzer {
 
 		Address entry = init.getAddress();
 		Address jumpInto = LoopIdioms.findJumpIntoRange(listing, branch, base, len);
-		RecognizedDecryptor.Confidence conf = jumpInto != null
+		Address fallInto = fallThroughInto(branch, base, base.add(len - 1));
+		RecognizedDecryptor.Confidence conf = jumpInto != null || fallInto != null
 				? RecognizedDecryptor.Confidence.AUTO
 				: RecognizedDecryptor.Confidence.CANDIDATE;
 
 		Address anchor = farInit ? lda.getAddress() : entry;
-		RecognizedDecryptor rd =
-			new RecognizedDecryptor(entry, anchor, target, key, conf, jumpInto);
+		RecognizedDecryptor rd = new RecognizedDecryptor(entry, anchor, target, key, conf,
+			jumpInto, fallInto, false);
 		apply(program, rd, monitor, log);
+	}
+
+	/** The branch's fall-through address when it lies in {@code [lo, hi]}, else null. */
+	private static Address fallThroughInto(Instruction branch, Address lo, Address hi) {
+		Address ft = branch.getFallThrough();
+		if (ft != null && ft.compareTo(lo) >= 0 && ft.compareTo(hi) <= 0) {
+			return ft;
+		}
+		return null;
+	}
+
+	/**
+	 * The up-counting form (grm-430b): {@code LDX/LDY #start; loop: LDA base,I; EOR ..; STA base,I;
+	 * INX/INY; [CPX/CPY #end]; BNE loop}, range {@code [base+start, base+end-1]} (no compare means
+	 * end = 256). The loop may patch its own back-branch operand (the Summer Games loader does);
+	 * then the static target is meaningless: a constant key lets us compute the patched operand,
+	 * a rolling key is accepted tentatively and the emulated run (which executes the patched
+	 * branch) must cover the range. Returns true when the shape was recognized here (applied or
+	 * bookmarked), false to let the caller fall back to its generic "could not be bounded" warning.
+	 */
+	private boolean tryUpCount(Program program, Listing listing, Instruction lda, Instruction step,
+			Register idx, Address base, RecognizedDecryptor.KeyModel key, TaskMonitor monitor,
+			MessageLog log) {
+		if (step == null || !LoopIdioms.mnem(step).equals(LoopIdioms.incMnemonic(idx))) {
+			return false;
+		}
+		Instruction next = listing.getInstructionAfter(step.getAddress());
+		if (next == null) {
+			return false;
+		}
+		String cmpMnem = idx.getName().equalsIgnoreCase("X") ? "CPX" : "CPY";
+		int end = 256;
+		Instruction branch = next;
+		if (LoopIdioms.mnem(next).equals(cmpMnem) && MosOperands.isImmediate(next)) {
+			Integer e = MosOperands.immediateOperandValue(next);
+			if (e == null) {
+				return false;
+			}
+			end = e == 0 ? 256 : e;
+			branch = listing.getInstructionAfter(next.getAddress());
+		}
+		if (branch == null || !LoopIdioms.mnem(branch).equals("BNE") || branch.getLength() != 2) {
+			return false;
+		}
+
+		Instruction init = LoopIdioms.findCounterInit(listing, lda, idx);
+		boolean farInit = false;
+		if (init == null) {
+			init = LoopIdioms.findDominatingCounterInit(program, lda, idx, branch);
+			farInit = init != null;
+		}
+		Integer start = init == null ? null : MosOperands.immediateOperandValue(init);
+		if (start == null || end <= start) {
+			return false;
+		}
+
+		long baseOff = base.getOffset();
+		if (baseOff + end - 1 > base.getAddressSpace().getMaxAddress().getOffset()) {
+			return false;
+		}
+		Address lo;
+		Address hi;
+		AddressRange target;
+		try {
+			lo = base.add(start);
+			hi = base.add(end - 1);
+			target = new AddressRangeImpl(lo, hi);
+		}
+		catch (AddressOutOfBoundsException e) {
+			return false;
+		}
+		int len = end - start;
+
+		// Back edge. A branch operand inside the range is rewritten by the loop itself.
+		Address opAddr = branch.getAddress().add(1);
+		boolean selfPatched = target.contains(opAddr);
+		if (target.contains(branch.getAddress())) {
+			return false; // the opcode itself is rewritten: cannot judge the loop
+		}
+		if (selfPatched) {
+			if (key.kind() == RecognizedDecryptor.KeyModel.Kind.CONSTANT) {
+				byte[] raw = new byte[1];
+				try {
+					program.getMemory().getBytes(opAddr, raw);
+				}
+				catch (MemoryAccessException e) {
+					return false;
+				}
+				int patched = (raw[0] & 0xFF) ^ key.constant();
+				Address after = branch.getAddress().add(2);
+				Address patchedTarget;
+				try {
+					patchedTarget = after.add((byte) patched);
+				}
+				catch (AddressOutOfBoundsException e) {
+					return false;
+				}
+				if (!patchedTarget.equals(lda.getAddress())) {
+					return false;
+				}
+			}
+			// rolling/unknown key: tentative back edge; emulation must cover the range.
+		}
+		else if (!LoopIdioms.branchTargets(branch, lda.getAddress())) {
+			return false;
+		}
+
+		Address entry = init.getAddress();
+		Address jumpInto = LoopIdioms.findJumpIntoRange(listing, branch, lo, len);
+		Address fallInto = fallThroughInto(branch, lo, hi);
+		RecognizedDecryptor.Confidence conf = jumpInto != null || fallInto != null
+				? RecognizedDecryptor.Confidence.AUTO
+				: RecognizedDecryptor.Confidence.CANDIDATE;
+		Address anchor = farInit ? lda.getAddress() : entry;
+		apply(program, new RecognizedDecryptor(entry, anchor, target, key, conf, jumpInto, fallInto,
+			selfPatched), monitor, log);
+		return true;
 	}
 
 	/** Route a recognized decryptor to inline decrypt (tier 1), emulation (tier 2), or a
@@ -302,11 +440,25 @@ public class C64DecryptLoopAnalyzer extends AbstractAnalyzer {
 		// Disassemble the recovered payload in the overlay so it reads as code -- the whole
 		// point of decrypting it. Same idiom BoardBankAnalyzer uses for cross-bank targets.
 		Address overlayStart = block.getStart();
-		if (program.getListing().getInstructionAt(overlayStart) == null) {
+		// A self-patched loop's range starts at its own branch OPERAND, which is not code; only
+		// the code entry below is disassembled then.
+		if (!rd.selfPatched() && program.getListing().getInstructionAt(overlayStart) == null) {
 			new DisassembleCommand(overlayStart, null, true).applyTo(program, monitor);
 			if (program.getListing().getInstructionAt(overlayStart) != null &&
 				program.getFunctionManager().getFunctionAt(overlayStart) == null) {
 				new CreateFunctionCmd(overlayStart).applyTo(program, monitor);
+			}
+		}
+		// The range can start with a rewritten loop operand rather than code (grm-430b): also
+		// disassemble where execution actually enters it.
+		if (rd.codeEntry() != null) {
+			Address ce = overlayStart.getAddressSpace().getAddress(rd.codeEntry().getOffset());
+			if (ce != null && program.getListing().getInstructionAt(ce) == null) {
+				new DisassembleCommand(ce, null, true).applyTo(program, monitor);
+				if (program.getListing().getInstructionAt(ce) != null &&
+					program.getFunctionManager().getFunctionAt(ce) == null) {
+					new CreateFunctionCmd(ce).applyTo(program, monitor);
+				}
 			}
 		}
 
@@ -318,7 +470,8 @@ public class C64DecryptLoopAnalyzer extends AbstractAnalyzer {
 					"Copy-Into-Program"
 				: "";
 		String msg = (suspect ? "SUSPECT " : "") + "decrypted " + rd.target() + " key=" + rd.key() +
-			"; " + detail + referral;
+			"; " + detail +
+			(rd.selfPatched() ? "; back branch self-patched (operand inside range)" : "") + referral;
 		program.getBookmarkManager().setBookmark(rd.anchor(),
 			suspect ? BookmarkType.WARNING : BookmarkType.NOTE, CATEGORY, msg);
 		program.getBookmarkManager().setBookmark(base,
