@@ -19,7 +19,7 @@ REALROM count blocks.overlay 4
 REALROM count spaces.overlay 4
 REALROM count instructions 1
 REALROM count instrs.inOverlay 0
-REALROM count functions 40
+REALROM count functions 41
 REALROM count loaded.bytes 335
 REALROM count loaded.undefinedBytes 287
 REALROM count bit.carriers 0
@@ -27,7 +27,7 @@ REALROM count bit.entered 0
 REALROM count bankComments 0
 REALROM count warnings 1
 REALROM count notes 0
-REALROM count symbols 43
+REALROM count symbols 44
 REALROM count decrypt.materialized 0
 REALROM count decrypt.suspect 0
 REALROM count decrypt.candidate 0
@@ -41,6 +41,7 @@ REALROM count skip.candidateNote 0
 REALROM count skip.offcutInfo 0
 REALROM sample.warn 0000 [no bank-switch write observed] Board declares 1 bank-switch mechanism(s) [register-write] but no mechanism write was observed in analyzed code; no bank annotations were produced. The switch routine may be unreached (e.g. entered only via an indirect/table jump auto-analysis did not disassemble).
 REALROM sample.symbol 00f7 entry IMPORTED primary=true
+REALROM sample.symbol 0203 autostart_stack IMPORTED primary=true
 REALROM sample.symbol ff87 RAMTAS IMPORTED primary=true
 REALROM sample.symbol ff8a RESTOR IMPORTED primary=true
 REALROM sample.symbol ff8d VECTOR IMPORTED primary=true
@@ -64,6 +65,5 @@ REALROM sample.symbol ffcc CLRCHN IMPORTED primary=true
 REALROM sample.symbol ffcf CHRIN IMPORTED primary=true
 REALROM sample.symbol ffd8 SAVE IMPORTED primary=true
 REALROM sample.symbol ffdb SETTIM IMPORTED primary=true
-REALROM sample.symbol ffde RDTIM IMPORTED primary=true
-REALROM sample.symbol.truncated 25 of 34
+REALROM sample.symbol.truncated 25 of 35
 === REALROM END ===
