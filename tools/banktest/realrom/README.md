@@ -65,10 +65,12 @@ safe.
 | `snes-analysis` | snes-analysis | `manifest-snes-analysis.tsv` | every row | SNES 65816 AUTO-ANALYSIS width census (bead `grm-9nxj.5`): the only SNES rows imported WITH analysis. `W65816WidthDump.java` pins instruction and function counts, instructions bucketed by the (E,M,X) context they decoded under, desync opcodes (BRK/COP/WDM/STP), each CPU vector's target and whether code was decoded there, JSR/JSL whose target decoded at a different width than the caller holds, functions returning at a different width than they entered, and computed flows with/without targets -- counts and addresses only, never bytes. Every grm-9nxj.5 increment is judged by its diff here. Does not refresh the NES staleness stamp. |
 | `snes-cart` | snes | `manifest-snes.tsv` | every row | The SNES loader set: cartridges covering the alt-board axis the NES GME corpus does not — SA-1, SuperFX 1/2, DSP-1 in both LoROM and HiROM form, S-DD1, CX4, the one genuine ExHiROM, a clean/copier pair on each of two titles, and one cartridge whose declared map mode contradicts its header location. |
 
+| `c64-prg` | c64 | `manifest-c64.tsv` | every row (10, **PROVISIONAL** pending owner pick, bead `grm-t3n.1`) | Commodore 64 `.prg` real programs (Summer Games, Seven Cities of Gold, Marble Madness, ACS, Sidplayer), imported with `C64PrgLoader` and analysis ON, dumped by the shared `C64RealRomDump.java` (instruction/function/undefined-byte counts, BIT-skip census, decrypt/copy-loop outcome counts; `RealRomDump.java` hard-codes NES invariants). ROM dirs from `GRM_C64_ROM_DIR` (`;`-separated; depth 1 only). Does not refresh the NES staleness stamp (`stamps_staleness=no`: it says nothing about NES bank-switch analysis). `nominate` is NES-only. |
+
 Platform groups, derived from `platforms.tsv`: **`nes`** (`nes-curated` + `nes-gme`, 35 rows —
 what the removed `--all` flag meant) and **`snes`** (`snes-cart` + `snes-spc`, 22
 rows — what the removed `--snes` flag meant). **`all`** is the driver's own union of every set on every
-platform except opt-in sets (62 rows today) — the word that changed meaning in `grm-ughg`, since before it there was no
+platform except opt-in sets (72 rows today, including the 10 provisional `c64-prg` rows) — the word that changed meaning in `grm-ughg`, since before it there was no
 bare `all` at all, only the `--all` flag meaning "both NES manifests."
 
 ```bash

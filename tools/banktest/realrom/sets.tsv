@@ -6,3 +6,4 @@ snes-cart	snes	manifest-snes.tsv	*	SNES alt-board cartridge loader sample (LOADE
 snes-spc	snes-spc	manifest-snes-spc.tsv	*	SNES SPC700 sound-driver upload recovery (65816 emulation against the IPL handshake; hashes of recovered blocks only, -noanalysis)	no
 snes-analysis	snes-analysis	manifest-snes-analysis.tsv	*	SNES 65816 auto-analysis width census (analysis ON; M/X/E context, desync, call-width agreement; bead grm-9nxj.5)	no
 snes-spc-analysis	snes-spc-analysis	manifest-snes-spc-analysis.tsv	*	SNES SPC700 AUTO-ANALYSIS census (materialized SPC700 program analysed in memory: instructions, functions, computed jumps, RET-trick sites; bead grm-gipk.10). OPT-IN: not in snes/all, name it explicitly	yes
+c64-prg	c64	manifest-c64.tsv	*	C64 .prg real-program rows (PROVISIONAL picks, grm-t3n.1; analysis ON, RealRomDump)	no
