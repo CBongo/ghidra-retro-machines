@@ -216,6 +216,10 @@ public class MapCompiler {
 		if (formats != null) {
 			mapDoc.put("formats", formats);
 		}
+		Map<String, Object> autostart = buildAutostart(descriptor);
+		if (autostart != null) {
+			mapDoc.put("autostart", autostart);
+		}
 
 		return mapDoc;
 	}
@@ -1711,6 +1715,88 @@ public class MapCompiler {
 			}
 		}
 		return null;
+	}
+
+	// ---- autostart (grm-w0j7) ----
+
+	/**
+	 * Optional {@code autostart:} section: where a loaded PRG's own bytes can name the next
+	 * code the machine will run (see CbmAutostart). {@code vectors} are RAM vectors with the
+	 * word the OS leaves there ({@code default}); {@code stack} is the page whose return
+	 * addresses a PRG may overwrite; {@code hardware} are the 6502 hardware vectors. Each
+	 * part is optional, so a machine gets exactly the detection it declares.
+	 */
+	@SuppressWarnings("unchecked")
+	private static Map<String, Object> buildAutostart(Map<String, Object> descriptor) {
+		Object raw = descriptor.get("autostart");
+		if (raw == null) {
+			return null;
+		}
+		if (!(raw instanceof Map)) {
+			throw new IllegalArgumentException("descriptor 'autostart:' must be a mapping");
+		}
+		Map<String, Object> in = (Map<String, Object>) raw;
+		Map<String, Object> out = new LinkedHashMap<>();
+		for (String listKey : new String[] {"vectors", "hardware"}) {
+			Object list = in.get(listKey);
+			if (list == null) {
+				continue;
+			}
+			if (!(list instanceof List)) {
+				throw new IllegalArgumentException("autostart." + listKey + " must be a list");
+			}
+			List<Map<String, Object>> rows = new ArrayList<>();
+			Set<String> names = new LinkedHashSet<>();
+			Set<Integer> addrs = new LinkedHashSet<>();
+			String context = "autostart." + listKey + "[]";
+			for (Object item : (List<Object>) list) {
+				if (!(item instanceof Map)) {
+					throw new IllegalArgumentException(context + " entries must be mappings");
+				}
+				Map<String, Object> row = (Map<String, Object>) item;
+				Map<String, Object> o = new LinkedHashMap<>();
+				String name = requireString(row, "name", context);
+				int addr = requireAddr(row, "addr", context);
+				if (addr < 0 || addr > 0xFFFE) {
+					throw new IllegalArgumentException(context + " '" + name + "' addr 0x" +
+						Integer.toHexString(addr) + " is not a 16-bit word address");
+				}
+				if (!names.add(name) || !addrs.add(addr)) {
+					throw new IllegalArgumentException(context + " '" + name +
+						"' duplicates another entry's name or addr");
+				}
+				o.put("name", name);
+				o.put("addr", addr);
+				if (listKey.equals("vectors")) {
+					int dflt = requireAddr(row, "default", context);
+					if (dflt < 0 || dflt > 0xFFFF) {
+						throw new IllegalArgumentException(context + " '" + name +
+							"' default is not a 16-bit word");
+					}
+					o.put("default", dflt);
+				}
+				rows.add(o);
+			}
+			out.put(listKey, rows);
+		}
+		Object stack = in.get("stack");
+		if (stack != null) {
+			if (!(stack instanceof Map)) {
+				throw new IllegalArgumentException("autostart.stack must be a mapping");
+			}
+			Map<String, Object> st = (Map<String, Object>) stack;
+			int start = requireAddr(st, "start", "autostart.stack");
+			int end = requireAddr(st, "end", "autostart.stack");
+			if (start < 0 || end <= start || end > 0xFFFF) {
+				throw new IllegalArgumentException("autostart.stack range 0x" +
+					Integer.toHexString(start) + "-0x" + Integer.toHexString(end) + " is invalid");
+			}
+			Map<String, Object> o = new LinkedHashMap<>();
+			o.put("start", start);
+			o.put("end", end);
+			out.put("stack", o);
+		}
+		return out;
 	}
 
 	// ---- formats ----

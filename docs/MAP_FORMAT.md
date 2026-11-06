@@ -59,7 +59,10 @@ the extension zip alongside the corresponding `.gdt`.
   "rom_images": { "<imageName>": { "size", "occupant" } },
   "symbols": [ { "set", "default": <bool>, "region"?,
                  "entries": [ { "addr", "name", "kind", "comment"? } ] } ],
-  "formats"?: { "<formatName>": { /* loader-policy metadata */ } }
+  "formats"?: { "<formatName>": { /* loader-policy metadata */ } },
+  "autostart"?: { "vectors"?: [ { "name", "addr", "default" } ],   // RAM vectors + OS default word
+                  "stack"?:   { "start", "end" },                  // page whose return addresses a PRG may plant
+                  "hardware"?: [ { "name", "addr" } ] }            // 6502 hardware vectors (grm-w0j7)
 }
 ```
 

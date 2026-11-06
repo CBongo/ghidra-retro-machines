@@ -195,6 +195,43 @@ rom_images:
     occupant: CHARGEN
     known_sha1: []                # TODO verify: chargen (901225-01)
 
+autostart:
+  # Entry points a PRG names by overwriting what the OS will run next (grm-w0j7). The loader
+  # (CbmAutostart) counts a RAM vector only when the PRG writes BOTH bytes and the word differs
+  # from `default`. Defaults: $0314-$0333 are the KERNAL init table at $FD30 (KERNAL rev3,
+  # 901227-03, sha1 1d503e56df85a62fee696e7618dc5b4e781df1bb, read from a real dump);
+  # $0300-$030B are BASIC V2's init table at $A00C (E38B A483 A57C A71A A7E4 AE86, from the
+  # documented C64 memory map -- no BASIC dump was at hand to cross-check).
+  vectors:
+    - { name: IERROR, addr: 0x0300, default: 0xE38B }
+    - { name: IMAIN,  addr: 0x0302, default: 0xA483 }
+    - { name: ICRNCH, addr: 0x0304, default: 0xA57C }
+    - { name: IQPLOP, addr: 0x0306, default: 0xA71A }
+    - { name: IGONE,  addr: 0x0308, default: 0xA7E4 }
+    - { name: IEVAL,  addr: 0x030A, default: 0xAE86 }
+    - { name: CINV,   addr: 0x0314, default: 0xEA31 }
+    - { name: CBINV,  addr: 0x0316, default: 0xFE66 }
+    - { name: NMINV,  addr: 0x0318, default: 0xFE47 }
+    - { name: IOPEN,  addr: 0x031A, default: 0xF34A }
+    - { name: ICLOSE, addr: 0x031C, default: 0xF291 }
+    - { name: ICHKIN, addr: 0x031E, default: 0xF20E }
+    - { name: ICKOUT, addr: 0x0320, default: 0xF250 }
+    - { name: ICLRCH, addr: 0x0322, default: 0xF333 }
+    - { name: IBASIN, addr: 0x0324, default: 0xF157 }
+    - { name: IBSOUT, addr: 0x0326, default: 0xF1CA }
+    - { name: ISTOP,  addr: 0x0328, default: 0xF6ED }
+    - { name: IGETIN, addr: 0x032A, default: 0xF13E }
+    - { name: ICLALL, addr: 0x032C, default: 0xF32F }
+    - { name: USRCMD, addr: 0x032E, default: 0xFE66 }
+    - { name: ILOAD,  addr: 0x0330, default: 0xF4A5 }
+    - { name: ISAVE,  addr: 0x0332, default: 0xF5ED }
+  # The stack page: LOAD's return addresses live here, so a PRG covering it can plant the RTS target.
+  stack: { start: 0x0100, end: 0x01FF }
+  hardware:
+    - { name: NMI,   addr: 0xFFFA }
+    - { name: RESET, addr: 0xFFFC }
+    - { name: IRQ,   addr: 0xFFFE }
+
 symbols:
   # Bulk sets are generated from mist64/c64ref (clean license) — see gib.1.2 notes.
   # Sets are user-toggleable at import; defaults tuned for game RE (KERNAL API on,

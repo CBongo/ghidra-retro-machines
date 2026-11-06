@@ -1,0 +1,5 @@
+autostart_IBSOUT @0340 label=true entry=true function=true
+CRITERION autostartvec-ibsout-label PASS autostart_IBSOUT@0340
+CRITERION autostartvec-ibsout-entry PASS isExternalEntryPoint(0340)=true
+CRITERION autostartvec-ibsout-function PASS function@0340=true expected true
+SYMBOLS 1

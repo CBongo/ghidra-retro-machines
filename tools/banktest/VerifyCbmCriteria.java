@@ -373,6 +373,71 @@ public class VerifyCbmCriteria extends VerifyBase {
 		criterion("prgentry-label-exists", hasLabel, "symbols@0000 present=" + hasLabel);
 	}
 
+	// grm-w0j7: autostart entry points detected from vectors the PRG overwrites. All three
+	// fixtures place the PRG in base RAM or (hardware vectors) the RAM_E000 overlay and assert
+	// labels, external-entry status, function presence, and that NOTHING ELSE was labelled
+	// autostart_* (zero words and default-equal words must stay silent).
+	private int autostartSymbolCount() {
+		int n = 0;
+		Iterator<Symbol> it = currentProgram.getSymbolTable().getSymbolIterator("autostart_*", true);
+		while (it.hasNext()) {
+			it.next();
+			n++;
+		}
+		return n;
+	}
+
+	private boolean hasLabelAt(Address a, String name) {
+		for (Symbol s : currentProgram.getSymbolTable().getSymbols(a)) {
+			if (s.getName().equals(name)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private void autostartRow(String id, String label, long target, boolean wantFunction) {
+		Address a = addr(target);
+		boolean labelled = hasLabelAt(a, label);
+		boolean entry = currentProgram.getSymbolTable().isExternalEntryPoint(a);
+		boolean fn = hasFunctionAt(target);
+		println(label + " @" + String.format("%04x", target) + " label=" + labelled + " entry=" +
+			entry + " function=" + fn);
+		criterion(id + "-label", labelled, label + "@" + fmt(a));
+		criterion(id + "-entry", entry, "isExternalEntryPoint(" + fmt(a) + ")=" + entry);
+		criterion(id + "-function", fn == wantFunction,
+			"function@" + fmt(a) + "=" + fn + " expected " + wantFunction);
+	}
+
+	protected void checkAutostartVector() {
+		println("=== BANKDUMP BEGIN ===");
+		autostartRow("autostartvec-ibsout", "autostart_IBSOUT", 0x0340, true);
+		println("SYMBOLS " + autostartSymbolCount());
+		println("=== BANKDUMP END ===");
+		criterion("autostartvec-only-one", autostartSymbolCount() == 1,
+			"autostart_* symbols=" + autostartSymbolCount());
+	}
+
+	protected void checkAutostartStack() {
+		println("=== BANKDUMP BEGIN ===");
+		autostartRow("autostartstack", "autostart_stack", 0x0200, true);
+		println("SYMBOLS " + autostartSymbolCount());
+		println("=== BANKDUMP END ===");
+		criterion("autostartstack-only-one", autostartSymbolCount() == 1,
+			"autostart_* symbols=" + autostartSymbolCount());
+	}
+
+	protected void checkAutostartHardware() {
+		println("=== BANKDUMP BEGIN ===");
+		autostartRow("autostarthw-nmi", "autostart_NMI", 0xfe43, false);
+		autostartRow("autostarthw-reset", "autostart_RESET", 0xfce2, false);
+		autostartRow("autostarthw-irq", "autostart_IRQ", 0xff48, false);
+		println("SYMBOLS " + autostartSymbolCount());
+		println("=== BANKDUMP END ===");
+		criterion("autostarthw-only-three", autostartSymbolCount() == 3,
+			"autostart_* symbols=" + autostartSymbolCount());
+	}
+
 	// grm-z15.1: a 2-byte PRG (load-address header, zero payload) must still import --
 	// the full memory map/symbols get built, but no PRG bytes are placed anywhere.
 	protected void checkPrgEmpty() {

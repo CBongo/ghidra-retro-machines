@@ -90,8 +90,39 @@ def overflow_payload():
     return bytes((i & 0xff) for i in range(0x10001))
 
 
+def autostart_vector_payload():
+    """$0326-$0342 (grm-w0j7): IBSOUT ($0326) = $0340, everything else zero (zero words are
+    padding and must NOT yield entries), code at $0340: LDA #1 ; RTS."""
+    payload = bytearray(0x340 + 3 - 0x326)
+    payload[0:2] = bytes((0x40, 0x03))
+    payload[0x340 - 0x326:] = bytes((0xa9, 0x01, 0x60))
+    assert payload[-3:] == b"\xa9\x01\x60" and len(payload) == 0x1d
+    return payload
+
+
+def autostart_stack_payload():
+    """$0100-$0202 (grm-w0j7): the whole stack page filled with the word $01FF (RTS target
+    $0200), then code at $0200: LDA #2 ; RTS. The odd parity reads $FF01, so the loader must
+    pick the candidate whose target is inside the PRG."""
+    payload = bytearray()
+    for i in range(0x100):
+        payload.append(0xff if i % 2 == 0 else 0x01)
+    payload += bytes((0xa9, 0x02, 0x60))
+    assert len(payload) == 0x103
+    return payload
+
+
+def autostart_hardware_payload():
+    """$FFFA-$FFFF (grm-w0j7): NMI=$FE43, RESET=$FCE2, IRQ=$FF48 -- all KERNAL addresses,
+    i.e. OUTSIDE the PRG's own bytes (label + entry point, no function)."""
+    return bytes((0x43, 0xfe, 0xe2, 0xfc, 0x48, 0xff))
+
+
 def main():
     outdir = bankgen.outdir_arg(__file__)
+    write_prg(outdir, "autostartvectest.prg", 0x0326, autostart_vector_payload())
+    write_prg(outdir, "autostartstacktest.prg", 0x0100, autostart_stack_payload())
+    write_prg(outdir, "autostarthwtest.prg", 0xfffa, autostart_hardware_payload())
     write_prg(outdir, "prgplacementtest.prg", 0xa000, placement_payload())
     write_prg(outdir, "prgwraptest.prg", 0xfffc, wrapping_payload())
     # grm-z15.2: 0x101-byte payload at $FF00 wraps exactly 1 byte to $0000,

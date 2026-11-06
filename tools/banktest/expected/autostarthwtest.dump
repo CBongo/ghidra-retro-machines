@@ -1,0 +1,13 @@
+autostart_NMI @fe43 label=true entry=true function=false
+CRITERION autostarthw-nmi-label PASS autostart_NMI@fe43
+CRITERION autostarthw-nmi-entry PASS isExternalEntryPoint(fe43)=true
+CRITERION autostarthw-nmi-function PASS function@fe43=false expected false
+autostart_RESET @fce2 label=true entry=true function=false
+CRITERION autostarthw-reset-label PASS autostart_RESET@fce2
+CRITERION autostarthw-reset-entry PASS isExternalEntryPoint(fce2)=true
+CRITERION autostarthw-reset-function PASS function@fce2=false expected false
+autostart_IRQ @ff48 label=true entry=true function=false
+CRITERION autostarthw-irq-label PASS autostart_IRQ@ff48
+CRITERION autostarthw-irq-entry PASS isExternalEntryPoint(ff48)=true
+CRITERION autostarthw-irq-function PASS function@ff48=false expected false
+SYMBOLS 3

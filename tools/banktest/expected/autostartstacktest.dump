@@ -1,0 +1,5 @@
+autostart_stack @0200 label=true entry=true function=true
+CRITERION autostartstack-label PASS autostart_stack@0200
+CRITERION autostartstack-entry PASS isExternalEntryPoint(0200)=true
+CRITERION autostartstack-function PASS function@0200=true expected true
+SYMBOLS 1

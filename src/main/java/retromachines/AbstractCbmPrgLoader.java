@@ -19,6 +19,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.AccessMode;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -436,6 +437,8 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 			labelEntryPoint(program, baseSpace, provider, loadAddr, prgLength, wrapped,
 				loadedSlices, log);
 
+			labelAutostartEntries(program, baseSpace, provider, map, prgLength, loadedSlices, log);
+
 			// Remember the ROM paths used (GUI only) so the next import defaults to them.
 			saveRomPreferences(settings);
 		}
@@ -629,6 +632,68 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 			catch (Exception e) {
 				log.appendMsg("Failed to set entry point: " + e.getMessage());
 			}
+		}
+	}
+
+	/**
+	 * Labels AUTOSTART entry points (grm-w0j7): vectors / stack words the PRG overwrote, found
+	 * statically from the placed bytes by {@link CbmAutostart}. Only what the descriptor's
+	 * {@code autostart:} section declares is looked for. Never throws; every failure degrades to a
+	 * log line.
+	 */
+	private void labelAutostartEntries(Program program, AddressSpace baseSpace,
+			ByteProvider provider, JsonObject map, long prgLength, List<LoadedSlice> loadedSlices,
+			MessageLog log) {
+		try {
+			CbmAutostart.Config config = CbmAutostart.fromMap(map);
+			if (config.isEmpty() || prgLength == 0) {
+				return;
+			}
+			int[] image = new int[0x10000];
+			Arrays.fill(image, -1);
+			for (LoadedSlice slice : loadedSlices) {
+				for (long i = 0; i < slice.length(); i++) {
+					image[(int) ((slice.start() + i) & 0xFFFF)] =
+						provider.readByte(slice.fileOffset() + i) & 0xFF;
+				}
+			}
+			CbmAutostart.Result result = CbmAutostart.detect(config,
+				a -> a < 0 || a > 0xFFFF ? -1 : image[a]);
+			for (String note : result.notes()) {
+				log.appendMsg(note);
+			}
+			for (CbmAutostart.Entry entry : result.entries()) {
+				labelAutostartEntry(program, baseSpace, loadedSlices, entry, log);
+			}
+		}
+		catch (Exception e) {
+			log.appendMsg("autostart detection skipped: " + e);
+		}
+	}
+
+	private void labelAutostartEntry(Program program, AddressSpace baseSpace,
+			List<LoadedSlice> loadedSlices, CbmAutostart.Entry entry, MessageLog log) {
+		String desc = "autostart " + entry.vector() + " word $" +
+			String.format("%04X", entry.word()) + " -> $" + String.format("%04X", entry.target());
+		try {
+			int target = entry.target() & 0xFFFF;
+			Address placed = resolvePrgAddress(program, target, loadedSlices);
+			Address addr = placed != null ? placed : baseSpace.getAddress(target);
+			program.getSymbolTable().createLabel(addr, entry.label(), SourceType.IMPORTED);
+			program.getSymbolTable().addExternalEntryPoint(addr);
+			MemoryBlock block = program.getMemory().getBlock(addr);
+			if (placed != null && block != null && block.isExecute()) {
+				markAsFunction(program, entry.label(), addr);
+				log.appendMsg(desc + " (in " + addr.getAddressSpace().getName() +
+					"; labelled, entry point, function)");
+			}
+			else {
+				log.appendMsg(desc + " (" + (placed == null ? "outside the PRG's placed bytes"
+						: "in a non-executable block") + "; labelled and entry point only)");
+			}
+		}
+		catch (Exception e) {
+			log.appendMsg(desc + ": failed to label: " + e.getMessage());
 		}
 	}
 

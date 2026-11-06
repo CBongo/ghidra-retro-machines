@@ -134,6 +134,9 @@ public class VerifyBankTest extends GhidraScript {
 		focused("prgwrap1test", cbm::checkPrgWrap1);
 		focused("prgfulltest", cbm::checkPrgFull);
 		focused("prgentrytest", cbm::checkPrgEntry);
+		focused("autostartvectest", cbm::checkAutostartVector);
+		focused("autostartstacktest", cbm::checkAutostartStack);
+		focused("autostarthwtest", cbm::checkAutostartHardware);
 		focused("prgstraddletest", cbm::checkPrgStraddle);
 		focused("D64FSTEST", cbm::checkD64Member);
 		focused("prgemptytest", cbm::checkPrgEmpty);

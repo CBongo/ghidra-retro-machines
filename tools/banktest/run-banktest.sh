@@ -980,6 +980,12 @@ if selected c64-loader; then
 	# grm-z15.1: entry point in a non-executable block, and a zero-payload PRG.
 	run_one prgentrytest "$WORK/prg/prgentrytest.prg" C64PrgLoader
 
+	# grm-w0j7: autostart entry points from vectors the PRG overwrites (RAM vector $0326,
+	# stack-page fill, hardware vectors $FFFA in the RAM_E000 overlay).
+	run_one autostartvectest "$WORK/prg/autostartvectest.prg" C64PrgLoader
+	run_one autostartstacktest "$WORK/prg/autostartstacktest.prg" C64PrgLoader
+	run_one autostarthwtest "$WORK/prg/autostarthwtest.prg" C64PrgLoader
+
 	# grm-t3n.2: a synthetic .d64 drilled into with -recursive. Proves the extension jar's
 	# D64FileSystem is discovered in the isolated install and C64PrgLoader imports the PRG member
 	# (the program is named after the member, "D64FSTEST.prg", which is also the fixture name
