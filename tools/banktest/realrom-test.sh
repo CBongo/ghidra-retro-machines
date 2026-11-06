@@ -164,7 +164,7 @@
 #                            (GRM_CACHE_KEEP_DAYS, default 14) -- bead grm-uqhd. A dir
 #                            named via REALROM_WORK_DIR is never deleted.
 #   REALROM_WORK_DIR        use this exact dir instead of a fresh one; one run at a time:
-#                            a second run on a dir in use exits 2 (lock .realrom.lock,
+#                            a second run on a dir in use exits 2 (lock .work.lock,
 #                            reclaimed if its holder pid is dead -- bead grm-wdxg)
 #   GRM_KEEP_PROJECT_DIR    base dir for --keep-project (defaults to
 #                            <repo>/build/kept-projects/realrom)
@@ -1273,32 +1273,8 @@ WORK_IS_OURS=1
 WORK="${REALROM_WORK_DIR:-$(grm_work_dir realrom)}"
 mkdir -p "$WORK"
 echo "== work dir: $WORK =="
-# One run per caller-named work dir (bead grm-wdxg). Two runs sharing REALROM_WORK_DIR interleave
-# writes into the same batch logs and fight over the same proj_* dirs, and the damage reads as
-# real bugs: a torn dump labelled BATCH-DEPENDENT (grm-okik), a project LockException that set off
-# grm-fumc's cascade. A fresh grm_work_dir is unique already, so only a named dir is locked.
-# mkdir is the atomic test-and-set; the holder's pid lets a dead run's lock be reclaimed.
-if [ "$WORK_IS_OURS" = 0 ]; then
-	WORK_LOCK="$WORK/.realrom.lock"
-	if ! mkdir "$WORK_LOCK" 2>/dev/null; then
-		holder="$(cat "$WORK_LOCK/pid" 2>/dev/null || true)"
-		if [ -n "$holder" ] && kill -0 "$holder" 2>/dev/null; then
-			echo "ERROR: REALROM_WORK_DIR $WORK is in use by another realrom-test.sh run" \
-				"(pid $holder). Concurrent runs in one work dir corrupt each other's logs and" \
-				"projects; give each run its own REALROM_WORK_DIR." >&2
-			exit 2
-		fi
-		echo "NOTE: reclaiming stale work-dir lock $WORK_LOCK (holder pid '${holder:-?}' is not running)" >&2
-		rm -rf "$WORK_LOCK"
-		if ! mkdir "$WORK_LOCK" 2>/dev/null; then
-			echo "ERROR: could not take work-dir lock $WORK_LOCK (another run took it first?)" >&2
-			exit 2
-		fi
-	fi
-	echo "$$" >"$WORK_LOCK/pid"
-	# shellcheck disable=SC2064 # expand WORK_LOCK now: the path is fixed for this run
-	trap "rm -rf '$WORK_LOCK'" EXIT
-fi
+# One run per caller-named work dir (bead grm-wdxg; see grm_lock_work_dir).
+[ "$WORK_IS_OURS" = 1 ] || grm_lock_work_dir "$WORK" realrom-test.sh REALROM_WORK_DIR
 # Same dot-segment hazard as grm_work_dir (bead grm-hhd): Ghidra rejects a project path with a
 # dot-leading segment, e.g. an agent worktree under .claude/worktrees/. Same fallback, shared
 # with tools/ghidra-mcp/serve.sh so it finds what this keeps (grm-f0i0).

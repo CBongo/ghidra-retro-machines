@@ -32,7 +32,8 @@
 #   GRM_BANKTEST_WORK       base dir for per-run work dirs (defaults to
 #                            <repo>/build/banktest-work; this script always
 #                            keeps its work dir)
-#   MEASURE_WORK_DIR        use this exact dir instead of a fresh one
+#   MEASURE_WORK_DIR        use this exact dir instead of a fresh one; one run at a
+#                            time (a second run on it exits 2 -- bead grm-wdxg)
 set -u
 
 if [ $# -eq 0 ]; then
@@ -61,6 +62,8 @@ grm_apply_settings_base
 WORK="${MEASURE_WORK_DIR:-$(grm_work_dir measure)}"
 mkdir -p "$WORK"
 echo "== work dir: $WORK =="
+# One run per caller-named work dir (bead grm-wdxg).
+[ -z "${MEASURE_WORK_DIR:-}" ] || grm_lock_work_dir "$WORK" measure-overlay-scale.sh MEASURE_WORK_DIR
 
 declare -a ROW_NAME ROW_BLOCKS_TOTAL ROW_BLOCKS_OVERLAY ROW_SPACES_OVERLAY
 declare -a ROW_REFS ROW_REFS_ADDED ROW_WARNINGS ROW_WALL ROW_LOG ROW_STATUS

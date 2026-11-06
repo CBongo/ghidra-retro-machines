@@ -317,6 +317,39 @@ grm_work_dir() {
 	mktemp -d "$base/${1:-run}.XXXXXXXX"
 }
 
+# One run at a time in a CALLER-NAMED work dir (bead grm-wdxg). Two runs sharing one interleave
+# writes into the same logs and fight over the same proj_* dirs, and the damage reads as real
+# bugs: a torn dump labelled BATCH-DEPENDENT (grm-okik), a project LockException that set off
+# grm-fumc's cascade. A fresh grm_work_dir is unique already and needs no lock.
+#
+#   grm_lock_work_dir <dir> <runner name> <env var that named the dir>
+#
+# mkdir is the atomic test-and-set; the holder's pid inside lets a dead run's lock be reclaimed
+# (the timeout path kill -9s, so a lock can outlive its run). Exits 2 on a live holder. Sets an
+# EXIT trap that removes the lock -- callers must not set their own EXIT trap after this.
+grm_lock_work_dir() {
+	local dir="$1" runner="$2" var="$3" lock holder
+	lock="$dir/.work.lock"
+	if ! mkdir "$lock" 2>/dev/null; then
+		holder="$(cat "$lock/pid" 2>/dev/null || true)"
+		if [ -n "$holder" ] && kill -0 "$holder" 2>/dev/null; then
+			echo "ERROR: $var $dir is in use by another $runner run (pid $holder). Concurrent" \
+				"runs in one work dir corrupt each other's logs and projects; give each run its" \
+				"own $var." >&2
+			exit 2
+		fi
+		echo "NOTE: reclaiming stale work-dir lock $lock (holder pid '${holder:-?}' is not running)" >&2
+		rm -rf "$lock"
+		if ! mkdir "$lock" 2>/dev/null; then
+			echo "ERROR: could not take work-dir lock $lock (another run took it first?)" >&2
+			exit 2
+		fi
+	fi
+	echo "$$" >"$lock/pid"
+	# shellcheck disable=SC2064 # expand $lock now: the path is fixed for this run
+	trap "rm -rf '$lock'" EXIT
+}
+
 # The work BASE grm_work_dir() creates run dirs under -- factored out (bead grm-uqhd) so
 # grm_prune_work_dirs and clean.sh resolve EXACTLY the same directory, dot-segment TEMP
 # fallback (grm-hhd) included. Silent: grm_work_dir owns the fallback NOTE.
