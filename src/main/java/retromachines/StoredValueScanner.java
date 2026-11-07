@@ -935,6 +935,16 @@ final class StoredValueScanner {
 				// Scalar extraction failed; fall through and treat like any other modifier.
 			}
 
+			if ((reg == 'X' || reg == 'Y') && mnem.equals("DE" + reg) && cur != null &&
+					cur.getMnemonicString().equalsIgnoreCase("BEQ")) {
+				// grm-hsv.5: reg is read on the fall-through exit of a DEX/BEQ (or DEY/BEQ) wait
+				// loop. Its exit value is derivable when the entry value is a known constant.
+				PartialByte exit = decBeqExitValue(program, prev, cur, reg, budget);
+				if (exit != null) {
+					return stopped(aAcc, oAcc, mask, exit, BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
+				}
+			}
+
 			if (mnem.equals(loadMnemonic)) {
 				// The target is resolved here, not in the hook: an absolute-indexed load's
 				// target needs the whole constant-index evaluator, and doing it once keeps
@@ -1580,6 +1590,122 @@ final class StoredValueScanner {
 		return LoopIdioms.countedLoopIndexRange(program, instr,
 			p -> constantRegisterValue(program, p, reg, Hooks.INERT, RegisterEnv.NONE,
 				new Budget(MAX_RESOLVE_STEPS)));
+	}
+
+	/** Most instructions a DEX/BEQ wait loop may span for {@link #decBeqExitValue}. */
+	private static final int DEC_BEQ_LOOP_MAX_BODY = 16;
+
+	/**
+	 * The value of {@code reg} (X or Y) on the fall-through exit of a decrement-and-branch-if-zero
+	 * loop (bead grm-hsv.5): {@code head: ... ; DEX ; BEQ head ; <exit>}. zelda2's RESET waits for
+	 * vblank this way ({@code LDX #0 / STX $2000 / INX / L: LDA $2002 / BPL L / DEX / BEQ L}) and
+	 * then writes X to all four MMC1 registers; X leaves the loop as $FF.
+	 * <p>
+	 * Sound only under all of: {@code beq} is a BEQ to {@code head <= dec} and {@code dec} is the
+	 * instruction just before it; the body {@code head..beq} is contiguous by fall-through, calls
+	 * nothing, writes {@code reg} only in {@code dec}, and every other branch in it goes back to
+	 * {@code head}; no flow enters the body except body branches into {@code head} (so the only
+	 * other way in is falling into {@code head}); and {@code reg}'s value on that fall-through
+	 * entry is a known constant n. Then the head value set is closed under "DEC lands on zero ->
+	 * back to head with 0", and the exit values are exactly the nonzero DEC results, enumerated
+	 * here. The answer is the bits all exit values share; null when any condition fails.
+	 */
+	private static PartialByte decBeqExitValue(Program program, Instruction dec, Instruction beq,
+			char reg, Budget budget) {
+		Listing listing = program.getListing();
+		Address[] flows = beq.getFlows();
+		if (flows.length != 1 || !FlowEdges.fallsInto(dec, beq)) {
+			return null;
+		}
+		Address headAddr = flows[0];
+		Instruction head = listing.getInstructionAt(headAddr);
+		if (head == null || head.getMinAddress().compareTo(dec.getMinAddress()) >= 0) {
+			return null;
+		}
+		ConstantSemantics.Loc loc = ConstantSemantics.Loc.ofRegister(reg);
+		ConstantSemantics semantics = budget.semanticsFor(program);
+		List<Instruction> body = new ArrayList<>();
+		Set<Address> bodyAddrs = new HashSet<>();
+		Instruction in = head;
+		while (in != null && body.size() < DEC_BEQ_LOOP_MAX_BODY) {
+			body.add(in);
+			bodyAddrs.add(in.getMinAddress());
+			if (in.equals(beq)) {
+				break;
+			}
+			Address ft = in.getFallThrough();
+			in = ft == null ? null : listing.getInstructionAt(ft);
+		}
+		if (body.isEmpty() || !body.get(body.size() - 1).equals(beq) || !body.contains(dec)) {
+			return null;
+		}
+		for (int i = 0; i < body.size(); i++) {
+			Instruction b = body.get(i);
+			ghidra.program.model.symbol.FlowType ft = b.getFlowType();
+			if (ft.isCall() || ft.isTerminal() || (ft.isJump() && !ft.isConditional())) {
+				return null;
+			}
+			if (ft.isJump()) {
+				Address[] bf = b.getFlows();
+				if (bf.length != 1 || !bf[0].equals(headAddr)) {
+					return null;
+				}
+			}
+			if (!b.equals(dec) && semantics.writes(b, loc)) {
+				return null;
+			}
+			for (Reference ref : program.getReferenceManager().getReferencesTo(b.getMinAddress())) {
+				if (!ref.getReferenceType().isFlow() || ref.getReferenceType().isFallthrough()) {
+					continue; // fall-through entry is checked structurally (body contiguity, p)
+				}
+				if (i > 0 || !bodyAddrs.contains(ref.getFromAddress())) {
+					return null;
+				}
+			}
+		}
+		if (!semantics.writes(dec, loc) || body.indexOf(dec) != body.size() - 2) {
+			return null;
+		}
+		Instruction p = listing.getInstructionBefore(headAddr);
+		if (p == null || !FlowEdges.fallsInto(p, head) || p.getFlowType().isCall()) {
+			return null;
+		}
+		Integer n;
+		if (semantics.writes(p, loc)) {
+			n = semantics.after(p, loc,
+				new WalkInputs(program, p, Hooks.INERT, RegisterEnv.NONE, budget, 0, MAX_BACKWARD_SCAN));
+		}
+		else {
+			n = constantRegisterValue(program, p, reg, Hooks.INERT, RegisterEnv.NONE, budget);
+		}
+		if (n == null) {
+			return null;
+		}
+		boolean[] seen = new boolean[256];
+		java.util.ArrayDeque<Integer> work = new java.util.ArrayDeque<>();
+		work.add(n & 0xFF);
+		seen[n & 0xFF] = true;
+		int common = 0xFF;
+		int bits = -1;
+		while (!work.isEmpty()) {
+			int v = work.poll();
+			int r = (v - 1) & 0xFF;
+			if (r == 0) {
+				if (!seen[0]) {
+					seen[0] = true;
+					work.add(0);
+				}
+				continue;
+			}
+			if (bits < 0) {
+				bits = r;
+			}
+			common &= ~(bits ^ r);
+		}
+		if (bits < 0) {
+			return null; // never exits: the fall-through is unreachable
+		}
+		return PartialByte.of(common, bits & common);
 	}
 
 	/**

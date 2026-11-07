@@ -977,6 +977,28 @@ public class SerialShiftBankSwitchStrategy extends AbstractRangeBankSwitchStrate
 	// Counted-loop idiom (SECONDARY recognizer -- see class javadoc)
 	// ------------------------------------------------------------------
 
+	/** Most inert instructions allowed between a counted loop's counter init and its head. */
+	private static final int MAX_INTERVENING = 3;
+
+	/**
+	 * Whether {@code instr} may sit between a counted loop's counter init and its head without
+	 * disturbing the loop: it falls through, writes no register (A/X/Y/S) and no memory in the
+	 * register range. Whitelist: flag set/clear, NOP, and INC/DEC of one plain absolute or
+	 * zero-page byte outside the range (the loop body reads no memory, so which byte is
+	 * irrelevant; the N/Z it sets are redefined by the DEX before the BNE).
+	 */
+	private boolean isInertFiller(Instruction instr) {
+		switch (instr.getMnemonicString().toUpperCase(Locale.ROOT)) {
+			case "NOP", "CLC", "SEC", "CLD", "SED", "CLV":
+				return true;
+			case "INC", "DEC":
+				Address target = MosOperands.plainAbsoluteTarget(instr);
+				return target != null && !inRange(target) && registerOffsetWritten(instr) == null;
+			default:
+				return false;
+		}
+	}
+
 	/** A matched counted serial-shift loop: {@code head} is the in-loop STA (also the
 	 *  BNE's target), {@code counterInit} the {@code LDX/LDY #5} immediately before it
 	 *  (the anchor for the pre-loop A-value scan), {@code staOffset} the STA's target
@@ -1052,13 +1074,28 @@ public class SerialShiftBankSwitchStrategy extends AbstractRangeBankSwitchStrate
 			return null;
 		}
 
-		Instruction counterInit = listing.getInstructionBefore(head.getMinAddress());
-		if (counterInit == null || !FlowEdges.fallsInto(counterInit, head)) {
-			return null;
-		}
 		char counterReg = decMnem.charAt(2); // 'X' | 'Y'
-		if (!counterInit.getMnemonicString().equalsIgnoreCase("LD" + counterReg) ||
-			!MosOperands.isImmediate(counterInit)) {
+		// The counter init may sit up to MAX_INTERVENING inert straight-line instructions before the
+		// head (grm-hsv.6: ultimaav f355 has INC $FD between LDX #5 and the loop). Only instructions
+		// that touch neither A, X, Y nor any register-range memory are skipped (isInertFiller).
+		Instruction counterInit = null;
+		Instruction next = head;
+		for (int skipped = 0; skipped <= MAX_INTERVENING; skipped++) {
+			Instruction prev = listing.getInstructionBefore(next.getMinAddress());
+			if (prev == null || !FlowEdges.fallsInto(prev, next) ||
+				(skipped > 0 && FlowEdges.isControlFlowJoin(program, next, prev))) {
+				return null;
+			}
+			if (prev.getMnemonicString().equalsIgnoreCase("LD" + counterReg)) {
+				counterInit = prev;
+				break;
+			}
+			if (!isInertFiller(prev)) {
+				return null;
+			}
+			next = prev;
+		}
+		if (counterInit == null || !MosOperands.isImmediate(counterInit)) {
 			return null;
 		}
 		Integer tripCount = MosOperands.immediateOperandValue(counterInit);

@@ -2446,6 +2446,9 @@ class _Asm:
     def dey(self):
         self._emit([0x88])
 
+    def dex(self):
+        self._emit([0xCA])
+
     def fwd(self):
         """A forward label: pass it to a branch/jmp now, `bind()` it where it lands."""
         return _Fwd()
@@ -2566,6 +2569,15 @@ class _Asm:
 
     def beq(self, target):
         self._branch(0xF0, target, "BEQ")
+
+    def bpl(self, target):
+        self._branch(0x10, target, "BPL")
+
+    def inx(self):
+        self._emit([0xE8])
+
+    def ldx_abs(self, addr):
+        self._emit([0xAE, addr & 0xFF, (addr >> 8) & 0xFF])
 
     def chain5(self, addr):
         """Emits the fully-unrolled STA/LSR commit chain (5 stores, 4 shifts --
@@ -2755,6 +2767,69 @@ def make_prg_serial():
         asm.sta_abs(0xE000)
     labels['f_rep4_s1'] = rep4[0]
     labels['f_rep4_s4'] = rep4[3]
+
+    # F-loopinc (bead grm-hsv.6): counted loop with an inert INC between the counter init and
+    # the loop head (ultimaav $F355 shape). Still the counted-loop commit: prg_bank=2.
+    asm.lda_imm(0x02)
+    asm.ldx_imm(0x05)
+    asm.inc_abs(0x0720)
+    labels['f_loopinc_head'] = asm.label()
+    asm.sta_abs(0xE000)
+    asm.lsr_a()
+    asm.dex()
+    labels['f_loopinc_bne'] = asm.label()
+    asm.bne(labels['f_loopinc_head'])
+
+    # F-loopdex / F-looptax: the in-between instruction clobbers the counter (DEX makes the
+    # trip count 4, TAX makes it A), so the loop is not recognized and its STA poisons.
+    asm.lda_imm(0x02)
+    asm.ldx_imm(0x05)
+    asm.dex()
+    labels['f_loopdex_head'] = asm.label()
+    asm.sta_abs(0xE000)
+    asm.lsr_a()
+    asm.dex()
+    labels['f_loopdex_bne'] = asm.label()
+    asm.bne(labels['f_loopdex_head'])
+
+    asm.lda_imm(0x02)
+    asm.ldx_imm(0x05)
+    asm.tax()
+    labels['f_looptax_head'] = asm.label()
+    asm.sta_abs(0xE000)
+    asm.lsr_a()
+    asm.dex()
+    labels['f_looptax_bne'] = asm.label()
+    asm.bne(labels['f_looptax_head'])
+
+    # F-decbeq (bead grm-hsv.5): zelda2's RESET shape. X is 0, then INX makes it 1, and a vblank
+    # wait loop (LDA $2002 / BPL / DEX / BEQ back) lets X leave as $FF -- bit 7 set -- so the
+    # STX $8000 is a reset (prg_mode=3). Placed after the looptax poison, so prg_mode arrives
+    # UNKNOWN and the reset visibly restores it.
+    asm.ldx_imm(0x00)
+    asm.inx()
+    labels['f_decbeq_head'] = asm.label()
+    asm.lda_abs(0x2002)
+    asm.bpl(labels['f_decbeq_head'])
+    asm.dex()
+    asm.beq(labels['f_decbeq_head'])
+    labels['f_decbeq_reset'] = asm.label()
+    asm.stx_abs(0x8000)
+
+    # F-decbeq-unk (negative): same loop, but X is unknown on entry (LDX from RAM), so the exit
+    # value is not derivable. Preceded by an unresolvable isolated write so prg_mode is UNKNOWN
+    # again: the STX must warn and must not claim prg_mode=3.
+    asm.ldx_imm(0x01)
+    asm.lda_absx(0xC200)
+    asm.sta_abs(0x8000)
+    asm.ldx_abs(0x0300)
+    labels['f_decbequ_head'] = asm.label()
+    asm.lda_abs(0x2002)
+    asm.bpl(labels['f_decbequ_head'])
+    asm.dex()
+    asm.beq(labels['f_decbequ_head'])
+    labels['f_decbequ_reset'] = asm.label()
+    asm.stx_abs(0x8000)
 
     labels['idle'] = asm.label()
     asm.jmp(labels['idle'])                  # idle loop, in the fixed home WC000 window
@@ -5185,6 +5260,26 @@ def main():
     # LDA #0 / BEQ +6 (over stores 1-2, landing on store 3) directly before the join scenario
     assert [_serial_byte(labels['f_repjoin_s1'] - 4 + i) for i in range(4)] == [0xA9, 0x00, 0xF0, 0x06]
     assert labels['f_repjoin_s3'] == labels['f_repjoin_s1'] + 6
+    # grm-hsv.6 counted loops with a filler between the counter init and the head
+    #   LDA #2 / LDX #5 / INC $0720 / loop: STA $E000 / LSR A / DEX / BNE loop
+    def _sb(a, n):
+        return [_serial_byte(a + i) for i in range(n)]
+    assert _sb(labels['f_loopinc_head'] - 7, 7) == [0xA9, 0x02, 0xA2, 0x05, 0xEE, 0x20, 0x07]
+    assert _sb(labels['f_loopinc_head'], 3) == [0x8D, 0x00, 0xE0]
+    assert _sb(labels['f_loopinc_bne'] - 2, 3) == [0x4A, 0xCA, 0xD0]
+    assert _serial_byte(labels['f_loopinc_bne'] + 1) == 0xF9  # BNE back 7
+    assert _sb(labels['f_loopdex_head'] - 1, 1) == [0xCA]
+    assert _sb(labels['f_looptax_head'] - 1, 1) == [0xAA]
+    # grm-hsv.5 DEX/BEQ exit: LDX #0 / INX / L: LDA $2002 / BPL L / DEX / BEQ L / STX $8000
+    h = labels['f_decbeq_head']
+    assert _sb(h - 3, 3) == [0xA2, 0x00, 0xE8]
+    assert _sb(h, 9) == [0xAD, 0x02, 0x20, 0x10, 0xFB, 0xCA, 0xF0, 0xF8, 0x8E]
+    assert labels['f_decbeq_reset'] == h + 8
+    assert _sb(labels['f_decbeq_reset'], 3) == [0x8E, 0x00, 0x80]
+    h = labels['f_decbequ_head']
+    assert _sb(h - 3, 3) == [0xAE, 0x00, 0x03]
+    assert _sb(h, 9) == [0xAD, 0x02, 0x20, 0x10, 0xFB, 0xCA, 0xF0, 0xF8, 0x8E]
+    assert _sb(labels['f_decbequ_reset'], 3) == [0x8E, 0x00, 0x80]
     print("nesserialtest labels: " +
           ", ".join("%s=$%04X" % (k, v) for k, v in labels.items()))
 

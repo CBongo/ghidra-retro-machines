@@ -1,4 +1,4 @@
-IDENTITY prg:b892d96836cec2818fc6df511e9b7f76ed583fe149d7124756d1dec677469ac2 file:a26b223e4d3b5f5398852922c904ad61fdd7e1e0d37d1fdddd4ffc647bf0f1a5
+IDENTITY prg:598eb22eb79aa662b2545ac92de94cfc4c4bc067d6339729c94fe068fa78841e file:952f0da07e066ba276c1617ccd97296774bd4d5523208ef78bdf465fb10b5552
 BLOCK APU_IO 4000-401f overlay=false
 BLOCK PPU_REGS 2000-2007 overlay=false
 BLOCK RAM 0000-07ff overlay=false
@@ -40,6 +40,12 @@ COMMENT c0b5 bank ? [WARNING: analyzer limit]
 COMMENT c0b8 bank ? [WARNING: analyzer limit]
 COMMENT c0bb bank ? [WARNING: analyzer limit]
 COMMENT c0be bank ? [WARNING: analyzer limit]
+COMMENT c0cd bank -> mirroring=0,prg_mode=3,prg_bank=2? [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
+COMMENT c0d4 bank ? [WARNING: analyzer limit]
+COMMENT c0e0 bank ? [WARNING: analyzer limit]
+COMMENT c0f2 bank -> mirroring=0,prg_mode=3,prg_bank=0? [known: prg_mode.0=1,prg_mode.1=1; assumed from initial: mirroring.0,mirroring.1,prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
+COMMENT c0fa bank ? [WARNING: analyzer limit]
+COMMENT c108 bank ? [WARNING: analyzer limit]
 BOOKMARK Warning c060
 BOOKMARK Warning c070
 BOOKMARK Warning c078
@@ -51,6 +57,10 @@ BOOKMARK Warning c0b5
 BOOKMARK Warning c0b8
 BOOKMARK Warning c0bb
 BOOKMARK Warning c0be
+BOOKMARK Warning c0d4
+BOOKMARK Warning c0e0
+BOOKMARK Warning c0fa
+BOOKMARK Warning c108
 REF c01a -> W8000_M3_B5::8000 UNCONDITIONAL_CALL primary=true
 REF c032 -> W8000_M3_B6::8000 UNCONDITIONAL_CALL primary=true
 REF c04a -> W8000_M3_B6::8000 UNCONDITIONAL_CALL primary=true
@@ -68,8 +78,8 @@ SYMBOL 4015 SND_CHN IMPORTED primary=true
 SYMBOL 4016 JOY1 IMPORTED primary=true
 SYMBOL 4017 JOY2 IMPORTED primary=true
 SYMBOL c000 RESET IMPORTED primary=true
-SYMBOL c0c4 IRQ IMPORTED primary=false
-SYMBOL c0c4 NMI IMPORTED primary=true
+SYMBOL c10e IRQ IMPORTED primary=false
+SYMBOL c10e NMI IMPORTED primary=true
 SYMBOL fffa NMI_VEC IMPORTED primary=true
 SYMBOL fffc RESET_VEC IMPORTED primary=true
 SYMBOL fffe IRQ_VEC IMPORTED primary=true

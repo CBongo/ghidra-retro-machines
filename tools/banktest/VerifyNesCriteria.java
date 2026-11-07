@@ -2093,6 +2093,42 @@ public class VerifyNesCriteria extends VerifyBase {
 			"4-store run still poisons: c0b5 warning=" + hasWarningBookmark(0xC0B5) +
 				" c0be warning=" + hasWarningBookmark(0xC0BE) + " comment=\"" + eol(0xC0BE) + "\"");
 
+		// F-loopinc (bead grm-hsv.6): LDA #2 / LDX #5 / INC $0720 / loop: STA $E000 / LSR A /
+		// DEX / BNE loop (ultimaav $F355's shape). The inert INC between the counter init and
+		// the head must not defeat the counted-loop recognizer: the BNE at $C0CD commits
+		// prg_bank=2 (it arrives unknown, F-rep4 poisoned it) and the in-loop STA ($C0C8) is
+		// suppressed rather than warned.
+		c = eol(0xC0CD);
+		criterion("F-loopinc:commit", c.contains("prg_bank=2") && c.contains("prg_bank.4=0"),
+			"counted loop with an inert INC before its head commits prg_bank=2 at c0cd: \"" + c + "\"");
+		criterion("F-loopinc:body-suppressed", !hasWarningBookmark(0xC0C8),
+			"in-loop STA (c0c8) is not warned: warning=" + hasWarningBookmark(0xC0C8));
+
+		// F-loopdex / F-looptax: the instruction between the counter init and the head
+		// CLOBBERS the counter (DEX, or TAX), so the loop is not recognized and its STA poisons.
+		criterion("F-loopdex:poison",
+			hasWarningBookmark(0xC0D4) && !eol(0xC0D9).contains("prg_bank=2"),
+			"DEX between LDX #5 and the head defeats the match, STA c0d4 warns: warning=" +
+				hasWarningBookmark(0xC0D4) + " bne=\"" + eol(0xC0D9) + "\"");
+		criterion("F-looptax:poison",
+			hasWarningBookmark(0xC0E0) && !eol(0xC0E5).contains("prg_bank=2"),
+			"TAX between LDX #5 and the head defeats the match, STA c0e0 warns: warning=" +
+				hasWarningBookmark(0xC0E0) + " bne=\"" + eol(0xC0E5) + "\"");
+
+		// F-decbeq (bead grm-hsv.5): LDX #0 / INX / L: LDA $2002 / BPL L / DEX / BEQ L / STX $8000
+		// (zelda2 RESET). X leaves the loop as $FF, so the STX at $C0F2 is a bit-7 reset and
+		// restores prg_mode=3, which F-looptax's poison left unknown.
+		c = eol(0xC0F2);
+		criterion("F-decbeq:reset", c.contains("prg_mode=3") && !hasWarningBookmark(0xC0F2),
+			"X=$FF out of a DEX/BEQ loop makes STX $8000 a reset -> prg_mode=3, no warning, at " +
+				"c0f2: warning=" + hasWarningBookmark(0xC0F2) + " comment=\"" + c + "\"");
+		// Negative: same loop but X is unknown on entry (LDX $0300), after a poison, so the exit
+		// value is not derivable: it must warn and must not claim prg_mode=3.
+		criterion("F-decbeq-unk:poison",
+			hasWarningBookmark(0xC108) && !eol(0xC108).contains("prg_mode=3"),
+			"unknown-entry DEX/BEQ loop leaves STX $8000 unresolved at c108: warning=" +
+				hasWarningBookmark(0xC108) + " comment=\"" + eol(0xC108) + "\"");
+
 		// Disassembly sanity: the three JSR-target overlay instructions actually exist.
 		criterion("F5:W8000_M3_B3_8000", hasInstructionAt("W8000_M3_B3", 0x8000),
 			"instruction exists at W8000_M3_B3::8000");

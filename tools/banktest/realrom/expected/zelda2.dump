@@ -20,21 +20,25 @@ REALROM count blocks.overlay 7
 REALROM count refs.intoOverlay.retargeted 4
 REALROM count refs.intoOverlay.intraOverlay 428
 REALROM count instrs.inOverlay 1405
-REALROM count bankComments 10
-REALROM count warnings 6
+REALROM count bankComments 14
+REALROM count warnings 2
 REALROM count notes 44
 REALROM count symbols 18
 REALROM count jumptable.wordArrays 0
 REALROM count jumptable.planarArrays 0
 REALROM sample.bankcomment 814b bank -> mirroring=3,prg_mode=3,prg_bank=0 via FUN_bf9d [switch-value flow]
 REALROM sample.bankcomment c00a bank -> mirroring=3,prg_mode=3,prg_bank=5 via FUN_ffcc [switch-value flow]
-REALROM sample.bankcomment c067 bank -> mirroring=0,prg_mode=3,prg_bank=6? via FUN_ffcc [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
-REALROM sample.bankcomment c1c3 bank -> mirroring=0,prg_mode=3,prg_bank=6? via FUN_ffcc [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
+REALROM sample.bankcomment c067 bank -> mirroring=0,prg_mode=3,prg_bank=6? via FUN_ffcc [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
+REALROM sample.bankcomment c1c3 bank -> mirroring=0,prg_mode=3,prg_bank=6? via FUN_ffcc [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
 REALROM sample.bankcomment c33e bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffcc [switch-value flow]
 REALROM sample.bankcomment c38a bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffcc [switch-value flow]
 REALROM sample.bankcomment c4d2 bank -> mirroring=2,prg_mode=3,prg_bank=5 via FUN_ff9d [switch-value flow]
 REALROM sample.bankcomment cf23 bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffcc [switch-value flow]
-REALROM sample.bankcomment ff8f bank -> mirroring=3,prg_mode=3,prg_bank=0? via FUN_ff9d [known: mirroring.0=1,mirroring.1=1,prg_mode.0=1,prg_mode.1=1; assumed from initial: prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
+REALROM sample.bankcomment ff81 bank -> mirroring=0,prg_mode=3,prg_bank=0 [switch-value flow]
+REALROM sample.bankcomment ff84 bank -> mirroring=0,prg_mode=3,prg_bank=0 [switch-value flow]
+REALROM sample.bankcomment ff87 bank -> mirroring=0,prg_mode=3,prg_bank=0 [switch-value flow]
+REALROM sample.bankcomment ff8a bank -> mirroring=0,prg_mode=3,prg_bank=0 [switch-value flow]
+REALROM sample.bankcomment ff8f bank -> mirroring=3,prg_mode=3,prg_bank=0 via FUN_ff9d [switch-value flow]
 REALROM sample.bankcomment ff97 bank -> mirroring=3,prg_mode=3,prg_bank=7 via FUN_ffcc [switch-value flow]
 REALROM sample.ref 9002 -> W8000_B6::900b CONDITIONAL_JUMP primary=true
 REALROM sample.ref 9009 -> W8000_B6::9030 CONDITIONAL_JUMP primary=true
@@ -64,10 +68,6 @@ REALROM sample.ref 90aa -> W8000_B6::90b1 CONDITIONAL_JUMP primary=true
 REALROM sample.ref.truncated 25 of 432
 REALROM sample.warn b9f8 [CopyLoopAnalyzer] copy-shaped loop RAM:0008 -> RAM:0000 could not be bounded; not applied
 REALROM sample.warn cd5c [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffcc whose bank argument could not be recovered at this call site
-REALROM sample.warn ff81 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
-REALROM sample.warn ff84 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
-REALROM sample.warn ff87 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
-REALROM sample.warn ff8a [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.note 80f0 [CopyLoopAnalyzer] copy-shaped loop RAM:80d5 -> RAM:0250 (16 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note 8a4b [CopyLoopAnalyzer] copy-shaped loop RAM:0470 -> RAM:0410 (96 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note 8b1a [CopyLoopAnalyzer] copy-shaped loop RAM:04d0 -> RAM:04e8 (24 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
