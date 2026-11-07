@@ -683,6 +683,11 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 					int te = exitDp(fl[0]);
 					out = te == ENTRY_DP ? st.dp : te;
 				}
+				else if (isDispatchTailExit(i, fl, callee)) {
+					// Rule A (owner ruling 2026-11-06, grm-9nxj.27): see isDispatchTailExit.
+					exit = true;
+					out = st.dp;
+				}
 				// An unwound exit has pulled its return address: it leaves for an outer frame, never
 				// the call's fall-through, so its DP is beside the point (see UNDER).
 				if (exit && UNWOUND.equals(st.stack)) {
@@ -714,6 +719,36 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 			int result = ok ? d : UNKNOWN;
 			exitDp.put(target, result);
 			return result;
+		}
+
+		/**
+		 * Rule A (owner ruling 2026-11-06, grm-9nxj.27; human TODO 1.13 answer: the owner judged it
+		 * safe to assume main-loop dispatch handlers do not change DP en route). Inside a call
+		 * summary, an indirect {@code JMP (abs)} / {@code JMP (abs,X)} is a tail exit whose handler
+		 * returns to our caller with the DP it was given at the jump, when it has no resolved
+		 * targets (the table is unknown) or any target leaving the function body (FF2 {@code $00:E0D0}
+		 * dispatches through a cut table to handlers outside {@code FUN_00e01a}). Targets landing
+		 * INSIDE the body are still walked as ordinary flow; only the out-of-body / untargeted part
+		 * is the tail exit. For {@link #exitDp} the path exits with the DP live at the jump (a
+		 * constant, or {@link #ENTRY_DP}), subject to the usual empty-stack rule; for
+		 * {@link #preserves} the jump is neutral. Optimistic: unsound if a handler changes DP and
+		 * does not restore it. Scope is {@code JMP} only (not JML [abs], JSR/JSL (abs,X)).
+		 */
+		private static boolean isDispatchTailExit(Instruction i, Address[] fl, Function callee) {
+			var ft = i.getFlowType();
+			if (!ft.isComputed() || !ft.isJump() || ft.isCall() || ft.isConditional() ||
+				!i.getMnemonicString().equalsIgnoreCase("JMP")) {
+				return false;
+			}
+			if (fl.length == 0) {
+				return true;
+			}
+			for (Address t : fl) {
+				if (!callee.getBody().contains(t)) {
+					return true;
+				}
+			}
+			return false;
 		}
 
 		/** Whether a call to {@code target} leaves DP alone, as far as its code visibly shows. */
@@ -769,6 +804,9 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				else if (!ft.isTerminal() && (ft.isJump() || ft.isComputed())) {
 					// A jump out of the body is a tail call: judged like a call to its target.
 					Address[] fl = i.getFlows();
+					if (isDispatchTailExit(i, fl, callee)) {
+						continue;   // rule A: hands the DP it was given to its handler
+					}
 					boolean outside = false;
 					for (Address t : fl) {
 						if (!callee.getBody().contains(t)) {

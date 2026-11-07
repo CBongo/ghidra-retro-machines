@@ -389,6 +389,49 @@ public class W65816DirectPageTest extends AbstractProgramTest {
 		assertRef(0x8008, 0x063d, RefType.WRITE);
 	}
 
+	/** Rule A (grm-9nxj.27): an untargeted JMP (abs) in a callee hands back the DP it was given. */
+	@Test
+	public void untargetedIndirectJmpKeepsEntryDp() throws Exception {
+		lay("0x8200", "6c 3d 06", "DISPATCH");   // JMP ($063d), no resolved targets
+		lay("0x8000", SET_600_CALL_8200_STA, "C");
+		analyzeAll();
+		assertRef(0x8008, 0x063d, RefType.WRITE);
+	}
+
+	/** The FF2 $00:E0D0 shape: the JMP (abs) has resolved targets, all outside the body. */
+	@Test
+	public void resolvedOutOfBodyIndirectJmpKeepsEntryDp() throws Exception {
+		lay("0x8200", "6c 3d 06", "DISPATCH");   // JMP ($063d)
+		inTx(program, "targets", () -> {
+			program.getReferenceManager().addMemoryReference(addr(0x8200), addr(0x8900),
+				RefType.COMPUTED_JUMP, SourceType.ANALYSIS, 0);
+			program.getReferenceManager().addMemoryReference(addr(0x8200), addr(0x8910),
+				RefType.COMPUTED_JUMP, SourceType.ANALYSIS, 0);
+		});
+		lay("0x8000", SET_600_CALL_8200_STA, "C");
+		analyzeAll();
+		assertRef(0x8008, 0x063d, RefType.WRITE);
+	}
+
+	/** A path that changes DP (TCD) and then does the untargeted JMP returns that DP. */
+	@Test
+	public void untargetedIndirectJmpAfterTcdReturnsChangedDp() throws Exception {
+		lay("0x8200", "a9 00 1e 5b 6c 3d 06", "DISPATCH");   // LDA #$1e00 ; TCD ; JMP ($063d)
+		lay("0x8000", SET_600_CALL_8200_STA, "C");
+		analyzeAll();
+		assertRef(0x8008, 0x1e3d, RefType.WRITE);
+	}
+
+	/** An RTS path and an untargeted-JMP path, both with the entry DP, summarize as returns-entry-DP. */
+	@Test
+	public void rtsPathAndUntargetedJmpPathBothReturnEntryDp() throws Exception {
+		// PHD ; LDA #$1e00 ; TCD ; PLD ; BEQ +1 ; RTS ; JMP ($063d)
+		lay("0x8200", "0b a9 00 1e 5b 2b f0 01 60 6c 3d 06", "S");
+		lay("0x8000", SET_600_CALL_8200_STA, "C");
+		analyzeAll();
+		assertRef(0x8008, 0x063d, RefType.WRITE);
+	}
+
 	/**
 	 * CT {@code $c7:0a39}: beside its plain RTS, an abort path pulls its own return address and
 	 * jumps into an outer routine's shared {@code PLD / RTL} epilogue. That path never returns to
