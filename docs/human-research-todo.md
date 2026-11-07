@@ -356,20 +356,6 @@ Blocked on judgment, not effort.
       nothing unless the next 2 cases also fail (`codePrefix`'s confirm rule). The bead holds
       the full analysis, plus a cheap measurement an agent can run to size the missed population.
 
-- [ ] **Find a "tricky code" example to measure the analysis posture against** (`grm-8v6y` P4,
-      parked 2026-11-06). The well-behaved/tricky posture switch has no test vector: the NES corpus
-      is well-behaved and the repo holds no deliberately tricky code, so none of its consumers
-      (`grm-8v6y.2`–`.4`) can be measured. Wanted: one or more programs that do on purpose what the
-      default posture treats as a misdecode. That means jumps into the middle of an instruction,
-      undocumented opcodes as live code, self-modifying or decrypt-in-place code, and odd
-      mapper/I/O access. C64 copy-protected loaders and fast loaders are the obvious candidates. A
-      demo-scene production or homebrew with a known license would sidestep the redistribution
-      question (`grm-5ioo`). For each candidate, note: title · platform · image format (PRG/D64/
-      G64) · which tricks it uses and roughly where · whether it can be redistributed or only
-      hash-pinned like the real-ROM tier (`grm-t3n`). One good example is enough to unpark
-      `grm-8v6y`. An agent then builds the posture plumbing (`.1`) together with its first
-      consumer.
-
 - [ ] **Forth support: scope and dialect** (`grm-arbi` P3, filed 2026-11-06). Adventure
       Construction Set is mostly Forth. Decide whether the Forth layer is handled here (layer 1:
       an analyzer that types threaded code, names words and renders Forth source in comments) or
@@ -579,3 +565,4 @@ Agents don't write into your ROM library or other personal directories.
 | Install ruff, the Python linter? | **Done (owner, 2026-11-02):** `ruff --version` in git bash prints `0.17.1`. `grm-l9s7` (ruff audit of tracked Python + the standing "ruff what you edit" rule) is unblocked. | `grm-o8id` **closed**; `grm-l9s7` |
 | FF2 `$00:E0D0`: which RESET callee before `$8083` loses the direct page? (1.11) | **`JSL $048000` at `$8035` (owner, 2026-11-02).** The UI shows DP=`$0600` after the `PLD` at `$8025` and UNKNOWN after the call at `$8035`. `$04:8000` is a JSR thunk to `$04:8008`, which saves DP with `PHD` at `$04:8009`, sets DP=`$1E00` at `$04:801C` for most of its body, and restores it with `PLD` at `$04:8104` just before it returns. So it hands back the DP it was given. The analyzer had only two call summaries, "visibly leaves DP alone" (no `TCD`) and "returns one constant", and this callee fits neither. It now also summarizes a callee as "returns its entry DP", walking it from a symbolic entry DP. That needs no caller context, so **no context-sensitive summary is needed.** Whether all six callers of `FUN_00df63` agree was left to the analyzer to measure (see the bead). | `grm-9nxj.27` |
 | FF2 `$01:82bb`: what does it do to the direct page? (1.12) | **Answered by the agent, 2026-11-03, before the owner got to it.** `$01:82bb` is `JSL $14:fd00`, and `$14:fd00` is a `JMP` thunk with no return of its own: the analyzer's call summary rejected any jump leaving the body. It now treats an unconditional jump out (and a `JMP` carrying Ghidra's CALL_RETURN override, FF2 `$00:e65e`) as a tail call returning its target's summary, and ignores an exit taken after the path pulled its own return address (CT `$c7:0a8c`, `PLA PLA PLA / JMP` into an outer routine's `PLD / RTL` epilogue). FF2 RESET now keeps `$0600` up to `JSR $00df63` at `$8083`; `tools/banktest/DpLossProbe.java` finds such losses from the stamps. | `grm-9nxj.27` |
+| Find a "tricky code" example to measure the analysis posture against? | **Three, all in the owner's hash-pinned C64 images (real-ROM set `c64-prg`, owner-confirmed 2026-11-06).** `c64_sg_loader` (Summer Games `loader.prg`): rolling-key self-decrypt loop at `$c002` (`grm-430b`). `c64_mm_ea` (Marble Madness `ea.prg`): stack-fill autostart (`grm-w0j7`) landing at `$0203` in undocumented-opcode code (`AF 72 01` = `LAX`), which the documented-only language does not decode. `c64_mm_loader` (Marble Madness `loader.prg`): loads at `$FFFA`, wraps, and overwrites the KERNAL LOAD store pointer `$AE/$AF` twice, redirecting its own remaining bytes to `$EDB0` and then the stack page (placement needs `grm-t3n.5`). Hash-pinned, not redistributable. **`grm-8v6y` is unblocked on its test vector; do not hunt for further examples before a consumer is measured.** Next step per the bead: build `.1` plumbing only together with its first consumer. | `grm-8v6y` |
