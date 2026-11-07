@@ -2056,6 +2056,43 @@ public class VerifyNesCriteria extends VerifyBase {
 			"self-modifying INC resets the shifter -> prg_mode=3, no warning, at c07b: " +
 				"warning=" + hasWarningBookmark(0xC07B) + " comment=\"" + c + "\"");
 
+		// F-rep0 / F-rep1 (recognizer A1): five plain STAs of one unshifted register (no LSR
+		// between them), the shape of ultimaav's $F313. Each store contributes bit 0 and
+		// nothing shifts it, so the commit is 0x00 or 0x1F. prg_bank arrives UNKNOWN here
+		// (F-partial-bit7 poisoned it), so a known value proves the commit.
+		c = eol(0xC08C);
+		// The comment keeps a trailing "?" only because mirroring is merely ASSUMED from the
+		// initial state at this point (F-partial-bit7 poisoned it); what matters is that every
+		// prg_bank bit is KNOWN 0 -- on arrival they were not.
+		criterion("F-rep0:comment",
+			c.contains("prg_bank=0") && c.contains("prg_bank.4=0") && !c.contains("WARNING"),
+			"LDA #0 / 5xSTA $E000 commits prg_bank=0 (all five bits known) at c08c: \"" + c + "\"");
+		criterion("F-rep0:echo-deposits-nothing",
+			eol(0xC080).isEmpty() && !hasWarningBookmark(0xC080),
+			"write 1 of the repeated run (c080) deposits nothing: comment=\"" + eol(0xC080) +
+				"\" warning=" + hasWarningBookmark(0xC080));
+		// LDA #1 commits 0x1F = bank 31, which this 8-bank board does not have: the analyzer
+		// says so ("impossible bank"), which is itself the proof that all five bits were
+		// committed as 1 (a poison would read "analyzer limit").
+		c = eol(0xC09D);
+		criterion("F-rep1:comment", c.contains("impossible bank"),
+			"LDA #1 / 5xSTA $E000 commits 0x1F (bank 31, impossible here) at c09d: \"" + c + "\"");
+
+		// F-repjoin: a branch into the middle of the run (BEQ over stores 1-2 onto store 3)
+		// leaves no attributable run of 5 -- the stores still poison.
+		criterion("F-repjoin:poison",
+			hasWarningBookmark(0xC0AA) && hasWarningBookmark(0xC0B0) &&
+				!eol(0xC0B0).contains("prg_bank=0"),
+			"join into a 5-store run still poisons: c0aa warning=" + hasWarningBookmark(0xC0AA) +
+				" c0b0 warning=" + hasWarningBookmark(0xC0B0) + " comment=\"" + eol(0xC0B0) + "\"");
+
+		// F-rep4: only four stores -- not a commit, still poisons.
+		criterion("F-rep4:poison",
+			hasWarningBookmark(0xC0B5) && hasWarningBookmark(0xC0BE) &&
+				!eol(0xC0BE).contains("prg_bank=0"),
+			"4-store run still poisons: c0b5 warning=" + hasWarningBookmark(0xC0B5) +
+				" c0be warning=" + hasWarningBookmark(0xC0BE) + " comment=\"" + eol(0xC0BE) + "\"");
+
 		// Disassembly sanity: the three JSR-target overlay instructions actually exist.
 		criterion("F5:W8000_M3_B3_8000", hasInstructionAt("W8000_M3_B3", 0x8000),
 			"instruction exists at W8000_M3_B3::8000");

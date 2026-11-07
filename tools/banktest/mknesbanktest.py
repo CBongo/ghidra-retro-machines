@@ -2713,6 +2713,49 @@ def make_prg_serial():
     labels['f_rmw_reset'] = asm.label()
     asm.inc_abs(labels['f_rmw_reset'])       # INC <itself>: reads its own $EE opcode -> $EF
 
+    # F-rep-*: the repeated-value run (recognizer A1, bead grm-hsv): five plain STAs of one
+    # unshifted register, no LSR between them (ultimaav's $F313 shape). Each store contributes
+    # bit 0 of the register, so the commit is 0x00 or 0x1F.
+    asm.lda_imm(0x00)
+    rep0 = []
+    for _ in range(5):
+        rep0.append(asm.label())
+        asm.sta_abs(0xE000)
+    labels['f_rep0_commit'] = rep0[4]        # prg_bank=0
+    labels['f_rep0_write1'] = rep0[0]
+
+    asm.lda_imm(0x01)
+    rep1 = []
+    for _ in range(5):
+        rep1.append(asm.label())
+        asm.sta_abs(0xE000)
+    labels['f_rep1_commit'] = rep1[4]        # prg_bank=0x1F
+    labels['f_rep1_write1'] = rep1[0]
+
+    # A join into the middle of the run (BEQ over stores 1-2 into store 3): no run of 5 can
+    # be attributed, so every store poisons.
+    asm.lda_imm(0x00)
+    joinmid = asm.fwd()
+    asm.beq(joinmid)
+    labels['f_repjoin_s1'] = asm.label()
+    asm.sta_abs(0xE000)
+    asm.sta_abs(0xE000)
+    asm.bind(joinmid)
+    labels['f_repjoin_s3'] = asm.label()
+    asm.sta_abs(0xE000)
+    asm.sta_abs(0xE000)
+    labels['f_repjoin_s5'] = asm.label()
+    asm.sta_abs(0xE000)
+
+    # A 4-store run is not a commit: poison.
+    asm.lda_imm(0x00)
+    rep4 = []
+    for _ in range(4):
+        rep4.append(asm.label())
+        asm.sta_abs(0xE000)
+    labels['f_rep4_s1'] = rep4[0]
+    labels['f_rep4_s4'] = rep4[3]
+
     labels['idle'] = asm.label()
     asm.jmp(labels['idle'])                  # idle loop, in the fixed home WC000 window
     labels['rti'] = asm.label()
@@ -5125,6 +5168,23 @@ def main():
     assert (prgs[vec + 2] | (prgs[vec + 3] << 8)) == labels['reset']  # RESET @ $FFFC
     assert (prgs[vec + 0] | (prgs[vec + 1] << 8)) == labels['rti']    # NMI @ $FFFA
     assert (prgs[vec + 4] | (prgs[vec + 5] << 8)) == labels['rti']    # IRQ @ $FFFE
+    # A1 repeated-value scenarios: each is straight-line `LDA #v` then N x `STA $E000`
+    # (8D 00 E0); the criteria address them by label, so pin the bytes here.
+    def _serial_byte(cpu):
+        return prgs[bank7_file_base + (cpu - 0xC000)]
+    for key in ('f_rep0_write1', 'f_rep0_commit', 'f_rep1_write1', 'f_rep1_commit',
+                'f_repjoin_s1', 'f_repjoin_s3', 'f_repjoin_s5', 'f_rep4_s1', 'f_rep4_s4'):
+        a = labels[key]
+        assert (_serial_byte(a), _serial_byte(a + 1), _serial_byte(a + 2)) == (0x8D, 0x00, 0xE0), key
+    for key, v in (('f_rep0_write1', 0x00), ('f_rep1_write1', 0x01)):
+        assert _serial_byte(labels[key] - 2) == 0xA9 and _serial_byte(labels[key] - 1) == v, key
+    assert labels['f_rep0_commit'] == labels['f_rep0_write1'] + 12
+    assert labels['f_rep1_commit'] == labels['f_rep1_write1'] + 12
+    assert labels['f_repjoin_s5'] == labels['f_repjoin_s3'] + 6
+    assert labels['f_rep4_s4'] == labels['f_rep4_s1'] + 9
+    # LDA #0 / BEQ +6 (over stores 1-2, landing on store 3) directly before the join scenario
+    assert [_serial_byte(labels['f_repjoin_s1'] - 4 + i) for i in range(4)] == [0xA9, 0x00, 0xF0, 0x06]
+    assert labels['f_repjoin_s3'] == labels['f_repjoin_s1'] + 6
     print("nesserialtest labels: " +
           ", ".join("%s=$%04X" % (k, v) for k, v in labels.items()))
 

@@ -495,6 +495,7 @@ public class SerialShiftBankSwitchStrategy extends AbstractRangeBankSwitchStrate
 		// write 1, a reset, or an isolated write) needs the general backward value scan.
 		boolean bit7Known;
 		boolean bit7Set;
+		PartialByte storedByte = null; // null when the LSR shortcut decided bit 7
 		if (precededByLsrA(program, instr)) {
 			bit7Known = true;
 			bit7Set = false;
@@ -504,7 +505,7 @@ public class SerialShiftBankSwitchStrategy extends AbstractRangeBankSwitchStrate
 			// interpreted at all (grm-mej.2 increment 3) -- and it must be available HERE, not
 			// only at the write-5 commit below, because this gate runs first and a poison here
 			// wipes the state the commit would have read.
-			PartialByte storedByte = StoredValueScanner.resolveStoredValue(program, instr, reg,
+			storedByte = StoredValueScanner.resolveStoredValue(program, instr, reg,
 				inState, PartialByte.BYTE_MASK, hooksFor(targets.get(targetIndex(offset))));
 			bit7Known = storedByte.isKnown(7);
 			bit7Set = bit7Known && storedByte.bit(7) != 0;
@@ -514,6 +515,30 @@ public class SerialShiftBankSwitchStrategy extends AbstractRangeBankSwitchStrate
 		}
 		if (bit7Set) {
 			return SwitchOutcome.implicitDeposit(applyReset(inState));
+		}
+
+		// Repeated-value run (recognizer A1): five plain stores of one unshifted register. Only
+		// reachable when bit 7 was resolved by the value scan above (storedByte != null), i.e.
+		// the write is not preceded by LSR A.
+		if (storedByte != null) {
+			RepeatRun run = analyzeRepeatRun(program, instr, reg);
+			if (run != null && run.total() == 5) {
+				if (run.index() < 5) {
+					return SwitchOutcome.noDeposit(inState);
+				}
+				List<TargetField> runFields = targets.get(targetIndex(offset));
+				if (runFields == null) {
+					return SwitchOutcome.noDeposit(inState); // CHR: recognized, discarded
+				}
+				// Each store contributes the register's bit 0 and nothing shifts it, so all five
+				// serial bits equal bit 0: the commit is 0x00 or 0x1F. Bit 0 unknown -> the five
+				// low bits are unknown (bit 7 is known clear here).
+				PartialByte committed = storedByte.isKnown(0)
+						? PartialByte.of(0x1F, storedByte.bit(0) != 0 ? 0x1F : 0)
+						: PartialByte.unknown();
+				return SwitchOutcome.deposit(depositFields(inState, runFields, committed),
+					depositMask(runFields));
+			}
 		}
 
 		if (reg != 'A') {
@@ -1155,6 +1180,59 @@ public class SerialShiftBankSwitchStrategy extends AbstractRangeBankSwitchStrate
 		}
 
 		return new ChainInfo(backCount + 1, backCount + 1 + forwardCount, chainStart);
+	}
+
+	/** A maximal run of adjacent plain stores of one register to the range (recognizer A1). */
+	private record RepeatRun(int index, int total) {
+	}
+
+	/**
+	 * Recognizer A1: the position and length of the maximal run of directly adjacent stores of
+	 * {@code reg} to the register range containing {@code sta}, with no instruction between
+	 * them (so nothing shifts or rewrites {@code reg}) and no control-flow join into any store
+	 * after the first. A run whose first store is preceded by, or whose last store is followed
+	 * by, {@code LSR A} belongs to the shift-chain shape and is declined. Instruction shape
+	 * only, like the chain walk.
+	 */
+	private RepeatRun analyzeRepeatRun(Program program, Instruction sta, char reg) {
+		Listing listing = program.getListing();
+		int back = 0;
+		Instruction cur = sta;
+		while (true) {
+			Instruction prev = listing.getInstructionBefore(cur.getMinAddress());
+			if (prev == null || !FlowEdges.fallsInto(prev, cur) ||
+				FlowEdges.isControlFlowJoin(program, cur, prev) || !isRepeatStore(prev, reg)) {
+				break;
+			}
+			back++;
+			cur = prev;
+		}
+		Instruction before = listing.getInstructionBefore(cur.getMinAddress());
+		if (reg == 'A' && before != null && FlowEdges.fallsInto(before, cur) &&
+			isLsrAccumulator(before)) {
+			return null;
+		}
+		int forward = 0;
+		cur = sta;
+		while (true) {
+			Address ft = cur.getFallThrough();
+			Instruction next = ft == null ? null : listing.getInstructionAt(ft);
+			if (next == null || !isRepeatStore(next, reg) ||
+				FlowEdges.isControlFlowJoin(program, next, cur)) {
+				if (reg == 'A' && next != null && isLsrAccumulator(next)) {
+					return null;
+				}
+				break;
+			}
+			forward++;
+			cur = next;
+		}
+		return new RepeatRun(back + 1, back + 1 + forward);
+	}
+
+	private boolean isRepeatStore(Instruction instr, char reg) {
+		return Character.valueOf(reg).equals(MosOperands.storeRegister(instr)) &&
+			registerOffsetWritten(instr) != null;
 	}
 
 	/** Whether {@code instr} is a same-shape chain link: a store of register A to the
