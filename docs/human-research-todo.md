@@ -215,28 +215,6 @@ Each is minutes of work and settles something specific. Highest value per unit e
   they decide whether `grm-c9d.8.8` adds a "table bytes decode as code" end test or leaves the
   table alone.
 
-### 1.13 FF2 `$00:E0D0` `JMP (!$063d)`: what does it dispatch to, and do those handlers keep DP? (`grm-9nxj.27`)
-
-- [ ] **Question.** The FF2 direct-page chain now loops back on itself. RESET keeps DP=`$0600` up
-  to `JSR $00df63` at `$8083` and loses it there. The reason is that `FUN_00df63` calls
-  `FUN_00e01a`, and `FUN_00e01a` contains the untargeted indirect jump `JMP (!$063d)` at `$E0D0`,
-  the very site this bead is trying to reach. A call summary rejects any computed jump with no
-  targets. Downstream, the main-loop body `FUN_0080a0` (which tail-jumps back to `$808e` in RESET)
-  is DP=?, and so are the other five callers of `FUN_00df63`. **Please check:** which addresses
-  does `$063d` hold when `$E0D0` runs (the routine stores `<$3d`/`<$3e` just before it)? Do those
-  handlers return to `FUN_00e01a`'s caller with the DP they were entered with, or does any of
-  them change DP?
-
-  If every handler keeps DP, the agent adds rule A: an untargeted `JMP (abs)` inside a callee
-  counts as a tail call that hands back its entry DP. If some handler changes DP, the summary stays
-  strict and E0D0 is reached another way (a caller-context walk or a per-game hint). The measured
-  chain is in the `grm-9nxj.27` comments.
-
-  **Update 2026-11-03: this is now the only blocker.** Since `grm-9nxj.28`, `FUN_00df63` is
-  seeded with `$0600` from RESET. It loses DP at `$00df7e` only because that is the head of its
-  outer loop (`$e00f JSR $00e01a` ... `$e017 JMP $df7e`), and the back edge carries the call's
-  failed summary. If that call keeps DP, the whole chain to E0D0 resolves at `$0600`.
-
 ### 1.14 cv3: are the three "table bytes decode as code" cuts right? (`grm-c9d.8.9`)
 
 - [ ] **Question.** `grm-c9d.8.8` added a tail rule that ends a word jump table at the first slot
@@ -566,3 +544,4 @@ Agents don't write into your ROM library or other personal directories.
 | FF2 `$00:E0D0`: which RESET callee before `$8083` loses the direct page? (1.11) | **`JSL $048000` at `$8035` (owner, 2026-11-02).** The UI shows DP=`$0600` after the `PLD` at `$8025` and UNKNOWN after the call at `$8035`. `$04:8000` is a JSR thunk to `$04:8008`, which saves DP with `PHD` at `$04:8009`, sets DP=`$1E00` at `$04:801C` for most of its body, and restores it with `PLD` at `$04:8104` just before it returns. So it hands back the DP it was given. The analyzer had only two call summaries, "visibly leaves DP alone" (no `TCD`) and "returns one constant", and this callee fits neither. It now also summarizes a callee as "returns its entry DP", walking it from a symbolic entry DP. That needs no caller context, so **no context-sensitive summary is needed.** Whether all six callers of `FUN_00df63` agree was left to the analyzer to measure (see the bead). | `grm-9nxj.27` |
 | FF2 `$01:82bb`: what does it do to the direct page? (1.12) | **Answered by the agent, 2026-11-03, before the owner got to it.** `$01:82bb` is `JSL $14:fd00`, and `$14:fd00` is a `JMP` thunk with no return of its own: the analyzer's call summary rejected any jump leaving the body. It now treats an unconditional jump out (and a `JMP` carrying Ghidra's CALL_RETURN override, FF2 `$00:e65e`) as a tail call returning its target's summary, and ignores an exit taken after the path pulled its own return address (CT `$c7:0a8c`, `PLA PLA PLA / JMP` into an outer routine's `PLD / RTL` epilogue). FF2 RESET now keeps `$0600` up to `JSR $00df63` at `$8083`; `tools/banktest/DpLossProbe.java` finds such losses from the stamps. | `grm-9nxj.27` |
 | Find a "tricky code" example to measure the analysis posture against? | **Three, all in the owner's hash-pinned C64 images (real-ROM set `c64-prg`, owner-confirmed 2026-11-06).** `c64_sg_loader` (Summer Games `loader.prg`): rolling-key self-decrypt loop at `$c002` (`grm-430b`). `c64_mm_ea` (Marble Madness `ea.prg`): stack-fill autostart (`grm-w0j7`) landing at `$0203` in undocumented-opcode code (`AF 72 01` = `LAX`), which the documented-only language does not decode. `c64_mm_loader` (Marble Madness `loader.prg`): loads at `$FFFA`, wraps, and overwrites the KERNAL LOAD store pointer `$AE/$AF` twice, redirecting its own remaining bytes to `$EDB0` and then the stack page (placement needs `grm-t3n.5`). Hash-pinned, not redistributable. **`grm-8v6y` is unblocked on its test vector; do not hunt for further examples before a consumer is measured.** Next step per the bead: build `.1` plumbing only together with its first consumer. | `grm-8v6y` |
+| FF2 `$00:E0D0` `JMP (!$063d)`: what does it dispatch to, and do those handlers keep DP? (1.13) | **A switch through the word table at `$00:E2E6`; assume the handlers keep DP (owner, 2026-11-06).** The table was laid but cut short at its first `0000` entry. That zero is a placeholder for a value handled specially, not the end: the real table runs to at least 45 entries, maybe 47 (the last couple are iffy, and a function follows entry 47). On DP: this is the main loop, so anything that changed DP without restoring it before returning to the loop would break the game. **Rule A therefore applies: inside a call summary, an untargeted `JMP (abs)` counts as a tail call that hands back its entry DP. Do not hand-check the handlers one by one.** | `grm-9nxj.27` (rule A); `grm-8lr2` (table cut at a zero entry) |
