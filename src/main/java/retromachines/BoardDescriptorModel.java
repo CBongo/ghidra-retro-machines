@@ -213,13 +213,35 @@ final class BoardDescriptorModel {
 		}
 	}
 
+	/**
+	 * A window whose {@code maps:} expression is constant (no state field): the descriptor pins
+	 * one bank into it (bead grm-hsv.8). {@code modeValue} is null for a mode-invariant window,
+	 * else the layout mode it belongs to. {@code expr} is the raw {@code maps:} text
+	 * ({@code last}, {@code second_last}, a literal), evaluated against an image size by
+	 * {@link BankAnnotationAdapter#descriptorFixedBanks}.
+	 */
+	record FixedWindowModel(String name, long start, long end, Integer modeValue, String expr) {}
+
 	/** Everything phase-independent parsed out of the descriptor. */
 	record BoardModel(int mask, int initialState, List<String> stateBitNames,
 			List<FieldSpec> fieldSpecs, Map<String, WindowModel> windows,
 			Map<String, ComputedWindowModel> computedWindows,
 			Map<Integer, Map<String, String>> occupantByWindowForState,
 			Map<String, String> homeOccupantByWindow, FieldSpec modeField, int homeModeValue,
-			List<ModeWindowModel> modeWindows, BankWrap bankWrap) {
+			List<ModeWindowModel> modeWindows, BankWrap bankWrap,
+			List<FixedWindowModel> fixedWindows) {
+
+		/** Board without fixed-window declarations (hand-built boards in tests). */
+		BoardModel(int mask, int initialState, List<String> stateBitNames,
+				List<FieldSpec> fieldSpecs, Map<String, WindowModel> windows,
+				Map<String, ComputedWindowModel> computedWindows,
+				Map<Integer, Map<String, String>> occupantByWindowForState,
+				Map<String, String> homeOccupantByWindow, FieldSpec modeField, int homeModeValue,
+				List<ModeWindowModel> modeWindows, BankWrap bankWrap) {
+			this(mask, initialState, stateBitNames, fieldSpecs, windows, computedWindows,
+				occupantByWindowForState, homeOccupantByWindow, modeField, homeModeValue,
+				modeWindows, bankWrap, List.of());
+		}
 
 		/** The {@code banking.bank_wrap} spelling of {@link BankWrap#IMAGE}. */
 		static final String BANK_WRAP_IMAGE = "image";
@@ -375,12 +397,15 @@ final class BoardDescriptorModel {
 			WindowPlanner.LayoutPlan plan = WindowPlanner.planWindows(map, log, mapPath, liveMode);
 
 			Map<String, ComputedWindowModel> computedByName = new LinkedHashMap<>();
+			List<FixedWindowModel> fixedWindows = new ArrayList<>();
 			for (WindowPlanner.PlannedWindow pw : plan.invariant()) {
 				if (pw.expr() == null) {
 					continue; // enumerated occupant window, already handled above
 				}
 				Set<String> fields = DescriptorExpressions.referencedFields(pw.expr());
 				if (fields.isEmpty()) {
+					fixedWindows.add(new FixedWindowModel(pw.name(), pw.start(), pw.end(), null,
+						pw.expr()));
 					continue; // fixed window -- placed by the loader, never retargeted
 				}
 				if (fields.size() > 1) {
@@ -438,6 +463,10 @@ final class BoardDescriptorModel {
 								continue;
 							}
 						}
+						if (bankField == null) {
+							fixedWindows.add(new FixedWindowModel(pw.name(), pw.start(), pw.end(),
+								pw.modeValue(), pw.expr()));
+						}
 						modeWindows.add(new ModeWindowModel(pw.name(), pw.start(), pw.end(),
 							pw.modeValue(), bankField, pw.onWrite(),
 							bankField == null ? 0
@@ -494,7 +523,7 @@ final class BoardDescriptorModel {
 
 			return new BoardModel(mask, initialState, stateBitNames, fieldSpecs, windowsByName,
 				computedByName, occupantByWindowForState, homeOccupantByWindow, modeField,
-				homeModeValue, modeWindows, bankWrap);
+				homeModeValue, modeWindows, bankWrap, fixedWindows);
 		}
 	}
 }

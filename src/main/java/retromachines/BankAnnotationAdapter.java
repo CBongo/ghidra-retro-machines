@@ -902,7 +902,10 @@ final class BankAnnotationAdapter {
 				// recording the field without a mode qualifier sound -- see
 				// BankMirrors.identifyingField before scanning a mode-varying window here.
 				discovery.addRomIdentifying(BankMirrors.romIdentifyingOffsets(program, w.name(),
-					w.start(), w.end(), banks, w.field().widthMask(), w.decodedMask()), w.field());
+					w.start(), w.end(), banks, w.field().widthMask(), w.decodedMask(),
+						descriptorFixedBanks(board, w.name(), w.start(), w.end(), null, banks,
+							w.field(), w.decodedMask(), flow)),
+						w.field());
 			}
 		}
 		// bead grm-mej.18: a mode-varying window is scanned too, but ONLY under a layout-mode
@@ -920,7 +923,9 @@ final class BankAnnotationAdapter {
 				Set<Integer> banks = bankUniverse.get(key);
 				if (banks != null) {
 					discovery.addRomIdentifying(BankMirrors.romIdentifyingOffsets(program, key,
-						w.start(), w.end(), banks, w.bankField().widthMask(), w.decodedMask()),
+						w.start(), w.end(), banks, w.bankField().widthMask(), w.decodedMask(),
+						descriptorFixedBanks(board, w.name(), w.start(), w.end(), w.modeValue(),
+							banks, w.bankField(), w.decodedMask(), flow)),
 						w.bankField());
 				}
 			}
@@ -945,6 +950,80 @@ final class BankAnnotationAdapter {
 		// bank" can only be judged once (a) and (b) have established what does.
 		discovery.scanSaveSlotCopies(program);
 		return discovery.build();
+	}
+
+	/**
+	 * The banks the board descriptor pins into OTHER, fixed windows, in the numbering of the
+	 * scanned window, minus any bank a resolved switch commits into it (bead grm-hsv.8) -- the
+	 * set {@link BankMirrors#romIdentifyingOffsets} may exempt from identity.
+	 * <p>
+	 * Each constant {@code maps:} window ({@code last}, {@code second_last}, a literal) that is
+	 * mode-invariant, or belongs to {@code modeValue} (null for a computed window, whose
+	 * governing mode is not known here: then only invariant fixed windows count), and has the
+	 * scanned window's length, yields bank {@code offset / length}. Sound only when the scanned
+	 * window's realized banks are exactly {@code 0..n-1} and its field is injective, because
+	 * the image size ({@code n * length}) is derived from them; otherwise the set is empty,
+	 * i.e. identity stays fully strict. A board with no fixed window in the mode likewise gets
+	 * nothing. MMC2 DOES get an exemption (its WA000/WC000/WE000 pin the top banks), even though
+	 * its 4-bit field can select those banks into W8000: owner ruling on grm-hsv.8, 2026-11-07,
+	 * bounded by the resolved-switch guard below.
+	 * <p>
+	 * The guard: a fixed bank that any RESOLVED pass-1 switch (direct, or a helper call) commits
+	 * into this window's field is removed -- the game demonstrably maps it here, so it must agree
+	 * as before. Unresolved switches say nothing and are not counted.
+	 */
+	static Set<Integer> descriptorFixedBanks(BoardModel board, String windowName, long start,
+			long end, Integer modeValue, Set<Integer> banks, FieldSpec field, long decodedMask,
+			DataflowResult flow) {
+		if (board.fixedWindows().isEmpty() || decodedMask != BoardDescriptorModel.fullMask(field)) {
+			return Set.of();
+		}
+		long length = end - start + 1;
+		int n = banks.size();
+		if (length <= 0 || n == 0) {
+			return Set.of();
+		}
+		for (int b = 0; b < n; b++) {
+			if (!banks.contains(b)) {
+				return Set.of(); // not a dense 0..n-1 image: the image size cannot be derived
+			}
+		}
+		long imageSize = n * length;
+		Set<Integer> fixed = new LinkedHashSet<>();
+		for (BoardDescriptorModel.FixedWindowModel fw : board.fixedWindows()) {
+			if (fw.name().equals(windowName) || fw.end() - fw.start() + 1 != length ||
+				(fw.modeValue() != null && !fw.modeValue().equals(modeValue))) {
+				continue;
+			}
+			long offset;
+			try {
+				offset = DescriptorExpressions.evalConstantExpr(fw.expr(), imageSize, length);
+			}
+			catch (IllegalArgumentException e) {
+				continue;
+			}
+			if (offset >= 0 && offset % length == 0 && offset / length < n) {
+				fixed.add((int) (offset / length));
+			}
+		}
+		if (fixed.isEmpty()) {
+			return Set.of();
+		}
+		List<BankState> committed = new ArrayList<>();
+		for (SwitchResult sr : flow.switchResults().values()) {
+			committed.add(sr.effect());
+			committed.addAll(sr.arms());
+		}
+		for (BankDataflowEngine.CallSwitch cs : flow.callSwitches().values()) {
+			committed.add(cs.effect());
+			committed.addAll(cs.arms());
+		}
+		for (BankState st : committed) {
+			if (st != null && field.fullyKnownIn(st)) {
+				fixed.remove(field.valueIn(st.bits()));
+			}
+		}
+		return fixed;
 	}
 
 	/** The layout-mode value pass 1's verified mode lock pins, or null when there is none. */

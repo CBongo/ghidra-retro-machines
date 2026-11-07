@@ -161,8 +161,9 @@ public final class BankMirrors {
 	 * that DOES enter the window satisfies.
 	 * <p>
 	 * <b>This is a PROXY, not the real test, and it is deliberately NEVER applied to {@code shift
-	 * == 0}.</b> The real fact is "this bank is {@code PRG[last]} (or {@code PRG[second_last]})
-	 * and this board pins it to a fixed window", which lives in the descriptor's fixed-bank
+	 * == 0}</b> (identity, since grm-hsv.8, exempts the descriptor's real fixed-bank set instead,
+	 * passed to {@code romIdentifyingOffsets}; the proxy here is left for the shift forms). The
+	 * real fact is "this bank is {@code PRG[last]} (or {@code PRG[second_last]}) and this board pins it to a fixed window", which lives in the descriptor's fixed-bank
 	 * declarations, not in anything {@code romIdentifyingOffsets} can see from image content and
 	 * a realized-bank set alone. Exempting the top two NUMBERED banks is the safe approximation
 	 * available without that descriptor plumbing for a board shaped like MMC3, where the
@@ -813,8 +814,9 @@ public final class BankMirrors {
 	 * (r6=2i, r7=2i+1) never leaves an even bank live in that window.
 	 * <p>
 	 * <b>An offset is admitted for {@code (shift, low)} iff</b> every CONGRUENT realized bank that
-	 * is not one of the window's {@link #FIXED_BANK_EXEMPTION_COUNT} highest-numbered ("fixed")
-	 * banks agrees with the formula, AND the set of banks that agree (fixed ones included, when
+	 * is not exempt agrees with the formula (a shift form exempts the window's
+	 * {@link #FIXED_BANK_EXEMPTION_COUNT} highest-numbered banks; identity exempts only the
+	 * descriptor's fixed banks, grm-hsv.8), AND the set of banks that agree (fixed ones included, when
 	 * they happen to) numbers at least {@link #MIN_IDENTIFYING_BANKS} for identity or
 	 * {@link #MIN_SHIFTED_IDENTIFYING_BANKS} for a shift form. A single non-exempt
 	 * disagreement refuses the WHOLE {@code (shift, low)} candidate at that offset -- prefer
@@ -872,6 +874,22 @@ public final class BankMirrors {
 	 */
 	static Map<Long, IdentifyingEncoding> romIdentifyingOffsets(Program program, String windowName,
 			long start, long end, Set<Integer> realizedBanks, int fieldMask, long decodedMask) {
+		return romIdentifyingOffsets(program, windowName, start, end, realizedBanks, fieldMask,
+			decodedMask, Set.of());
+	}
+
+	/**
+	 * {@link #romIdentifyingOffsets(Program, String, long, long, Set, int, long)} with the
+	 * board descriptor's REAL fixed-bank set (bead grm-hsv.8): {@code descriptorFixed} are banks
+	 * the active layout mode pins into OTHER, fixed windows (a constant {@code maps:} such as
+	 * {@code last}), already net of any bank a resolved switch commits into this window (see
+	 * {@code BankAnnotationAdapter.descriptorFixedBanks}). IDENTITY ({@code shift == 0}) is
+	 * exempt for exactly those banks -- they need not agree -- and for nothing else. The
+	 * numeric top-two proxy stays confined to the shift/alias/biased forms.
+	 */
+	static Map<Long, IdentifyingEncoding> romIdentifyingOffsets(Program program, String windowName,
+			long start, long end, Set<Integer> realizedBanks, int fieldMask, long decodedMask,
+			Set<Integer> descriptorFixed) {
 		if (realizedBanks.size() < MIN_IDENTIFYING_BANKS || end < start) {
 			return Map.of();
 		}
@@ -922,19 +940,16 @@ public final class BankMirrors {
 		Map<Long, IdentifyingEncoding> offsets = new LinkedHashMap<>();
 		nextOffset: for (int k = 0; k < length; k++) {
 			for (int shift = 0; shift <= 2; shift++) {
-				// Identity draws NO exemption, ever (bead grm-km4f). The exemption exists to admit
-				// a bank that CANNOT reach this window at runtime even though the loader realized
-				// an overlay for it (RCR's PRG[last] never enters WA000) -- but "highest-numbered
-				// realized bank" is only a proxy for that fact, and on a board where the register
-				// really can select ANY realized bank into this window (MMC2's W8000 takes all 16),
-				// the proxy is simply wrong. Measured regression: exempting MMC2's own highest W8000
-				// bank (which holds live RESET code, not a bank-number marker, at the offset under
-				// test) admitted $8000 as identity from three coincidental agreements plus one
-				// tolerated disagreement -- a real board's offset invented from a shape the image
-				// never actually proved. Restricting the exemption to shift != 0 keeps identity
-				// exactly as strict as it was before this bead (never admits on anything short of
-				// EVERY realized bank agreeing) while still letting RCR's shift == 1 case through.
-				Set<Integer> exemptForThisShift = shift == 0 ? Set.of() : exempt;
+				// Identity's exemption is the DESCRIPTOR's fixed-bank set, never the numeric proxy
+				// (beads grm-km4f, grm-hsv.8). The proxy ("highest-numbered realized banks") is
+				// simply wrong where the register can select ANY realized bank into this window
+				// (MMC2's W8000 takes all 16): exempting its highest bank admitted $8000 as identity
+				// from three coincidental agreements plus one tolerated disagreement. The real fact
+				// -- "the active mode pins this bank into a fixed window, and no resolved switch
+				// commits it here" -- comes in as descriptorFixed, so identity stays exactly as strict
+				// as before wherever that set is empty, and the MIN_IDENTIFYING_BANKS floor still
+				// counts only banks that really agree.
+				Set<Integer> exemptForThisShift = shift == 0 ? descriptorFixed : exempt;
 				int congruenceClasses = 1 << shift;
 				for (int low = 0; low < congruenceClasses; low++) {
 					Set<Integer> matched = new LinkedHashSet<>();

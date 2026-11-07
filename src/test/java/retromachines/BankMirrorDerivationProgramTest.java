@@ -162,6 +162,55 @@ public class BankMirrorDerivationProgramTest extends AbstractProgramTest {
 		assertEquals(Set.of(), identifyingOffsets(2).keySet());
 	}
 
+	private Map<Long, BankMirrors.IdentifyingEncoding> identifyingOffsets(int banks,
+			Set<Integer> descriptorFixed) {
+		Set<Integer> realized = new java.util.LinkedHashSet<>();
+		for (int bank = 0; bank < banks; bank++) {
+			realized.add(bank);
+		}
+		return BankMirrors.romIdentifyingOffsets(program, "PRG_LO", 0x8000, 0xBFFF, realized, 0x0F,
+			-1L, descriptorFixed);
+	}
+
+	/**
+	 * <b>Super Dodge Ball's {@code $BFF9} (grm-hsv.8):</b> banks 0..2 hold their own number and
+	 * the descriptor-fixed top bank holds {@code $36}. Identity is admitted because the fixed
+	 * bank is exempt and three banks still agree.
+	 */
+	@Test
+	public void identityIsAdmittedWhenTheOnlyDisagreeingBankIsDescriptorFixed() throws Exception {
+		layBankOverlays(4);
+		for (int bank = 0; bank < 4; bank++) {
+			setBankByte(bank, 0x8000, bank == 3 ? 0x36 : bank);
+		}
+
+		assertEquals(Set.of(), identifyingOffsets(4, Set.of()).keySet());
+		BankMirrors.IdentifyingEncoding enc = identifyingOffsets(4, Set.of(3)).get(0x8000L);
+		assertEquals(0, enc.shift());
+	}
+
+	/** The exemption is for the descriptor's banks only: any other disagreeing bank refuses. */
+	@Test
+	public void identityIsStillRefusedWhenANonFixedBankDisagrees() throws Exception {
+		layBankOverlays(5);
+		for (int bank = 0; bank < 5; bank++) {
+			setBankByte(bank, 0x8000, bank == 4 || bank == 1 ? 0x36 : bank);
+		}
+
+		assertEquals(Set.of(), identifyingOffsets(5, Set.of(4)).keySet());
+	}
+
+	/** The floor stays: an exempt bank does not count as agreement. */
+	@Test
+	public void theFloorStillNeedsThreeAgreeingBanksBesideTheFixedOne() throws Exception {
+		layBankOverlays(3);
+		for (int bank = 0; bank < 3; bank++) {
+			setBankByte(bank, 0x8000, bank == 2 ? 0x36 : bank);
+		}
+
+		assertEquals(Set.of(), identifyingOffsets(3, Set.of(2)).keySet());
+	}
+
 	/**
 	 * A window whose banks agree at byte 0 but disagree one byte later yields the one offset and
 	 * not the other -- the test is per offset, not per window.
