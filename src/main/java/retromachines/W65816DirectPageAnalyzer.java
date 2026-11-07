@@ -441,6 +441,11 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 		}
 
 		Map<Address, State> walk(Function f, State entry) {
+			return walk(f, entry, false);
+		}
+
+		/** @param summary a call-summary walk: dispatch JMPs end the path (see isDispatchJmp) */
+		Map<Address, State> walk(Function f, State entry, boolean summary) {
 			Map<Address, State> in = new LinkedHashMap<>();
 			ArrayDeque<Address> work = new ArrayDeque<>();
 			in.put(f.getEntryPoint(), entry);
@@ -453,7 +458,7 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 					continue;
 				}
 				State out = transfer(ins, in.get(at));
-				for (Address next : successors(f, ins)) {
+				for (Address next : successors(f, ins, summary)) {
 					State old = in.get(next);
 					State merged = old == null ? out : old.meet(out);
 					if (!merged.equals(old)) {
@@ -468,9 +473,12 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 			return in;
 		}
 
-		private List<Address> successors(Function f, Instruction ins) {
+		private List<Address> successors(Function f, Instruction ins, boolean summary) {
 			List<Address> out = new ArrayList<>();
 			var ft = ins.getFlowType();
+			if (summary && isDispatchJmp(ins)) {
+				return out;
+			}
 			if (ft.isCall()) {
 				addIfBody(f, out, ins.getFallThrough());
 				return out;
@@ -654,7 +662,7 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 			int d = UNKNOWN;
 			boolean ok = true;
 			Map<Address, State> states =
-				walk(callee, new State(ENTRY_DP, UNKNOWN, UNKNOWN, UNKNOWN, List.of()));
+				walk(callee, new State(ENTRY_DP, UNKNOWN, UNKNOWN, UNKNOWN, List.of()), true);
 			if (states.isEmpty()) {
 				ok = false;
 			}
@@ -683,8 +691,8 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 					int te = exitDp(fl[0]);
 					out = te == ENTRY_DP ? st.dp : te;
 				}
-				else if (isDispatchTailExit(i, fl, callee)) {
-					// Rule A (owner ruling 2026-11-06, grm-9nxj.27): see isDispatchTailExit.
+				else if (isDispatchJmp(i)) {
+					// Rule A (owner ruling 2026-11-06, grm-9nxj.27): see isDispatchJmp.
 					exit = true;
 					out = st.dp;
 				}
@@ -722,33 +730,52 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 		}
 
 		/**
-		 * Rule A (owner ruling 2026-11-06, grm-9nxj.27; human TODO 1.13 answer: the owner judged it
-		 * safe to assume main-loop dispatch handlers do not change DP en route). Inside a call
-		 * summary, an indirect {@code JMP (abs)} / {@code JMP (abs,X)} is a tail exit whose handler
-		 * returns to our caller with the DP it was given at the jump, when it has no resolved
-		 * targets (the table is unknown) or any target leaving the function body (FF2 {@code $00:E0D0}
-		 * dispatches through a cut table to handlers outside {@code FUN_00e01a}). Targets landing
-		 * INSIDE the body are still walked as ordinary flow; only the out-of-body / untargeted part
-		 * is the tail exit. For {@link #exitDp} the path exits with the DP live at the jump (a
-		 * constant, or {@link #ENTRY_DP}), subject to the usual empty-stack rule; for
+		 * Rule A (owner ruling 2026-11-06, grm-9nxj.27; human TODO 1.13 answer: "safe to assume
+		 * DP won't be changed en route since it's part of the main loop"). Inside a call summary,
+		 * an indirect {@code JMP (abs)} / {@code JMP (abs,X)} is ALWAYS a tail exit whose handler
+		 * returns to our caller with the DP it was given at the jump, whatever its targets: none
+		 * resolved, out of the body, or in the body (Ghidra pulls the handlers of FF2
+		 * {@code $00:E0D0} into {@code FUN_00e01a}'s body). Its flows are NOT walked by the summary
+		 * ({@link #successors} with {@code summary}), so handlers reached only through it do not
+		 * count against the summary. For {@link #exitDp} the path exits with the DP live at the
+		 * jump (a constant, or {@link #ENTRY_DP}), subject to the usual empty-stack rule; for
 		 * {@link #preserves} the jump is neutral. Optimistic: unsound if a handler changes DP and
 		 * does not restore it. Scope is {@code JMP} only (not JML [abs], JSR/JSL (abs,X)).
 		 */
-		private static boolean isDispatchTailExit(Instruction i, Address[] fl, Function callee) {
+		private static boolean isDispatchJmp(Instruction i) {
 			var ft = i.getFlowType();
-			if (!ft.isComputed() || !ft.isJump() || ft.isCall() || ft.isConditional() ||
-				!i.getMnemonicString().equalsIgnoreCase("JMP")) {
-				return false;
-			}
-			if (fl.length == 0) {
-				return true;
-			}
-			for (Address t : fl) {
-				if (!callee.getBody().contains(t)) {
-					return true;
+			return ft.isComputed() && ft.isJump() && !ft.isCall() && !ft.isConditional() &&
+				i.getMnemonicString().equalsIgnoreCase("JMP");
+		}
+
+		/**
+		 * For {@link #preserves}: the instructions of {@code f} reachable from its entry without
+		 * going through a dispatch JMP (see {@link #isDispatchJmp}), or null when the body has no
+		 * dispatch JMP (then every instruction counts, as before).
+		 */
+		private Set<Address> dispatchLiveSet(Function f) {
+			boolean any = false;
+			for (Instruction i : program.getListing().getInstructions(f.getBody(), true)) {
+				if (isDispatchJmp(i)) {
+					any = true;
+					break;
 				}
 			}
-			return false;
+			if (!any) {
+				return null;
+			}
+			Set<Address> seen = new HashSet<>();
+			ArrayDeque<Address> work = new ArrayDeque<>();
+			work.add(f.getEntryPoint());
+			while (!work.isEmpty()) {
+				Address at = work.poll();
+				Instruction ins = program.getListing().getInstructionAt(at);
+				if (ins == null || !seen.add(at)) {
+					continue;
+				}
+				work.addAll(successors(f, ins, true));
+			}
+			return seen;
 		}
 
 		/** Whether a call to {@code target} leaves DP alone, as far as its code visibly shows. */
@@ -780,7 +807,11 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 			int pld = 0;
 			boolean ok = true;
 			List<Address> next = new ArrayList<>();
+			Set<Address> live = dispatchLiveSet(callee);
 			for (Instruction i : program.getListing().getInstructions(callee.getBody(), true)) {
+				if (live != null && !live.contains(i.getAddress())) {
+					continue;   // a handler reached only through a dispatch JMP (rule A)
+				}
 				String mn = i.getMnemonicString().toUpperCase(Locale.ROOT);
 				var ft = i.getFlowType();
 				if (mn.equals("TCD")) {
@@ -804,7 +835,7 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				else if (!ft.isTerminal() && (ft.isJump() || ft.isComputed())) {
 					// A jump out of the body is a tail call: judged like a call to its target.
 					Address[] fl = i.getFlows();
-					if (isDispatchTailExit(i, fl, callee)) {
+					if (isDispatchJmp(i)) {
 						continue;   // rule A: hands the DP it was given to its handler
 					}
 					boolean outside = false;

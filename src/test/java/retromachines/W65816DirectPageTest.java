@@ -413,6 +413,22 @@ public class W65816DirectPageTest extends AbstractProgramTest {
 		assertRef(0x8008, 0x063d, RefType.WRITE);
 	}
 
+	/**
+	 * Option 1 (owner: handlers do not change DP en route): the dispatch JMP's in-body handlers are
+	 * not walked, so a handler that does TCD without restoring still summarizes as returns-entry-DP.
+	 * Documents the optimistic assumption.
+	 */
+	@Test
+	public void inBodyDispatchHandlerChangingDpIsIgnored() throws Exception {
+		// JMP ($063d) ; handler: LDA #$1e00 ; TCD ; RTS
+		lay("0x8200", "6c 3d 06 a9 00 1e 5b 60", "DISPATCH");
+		inTx(program, "target", () -> program.getReferenceManager().addMemoryReference(
+			addr(0x8200), addr(0x8203), RefType.COMPUTED_JUMP, SourceType.ANALYSIS, 0));
+		lay("0x8000", SET_600_CALL_8200_STA, "C");
+		analyzeAll();
+		assertRef(0x8008, 0x063d, RefType.WRITE);
+	}
+
 	/** A path that changes DP (TCD) and then does the untargeted JMP returns that DP. */
 	@Test
 	public void untargetedIndirectJmpAfterTcdReturnsChangedDp() throws Exception {
