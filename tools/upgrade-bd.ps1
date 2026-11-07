@@ -32,6 +32,8 @@
     .\tools\upgrade-bd.ps1 -Version 1.3.0 -Sha256 <hash-from-checksums.txt>
 #>
 [CmdletBinding(SupportsShouldProcess = $true)]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
+    Justification = 'Interactive upgrade tool: status lines are for the person at the console, not pipeline output (grm-kk77).')]
 param(
     [string] $Version = '1.2.2',
     [string] $Sha256  = '1f00c29cd9599e182a4a4e829f5210daca2da14155920aee2836d8bc613b2feb'

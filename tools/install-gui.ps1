@@ -43,6 +43,8 @@
     pwsh -File tools/install-gui.ps1        # from git bash or WSL
 #>
 [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'Medium')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
+    Justification = 'Interactive installer: progress lines are for the person at the console, not pipeline output (grm-kk77).')]
 param(
     [switch] $SkipBuild,
     [switch] $Force,
