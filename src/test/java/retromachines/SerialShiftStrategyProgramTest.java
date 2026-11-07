@@ -294,6 +294,116 @@ public class SerialShiftStrategyProgramTest extends AbstractProgramTest {
 	}
 
 	// ------------------------------------------------------------------
+	// Recognizer A2 (grm-hsv.7): unknown bit 7 in a repeated-value run, prg_mode known 3
+	// ------------------------------------------------------------------
+
+	/** Everything known, prg_mode = 3: a reset would change no tracked field. */
+	private static MechanismState knownWithPrgMode3() {
+		return MechanismState.fullyKnown(STATE_MASK, PRG_MODE_3 | 0x01 | (0x05 << 4));
+	}
+
+	/** {@code PLA} then five {@code STA}s to {@code addr}: A is unknown, bit 7 included. */
+	private void repeatRunOfUnknownA(int addr) throws Exception {
+		builder.setBytes("0x8000", "68", true); // PLA
+		String lo = String.format("%02x", addr & 0xFF);
+		String hi = String.format("%02x", (addr >> 8) & 0xFF);
+		for (int i = 0; i < 5; i++) {
+			builder.setBytes(String.format("0x%04x", 0x8001 + 3 * i), "8d " + lo + " " + hi, true);
+		}
+	}
+
+	private MechanismState switchAt(String address, MechanismState in) {
+		MechanismState result = mmc1().computeSwitch(program, instructionAt(address), in);
+		assertNotNull("fixture produced no mechanism write at " + address, result);
+		return result;
+	}
+
+	/**
+	 * ff1 fe5b's shape: five stores of one unknown A to a CHR register. All five share bit 7,
+	 * so all reset or none does; with prg_mode already 3 a reset changes nothing tracked, and a
+	 * CHR commit is discarded. Every write echoes the in-state.
+	 */
+	@Test
+	public void unknownBit7RepeatRunToChrEchoesWhenPrgModeIs3() throws Exception {
+		repeatRunOfUnknownA(0xBFFF);
+		for (int i = 0; i < 5; i++) {
+			String at = String.format("0x%04x", 0x8001 + 3 * i);
+			assertEquals("write " + (i + 1) + " must echo", knownWithPrgMode3(),
+				switchAt(at, knownWithPrgMode3()));
+		}
+	}
+
+	/**
+	 * ff1 fe5b-fe76 byte for byte in shape: after {@code JSR $fe06} (A unknown to the scanner),
+	 * five {@code STA $BFFF} then five {@code STA $DFFF}. One run of ten, two CHR commits; every
+	 * store echoes.
+	 */
+	@Test
+	public void unknownBit7TenStoreRunIsTwoCommits() throws Exception {
+		builder.setBytes("0x8000", "68", true); // PLA
+		for (int i = 0; i < 10; i++) {
+			builder.setBytes(String.format("0x%04x", 0x8001 + 3 * i),
+				i < 5 ? "8d ff bf" : "8d ff df", true);
+		}
+		for (int i = 0; i < 10; i++) {
+			String at = String.format("0x%04x", 0x8001 + 3 * i);
+			assertEquals("write " + (i + 1) + " must echo", knownWithPrgMode3(),
+				switchAt(at, knownWithPrgMode3()));
+		}
+	}
+
+	/** A1 (bit 7 known clear) on a ten-store run: the second five commits A's bit 0 to PRG. */
+	@Test
+	public void knownValueTenStoreRunCommitsEachFive() throws Exception {
+		builder.setBytes("0x8000", "a9 01", true); // LDA #$01
+		for (int i = 0; i < 10; i++) {
+			builder.setBytes(String.format("0x%04x", 0x8002 + 3 * i),
+				i < 5 ? "8d ff bf" : "8d 00 e0", true);
+		}
+		MechanismState in = allKnownZero();
+		assertEquals("write 5 (CHR0) is discarded", in, switchAt("0x800e", in));
+		assertEquals("write 6 starts the PRG group", in, switchAt("0x8011", in));
+		MechanismState out = switchAt("0x801d", in);
+		assertEquals("prg_bank = 0x1F from five 1-bits: " + out, 0x1F << 4,
+			out.bits() & (0x1F << 4));
+		assertEquals(STATE_MASK, out.knownMask());
+	}
+
+	/** The precondition is load-bearing: with prg_mode 0 a reset WOULD change it, so poison. */
+	@Test
+	public void unknownBit7RepeatRunPoisonsWhenPrgModeIsNot3() throws Exception {
+		repeatRunOfUnknownA(0xBFFF);
+		assertPoisoned(switchAt("0x8001", allKnownZero()));
+		assertPoisoned(switchAt("0x800d", allKnownZero()));
+	}
+
+	/**
+	 * A PRG-target run: none-reset commits 0x00 or 0x1F (bit 0 unknown here), all-reset keeps
+	 * prg_bank. Only prg_bank's bits are lost; mirroring and prg_mode stay known.
+	 */
+	@Test
+	public void unknownBit7RepeatRunToPrgForgetsOnlyPrgBank() throws Exception {
+		repeatRunOfUnknownA(0xE000);
+		MechanismState in = knownWithPrgMode3();
+		assertEquals("write 1 echoes", in, switchAt("0x8001", in));
+		MechanismState out = switchAt("0x800d", in);
+		assertEquals("only prg_bank is forgotten: " + out, 0x0F, out.knownMask());
+		assertEquals(in.bits() & 0x0F, out.bits() & 0x0F);
+	}
+
+	/**
+	 * Owner ruling 2026-11-06: STA/LSR chains are NOT covered. Write 1's bit 7 alone is
+	 * unknown, and a reset there would leave the shifter part-filled after writes 2-5.
+	 */
+	@Test
+	public void unknownBit7ShiftChainStillPoisonsWhenPrgModeIs3() throws Exception {
+		builder.setBytes("0x8000", "68", true); // PLA
+		builder.setBytes("0x8001", "8d 00 e0 4a 8d 00 e0 4a 8d 00 e0 4a 8d 00 e0 4a 8d 00 e0",
+			true);
+		assertPoisoned(switchAt("0x8001", knownWithPrgMode3()));
+	}
+
+	// ------------------------------------------------------------------
 	// effectDependsOnPriorState() -- grm-izu: the fix for false "requires on entry"
 	// violations: serial-shift never reads tracked state back, so an unknown outcome here
 	// is never evidence a dispatch needed a state bit it lacked (see the class javadoc's

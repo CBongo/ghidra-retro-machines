@@ -90,7 +90,10 @@ import ghidra.program.model.listing.Program;
  * <ol>
  * <li>Resolve {@code W}'s stored byte via {@link StoredValueScanner} (mask 0xFF). Bit 7
  * UNKNOWN -> honest degrade: poison every field any target or the reset could touch (the
- * "partially-known must not silently assume reset" case -- never guess).</li>
+ * "partially-known must not silently assume reset" case -- never guess). One exception,
+ * recognizer A2 ({@link #repeatRunUnknownBit7}, grm-hsv.7): a five-store repeated-value run
+ * when a reset would change no tracked field, where all-reset and none-reset are both
+ * modelled exactly.</li>
  * <li>Bit 7 known SET -> reset: only the {@code reset} deposits are applied; every other
  * field (including mirroring) passes {@code inState} through unchanged. Because this
  * check runs independently for every write the dataflow visits, four consecutive bit-7-set
@@ -511,7 +514,8 @@ public class SerialShiftBankSwitchStrategy extends AbstractRangeBankSwitchStrate
 			bit7Set = bit7Known && storedByte.bit(7) != 0;
 		}
 		if (!bit7Known) {
-			return SwitchOutcome.of(poisonAll(inState));
+			SwitchOutcome echoed = repeatRunUnknownBit7(program, instr, reg, offset, storedByte, inState);
+			return echoed != null ? echoed : SwitchOutcome.of(poisonAll(inState));
 		}
 		if (bit7Set) {
 			return SwitchOutcome.implicitDeposit(applyReset(inState));
@@ -522,8 +526,8 @@ public class SerialShiftBankSwitchStrategy extends AbstractRangeBankSwitchStrate
 		// the write is not preceded by LSR A.
 		if (storedByte != null) {
 			RepeatRun run = analyzeRepeatRun(program, instr, reg);
-			if (run != null && run.total() == 5) {
-				if (run.index() < 5) {
+			if (run != null && run.fiveAligned()) {
+				if (!run.commits()) {
 					return SwitchOutcome.noDeposit(inState);
 				}
 				List<TargetField> runFields = targets.get(targetIndex(offset));
@@ -571,6 +575,61 @@ public class SerialShiftBankSwitchStrategy extends AbstractRangeBankSwitchStrate
 		// Judged on the target's own fields, not the echoed rest of the in-state (grm-dos9.10).
 		return SwitchOutcome.deposit(depositFields(inState, fields, preChainByte),
 			depositMask(fields));
+	}
+
+	/**
+	 * Recognizer A2 (bead grm-hsv.7, owner ruling 2026-11-06): a write whose bit 7 is UNKNOWN
+	 * inside a repeated-value run of five stores, or several fives back to back (recognizer
+	 * A1's shape, see {@link RepeatRun}), when a reset would change
+	 * no tracked field -- on MMC1, when {@code prg_mode} is already known to be 3.
+	 * <p>
+	 * Why that is sound. All five stores write the same unshifted register, so they share bit 7:
+	 * either every one resets the shifter or none does. All-reset leaves the shifter empty and,
+	 * by the precondition, every tracked field as it was. None-reset is A1's ordinary commit.
+	 * Neither leaves a partial shifter behind, which is the hazard that keeps STA/LSR chains out
+	 * of this rule (there write 1 alone carries an unknown bit 7, and a reset there would leave
+	 * writes 2-5 at shifter position 4, so the next mapper write anywhere would commit).
+	 * <p>
+	 * Result: positions 1-4 echo {@code inState}; position 5 to an untracked target (CHR) echoes;
+	 * position 5 to a tracked target deposits, into that target's fields only, the bits on which
+	 * the two outcomes agree. {@code null} -- the caller poisons -- for anything else.
+	 * <p>
+	 * Instruction-shape match plus a per-state precondition: the match DECISION (non-null
+	 * result) is unchanged by this, since the caller returns non-null either way.
+	 */
+	private SwitchOutcome repeatRunUnknownBit7(Program program, Instruction instr, char reg,
+			long offset, PartialByte storedByte, MechanismState inState) {
+		if (storedByte == null || !sameKnowledge(applyReset(inState), inState)) {
+			return null;
+		}
+		RepeatRun run = analyzeRepeatRun(program, instr, reg);
+		if (run == null || !run.fiveAligned()) {
+			return null;
+		}
+		if (!run.commits()) {
+			return SwitchOutcome.noDeposit(inState);
+		}
+		List<TargetField> runFields = targets.get(targetIndex(offset));
+		if (runFields == null) {
+			return SwitchOutcome.noDeposit(inState); // CHR: recognized, discarded
+		}
+		PartialByte committed = storedByte.isKnown(0)
+				? PartialByte.of(0x1F, storedByte.bit(0) != 0 ? 0x1F : 0)
+				: PartialByte.unknown();
+		MechanismState noReset = depositFields(inState, runFields, committed);
+		return SwitchOutcome.deposit(agreement(inState, noReset), depositMask(runFields));
+	}
+
+	/** Whether two states know the same bits with the same values. */
+	private static boolean sameKnowledge(MechanismState a, MechanismState b) {
+		return a.knownMask() == b.knownMask() &&
+			(a.bits() & a.knownMask()) == (b.bits() & b.knownMask());
+	}
+
+	/** The bits both states know with equal values: the join of two possible outcomes. */
+	private static MechanismState agreement(MechanismState a, MechanismState b) {
+		int known = a.knownMask() & b.knownMask() & ~(a.bits() ^ b.bits());
+		return new MechanismState(known, a.bits() & known);
 	}
 
 	/** The local bits a commit to a target with these fields deposits into. */
@@ -1219,8 +1278,23 @@ public class SerialShiftBankSwitchStrategy extends AbstractRangeBankSwitchStrate
 		return new ChainInfo(backCount + 1, backCount + 1 + forwardCount, chainStart);
 	}
 
-	/** A maximal run of adjacent plain stores of one register to the range (recognizer A1). */
+	/**
+	 * A maximal run of adjacent plain stores of one register to the range (recognizer A1).
+	 * <p>
+	 * A run may be several back-to-back five-write commits (ff1 fe5b-fe76: five stores to
+	 * {@code $BFFF}, then five to {@code $DFFF}, all of one A), so the run is cut into fives
+	 * from its start and every fifth store commits to its OWN address's target.
+	 */
 	private record RepeatRun(int index, int total) {
+		/** Whether the run is a whole number of five-write commits. */
+		boolean fiveAligned() {
+			return total > 0 && total % 5 == 0;
+		}
+
+		/** Whether this store is the fifth of its group, so it commits. */
+		boolean commits() {
+			return index % 5 == 0;
+		}
 	}
 
 	/**
