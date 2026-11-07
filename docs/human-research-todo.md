@@ -215,24 +215,6 @@ Each is minutes of work and settles something specific. Highest value per unit e
   they decide whether `grm-c9d.8.8` adds a "table bytes decode as code" end test or leaves the
   table alone.
 
-### 1.14 cv3: are the three "table bytes decode as code" cuts right? (`grm-c9d.8.9`)
-
-- [ ] **Question.** `grm-c9d.8.8` added a tail rule that ends a word jump table at the first slot
-  whose own bytes decode as a code run with at least 3 absolute calls. On cv3 it cuts three tables,
-  and the cv3 golden is **held, not blessed**, until you say, so `realrom-test.sh check nes` fails
-  on cv3 meanwhile. **Please check each:**
-  - **`e137`, table `RAM:9f31`**, 128 read, cut to **16**. Slot 16's bytes: `f1 07 c9 06 f0 04 …`.
-    Is 16 the real end, or one slot late?
-  - **`80a1`, table `W8000_B4::8277`**, 128 read, cut to 64, and the existing code-prefix rule
-    trims that to **23**. The code seems to start around slot 56. Is 23 right?
-  - **`e137`, table `W8000_B22::9f31`**, cut at **20** on `20 8e 9f 20 9b 9f d0 14 …` (`JSR $9F8E /
-    JSR $9F9B / BNE`). The bytes before it (`03 00 01 02 …`) look like byte values, not pointers.
-    Is this a pointer table at all in bank 22? If not, the cut is only half a fix, and the real
-    question is why the bank-22 reading of `e137` exists.
-
-  Your answers decide whether cv3 is blessed as-is or the rule needs another guard. The dump moved
-  `refs.intoOverlay.retargeted` 154→122 and `instrs.inOverlay` 19401→19151.
-
 ---
 
 ## 2. Def-use passes on untraced titles
@@ -545,3 +527,4 @@ Agents don't write into your ROM library or other personal directories.
 | FF2 `$01:82bb`: what does it do to the direct page? (1.12) | **Answered by the agent, 2026-11-03, before the owner got to it.** `$01:82bb` is `JSL $14:fd00`, and `$14:fd00` is a `JMP` thunk with no return of its own: the analyzer's call summary rejected any jump leaving the body. It now treats an unconditional jump out (and a `JMP` carrying Ghidra's CALL_RETURN override, FF2 `$00:e65e`) as a tail call returning its target's summary, and ignores an exit taken after the path pulled its own return address (CT `$c7:0a8c`, `PLA PLA PLA / JMP` into an outer routine's `PLD / RTL` epilogue). FF2 RESET now keeps `$0600` up to `JSR $00df63` at `$8083`; `tools/banktest/DpLossProbe.java` finds such losses from the stamps. | `grm-9nxj.27` |
 | Find a "tricky code" example to measure the analysis posture against? | **Three, all in the owner's hash-pinned C64 images (real-ROM set `c64-prg`, owner-confirmed 2026-11-06).** `c64_sg_loader` (Summer Games `loader.prg`): rolling-key self-decrypt loop at `$c002` (`grm-430b`). `c64_mm_ea` (Marble Madness `ea.prg`): stack-fill autostart (`grm-w0j7`) landing at `$0203` in undocumented-opcode code (`AF 72 01` = `LAX`), which the documented-only language does not decode. `c64_mm_loader` (Marble Madness `loader.prg`): loads at `$FFFA`, wraps, and overwrites the KERNAL LOAD store pointer `$AE/$AF` twice, redirecting its own remaining bytes to `$EDB0` and then the stack page (placement needs `grm-t3n.5`). Hash-pinned, not redistributable. **`grm-8v6y` is unblocked on its test vector; do not hunt for further examples before a consumer is measured.** Next step per the bead: build `.1` plumbing only together with its first consumer. | `grm-8v6y` |
 | FF2 `$00:E0D0` `JMP (!$063d)`: what does it dispatch to, and do those handlers keep DP? (1.13) | **A switch through the word table at `$00:E2E6`; assume the handlers keep DP (owner, 2026-11-06).** The table was laid but cut short at its first `0000` entry. That zero is a placeholder for a value handled specially, not the end: the real table runs to at least 45 entries, maybe 47 (the last couple are iffy, and a function follows entry 47). On DP: this is the main loop, so anything that changed DP without restoring it before returning to the loop would break the game. **Rule A therefore applies: inside a call summary, an untargeted `JMP (abs)` counts as a tail call that hands back its entry DP. Do not hand-check the handlers one by one.** | `grm-9nxj.27` (rule A); `grm-8lr2` (table cut at a zero entry) |
+| cv3: are the three "table bytes decode as code" (SLOT_CODE) cuts right? (1.14) | **`80a1` / `W8000_B4::8277` at 23 is right. Both `e137` readings are the wrong bank (owner, 2026-11-06).** `e137` is in the IRQ handler, which sets `$5115` to `$82` at `e124`, so the `$9F31`/`$9F32` table comes from bank 2, not RAM, and the handler never reads bank 22 here. The RAM (cut to 16) and B22 (cut to 20) cuts only shrink tables that should not exist at all, so cv3 was blessed as-is and the rule needs no further guard. **Do not tune SLOT_CODE against the `e137` cuts.** The real fix is making `e137` use the bank-2 mapping set at `e124`. | `grm-c9d.8.9` (closed, cv3 blessed); `grm-vk15` (bank 2 at e137) |

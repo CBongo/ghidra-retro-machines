@@ -316,6 +316,11 @@ CT c7:0ad9:
 for c70173, A is bound by CMP to indexes beween $10 and $17 so it is at most 8 entries. c5:06fe doesn't seem to be reached/pointed by anything.
 for c1:0051, this is a table of length 10, which runs right up to the function c10065.  side note: the JSR and JMPs on 65816 do not seem to preserve a data reference to the table itself, just COMPUTED_CALL refs to the targets.
 
+cv3:
+e137: irq handler.  sets bank 5115 to 82 at e124, so the table at 9f31/32 is  coming from bank 2 not RAM. it doesn't ever read bank 22 here.
+4:80a1: 23 is right.
+
+
   Next session's shortest path
 
   1. bd list --label background-ok → farm out immediately (grm-hhd first; it blocks every parallel agent).

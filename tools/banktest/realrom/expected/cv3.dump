@@ -93,13 +93,13 @@ REALROM block WE000_B8 e000-ffff overlay=true
 REALROM block WE000_B9 e000-ffff overlay=true
 REALROM count blocks.total 89
 REALROM count blocks.overlay 77
-REALROM count refs.intoOverlay.retargeted 154
-REALROM count refs.intoOverlay.intraOverlay 4952
-REALROM count instrs.inOverlay 19401
-REALROM count bankComments 176
+REALROM count refs.intoOverlay.retargeted 122
+REALROM count refs.intoOverlay.intraOverlay 4869
+REALROM count instrs.inOverlay 19151
+REALROM count bankComments 175
 REALROM count warnings 14
 REALROM count notes 14
-REALROM count symbols 151
+REALROM count symbols 154
 REALROM count jumptable.wordArrays 6
 REALROM count jumptable.planarArrays 0
 REALROM sample.bankcomment 8065 bank -> prg_mode=2,bank_5114=0,bank_5115=0,bank_5116=7,bank_5117=31? via FUN_e2d6 [known: prg_mode.0=0,prg_mode.1=1,bank_5116.0=1,bank_5116.1=1,bank_5116.2=1,bank_5116.3=0,bank_5116.4=0,bank_5116.5=0,bank_5116.6=0; assumed from initial: bank_5114.0,bank_5114.1,bank_5114.2,bank_5114.3,bank_5114.4,bank_5114.5,bank_5114.6,bank_5115.0,bank_5115.1,bank_5115.2,bank_5115.3,bank_5115.4,bank_5115.5,bank_5115.6,bank_5117.0,bank_5117.1,bank_5117.2,bank_5117.3,bank_5117.4,bank_5117.5,bank_5117.6] [switch-value flow]
@@ -161,7 +161,6 @@ REALROM sample.bankcomment e686 bank -> prg_mode=2,bank_5114=0,bank_5115=8,bank_
 REALROM sample.bankcomment e691 bank -> prg_mode=2,bank_5114=0,bank_5115=8,bank_5116=0,bank_5117=31? via FUN_e2e0 [known: prg_mode.0=0,prg_mode.1=1,bank_5115.0=0,bank_5115.1=0,bank_5115.2=0,bank_5115.3=1,bank_5115.4=0,bank_5115.5=0,bank_5115.6=0; assumed from initial: bank_5114.0,bank_5114.1,bank_5114.2,bank_5114.3,bank_5114.4,bank_5114.5,bank_5114.6,bank_5116.0,bank_5116.1,bank_5116.2,bank_5116.3,bank_5116.4,bank_5116.5,bank_5116.6,bank_5117.0,bank_5117.1,bank_5117.2,bank_5117.3,bank_5117.4,bank_5117.5,bank_5117.6] [switch-value flow]
 REALROM sample.bankcomment e6ca bank -> prg_mode=2,bank_5114=0,bank_5115=28,bank_5116=0,bank_5117=31? via FUN_e2e6 [known: prg_mode.0=0,prg_mode.1=1,bank_5115.0=0,bank_5115.1=0,bank_5115.2=1,bank_5115.3=1,bank_5115.4=1,bank_5115.5=0,bank_5115.6=0; assumed from initial: bank_5114.0,bank_5114.1,bank_5114.2,bank_5114.3,bank_5114.4,bank_5114.5,bank_5114.6,bank_5116.0,bank_5116.1,bank_5116.2,bank_5116.3,bank_5116.4,bank_5116.5,bank_5116.6,bank_5117.0,bank_5117.1,bank_5117.2,bank_5117.3,bank_5117.4,bank_5117.5,bank_5117.6] [switch-value flow]
 REALROM sample.bankcomment e6d1 bank -> prg_mode=2,bank_5114=0,bank_5115=0,bank_5116=0,bank_5117=31? via FUN_e2e6 [known: prg_mode.0=0,prg_mode.1=1,bank_5115.0=0,bank_5115.1=0,bank_5115.2=0,bank_5115.3=0,bank_5115.4=0,bank_5115.5=0,bank_5115.6=0; assumed from initial: bank_5114.0,bank_5114.1,bank_5114.2,bank_5114.3,bank_5114.4,bank_5114.5,bank_5114.6,bank_5116.0,bank_5116.1,bank_5116.2,bank_5116.3,bank_5116.4,bank_5116.5,bank_5116.6,bank_5117.0,bank_5117.1,bank_5117.2,bank_5117.3,bank_5117.4,bank_5117.5,bank_5117.6] [switch-value flow]
-REALROM sample.bankcomment e702 bank -> prg_mode=2,bank_5114=0,bank_5115=28,bank_5116=0,bank_5117=31? via FUN_e2e0 [known: prg_mode.0=0,prg_mode.1=1,bank_5115.0=0,bank_5115.1=0,bank_5115.2=1,bank_5115.3=1,bank_5115.4=1,bank_5115.5=0,bank_5115.6=0; assumed from initial: bank_5114.0,bank_5114.1,bank_5114.2,bank_5114.3,bank_5114.4,bank_5114.5,bank_5114.6,bank_5116.0,bank_5116.1,bank_5116.2,bank_5116.3,bank_5116.4,bank_5116.5,bank_5116.6,bank_5117.0,bank_5117.1,bank_5117.2,bank_5117.3,bank_5117.4,bank_5117.5,bank_5117.6] [switch-value flow]
 REALROM sample.bankcomment e71b bank -> prg_mode=2,bank_5114=0,bank_5115=0,bank_5116=0,bank_5117=31? via FUN_e2e6 [known: prg_mode.0=0,prg_mode.1=1,bank_5115.0=0,bank_5115.1=0,bank_5115.2=0,bank_5115.3=0,bank_5115.4=0,bank_5115.5=0,bank_5115.6=0; assumed from initial: bank_5114.0,bank_5114.1,bank_5114.2,bank_5114.3,bank_5114.4,bank_5114.5,bank_5114.6,bank_5116.0,bank_5116.1,bank_5116.2,bank_5116.3,bank_5116.4,bank_5116.5,bank_5116.6,bank_5117.0,bank_5117.1,bank_5117.2,bank_5117.3,bank_5117.4,bank_5117.5,bank_5117.6] [switch-value flow]
 REALROM sample.bankcomment e722 bank -> prg_mode=2,bank_5114=0,bank_5115=0,bank_5116=0,bank_5117=31? via FUN_e2e6 [known: prg_mode.0=0,prg_mode.1=1,bank_5115.0=0,bank_5115.1=0,bank_5115.3=0,bank_5115.5=0,bank_5115.6=0; assumed from initial: bank_5114.0,bank_5114.1,bank_5114.2,bank_5114.3,bank_5114.4,bank_5114.5,bank_5114.6,bank_5115.2,bank_5115.4,bank_5116.0,bank_5116.1,bank_5116.2,bank_5116.3,bank_5116.4,bank_5116.5,bank_5116.6,bank_5117.0,bank_5117.1,bank_5117.2,bank_5117.3,bank_5117.4,bank_5117.5,bank_5117.6] [switch-value flow]
 REALROM sample.bankcomment e732 bank -> prg_mode=2,bank_5114=0,bank_5115=0,bank_5116=0,bank_5117=31? via FUN_e2e6 [known: prg_mode.0=0,prg_mode.1=1,bank_5115.0=0,bank_5115.1=0,bank_5115.2=0,bank_5115.3=0,bank_5115.4=0,bank_5115.5=0,bank_5115.6=0; assumed from initial: bank_5114.0,bank_5114.1,bank_5114.2,bank_5114.3,bank_5114.4,bank_5114.5,bank_5114.6,bank_5116.0,bank_5116.1,bank_5116.2,bank_5116.3,bank_5116.4,bank_5116.5,bank_5116.6,bank_5117.0,bank_5117.1,bank_5117.2,bank_5117.3,bank_5117.4,bank_5117.5,bank_5117.6] [switch-value flow]
@@ -303,7 +302,7 @@ REALROM sample.ref 8019 -> W8000_B24::801e CONDITIONAL_JUMP primary=true
 REALROM sample.ref 801a -> W8000_B18::8252 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 801b -> W8000_B24::812c UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 801c -> W8000_B4::802d CONDITIONAL_JUMP primary=true
-REALROM sample.ref.truncated 25 of 5106
+REALROM sample.ref.truncated 25 of 4991
 REALROM sample.warn c912 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_e2e6, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
 REALROM sample.warn e1b8 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_e2e6, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
 REALROM sample.warn e1c8 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_e2e6, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
@@ -332,6 +331,11 @@ REALROM sample.note ff87 [NesBankingAnalyzer] Bank value is RESTORED here, not r
 REALROM sample.note ffa7 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call re-commits the bank READ BACK at ff9a from bank-identifying ROM byte 8000 -- a byte that, committed back to the bank register as read, re-selects a bank whose window image is identical to the one it is read from (byte re-selects the same bank image), so the bank committed is the bank live at the read -- that the live bank is one this was verified on is PROVEN by the tracked state at the read, carried on the stack across the call at ffa0 -- the save/restore idiom. The bank after this call is the bank 8000 identified at that read, not a fresh value this analyzer failed to pin down. That read sits at the ENTRY of FUN_ff9a (nothing switches between its entry and the read), so it is the bank live on entry: each of its call sites' own bank, which those sites already track -- the call passes it through unchanged. A property of the game, not a gap in analysis.
 REALROM sample.note ffb7 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call re-commits the bank READ BACK at ffaa from bank-identifying ROM byte 8000 -- a byte that, committed back to the bank register as read, re-selects a bank whose window image is identical to the one it is read from (byte re-selects the same bank image), so the bank committed is the bank live at the read -- that the live bank is one this was verified on is PROVEN by the tracked state at the read, carried on the stack across the call at ffb0 -- the save/restore idiom. The bank after this call is the bank 8000 identified at that read, not a fresh value this analyzer failed to pin down. A property of the game, not a gap in analysis.
 REALROM sample.note ffc7 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call re-commits the bank READ BACK at ffba from bank-identifying ROM byte 8000 -- a byte that, committed back to the bank register as read, re-selects a bank whose window image is identical to the one it is read from (byte re-selects the same bank image), so the bank committed is the bank live at the read -- that the live bank is one this was verified on is PROVEN by the tracked state at the read, carried on the stack across the call at ffc0 -- the save/restore idiom. The bank after this call is the bank 8000 identified at that read, not a fresh value this analyzer failed to pin down. That read sits at the ENTRY of FUN_ffba (nothing switches between its entry and the read), so it is the bank live on entry: each of its call sites' own bank, which those sites already track -- the call passes it through unchanged. A property of the game, not a gap in analysis.
+REALROM sample.symbol 07ee case_10 USER_DEFINED primary=true
+REALROM sample.symbol 07f3 case_2 USER_DEFINED primary=true
+REALROM sample.symbol 3790 case_13 USER_DEFINED primary=true
+REALROM sample.symbol 494c case_14 USER_DEFINED primary=true
+REALROM sample.symbol 80a1 switch USER_DEFINED primary=true
 REALROM sample.symbol 813a switch USER_DEFINED primary=true
 REALROM sample.symbol 841d switch USER_DEFINED primary=true
 REALROM sample.symbol 8434 case_0 USER_DEFINED primary=false
@@ -344,6 +348,7 @@ REALROM sample.symbol 8434 case_6 USER_DEFINED primary=false
 REALROM sample.symbol 8434 case_7 USER_DEFINED primary=false
 REALROM sample.symbol 8434 case_8 USER_DEFINED primary=false
 REALROM sample.symbol 8434 case_9 USER_DEFINED primary=true
+REALROM sample.symbol 8510 case_8 USER_DEFINED primary=true
 REALROM sample.symbol 8667 switch USER_DEFINED primary=true
 REALROM sample.symbol 866a case_0 USER_DEFINED primary=true
 REALROM sample.symbol 866a case_1 USER_DEFINED primary=false
@@ -351,17 +356,11 @@ REALROM sample.symbol 866a case_6 USER_DEFINED primary=false
 REALROM sample.symbol 867c case_2 USER_DEFINED primary=true
 REALROM sample.symbol 8684 case_3 USER_DEFINED primary=true
 REALROM sample.symbol 8684 case_4 USER_DEFINED primary=false
-REALROM sample.symbol 86bb case_5 USER_DEFINED primary=true
-REALROM sample.symbol 8707 case_42 USER_DEFINED primary=true
-REALROM sample.symbol 870a case_33 USER_DEFINED primary=true
-REALROM sample.symbol 920c case_29 USER_DEFINED primary=true
-REALROM sample.symbol 934c case_30 USER_DEFINED primary=true
-REALROM sample.symbol 9369 case_31 USER_DEFINED primary=true
-REALROM sample.symbol.truncated 25 of 139
+REALROM sample.symbol.truncated 25 of 142
 REALROM sample.jumptable W8000_B18::8671 word[75]
 REALROM sample.jumptable W8000_B24::8420 word[10]
 REALROM sample.jumptable W8000_B24::86f5 word[7]
 REALROM sample.jumptable W8000_B24::8703 word[4]
 REALROM sample.jumptable W8000_B24::8b3d word[4]
-REALROM sample.jumptable W8000_B4::a04f word[18]
+REALROM sample.jumptable W8000_B4::8277 word[23]
 === REALROM END ===
