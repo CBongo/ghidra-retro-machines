@@ -91,6 +91,70 @@ public class W65816JumpTablesTest {
 		assertEquals(W65816JumpTables.End.UNREADABLE, r.endedBy());
 	}
 
+	private static TableScorer.Result<Long, W65816JumpTables.End> zeroWalk(boolean sameHalf,
+			int[] words) {
+		return W65816JumpTables.score(0x00e2e6L, 0x000000L, 128, sameHalf, true,
+			i -> i < words.length ? words[i] : null, b -> true, t -> (t & 0xffff) != 0,
+			i -> null);
+	}
+
+	/** grm-8lr2: a zero word between real entries is a placeholder, and the walk goes on. */
+	@Test
+	public void aZeroWordInTheMiddleIsAPlaceholder() {
+		TableScorer.Result<Long, W65816JumpTables.End> r = zeroWalk(false,
+			new int[] { 0xe400, 0, 0xe410, 0xe420 });
+		assertEquals(4, r.count());
+		assertEquals(W65816JumpTables.UNUSED_ENTRY, (long) r.targets().get(1));
+		assertEquals(1, W65816JumpTables.unusedCount(r.targets()));
+	}
+
+	@Test
+	public void trailingPlaceholdersAreTrimmed() {
+		TableScorer.Result<Long, W65816JumpTables.End> r = W65816JumpTables.trimUnused(
+			zeroWalk(false, new int[] { 0xe400, 0xe410, 0, 0 }));
+		assertEquals(2, r.count());
+		assertEquals(2, r.scores().size());
+	}
+
+	@Test
+	public void threeZerosInARowEndTheTableBeforeThem() {
+		TableScorer.Result<Long, W65816JumpTables.End> r = zeroWalk(false,
+			new int[] { 0xe400, 0xe410, 0, 0, 0, 0xe420 });
+		assertEquals(4, r.count());   // the two allowed placeholders; trimUnused drops them
+		assertEquals(W65816JumpTables.End.UNUSED_SLOT, r.endedBy());
+		assertEquals(2, W65816JumpTables.trimUnused(r).count());
+	}
+
+	@Test
+	public void aFirstZeroWordStillEndsTheTableAtOnce() {
+		TableScorer.Result<Long, W65816JumpTables.End> r = zeroWalk(false,
+			new int[] { 0, 0xe410, 0xe420 });
+		assertEquals(0, r.count());
+		assertEquals(W65816JumpTables.End.IMPLAUSIBLE, r.endedBy());
+	}
+
+	/** Where $xx:0000 is a plausible target (HiROM ROM) a zero run is not cut: FF3 $C0:7807. */
+	@Test
+	public void aPlausibleZeroTargetIsNotAPlaceholder() {
+		int[] words = { 0xe400, 0, 0, 0, 0, 0xe410 };
+		TableScorer.Result<Long, W65816JumpTables.End> r = W65816JumpTables.score(0xc07807L,
+			0xc00000L, 128, false, true, i -> i < words.length ? words[i] : null, b -> true,
+			t -> true, i -> null);
+		assertEquals(6, r.count());
+		assertEquals(0, W65816JumpTables.unusedCount(r.targets()));
+	}
+
+	/** Without the opt-in (the RTS trick's call), a zero word is still target $xx:0000. */
+	@Test
+	public void withoutTheOptInAZeroWordStillEndsIt() {
+		int[] words = { 0xe400, 0, 0xe410 };
+		TableScorer.Result<Long, W65816JumpTables.End> r = W65816JumpTables.score(0x00e2e6L,
+			0x000000L, 128, true, i -> i < words.length ? words[i] : null, b -> true,
+			t -> (t & 0xffff) != 0);
+		assertEquals(1, r.count());
+		assertEquals(W65816JumpTables.End.IMPLAUSIBLE, r.endedBy());
+	}
+
 	private static TableScorer.Result<Long, W65816JumpTables.End> rtsTrick(long start,
 			int[] words) {
 		return W65816JumpTables.score(start, start & 0xff0000L, 256, true,

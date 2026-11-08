@@ -231,6 +231,10 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 				AnalyzerLog.info(this, "dispatch " + siteAddr + ": no plausible entry at " + table);
 				continue;
 			}
+			if (W65816JumpTables.unusedCount(targets) > 0) {
+				AnalyzerLog.info(this, "dispatch " + siteAddr + ": table " + laid + ": " + n +
+					" entries" + placeholders(targets));
+			}
 			boolean call = site.getFlowType().isCall();
 			// grm-iv4i: one DATA reference per entry into bank:word, as on the NES side.
 			if (!shared && !JumpTableArrays.layWords(program, laid, entryTargets(laid, targets))) {
@@ -242,7 +246,9 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 			RefType type = call ? RefType.COMPUTED_CALL : RefType.COMPUTED_JUMP;
 			Set<Address> unique = new LinkedHashSet<>();
 			for (long t : targets) {
-				unique.add(table.getNewAddress(t));
+				if (t != W65816JumpTables.UNUSED_ENTRY) {
+					unique.add(table.getNewAddress(t));
+				}
 			}
 			for (Address t : unique) {
 				program.getReferenceManager().addMemoryReference(siteAddr, t, type,
@@ -264,7 +270,7 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 			}
 			tables.computeIfAbsent(laid, t -> new LinkedHashSet<>()).add(siteAddr);
 			AnalyzerCommentRecord.replaceOwn(program, siteAddr, CommentType.EOL,
-				note(laid, n, unique.size(), ctx, cap), COMMENT_PREFIX);
+				note(laid, n, unique.size(), ctx, cap) + placeholders(targets), COMMENT_PREFIX);
 			resolved++;
 		}
 		if (resolved > 0) {
@@ -381,6 +387,15 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 			if (keep == n) {
 				continue;
 			}
+			// Read the kept entries while the array's references still say which are placeholders.
+			List<Long> entries = new ArrayList<>();
+			for (int i = 0; i < keep; i++) {
+				Long e = laidEntry(program, table, i, targetBank);
+				if (e == null) {
+					break;
+				}
+				entries.add(e);
+			}
 			// The cut entries' data references go with the array, so they cannot keep stale
 			// targets looking referenced.
 			if (!JumpTableArrays.unlay(program, table)) {
@@ -388,17 +403,19 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 			}
 			Set<Address> kept = new LinkedHashSet<>();
 			if (keep > 0) {
-				List<Long> entries = new ArrayList<>();
-				for (int i = 0; i < keep; i++) {
-					Integer w = word(program.getMemory(), table.add(2L * i));
-					if (w == null) {
-						break;
-					}
-					entries.add(targetBank | w);
+				int real = entries.size();
+				while (real > 0 && entries.get(real - 1) == W65816JumpTables.UNUSED_ENTRY) {
+					real--;   // a trailing placeholder is not part of the table
 				}
+				boolean complete = entries.size() == keep;
+				entries = new ArrayList<>(entries.subList(0, real));
 				List<Address> entryTargets = entryTargets(table, entries);
-				kept.addAll(entryTargets);
-				if (entries.size() < keep ||
+				for (Address et : entryTargets) {
+					if (et != null) {
+						kept.add(et);
+					}
+				}
+				if (!complete ||
 					!JumpTableArrays.layWords(program, table, entryTargets)) {
 					AnalyzerLog.info(this, "could not shrink table " + table);
 				}
@@ -472,11 +489,12 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 			Set<Address> tableStarts, Set<Address> own) {
 		// grm-gipk.16.7: references at an entry position that are not the table's own.
 		List<EntryReferences.Extent> extent = extentOf(table, cap);
-		return W65816JumpTables.score(table.getOffset(), targetBank, cap, false,
+		return W65816JumpTables.trimUnused(W65816JumpTables.score(table.getOffset(), targetBank, cap,
+			false, true,
 			i -> word(program.getMemory(), table.add(2L * i)),
 			b -> tableByteFree(program, table.getNewAddress(b), table, tableStarts),
 			t -> plausibleTarget(program, table.getNewAddress(t), ctx),
-			i -> EntryReferences.find(program, table.add(2L * i), extent, own));
+			i -> EntryReferences.find(program, table.add(2L * i), extent, own)));
 	}
 
 	/**
@@ -757,20 +775,46 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 		}
 		int n = Math.min(cap, a.getNumElements());
 		for (int i = 0; i < n; i++) {
-			Integer w = word(program.getMemory(), table.add(2L * i));
-			if (w == null) {
+			Long e = laidEntry(program, table, i, targetBank);
+			if (e == null) {
 				return i;
 			}
-			targets.add(targetBank | w);
+			targets.add(e);
 		}
 		return n;
 	}
 
-	/** Each entry's target as an address in {@code table}'s space, one per entry, in order. */
+	/**
+	 * Entry {@code i} of a word table {@link JumpTableArrays#layWords} laid at {@code table}: its
+	 * target, or {@link W65816JumpTables#UNUSED_ENTRY} for a zero word the walk took as a
+	 * placeholder -- which {@code layWords} marks by giving it no data reference (grm-8lr2). Read
+	 * from the references, not re-derived, so this agrees with the walk by construction: where
+	 * {@code $bank:0000} is plausible (HiROM) the walk took a zero as a target and referenced it.
+	 * Null when the word is unreadable.
+	 */
+	private static Long laidEntry(Program program, Address table, int i, long targetBank) {
+		Address at = table.add(2L * i);
+		Integer w = word(program.getMemory(), at);
+		if (w == null) {
+			return null;
+		}
+		if (w == 0 && i > 0 && !program.getReferenceManager().hasReferencesFrom(at)) {
+			return W65816JumpTables.UNUSED_ENTRY;
+		}
+		return targetBank | w;
+	}
+
+	/** " (k placeholder[s])" for the zero-word entries among {@code targets}, else empty. */
+	private static String placeholders(List<Long> targets) {
+		int k = W65816JumpTables.unusedCount(targets);
+		return k == 0 ? "" : " (" + k + " placeholder" + (k == 1 ? "" : "s") + ")";
+	}
+
+	/** Each entry's target as an address in {@code table}'s space, in order; null: placeholder. */
 	static List<Address> entryTargets(Address table, List<Long> targets) {
 		List<Address> out = new ArrayList<>(targets.size());
 		for (long t : targets) {
-			out.add(table.getNewAddress(t));
+			out.add(t == W65816JumpTables.UNUSED_ENTRY ? null : table.getNewAddress(t));
 		}
 		return out;
 	}

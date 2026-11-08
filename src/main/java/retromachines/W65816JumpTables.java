@@ -111,7 +111,10 @@ final class W65816JumpTables {
 		 * p {@link #LABEL_P}); see {@link EntryReferences} (grm-gipk.16.7).
 		 */
 		ENTRY_REFERENCED,
-		/** Soft (record tables only): an unused slot, {@link #UNUSED_ENTRY}; p {@link #UNUSED_P}. */
+		/**
+		 * Soft (record tables, zero-word placeholders): an unused slot, {@link #UNUSED_ENTRY}; p
+		 * {@link #UNUSED_P}. Hard past {@link #MAX_UNUSED_RUN} placeholders in a row.
+		 */
 		UNUSED_SLOT
 	}
 
@@ -180,10 +183,65 @@ final class W65816JumpTables {
 	static TableScorer.Result<Long, End> score(long tableStart, long targetBank, int cap,
 			boolean sameHalf, IntFunction<Integer> word, LongPredicate tableByteFree,
 			LongPredicate targetPlausible, IntFunction<EntryReferences.Hit> entryRef) {
+		return score(tableStart, targetBank, cap, sameHalf, false, word, tableByteFree,
+			targetPlausible, entryRef);
+	}
+
+	/**
+	 * As above, plus {@code zeroIsPlaceholder} (grm-8lr2): a raw word of $0000 after entry 0 is an
+	 * {@link #UNUSED_ENTRY} (soft {@link End#UNUSED_SLOT}), not target $xx:0000 that
+	 * {@code targetPlausible} rejects. FF2 {@code $00:E2E6} holds a zero for a value the code
+	 * special-cases before the dispatch, with real handlers after it. At most
+	 * {@link #MAX_UNUSED_RUN} placeholders in a row: zero padding after a real table must not let
+	 * the walk run on into whatever follows. Only where $xx:0000 is NOT a plausible target: in a
+	 * HiROM bank offset 0 is ROM, the walk already took the zero as an ordinary target, and FF3 {@code $C0:7807} is a real table with
+	 * zero runs of 2, 3 and 4 that the run limit would have cut. Entry 0 stays a hard
+	 * {@link End#IMPLAUSIBLE} end.
+	 * Trailing placeholders stay in the result; {@link #trimUnused} drops them.
+	 */
+	static TableScorer.Result<Long, End> score(long tableStart, long targetBank, int cap,
+			boolean sameHalf, boolean zeroIsPlaceholder, IntFunction<Integer> word,
+			LongPredicate tableByteFree, LongPredicate targetPlausible,
+			IntFunction<EntryReferences.Hit> entryRef) {
 		return scoreCore(tableStart, 2, cap, sameHalf, false, n -> {
 			Integer w = word.apply(n);
-			return w == null ? null : (targetBank & 0xff0000L) | (w & 0xffff);
-		}, tableByteFree, targetPlausible, entryRef);
+			if (w == null) {
+				return null;
+			}
+			if (zeroIsPlaceholder && n > 0 && (w & 0xffff) == 0 &&
+				!targetPlausible.test((targetBank & 0xff0000L))) {
+				return UNUSED_ENTRY;
+			}
+			return (targetBank & 0xff0000L) | (w & 0xffff);
+		}, tableByteFree, targetPlausible, entryRef, zeroIsPlaceholder ? MAX_UNUSED_RUN : -1);
+	}
+
+	/** Most consecutive placeholders a zero-word-placeholder walk keeps; see {@link #score}. */
+	static final int MAX_UNUSED_RUN = 2;
+
+	/**
+	 * {@code r} without its trailing {@link #UNUSED_ENTRY}s: a placeholder is part of a table only
+	 * when a later real entry vouches for it.
+	 */
+	static TableScorer.Result<Long, End> trimUnused(TableScorer.Result<Long, End> r) {
+		int n = r.targets().size();
+		while (n > 0 && r.targets().get(n - 1) == UNUSED_ENTRY) {
+			n--;
+		}
+		if (n == r.targets().size()) {
+			return r;
+		}
+		return new TableScorer.Result<>(List.copyOf(r.targets().subList(0, n)), r.endedBy(),
+			List.copyOf(r.scores().subList(0, n)));
+	}
+
+	/** The number of {@link #UNUSED_ENTRY}s in {@code targets}. */
+	static int unusedCount(List<Long> targets) {
+		int c = 0;
+		for (long t : targets) {
+			c += t == UNUSED_ENTRY ? 1 : 0;
+		}
+		return c;
 	}
 
 	/**
@@ -197,13 +255,13 @@ final class W65816JumpTables {
 			IntFunction<Long> entryTarget, LongPredicate tableByteFree,
 			LongPredicate targetPlausible, IntFunction<EntryReferences.Hit> entryRef) {
 		return scoreCore(tableStart, stride, cap, false, true, entryTarget, tableByteFree,
-			targetPlausible, entryRef);
+			targetPlausible, entryRef, -1);
 	}
 
 	private static TableScorer.Result<Long, End> scoreCore(long tableStart, int stride, int cap,
 			boolean sameHalf, boolean bankFilter, IntFunction<Long> entryTarget,
 			LongPredicate tableByteFree, LongPredicate targetPlausible,
-			IntFunction<EntryReferences.Hit> entryRef) {
+			IntFunction<EntryReferences.Hit> entryRef, int maxUnusedRun) {
 		long bank = tableStart & 0xff0000L;
 		List<Boolean> sure = new ArrayList<>();   // per accepted entry, in order
 		TableScorer.EndPolicy policy = sameHalf ? TableScorer.doubtRun(0.5, 1.0, DOUBT_RUN)
@@ -227,6 +285,15 @@ final class W65816JumpTables {
 				return TableScorer.Entry.rejected(End.UNREADABLE);
 			}
 			if (target == UNUSED_ENTRY) {
+				if (maxUnusedRun >= 0) {
+					int run = 0;
+					while (run < before.size() && before.get(before.size() - 1 - run) == UNUSED_ENTRY) {
+						run++;
+					}
+					if (run >= maxUnusedRun) {
+						return TableScorer.Entry.rejected(End.UNUSED_SLOT);
+					}
+				}
 				sure.add(true);
 				return TableScorer.Entry.accepted(target,
 					List.of(new TableScorer.Term<>(End.UNUSED_SLOT, UNUSED_P)));

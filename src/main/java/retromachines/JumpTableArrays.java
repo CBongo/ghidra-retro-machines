@@ -67,7 +67,7 @@ final class JumpTableArrays {
 			return false;
 		}
 		for (int i = 0; i < targets.size(); i++) {
-			if (!hasRef(program, start.add(2L * i), targets.get(i))) {
+			if (targets.get(i) != null && !hasRef(program, start.add(2L * i), targets.get(i))) {
 				return false;
 			}
 		}
@@ -91,7 +91,8 @@ final class JumpTableArrays {
 	}
 
 	/**
-	 * Lays {@code word[targets.size()]} at {@code start} and one data reference per entry. Clears
+	 * Lays {@code word[targets.size()]} at {@code start} and one data reference per entry (a null
+	 * target is a placeholder: no reference, which is how a re-read tells it apart). Clears
 	 * stock's byte array at {@code start} (the whole of it, so its over-read tail goes too) and any
 	 * undefined or byte data in the extent. Declines, changing nothing, when an instruction or any
 	 * other defined data overlaps the extent, or the extent is not addressable. Returns whether the
@@ -104,8 +105,10 @@ final class JumpTableArrays {
 		}
 		ReferenceManager refs = program.getReferenceManager();
 		for (int i = 0; i < n; i++) {
-			refs.addMemoryReference(start.add(2L * i), targets.get(i), RefType.DATA,
-				SourceType.ANALYSIS, 0);
+			if (targets.get(i) != null) {
+				refs.addMemoryReference(start.add(2L * i), targets.get(i), RefType.DATA,
+					SourceType.ANALYSIS, 0);
+			}
 		}
 		return true;
 	}
