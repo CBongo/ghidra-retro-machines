@@ -173,6 +173,22 @@ Each is minutes of work and settles something specific. Highest value per unit e
   they decide whether `grm-c9d.8.8` adds a "table bytes decode as code" end test or leaves the
   table alone.
 
+### 1.15 dodge bank 5: what are the 5-byte records that point at `fb1b`? (`grm-gipk.20`)
+
+- [ ] **Question.** `fb1b`–`fb26` (`LDA $BFF9 / PHA / LDA #3 / JSR ff08 / JSR $8003`, falling
+  into the shared tail `fb27 PLA / JSR ff08 / RTS`) is real code that nothing flows to. Its only
+  references are a word inside 5-byte records in bank 5, at `$9514`, `$9724`, `$9744`, `$BCC2` and
+  `$BD76`. Six sibling routines (`fb2c`–`fb77`) have the same bracket and are disassembled.
+  - What is the record layout? Which byte or word is the `fb1b` pointer, and what are the others?
+  - What walks the records, and how does it reach `fb1b` (`JMP (ind)`, RTS trick, `JSR` through
+    a vector)?
+  - How many records are there? Do other records point at code Ghidra has also missed?
+
+  The answer decides `grm-gipk.20`. If the shape is a common one, it gets a recognizer. If it is
+  dodge-only, it gets a per-game code-pointer hint (the `grm-hb6.29` route, as for kicarus' 5-byte
+  records). Either way, once `fb1b` is disassembled, the `fb28` RESTORED proof (`grm-hsv.13`) stops
+  depending on the closed-world assumption.
+
 ---
 
 ## 2. Def-use passes on untraced titles
