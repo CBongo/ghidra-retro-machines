@@ -374,6 +374,11 @@ and a recorded fact is an input, not an inference. Two distinct entry points:
   fills the gap where it does not. Every annotation derived from one carries hint provenance,
   so a reader can always tell an inference from a recording.
 
+**Where switch values come from in real code.** The recurring shapes (argument cells,
+current-bank shadows, busy flags, deferred requests, bank-ID read-backs), with corpus examples
+and the mechanism that handles each, are catalogued in
+[bank-source-idioms.md](bank-source-idioms.md).
+
 ### L3 — Interpretation
 
 A pure function `resolve(state_tuple, window) → occupant/physical-offset`, evaluated
