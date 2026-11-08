@@ -189,25 +189,6 @@ Each is minutes of work and settles something specific. Highest value per unit e
   records). Either way, once `fb1b` is disassembled, the `fb28` RESTORED proof (`grm-hsv.13`) stops
   depending on the closed-world assumption.
 
-### 1.16 Metroid: two facts behind the live-bank set (`grm-5tl.20.3`, `grm-5tl.20.5`)
-
-- [ ] **Question.** Metroid requests an area bank by writing `$24`. `c4de`→`c4e8` commits it later
-  as `$24`−1 and records it in `$23`. The agent derived the set of possible live banks, {0..5},
-  from the bytes. Two parts of that need a human:
-  - **Is the `ca30` table index really 0–4?** `ca28`–`ca2b` does `AND #$0F / TAY / LDA $CA30,Y /
-    STA $24`. The table is `02 03 05 04 06`, and `ca35` is already code. The index comes from
-    `$030F` at caller `d8e7` (`c81a` passes index 0). Does `$030F` only ever hold 0–4 (the five
-    areas)? If yes, the hint can say so with that as its provenance. If not, something else bounds
-    it.
-  - **Which bank is live at `e5e0 JSR $A29E`?** The other targets that only decode in bank 0
-    (`988a`, `9f54`, `8ac7`, `a93e`) are called from sites that are mostly behind a `$1D`/`$1F`
-    title-mode check in the fixed bank (e.g. `c1b4`, `c1e0`). `e5e0` is not. At `$A29E`, bank 0 holds a pointer table and only bank 3 decodes as code,
-    in what looks like the middle of a routine. Is this a real bank-3 entry point, a call that
-    never runs, or data reached some other way?
-
-  The answers set `grm-5tl.20.3`'s value set and provenance, and tell `grm-5tl.20.5` whether
-  dropping banks that don't decode is right at `e5e0`, or would drop the only real target.
-
 ---
 
 ## 2. Def-use passes on untraced titles
@@ -521,3 +502,4 @@ Agents don't write into your ROM library or other personal directories.
 | FF3 `$C0:196F` / `$C0:1AB6`, fzero `$00:B59F`: what width does the code after `JSR` really run at? (1.4) | **M=0 on every live route at all three (owner, 2026-11-07).** fzero: `$00:D1F0` does `PHP`, `SEP #$30`, pushes a bank and (address after its `JML`) − 1, then `JML`s. The callee's `RTL` lands at `$D1FB`, which does `PLP` / `RTS`, so the call is flag-neutral. The warning is a false positive from the effect walk, which cannot follow the pushed return (`grm-9nxj.33`, P4). FF3: `$C0:1A2A` leaving with M set is a real game bug that never runs. It is called only when the "set parent map" flag `$02` is set in the entrance-tile flags byte. No long-table entry (`196F`) has it, and the short-table entries (`1AB6`) that do are handled by the world-map handler at `$EE:20DF`, which never calls `1A2A`. The FF3 warnings are honest and the current M=0 decode is right. **Do not repair these continuations to M=1.** | `grm-9nxj.5.7`; `grm-9nxj.33` |
 | FF3 `$C1:0008`: how many jump-table entries are real? (the FF3 half of 1.5) | **14, exactly as the analyzer lays it (owner, 2026-11-07).** These are the battle graphics handlers. Entry 4 (`950f`) is a real handler even though it sits well away from the other `00xx`–`02xx` targets. A target far from its siblings is not evidence of an over-read: **do not shorten this table, and do not add a "distant target" cut for it.** With the CT half answered earlier, `grm-9nxj.5.8` item 3 is fully closed. | `grm-9nxj.5.8` |
 | FF3 `$C5:3D1C`: what follows the sample pointer table? (1.7) | **The sample loop table; 63 is the real sample count (owner, 2026-11-07).** The sample uploader adds each loop entry to its sample's base address when it sets the loop point in the instrument table. `ff3mus.pl`'s `0x45` (69) is most likely a count copied from another game's script and never updated, and the script barely uses the sample tables anyway. Its song count, `0x55`, is right (owner). **Lay the sample tables at 63 entries, not 69.** The next two tables are the per-sample pitch multipliers at `$C5:3D9A` and the ADSR at `$C5:3E18` (owner). `$3D1C`→`$3E96` (the song table) is 378 bytes = 63 × 6, and each of the three is 63 word entries (owner): the loop entry is an offset into the sample, the multiplier a word, and the ADSR entry the two 8-bit DSP ADSR register values. | `grm-hb6.28` |
+| Metroid (1.16): is the `ca30` table index really 0–4, and which bank is live at `e5e0 JSR $A29E`? | **Index 0–4, and `e5e0` is not a call (owner, 2026-11-08; bytes agent-checked).** `ca18`, which holds the table load, is called only from `d8e7` (elevator handling: area changes always go through an elevator) and from the new-game init (Brinstar, area 0). At `d8e7` the value comes from `$030F,X` with X=`#$20`, the elevator object's status. The pre-AND value is what `ca23` stores in `$74`, which the nmikstas disassembly gives as `$00` or `$10`–`$14`, so `AND #$0F` gives 0–4 and the five bytes at `ca30` are the whole table. `e5e0` is data: the `JSR $c376` before it never returns there, because `c376` ends `PLA / PLA / RTS` and returns to its caller's caller. **Do not treat `$A29E` as a banked call target in any bank, and do not use `e5e0` as evidence for or against bank pruning.** The general fix (pop-return helpers) is `grm-ed6h`. | `grm-5tl.20.3`, `grm-5tl.20.5`; `grm-ed6h` |
