@@ -333,6 +333,9 @@ e5e0: this is data that was misdissambled as a JSR, because the preceding JSR c3
 timecop JSR 81af90,X at 81af35 might share some entries with the JSR 81af92,X at 81af84.  81af92 is NOT code. it's possible that 81af90 is just one entry long, but more likely encompasses the 81af92 entries so the first is 11 entries and the second is 10 entries, both ending just before real code (a shared RTS) at afa6.
 madden95 c6b892: the bias 0 (19 entries) reading appears correct.
 
+1.10: dbz_saiyan d2ae is code; 20 is the correct length of the d286 table.
+dragonpower 803e is indeed 9 entries and is being recovered correctly now.
+tmnt 5:823b: code at 82c1 is reached from a JMP (bounds check to skip the indirect jump) at 8226 as part of the flow preceding the table read.  67 is the correct entry count.
 
   Next session's shortest path
 

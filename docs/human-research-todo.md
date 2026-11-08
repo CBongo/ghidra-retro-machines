@@ -114,39 +114,6 @@ Each is minutes of work and settles something specific. Highest value per unit e
   the likely cause is a wrong assumption about which bank `e72a JSR $8574` enters (`$80` gives 16K
   bank 0). Say so, and `grm-mej.19` can aim for a full RESTORED note.
 
-### 1.10 Three over-read NES jump tables: where does each real table end? (`grm-c9d.8.7`, `grm-c9d.8.8`)
-
-- [ ] **Question.** Each table below was read to 83–128 entries and no bound rule cut it. The
-  agent read the bytes and proposed a real count and a rule change for each.
-  **Update 2026-11-01:** the owner ruled the rule directions without the disassembler check, and
-  `grm-c9d.8.7` shipped two of them. The below-table cut's confirm check now ignores a target
-  between the table and its lowest kept handler (dbz). Its same-block check now accepts handlers
-  in the fixed bank when at least one is in the table's own bank (tmnt). Both goldens are blessed
-  at **20** and **67**. dragonpower moved to `grm-c9d.8.8`. **What is still open is the check
-  itself:** are 20 and 67 right, and are tmnt's entries 65/66 real? If either count is wrong, reopen
-  `grm-c9d.8.7`. The full target list per entry is in the comment on `grm-c9d.8.7`
-  (`bd show grm-c9d.8.7`).
-  - **dbz_saiyan `c4fb`, table `d286`** (128 read). Proposed: **20** entries (`d2f3 d2f6 d3bf …
-    d311`), with the table bytes from `d2ae` decoding as code (`85 32 a8 …`). Entry 20 (`3285`) is
-    the first target below the table, so the existing below-table cut lands on 20. Its follow-up
-    check declines because entry 22 (`d2bf`) points back inside the table's bank. Is `d2ae` code,
-    and is that entry 22 junk? If both are yes, the follow-up check is too strict here.
-  - **tmnt `W8000_B5::8238`, table `823b`** (83 read). Proposed: **67** entries. The bytes from
-    `82c1` decode as `LDA $0630,X / CMP #$FF / BEQ / DEC $0630,X / BNE / JSR $EF48 / RTS`. Entry
-    67 (`30bd`) is the first target below the table. The below-table cut is declined only because
-    many real handlers (`cfb8`, `fd4b`, `fd5f`, …) sit in the fixed bank, outside the table's bank.
-    Is it 67? Entries 65 (`bef0`) and 66 (`8733`, which entries 5 and 28 also use) are the doubtful
-    ones. Is a table in one bank whose handlers sit in the fixed bank normal for tmnt?
-  - **dragonpower `803b`, table `803e`** (128 read). Proposed: about **9** entries (`80b4 81b2
-    81a4 81d2 81a4 80ba 80b4 80dd 81f2`). From `8050` the bytes read as code (`20 fb 99 a0 18 20 8b
-    98 …`), yet entries 11, 17 and 19 (`2018`, `2008`, `06a0`) still fall inside that span. Is it
-    9? No current rule reaches 9. Would "the table ends where its own bytes start decoding as code"
-    be a safe rule, or does this game put tables right before code that only looks that way?
-
-  For dbz and tmnt, the answers confirm or reopen the rule changes that shipped. For dragonpower,
-  they decide whether `grm-c9d.8.8` adds a "table bytes decode as code" end test or leaves the
-  table alone.
-
 ---
 
 ## 2. Def-use passes on untraced titles
@@ -465,3 +432,4 @@ Agents don't write into your ROM library or other personal directories.
 | dodge bank 5 (1.15): what are the 5-byte records whose words point at `fb1b`, and what walks them? | **They are not pointers, and `fb1b` is unused code (owner, 2026-11-08).** The words at `$9514`, `$9724`, `$9744`, `$BCC2` and `$BD76` belong to some other kind of data and only happen to equal `fb1b`. The owner found no hidden reference to `fb1b`: the seventh `$BFF9` bracket is never called. **Do not build a recognizer or a code-pointer hint for these records, and do not disassemble `fb1b`.** `grm-hsv.13`'s `fb28` RESTORED note stands: its fall-through never runs, so the closed-world assumption holds. | `grm-gipk.20` (closed) |
 | ff1 bank 14 (1.6, first half): what is switch `a354`'s real table, and where does it end? | **The shop dispatcher, using the 8-entry table at `a320`, which ends where the code that uses it starts, at `$a330` (owner, 2026-11-08).** This matches the 2026-10-03 ruling above (`E:a358`, 8 entries) and grm-fxtp's bound, so the stale cases past entry 8 were over-read. Retracting them (grm-vrkk.11) was right. **Do not re-read this bound.** The second half of 1.6, what (if anything) reaches the ~160 retracted instructions, is still open in section 1. | `grm-vrkk.11` |
 | ff1 bank 14 (1.6, second half): what reaches the ~160 instructions retracted with `a354`'s over-read (`a61d`, `a8d3`, `aadf`, ...)? | **The shop pointers at `a320` do: it is real shop code (owner, 2026-11-08; labels from Entroper/FF1Disassembly `bank_0E.asm`).** The table's 8 words (`a3b4 a3b4 a360 a360 a5a2 a508 a47c a47a`, agent-decoded) are the shop entry points. The extension lays them out as data instead of disassembling them, so their callees are lost too: e.g. the equipment shop `a3b4` calls `a8d3` (ShopLoop_BuySellExit) at `a3b9` and `a61d` (EquipShop_GiveItemToCharacter) at `a3f7`. **Do not treat that region as unused, and do not bring back the over-read to recover it.** Disassembling the bounded targets is agent work. | `grm-vrkk.11`; follow-up `grm-gipk.21` |
+| Three over-read NES jump tables (1.10): are dbz_saiyan `d286` = 20, tmnt `B5:823b` = 67 and dragonpower `803e` = 9 right? | **All three right (owner, 2026-11-08), so nothing reopens.** dbz_saiyan: `d2ae` is code, and 20 is `d286`'s real length. tmnt: 67 is right, entries 65/66 included. The code at `82c1` is reached from the `JMP` at `8226`, the bounds check that skips the indirect jump in the flow before the table read. dragonpower: 9 entries, and the current build recovers exactly that. **The shipped `grm-c9d.8.7` rule changes (below-table confirm, fixed-bank same-block) and `grm-c9d.8.8`'s tail cut are confirmed. Do not re-read these three tables.** | `grm-c9d.8.7`, `grm-c9d.8.8` |
