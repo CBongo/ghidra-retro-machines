@@ -329,6 +329,11 @@ metroid ca18:
 only ever called from d8e7 (elevator handling routine, since you must use one to cross areas) and ca18 (area init at new game - start in brinstar, area 0). d8e7 is actually loading from $030f,X and X is set to #$20 (start of elevator object status) in that context. The pre-AND value at ca18 is stored in $74 which is set to 00 or 10-14 according to the nmikstas disassembly.
 e5e0: this is data that was misdissambled as a JSR, because the preceding JSR c376 pulls the return address off the stack and returns to the caller.
 
+1.8: bof2: c43045 is 3 entries.
+timecop JSR 81af90,X at 81af35 might share some entries with the JSR 81af92,X at 81af84.  81af92 is NOT code. it's possible that 81af90 is just one entry long, but more likely encompasses the 81af92 entries so the first is 11 entries and the second is 10 entries, both ending just before real code (a shared RTS) at afa6.
+madden95 c6b892: the bias 0 (19 entries) reading appears correct.
+
+
   Next session's shortest path
 
   1. bd list --label background-ok → farm out immediately (grm-hhd first; it blocks every parallel agent).

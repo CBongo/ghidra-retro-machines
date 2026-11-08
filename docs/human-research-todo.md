@@ -128,18 +128,6 @@ Each is minutes of work and settles something specific. Highest value per unit e
   An answer becomes an agent bead to recover the true reference, so the code comes back as
   reached code rather than through the over-read.
 
-### 1.8 65816 tables where the bytes outvote the code's start or bias (`grm-gipk.16.8`)
-
-- [ ] **Question.** The start/bias check (grm-gipk.16.6) logs where reading a table one entry
-  later, or with the RTS value bias one off, yields far more plausible entries than the reading the
-  code implies. Where the code's reading resolves *nothing* the agent will adopt the alternative.
-  For the close calls below it needs a ruling. Which reading is the real table?
-  - BoF2 `$C4:3042` (table `$C4:3045`): code start keeps 3 entries, one entry later keeps 15.
-  - Timecop `$81:AF35` (table `$81:AF90`): code start keeps 1, one entry later keeps 10.
-  - Madden NFL 95, RTS `$C6:B892` (table `$C6:B8DE`): code bias +1 keeps 3, bias 0 keeps 19.
-
-  Two or three answers set the margin rule for acting on the rest (full list on grm-gipk.16.6).
-
 ### 1.10 Three over-read NES jump tables: where does each real table end? (`grm-c9d.8.7`, `grm-c9d.8.8`)
 
 - [ ] **Question.** Each table below was read to 83–128 entries and no bound rule cut it. The
@@ -503,3 +491,4 @@ Agents don't write into your ROM library or other personal directories.
 | FF3 `$C1:0008`: how many jump-table entries are real? (the FF3 half of 1.5) | **14, exactly as the analyzer lays it (owner, 2026-11-07).** These are the battle graphics handlers. Entry 4 (`950f`) is a real handler even though it sits well away from the other `00xx`–`02xx` targets. A target far from its siblings is not evidence of an over-read: **do not shorten this table, and do not add a "distant target" cut for it.** With the CT half answered earlier, `grm-9nxj.5.8` item 3 is fully closed. | `grm-9nxj.5.8` |
 | FF3 `$C5:3D1C`: what follows the sample pointer table? (1.7) | **The sample loop table; 63 is the real sample count (owner, 2026-11-07).** The sample uploader adds each loop entry to its sample's base address when it sets the loop point in the instrument table. `ff3mus.pl`'s `0x45` (69) is most likely a count copied from another game's script and never updated, and the script barely uses the sample tables anyway. Its song count, `0x55`, is right (owner). **Lay the sample tables at 63 entries, not 69.** The next two tables are the per-sample pitch multipliers at `$C5:3D9A` and the ADSR at `$C5:3E18` (owner). `$3D1C`→`$3E96` (the song table) is 378 bytes = 63 × 6, and each of the three is 63 word entries (owner): the loop entry is an offset into the sample, the multiplier a word, and the ADSR entry the two 8-bit DSP ADSR register values. | `grm-hb6.28` |
 | Metroid (1.16): is the `ca30` table index really 0–4, and which bank is live at `e5e0 JSR $A29E`? | **Index 0–4, and `e5e0` is not a call (owner, 2026-11-08; bytes agent-checked).** `ca18`, which holds the table load, is called only from `d8e7` (elevator handling: area changes always go through an elevator) and from the new-game init (Brinstar, area 0). At `d8e7` the value comes from `$030F,X` with X=`#$20`, the elevator object's status. The pre-AND value is what `ca23` stores in `$74`, which the nmikstas disassembly gives as `$00` or `$10`–`$14`, so `AND #$0F` gives 0–4 and the five bytes at `ca30` are the whole table. `e5e0` is data: the `JSR $c376` before it never returns there, because `c376` ends `PLA / PLA / RTS` and returns to its caller's caller. **Do not treat `$A29E` as a banked call target in any bank, and do not use `e5e0` as evidence for or against bank pruning.** The general fix (pop-return helpers) is `grm-ed6h`. | `grm-5tl.20.3`, `grm-5tl.20.5`; `grm-ed6h` |
+| 65816 start/bias close calls (1.8): BoF2 `$C4:3042`, Timecop `$81:AF35`, Madden NFL 95 `$C6:B892` — code's reading or the bytes'? | **One each way, and one that is neither (owner, 2026-11-08).** BoF2 `$C4:3045` is 3 entries: the code is right. Madden 95 `$C6:B8DE` is bias 0, 19 entries: the bytes are right. Timecop: the code's start `$AF90` is right but not its length. A second `JSR ($AF92,X)` at `$81:AF84` indexes the same words one entry later. `$AF92` is not code, and most likely the two tables are 11 and 10 entries, both ending before the shared `RTS` at `$AFA6`. **Do not adopt an entry-count margin rule for overriding a code reading that resolves something**: BoF2 (3 vs 15) and Madden 95 (3 vs 19) look the same by count and go opposite ways. Overlapping tables are `grm-gipk.16.11`. | `grm-gipk.16.9`; `grm-gipk.16.11` |
