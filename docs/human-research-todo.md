@@ -114,26 +114,6 @@ Each is minutes of work and settles something specific. Highest value per unit e
   the likely cause is a wrong assumption about which bank `e72a JSR $8574` enters (`$80` gives 16K
   bank 0). Say so, and `grm-mej.19` can aim for a full RESTORED note.
 
-### 1.4 FF3 `$C0:196F` / `$C0:1AB6`, fzero `$00:B59F`: what width does the code after `JSR` really run at? (`grm-9nxj.5.7`)
-
-- [ ] **Question.** Each is a call continuation that two paths enter at different accumulator
-  widths, so Ghidra (one decode per address) can only be right for one of them. The analyzer now
-  reports these with a `65816 Width` warning bookmark instead of guessing. FF3's pair look the same:
-
-  ```
-  c0196a  BEQ $c0196f          ; M=0: skips the call
-  c0196c  JSR $c01a2a          ; c01a2a: REP #$20 ... SEP #$20 / LDY $0803 / LDA $087e,Y / STA $1fd2 / RTS
-  c0196f  LDA $edf483,X        ; decoded M=0 -- the bytes then read AND #$01FF / CMP #$01FF,
-  c01973  AND #$01ff           ;   which only make sense 16-bit
-  ```
-
-  Statically, the `JSR` path arrives with M=1, because `$C0:1A2A` returns after `SEP #$20`. If
-  that is right, the code at `c0196f` is mis-decoded on that path. **Break at `c0196f` once with
-  each route** (branch taken / call made) and read P's M bit. If M=1 on the call route, does
-  something re-widen before `c0196f` that the static read misses: a stack trick in `$C0:1A2A`,
-  or an RTS to somewhere else? The same check applies at `c01ab6` (after `c01ab3 JSR $c01a2a`)
-  and at fzero `00b59f` (after `00b59c JSR $00d1f0`, joined by a flow from `00b57a`).
-
 ### 1.5 FF3 jump table with no structural end: how many entries are real? (`grm-9nxj.5.8` item 3)
 
 - [ ] **Question.** The 65816 Jump Tables analyzer stops a table at the first entry that cannot
@@ -525,3 +505,4 @@ Agents don't write into your ROM library or other personal directories.
 | FF2 `$00:E0D0` `JMP (!$063d)`: what does it dispatch to, and do those handlers keep DP? (1.13) | **A switch through the word table at `$00:E2E6`; assume the handlers keep DP (owner, 2026-11-06).** The table was laid but cut short at its first `0000` entry. That zero is a placeholder for a value handled specially, not the end: the real table runs to at least 45 entries, maybe 47 (the last couple are iffy, and a function follows entry 47). On DP: this is the main loop, so anything that changed DP without restoring it before returning to the loop would break the game. **Rule A therefore applies: inside a call summary, an untargeted `JMP (abs)` counts as a tail call that hands back its entry DP. Do not hand-check the handlers one by one.** | `grm-9nxj.27` (rule A); `grm-8lr2` (table cut at a zero entry) |
 | cv3: are the three "table bytes decode as code" (SLOT_CODE) cuts right? (1.14) | **`80a1` / `W8000_B4::8277` at 23 is right. Both `e137` readings are the wrong bank (owner, 2026-11-06).** `e137` is in the IRQ handler, which sets `$5115` to `$82` at `e124`, so the `$9F31`/`$9F32` table comes from bank 2, not RAM, and the handler never reads bank 22 here. The RAM (cut to 16) and B22 (cut to 20) cuts only shrink tables that should not exist at all, so cv3 was blessed as-is and the rule needs no further guard. **Do not tune SLOT_CODE against the `e137` cuts.** The real fix is making `e137` use the bank-2 mapping set at `e124`. | `grm-c9d.8.9` (closed, cv3 blessed); `grm-vk15` (bank 2 at e137) |
 | Install PSScriptAnalyzer, the PowerShell linter (6.2) | **Installed (owner, 2026-11-07):** 1.25.0, CurrentUser scope, confirmed with `Get-Module -ListAvailable PSScriptAnalyzer`. `grm-kk77` (static audit of the three tracked `.ps1`) is now unblocked agent work; agents still never RUN `tools/install-gui.ps1`. | `grm-76hw` |
+| FF3 `$C0:196F` / `$C0:1AB6`, fzero `$00:B59F`: what width does the code after `JSR` really run at? (1.4) | **M=0 on every live route at all three (owner, 2026-11-07).** fzero: `$00:D1F0` does `PHP`, `SEP #$30`, pushes a bank and (address after its `JML`) − 1, then `JML`s. The callee's `RTL` lands at `$D1FB`, which does `PLP` / `RTS`, so the call is flag-neutral. The warning is a false positive from the effect walk, which cannot follow the pushed return (`grm-9nxj.33`, P4). FF3: `$C0:1A2A` leaving with M set is a real game bug that never runs. It is called only when the "set parent map" flag `$02` is set in the entrance-tile flags byte. No long-table entry (`196F`) has it, and the short-table entries (`1AB6`) that do are handled by the world-map handler at `$EE:20DF`, which never calls `1A2A`. The FF3 warnings are honest and the current M=0 decode is right. **Do not repair these continuations to M=1.** | `grm-9nxj.5.7`; `grm-9nxj.33` |

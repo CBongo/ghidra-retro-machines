@@ -320,6 +320,12 @@ cv3:
 e137: irq handler.  sets bank 5115 to 82 at e124, so the table at 9f31/32 is  coming from bank 2 not RAM. it doesn't ever read bank 22 here.
 4:80a1: 23 is right.
 
+fzero b59f:  calls d1f0, which engages in stack trickery that confuses the flags.  it does PHP then SEP #$30, then pushes the bank and the address following the JML minus one. this makes the RTL from the JML return to d1fb which restores the flags via PLP/RTS.  so the net effect of b59f is flag neutral but that requires careful analysis of the stack situation.
+
+ff3: c0196f/c01ab6: the subroutine at 1a2a leaving with M set is a bug, but it is never exercised.  these are routines that handle "entrance" tiles for field maps, and 1a2a is only called when the "set parent map" flag (0x02) is set on the flags byte (byte 4 of the "long" table handled by 196f, byte 3 of the "short" table handled by 1ab6).  but none of the long table entries have this bit set, and the only entries in the "short" table with it set are handled by the world map entrance handler at ee20df, which does not call c01a2a.
+ this appears to be a bug that is never actually exercised because the values in the table ("long entrance" field data) never have the map flag bit set so the AND #$0200 is always zero, the branch is always taken, and the subroutine is never called from here.
+
+
 
   Next session's shortest path
 
