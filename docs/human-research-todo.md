@@ -114,16 +114,6 @@ Each is minutes of work and settles something specific. Highest value per unit e
   the likely cause is a wrong assumption about which bank `e72a JSR $8574` enters (`$80` gives 16K
   bank 0). Say so, and `grm-mej.19` can aim for a full RESTORED note.
 
-### 1.5 FF3 jump table with no structural end: how many entries are real? (`grm-9nxj.5.8` item 3)
-
-- [ ] **Question.** The 65816 Jump Tables analyzer stops a table at the first entry that cannot
-  be one: a byte already code or data, the start of another table, a desync opcode within 16
-  instructions. This one passes every one of those checks and still looks over-read. A hand look
-  at the table's bytes, or a breakpoint on the dispatch watching X, settles it. (The two CT
-  tables that were here are answered; see `## Answered`.)
-  - **FF3 `$C1:0008`**: entry 4 (`950f`, among `00xx`–`02xx`) looks wrong. Where does the real
-    table end?
-
 ### 1.6 ff1 bank 14: what really reaches `a61d`, `a667`, `aadf`, ...? (`grm-vrkk.11`)
 
 - [ ] **Question.** Switch `W8000_B14::a354` was over-read by stock analysis. Its stale cases
@@ -506,3 +496,4 @@ Agents don't write into your ROM library or other personal directories.
 | cv3: are the three "table bytes decode as code" (SLOT_CODE) cuts right? (1.14) | **`80a1` / `W8000_B4::8277` at 23 is right. Both `e137` readings are the wrong bank (owner, 2026-11-06).** `e137` is in the IRQ handler, which sets `$5115` to `$82` at `e124`, so the `$9F31`/`$9F32` table comes from bank 2, not RAM, and the handler never reads bank 22 here. The RAM (cut to 16) and B22 (cut to 20) cuts only shrink tables that should not exist at all, so cv3 was blessed as-is and the rule needs no further guard. **Do not tune SLOT_CODE against the `e137` cuts.** The real fix is making `e137` use the bank-2 mapping set at `e124`. | `grm-c9d.8.9` (closed, cv3 blessed); `grm-vk15` (bank 2 at e137) |
 | Install PSScriptAnalyzer, the PowerShell linter (6.2) | **Installed (owner, 2026-11-07):** 1.25.0, CurrentUser scope, confirmed with `Get-Module -ListAvailable PSScriptAnalyzer`. `grm-kk77` (static audit of the three tracked `.ps1`) is now unblocked agent work; agents still never RUN `tools/install-gui.ps1`. | `grm-76hw` |
 | FF3 `$C0:196F` / `$C0:1AB6`, fzero `$00:B59F`: what width does the code after `JSR` really run at? (1.4) | **M=0 on every live route at all three (owner, 2026-11-07).** fzero: `$00:D1F0` does `PHP`, `SEP #$30`, pushes a bank and (address after its `JML`) − 1, then `JML`s. The callee's `RTL` lands at `$D1FB`, which does `PLP` / `RTS`, so the call is flag-neutral. The warning is a false positive from the effect walk, which cannot follow the pushed return (`grm-9nxj.33`, P4). FF3: `$C0:1A2A` leaving with M set is a real game bug that never runs. It is called only when the "set parent map" flag `$02` is set in the entrance-tile flags byte. No long-table entry (`196F`) has it, and the short-table entries (`1AB6`) that do are handled by the world-map handler at `$EE:20DF`, which never calls `1A2A`. The FF3 warnings are honest and the current M=0 decode is right. **Do not repair these continuations to M=1.** | `grm-9nxj.5.7`; `grm-9nxj.33` |
+| FF3 `$C1:0008`: how many jump-table entries are real? (the FF3 half of 1.5) | **14, exactly as the analyzer lays it (owner, 2026-11-07).** These are the battle graphics handlers. Entry 4 (`950f`) is a real handler even though it sits well away from the other `00xx`–`02xx` targets. A target far from its siblings is not evidence of an over-read: **do not shorten this table, and do not add a "distant target" cut for it.** With the CT half answered earlier, `grm-9nxj.5.8` item 3 is fully closed. | `grm-9nxj.5.8` |
