@@ -15,7 +15,7 @@ For a plain disassembly use `tools/banktest/dis6502.py`.
 |---|---|---|
 | `reqscan.py` | grm-5tl.20.2 | Corpus scan (`.nes` dirs or `--rom-dir`): finds mapper-register store helpers in the fixed bank, their call-site argument kinds and the writers of the RAM cells they read. Writes a JSON (an output, do not commit). |
 | `reqrank.py` | grm-5tl.20.2 | Rankings over that JSON: `adj`, `callargs`, `readclear`, `asrc` modes ("which titles request a bank in RAM and fulfil it later"). |
-| `cellxref.py` | grm-5tl.20.1 | `--grep CELL` readers+writers with context, `--writers CELL` writers only, `--calls ADDR` JSR sites, across every bank of one ROM. |
+| `cellxref.py` | grm-5tl.20.1, .20.2 | `--grep CELL` readers+writers with context, `--writers CELL` writers only, `--summary CELL` writers grouped by the source of the stored value with the next call after each (the class A vs D test in `docs/bank-source-idioms.md`), `--calls ADDR` JSR sites, across every bank of one ROM. |
 | `bankdiff.py` | grm-5tl.20.1 | For fixed-bank calls into the switchable window: is the callee identical / different / not code in each bank (direct-flow closure); per-bank dispatch targets with `--detail`; `--reach` checks raw call patterns the linear sweep missed. Fixed-last-16K layouts. |
 | `rom6502.py` | both | Shared helpers (iNES parse, decode, chain-back, formatting); not a CLI. |
 

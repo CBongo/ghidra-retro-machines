@@ -14,6 +14,12 @@ through dis6502's --find from $GRM_ROM_DIR):
                                                           that can reach the cell)
   python -I tools/recon/cellxref.py ROM --calls TARGETHEX  JSR sites to a CPU address, any bank,
                                                           with the 4 preceding instructions
+  python -I tools/recon/cellxref.py ROM --summary CELLHEX  direct writers grouped by the SOURCE of
+                                                          the stored value (imm / load / table /
+                                                          transfer / pull / computed), each site
+                                                          with the next call/jump/return after it
+                                                          (the class A vs D adjacency test in
+                                                          docs/bank-source-idioms.md)
   e.g.  python -I tools/recon/cellxref.py --find metroid_u --grep 24
 
 Banks are 16K; the last bank is labelled FIX (it sits at $C000, fixed-last layouts: MMC1 mode 3,
@@ -101,6 +107,101 @@ def do_writers(prg, cell):
             print('  ' + show(prg, a, ins) + note)
 
 
+STORES = {'STA': 'A', 'STX': 'X', 'STY': 'Y'}
+# instructions that (re)define a register, by register; INX/DEX etc. are "step" not "source"
+SETS = {
+    'A': {'LDA', 'TXA', 'TYA', 'PLA', 'ADC', 'SBC', 'AND', 'ORA', 'EOR', 'ASL', 'LSR', 'ROL', 'ROR'},
+    'X': {'LDX', 'TAX', 'TSX', 'INX', 'DEX'},
+    'Y': {'LDY', 'TAY', 'INY', 'DEY'},
+}
+STEPS = {'INX', 'DEX', 'INY', 'DEY', 'ADC', 'SBC', 'AND', 'ORA', 'EOR', 'ASL', 'LSR', 'ROL', 'ROR'}
+
+
+def value_source(prg, chain, reg):
+    """Walk back over `chain` (instructions before the store, oldest first) to what set `reg`.
+
+    Returns (kind, text): kind is one of imm / load / table / transfer / pull / computed / unknown.
+    Steps (INY, AND #.., ...) are folded into the text and make the kind "computed" unless the
+    base is an immediate, e.g. "LDY #0 ; INY".
+    """
+    steps = []
+    for o, ins in reversed(chain):
+        mn, mode = ins[0], ins[1]
+        if mn in ('JSR', 'RTS', 'RTI', 'JMP') or mode == 'rel':
+            break  # a call/flow between source and store: the static chain is not a straight line
+        if mn not in SETS[reg]:
+            continue
+        txt = rom6502.fmt_ins(ins, cpu(o, len(prg)))
+        if mn in STEPS:
+            steps.append(txt)
+            continue
+        if mn in ('TXA', 'TYA', 'TAX', 'TAY', 'TSX'):
+            kind = 'transfer'
+        elif mn == 'PLA':
+            kind = 'pull'
+        elif mode == 'imm':
+            kind = 'imm'
+        elif mode in ('abx', 'aby', 'zpx', 'zpy', 'izx', 'izy'):
+            kind = 'table'
+        else:
+            kind = 'load'
+        if steps and kind != 'imm':
+            kind = 'computed'
+        return kind, ' ; '.join([txt] + list(reversed(steps)))
+    return 'unknown', ' ; '.join(reversed(steps)) or '(no source in chain)'
+
+
+def next_flow(prg, i, limit=6):
+    """The first call/jump/return within `limit` instructions after offset i (adjacency test)."""
+    j = i
+    for _ in range(limit):
+        ins = rom6502.decode(prg, j)
+        if not ins:
+            return '?'
+        if ins[0] in ('JSR', 'JMP', 'RTS', 'RTI'):
+            return rom6502.fmt_ins(ins, cpu(j, len(prg)))
+        j += ins[2]
+    return '-'
+
+
+def do_summary(prg, cell):
+    """Group the direct writers of `cell` by where the stored value comes from.
+
+    Answers step 3 of docs/bank-source-idioms.md's procedure: is every writer next to a switch
+    call (class A), or do some store a value and return (class D candidates)? Bead grm-5tl.20.2
+    (Tecmo Bowl $1d: 43 writers of #4, 34 of LDA $bff8, small counts in count mode).
+    """
+    n = len(prg)
+    groups = {}
+    incdec = []
+    for i in range(n - 2):
+        op = prg[i]
+        zp = cell < 256 and prg[i + 1] == cell and op in (0x85, 0x86, 0x84, 0xE6, 0xC6)
+        ab = prg[i + 1] == (cell & 255) and prg[i + 2] == (cell >> 8) and op in (0x8D, 0x8E, 0x8C, 0xEE, 0xCE)
+        if not (zp or ab):
+            continue
+        chain = rom6502.chain_back(prg, i, 24, max(0, i - 24))
+        if not chain:
+            continue
+        ins = rom6502.decode(prg, i)
+        site = label(i, n).strip() + ':%04x' % cpu(i, n)
+        if ins[0] in ('INC', 'DEC'):
+            incdec.append((site, ins[0], next_flow(prg, i + ins[2])))
+            continue
+        kind, src = value_source(prg, chain, STORES[ins[0]])
+        groups.setdefault((kind, src), []).append((site, next_flow(prg, i + ins[2])))
+    total = sum(len(v) for v in groups.values()) + len(incdec)
+    print('writers of $%02x: %d (direct stores and INC/DEC; indexed/indirect not included)' % (cell, total))
+    for (kind, src), sites in sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0])):
+        print('\n%3d  %-9s %s' % (len(sites), kind, src))
+        for site, nxt in sites:
+            print('       %-10s next: %s' % (site, nxt))
+    if incdec:
+        print('\n%3d  inc/dec' % len(incdec))
+        for site, mn, nxt in incdec:
+            print('       %-10s %s  next: %s' % (site, mn, nxt))
+
+
 def do_calls(prg, target):
     n = len(prg)
     i = prg.find(b'\x20')
@@ -119,14 +220,15 @@ def main():
         path, a = a[0], a[1:]
     else:
         sys.exit(__doc__)
-    if len(a) != 2 or a[0] not in ('--grep', '--writers', '--calls'):
+    if len(a) != 2 or a[0] not in ('--grep', '--writers', '--calls', '--summary'):
         sys.exit(__doc__)
     r = rom6502.parse_ines(path)
     if r is None:
         sys.exit('not an iNES file: ' + path)
     prg = r[1]
     val = int(a[1], 16)
-    {'--grep': do_grep, '--writers': do_writers, '--calls': do_calls}[a[0]](prg, val)
+    {'--grep': do_grep, '--writers': do_writers, '--calls': do_calls,
+     '--summary': do_summary}[a[0]](prg, val)
 
 
 if __name__ == '__main__':
