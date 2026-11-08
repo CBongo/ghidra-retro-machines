@@ -68,10 +68,10 @@ safe.
 
 | `c64-prg` | c64 | `manifest-c64.tsv` | every row (14; owner kept the first 10, bead `grm-t3n.1`; ACS G/B/O added by `grm-arbi.3`; container row `c64_acs_kernel` by `grm-t3n.3`) | Commodore 64 `.prg` real programs (Summer Games, Seven Cities of Gold, Marble Madness, ACS, Sidplayer), imported with `C64PrgLoader` and analysis ON, dumped by the shared `C64RealRomDump.java` (instruction/function/undefined-byte counts, BIT-skip census, decrypt/copy-loop outcome counts; `RealRomDump.java` hard-codes NES invariants). ROM dirs from `GRM_C64_ROM_DIR` (`;`-separated; depth 1 only). Does not refresh the NES staleness stamp (`stamps_staleness=no`: it says nothing about NES bank-switch analysis). `nominate` is NES-only. |
 
-Platform groups, derived from `platforms.tsv`: **`nes`** (`nes-curated` + `nes-gme`, 35 rows —
+Platform groups, derived from `platforms.tsv`: **`nes`** (`nes-curated` + `nes-gme`, 36 rows —
 what the removed `--all` flag meant) and **`snes`** (`snes-cart` + `snes-spc`, 22
 rows — what the removed `--snes` flag meant). **`all`** is the driver's own union of every set on every
-platform except opt-in sets (76 rows today, including the 14 `c64-prg` rows) — the word that changed meaning in `grm-ughg`, since before it there was no
+platform except opt-in sets (77 rows today, including the 14 `c64-prg` rows) — the word that changed meaning in `grm-ughg`, since before it there was no
 bare `all` at all, only the `--all` flag meaning "both NES manifests."
 
 ```bash

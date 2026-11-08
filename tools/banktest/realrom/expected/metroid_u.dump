@@ -1,0 +1,64 @@
+=== REALROM BEGIN ===
+REALROM program metroid_u.nes
+REALROM sha256 88ad02b0b53012712f3c773a62073847551cec191aeda5d3ec19b22b594640eb
+REALROM prgsha256 649db8035018f2512ccea70aca6606c3b3a6988cd9ed43953b38dc5103dec7bb
+REALROM map machines/nes-mmc1.map
+REALROM placement NONE
+REALROM block COPY_77f0 77f0-77fd overlay=false
+REALROM block PRG_RAM 6000-77ef overlay=false
+REALROM block PRG_RAM_77FE 77fe-7fff overlay=false
+REALROM block RAM 0000-07ff overlay=false
+REALROM block W8000 8000-bfff overlay=false
+REALROM block W8000_B1 8000-bfff overlay=true
+REALROM block W8000_B2 8000-bfff overlay=true
+REALROM block W8000_B3 8000-bfff overlay=true
+REALROM block W8000_B4 8000-bfff overlay=true
+REALROM block W8000_B5 8000-bfff overlay=true
+REALROM block W8000_B6 8000-bfff overlay=true
+REALROM block W8000_B7 8000-bfff overlay=true
+REALROM block WC000 c000-ffff overlay=false
+REALROM count blocks.total 15
+REALROM count blocks.overlay 7
+REALROM count refs.intoOverlay.retargeted 0
+REALROM count refs.intoOverlay.intraOverlay 0
+REALROM count instrs.inOverlay 0
+REALROM count bankComments 5
+REALROM count warnings 7
+REALROM count notes 4
+REALROM count symbols 28
+REALROM count jumptable.wordArrays 1
+REALROM count jumptable.planarArrays 0
+REALROM sample.bankcomment c03a bank -> mirroring=0,prg_mode=3,prg_bank=0? via FUN_c4fa [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
+REALROM sample.bankcomment ffc6 bank -> mirroring=0,prg_mode=3,prg_bank=0? [known: prg_mode.0=1,prg_mode.1=1; assumed from initial: mirroring.0,mirroring.1,prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
+REALROM sample.bankcomment ffc9 bank -> mirroring=0,prg_mode=3,prg_bank=0? [known: prg_mode.0=1,prg_mode.1=1; assumed from initial: mirroring.0,mirroring.1,prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
+REALROM sample.bankcomment ffcc bank -> mirroring=0,prg_mode=3,prg_bank=0? [known: prg_mode.0=1,prg_mode.1=1; assumed from initial: mirroring.0,mirroring.1,prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
+REALROM sample.bankcomment ffcf bank -> mirroring=0,prg_mode=3,prg_bank=0? [known: prg_mode.0=1,prg_mode.1=1; assumed from initial: mirroring.0,mirroring.1,prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
+REALROM sample.warn c099 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c4b2, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
+REALROM sample.warn c4c5 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn c4d5 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn c4e2 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c4e8, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
+REALROM sample.warn c56f [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c4ef, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
+REALROM sample.warn c7c1 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c4ef, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
+REALROM sample.warn c7d2 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c4ef, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
+REALROM sample.note 77f0 [CopyLoopAnalyzer] run-from-elsewhere copy of RAM:c5a8; initialized in place as COPY_77f0
+REALROM sample.note c4fa [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
+REALROM sample.note c50a [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
+REALROM sample.note c597 [CopyLoopAnalyzer] copy loop (no jump into the copy; its bytes decode as a subroutine) -> COPY_77f0: 14 bytes RAM:c5a8 -> RAM:77f0; disassembled as code
+REALROM sample.symbol c0d9 NMI IMPORTED primary=true
+REALROM sample.symbol c45c case_6 USER_DEFINED primary=true
+REALROM sample.symbol c45c case_7 USER_DEFINED primary=false
+REALROM sample.symbol c45c case_8 USER_DEFINED primary=false
+REALROM sample.symbol c51c switch USER_DEFINED primary=true
+REALROM sample.symbol c531 case_0 USER_DEFINED primary=true
+REALROM sample.symbol c552 case_1 USER_DEFINED primary=true
+REALROM sample.symbol c583 case_2 USER_DEFINED primary=true
+REALROM sample.symbol c590 case_3 USER_DEFINED primary=true
+REALROM sample.symbol c5b6 case_4 USER_DEFINED primary=true
+REALROM sample.symbol c5c3 case_5 USER_DEFINED primary=true
+REALROM sample.symbol ffb0 IRQ IMPORTED primary=false
+REALROM sample.symbol ffb0 RESET IMPORTED primary=true
+REALROM sample.symbol fffa NMI_VEC IMPORTED primary=true
+REALROM sample.symbol fffc RESET_VEC IMPORTED primary=true
+REALROM sample.symbol fffe IRQ_VEC IMPORTED primary=true
+REALROM sample.jumptable c51f word[9]
+=== REALROM END ===
