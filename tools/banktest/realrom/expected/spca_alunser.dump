@@ -1,0 +1,16 @@
+=== REALROM BEGIN ===
+REALROM program spca_alunser.sfc
+REALROM sha256 0099bdb56e4190f81440c8c29395ecc15d78eeabfc38a93dca4773817d6f720f
+REALROM language 65816:LE:24:retro
+REALROM spca recovery stop IPL_DONE blocks 1 entry 0400
+REALROM spca instructions 1318
+REALROM spca functions 33
+REALROM spca bookmarks.error 0
+REALROM spca computed sites=4 withTargets=0
+REALROM spca computed 0410 jump BRK n=0
+REALROM spca computed 0522 jump BRK n=0
+REALROM spca computed 0572 jump BRK n=0
+REALROM spca computed 0dc3 jump BRK n=0
+REALROM spca retTrick sites=1
+REALROM spca retTrick 043e RET n=24 0452 045e 046f 0475 047b 048e 049f 04ab 04b1 04ba 04d4 04f6 050e 0514 051c 0522 0523 052d 0542 055a 0560 0566 056c 0572
+=== REALROM END ===

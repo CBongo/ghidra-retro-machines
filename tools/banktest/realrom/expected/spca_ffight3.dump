@@ -1,0 +1,12 @@
+=== REALROM BEGIN ===
+REALROM program spca_ffight3.sfc
+REALROM sha256 f9dac709b2c2859f828103a0dd980716817e2bde3b9d7e2fdea36e9bb9bed7f2
+REALROM language 65816:LE:24:retro
+REALROM spca recovery stop IPL_DONE blocks 1 entry 0700
+REALROM spca instructions 1624
+REALROM spca functions 66
+REALROM spca bookmarks.error 0
+REALROM spca computed sites=1 withTargets=1
+REALROM spca computed 18c4 jump JMP n=12 18c7 18c8 18da 18e2 190b 1914 192e 193c 1963 1968 197d 198c
+REALROM spca retTrick sites=0
+=== REALROM END ===

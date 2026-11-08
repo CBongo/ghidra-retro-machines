@@ -1,0 +1,12 @@
+=== REALROM BEGIN ===
+REALROM program spca_pugsley.sfc
+REALROM sha256 b6957bae7fd97ba681afbf8962fe2138e209649fd88ed9add2d5233178680aaa
+REALROM language 65816:LE:24:retro
+REALROM spca recovery stop IPL_DONE blocks 2 entry 0440
+REALROM spca instructions 1448
+REALROM spca functions 36
+REALROM spca bookmarks.error 2
+REALROM spca computed sites=0 withTargets=0
+REALROM spca retTrick sites=1
+REALROM spca retTrick 053c RET n=10 0555 0576 05ad 05cb 061c 061d 061e 063f 0646 0663
+=== REALROM END ===

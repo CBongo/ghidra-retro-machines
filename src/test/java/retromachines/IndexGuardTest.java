@@ -95,4 +95,28 @@ public class IndexGuardTest {
 		// misaligned callers fall back to a step of one
 		assertEquals(1, IndexGuard.hull(new Range(0, 10, 2), new Range(3, 7, 2)).step());
 	}
+
+	@Test
+	public void beqThenBccNotTakenIsAboveTheImmediate() {
+		// 7th Saga 077f's caller: CMP A,#$df / BEQ / BCC
+		assertEquals(new IndexGuard.Range(0xe0, 0xff, 1), IndexGuard.fallThrough(
+			List.of(IndexGuard.Branch.BEQ, IndexGuard.Branch.BCC), 0xdf));
+		assertEquals(new IndexGuard.Range(0xe0, 0xff, 1), IndexGuard.fallThrough(
+			List.of(IndexGuard.Branch.BCC, IndexGuard.Branch.BEQ), 0xdf));
+		assertEquals(new IndexGuard.Range(0xdf, 0xdf, 1), IndexGuard.fallThrough(
+			List.of(IndexGuard.Branch.BNE, IndexGuard.Branch.BCC), 0xdf));
+	}
+
+	@Test
+	public void chainWithoutACarryBranchOrWithHolesIsNull() {
+		// BEQ alone leaves 0..imm-1 and imm+1..255
+		assertNull(IndexGuard.fallThrough(List.of(IndexGuard.Branch.BEQ), 0x10));
+		assertNull(IndexGuard.fallThrough(List.of(IndexGuard.Branch.BNE), 0x10));
+		// contradictory chain: empty set
+		assertNull(IndexGuard.fallThrough(
+			List.of(IndexGuard.Branch.BNE, IndexGuard.Branch.BEQ, IndexGuard.Branch.BCC), 0x10));
+		// longer than MAX_CHAIN
+		assertNull(IndexGuard.fallThrough(List.of(IndexGuard.Branch.BEQ, IndexGuard.Branch.BEQ,
+			IndexGuard.Branch.BEQ, IndexGuard.Branch.BCC), 0x10));
+	}
 }

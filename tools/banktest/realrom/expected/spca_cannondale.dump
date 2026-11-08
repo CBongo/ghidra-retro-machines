@@ -1,0 +1,15 @@
+=== REALROM BEGIN ===
+REALROM program spca_cannondale.sfc
+REALROM sha256 6cdec3cb9c91aa23feb13005f874bda580c2f548302874491a31951031c9dbbd
+REALROM language 65816:LE:24:retro
+REALROM spca recovery stop IPL_DONE blocks 1 entry 0800
+REALROM spca instructions 1297
+REALROM spca functions 29
+REALROM spca bookmarks.error 0
+REALROM spca computed sites=3 withTargets=0
+REALROM spca computed 0810 jump BRK n=0
+REALROM spca computed 08e1 jump BRK n=0
+REALROM spca computed 1112 jump BRK n=0
+REALROM spca retTrick sites=1
+REALROM spca retTrick 0836 RET n=16 084d 0855 0866 086c 0872 0885 0896 089e 08a4 08ad 08b3 08b9 08cd 08d3 08db 08e1
+=== REALROM END ===

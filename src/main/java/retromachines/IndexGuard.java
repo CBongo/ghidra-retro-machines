@@ -38,8 +38,33 @@ final class IndexGuard {
 		/** Taken when the register is below the immediate (carry clear). */
 		BCC,
 		/** Taken when the register is at or above the immediate (carry set). */
-		BCS
+		BCS,
+		/** Taken when the register equals the immediate (zero set); only inside a chain. */
+		BEQ,
+		/** Taken when the register differs from the immediate; only inside a chain. */
+		BNE;
+
+		boolean isCarry() {
+			return this == BCC || this == BCS;
+		}
+
+		/** Whether {@code reg} (compared against {@code imm}) falls through this branch. */
+		boolean notTaken(int reg, int imm) {
+			switch (this) {
+				case BCC:
+					return reg >= imm;
+				case BCS:
+					return reg < imm;
+				case BEQ:
+					return reg != imm;
+				default:
+					return reg == imm;
+			}
+		}
 	}
+
+	/** Most branches a chain between one CMP and the path analysed may hold. */
+	static final int MAX_CHAIN = 3;
 
 	/** The register-to-register maps carried along a straight run; plain copies are not listed. */
 	enum Op {
@@ -69,13 +94,35 @@ final class IndexGuard {
 	 * {@code reg < imm}. Null when that set is empty, which no real guard produces.
 	 */
 	static Range fallThrough(Branch branch, int imm) {
-		if (imm < 0 || imm > 255) {
+		return fallThrough(List.of(branch), imm);
+	}
+
+	/**
+	 * grm-gipk.18: the values {@code reg} can hold after {@code CMP reg,#imm} when the path falls
+	 * through EVERY branch of {@code chain} (BEQ/BNE/BCC/BCS reading the one CMP's flags, at most
+	 * {@link #MAX_CHAIN} of them, at least one a carry branch). 7th Saga: {@code CMP A,#$df / BEQ /
+	 * BCC} not taken is {@code $e0..$ff}. Computed by enumerating the 256 values; null unless the
+	 * survivors are one non-empty plain run (so no wrap, no holes).
+	 */
+	static Range fallThrough(List<Branch> chain, int imm) {
+		if (imm < 0 || imm > 255 || chain.isEmpty() || chain.size() > MAX_CHAIN ||
+			chain.stream().noneMatch(Branch::isCarry)) {
 			return null;
 		}
-		if (branch == Branch.BCC) {
-			return new Range(imm, 255, 1);
+		int lo = -1;
+		int hi = -1;
+		int count = 0;
+		for (int v = 0; v < 256; v++) {
+			final int reg = v;
+			if (chain.stream().allMatch(b -> b.notTaken(reg, imm))) {
+				if (lo < 0) {
+					lo = v;
+				}
+				hi = v;
+				count++;
+			}
 		}
-		return imm == 0 ? null : new Range(0, imm - 1, 1);
+		return count == 0 || count != hi - lo + 1 ? null : new Range(lo, hi, 1);
 	}
 
 	/** The image of {@code r} under one {@code op}, or null when it is not a contiguous range. */

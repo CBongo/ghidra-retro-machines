@@ -226,6 +226,8 @@ final class RtsTrickDispatch {
 		NEIGHBOUR_TABLE, DECLINED,
 		/** Every index an {@code AND #mask} before the loads allows was read (grm-gipk.8). */
 		MASK,
+		/** The index range a dominating {@code CMP A,#imm} guard allows was read (grm-gipk.18). */
+		GUARD,
 		/**
 		 * The entry's position (either plane) carries a reference from outside the table that is
 		 * not this dispatch's own, grm-gipk.16.7; see {@link EntryReferences}.
@@ -237,7 +239,7 @@ final class RtsTrickDispatch {
 	 * A recognized push pair: the two table bases, before any bound, the dialect's bias, and the
 	 * entry cap an {@code AND #mask} on the index allows (0 when there is none).
 	 */
-	record Shape(Address rts, int tHi, int tLo, int bias, int maskCap) {
+	record Shape(Address rts, int tHi, int tLo, int bias, int maskCap, Address guardLoad) {
 		boolean interleaved() {
 			return tHi == tLo + 1;
 		}
@@ -332,8 +334,11 @@ final class RtsTrickDispatch {
 				return null;
 			}
 		}
-		return new Shape(rts.getMinAddress(), tHi, tLo, d.bias,
-			maskCap(program, d, w, load1, reg == d.loadX, tHi == tLo + 1));
+		int mask = maskCap(program, d, w, load1, reg == d.loadX, tHi == tLo + 1);
+		// grm-gipk.18: SPC700 only (the 6502/65816 dialects have their own cap logic and were not
+		// re-gated against caller-side guards); the first load's index may be bounded by a CMP chain.
+		return new Shape(rts.getMinAddress(), tHi, tLo, d.bias, mask,
+			mask == 0 && d == Dialect.SPC700 ? w[load1].getMinAddress() : null);
 	}
 
 	/**
@@ -476,7 +481,15 @@ final class RtsTrickDispatch {
 		if (masked) {
 			cap = shape.maskCap();
 		}
-		Site site = scanFrom(program, shape, loBase, hiBase, cap, masked, neighbourStarts);
+		Cut capCut = masked ? Cut.MASK : interleaved ? Cut.DECLINED : Cut.GAP;
+		if (shape.guardLoad() != null) {
+			// grm-gipk.18: a dominating CMP/branch-chain guard in the caller moves and bounds the table.
+			Site guarded = scanGuarded(program, shape, loBase, hiBase, cap, stride, neighbourStarts);
+			if (guarded != null) {
+				return guarded;
+			}
+		}
+		Site site = scanFrom(program, shape, loBase, hiBase, cap, capCut, neighbourStarts);
 		if (site != null || !interleaved || cap <= MIN_ONE_BASED_ENTRIES ||
 			Dialect.of(program) != Dialect.SPC700) {
 			return site;
@@ -484,12 +497,46 @@ final class RtsTrickDispatch {
 		// Entry 0 unusable (see MIN_ONE_BASED_ENTRIES): retry one entry up, the table of a
 		// 1-based command number. Only when entry 0 itself is the invalid one.
 		Site shifted = scanFrom(program, shape, loBase.add(stride), hiBase.add(stride), cap - 1,
-			masked, neighbourStarts);
+			capCut, neighbourStarts);
 		if (shifted == null || shifted.targets.size() < MIN_ONE_BASED_ENTRIES ||
 			isValidEntry(program, shape, loBase, hiBase)) {
 			return null;
 		}
 		return shifted;
+	}
+
+	/**
+	 * The scan restricted to the slots {@link IndexGuardRecovery#guardedIndexedLoad} says the first
+	 * load reaches, or null when there is no guard, it does not cover whole entries (an index step
+	 * other than the entry width), or the window holds no table. The caller then scans unguarded.
+	 */
+	private static Site scanGuarded(Program program, Shape shape, Address loBase, Address hiBase,
+			int cap, int stride, Collection<Address> neighbourStarts) {
+		Instruction load = program.getListing().getInstructionAt(shape.guardLoad());
+		IndexGuardRecovery.LoadGuard g =
+			load == null ? null : IndexGuardRecovery.guardedIndexedLoad(program, load);
+		if (g == null) {
+			return null;
+		}
+		int[] span = IndexGuard.slotSpan(g.range(), stride);
+		if (span == null) {
+			return null;
+		}
+		long off = (long) span[0] * stride;
+		Address lo;
+		Address hi;
+		try {
+			lo = loBase.add(off);
+			hi = hiBase.add(off);
+		}
+		catch (ghidra.program.model.address.AddressOutOfBoundsException e) {
+			return null;
+		}
+		if (!isReadable(program.getMemory(), lo) || !isReadable(program.getMemory(), hi)) {
+			return null;
+		}
+		return scanFrom(program, shape, lo, hi, Math.min(cap, span[1] - span[0] + 1), Cut.GUARD,
+			neighbourStarts);
 	}
 
 	/**
@@ -511,7 +558,7 @@ final class RtsTrickDispatch {
 	}
 
 	private static Site scanFrom(Program program, Shape shape, Address loBase, Address hiBase,
-			int cap, boolean masked, Collection<Address> neighbourStarts) {
+			int cap, Cut capCut, Collection<Address> neighbourStarts) {
 		AddressSpace space = shape.rts().getAddressSpace();
 		Memory memory = program.getMemory();
 		boolean interleaved = shape.interleaved();
@@ -543,7 +590,6 @@ final class RtsTrickDispatch {
 			return best;
 		};
 
-		Cut capCut = masked ? Cut.MASK : interleaved ? Cut.DECLINED : Cut.GAP;
 		final long fNextNeighbour = nextNeighbour;
 		TableScorer.Result<Address, Cut> walked = TableScorer.walk(cap, (i, before) -> {
 			long loOff = loBase.getOffset() + (long) stride * i;

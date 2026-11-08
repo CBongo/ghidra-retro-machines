@@ -130,6 +130,25 @@ final class IndexGuardRecovery {
 	 * operand-length table that follows the {@code $0D44} dispatch table.
 	 */
 	static ReaderStart readerStart(Program program, Instruction instr) {
+		LoadGuard g = guardedIndexedLoad(program, instr);
+		if (g == null) {
+			return null;
+		}
+		long start = g.base() + g.range().lo();
+		return new ReaderStart(instr.getMinAddress(), start, instr.getMinAddress() + " " + instr +
+			": " + g.notes() + " -> " + g.index().getName() + " " + g.range() + " -> from " +
+			Long.toHexString(start));
+	}
+
+	/** An indexed operand's {@code base}, its index register and the range the guards give it. */
+	record LoadGuard(long base, Register index, IndexGuard.Range range, String notes) {}
+
+	/**
+	 * grm-gipk.18: the guarded range of the index register of {@code instr}, an instruction with
+	 * one {@code !base+X/Y} operand (see {@link #readerStart} for the operand shape), or null when
+	 * no guard bounds it.
+	 */
+	static LoadGuard guardedIndexedLoad(Program program, Instruction instr) {
 		Register index = null;
 		Long base = null;
 		int indexes = 0;
@@ -152,13 +171,7 @@ final class IndexGuardRecovery {
 		}
 		List<String> notes = new ArrayList<>();
 		IndexGuard.Range r = walk(program, instr, index, new ArrayList<>(), true, notes);
-		if (r == null) {
-			return null;
-		}
-		long start = base + r.lo();
-		return new ReaderStart(instr.getMinAddress(), start, instr.getMinAddress() + " " + instr +
-			": " + String.join("; ", notes) + " -> " + index.getName() + " " + r + " -> from " +
-			Long.toHexString(start));
+		return r == null ? null : new LoadGuard(base, index, r, String.join("; ", notes));
 	}
 
 	/**
@@ -284,35 +297,59 @@ final class IndexGuardRecovery {
 	 */
 	private static IndexGuard.Range guardBefore(Program program, Instruction branch, Register reg,
 			List<IndexGuard.Op> opsBackward, List<String> notes) {
-		String mnem = branch.getMnemonicString().toUpperCase(Locale.ROOT);
-		IndexGuard.Branch kind = mnem.equals("BCC") ? IndexGuard.Branch.BCC
-				: mnem.equals("BCS") ? IndexGuard.Branch.BCS : null;
-		if (kind == null || branch.getFallFrom() == null) {
-			return null;
-		}
-		for (Reference ref : program.getReferenceManager().getReferencesTo(branch.getMinAddress())) {
-			if (!ref.getReferenceType().isFallthrough()) {
-				return null; // the branch can be entered without running the CMP first
+		// grm-gipk.18: the CMP may be followed by a short chain of BEQ/BNE/BCC/BCS, each entered
+		// only by falling through from the one before; the tracked path fell out of all of them.
+		List<IndexGuard.Branch> chain = new ArrayList<>();
+		Instruction cur = branch;
+		Instruction cmp = null;
+		while (cmp == null) {
+			IndexGuard.Branch kind = branchKind(cur);
+			if (kind == null || chain.size() >= IndexGuard.MAX_CHAIN || cur.getFallFrom() == null) {
+				return null;
 			}
-		}
-		Instruction cmp = program.getListing().getInstructionAt(branch.getFallFrom());
-		if (cmp == null) {
-			return null;
+			for (Reference ref : program.getReferenceManager()
+					.getReferencesTo(cur.getMinAddress())) {
+				if (!ref.getReferenceType().isFallthrough()) {
+					return null; // the branch can be entered without running the CMP first
+				}
+			}
+			chain.add(kind);
+			Instruction before = program.getListing().getInstructionAt(cur.getFallFrom());
+			if (before == null) {
+				return null;
+			}
+			if (before.getFlowType().isConditional() && before.getFlowType().isJump()) {
+				cur = before;
+			}
+			else {
+				cmp = before;
+			}
 		}
 		Register cmpReg = compareRegister(program, cmp);
 		Integer imm = compareImmediate(cmp);
 		if (cmpReg == null || imm == null || !sameRegister(cmpReg, reg)) {
 			return null;
 		}
-		IndexGuard.Range g = IndexGuard.fallThrough(kind, imm);
+		IndexGuard.Range g = IndexGuard.fallThrough(chain, imm);
 		List<IndexGuard.Op> ops = new ArrayList<>(opsBackward);
 		java.util.Collections.reverse(ops); // program order
 		IndexGuard.Range out = g == null ? null : IndexGuard.apply(g, ops);
 		if (out != null) {
-			notes.add(cmp.getMinAddress() + " " + cmp + ", " + branch.getMinAddress() + " " +
-				mnem + " not taken: " + cmpReg.getName() + " " + g);
+			String mnem = branch.getMnemonicString().toUpperCase(Locale.ROOT);
+			notes.add(cmp.getMinAddress() + " " + cmp + ", " + branch.getMinAddress() + " " + mnem +
+				" not taken" + (chain.size() > 1 ? " (chain of " + chain.size() + ")" : "") + ": " +
+				cmpReg.getName() + " " + g);
 		}
 		return out;
+	}
+
+	private static IndexGuard.Branch branchKind(Instruction in) {
+		try {
+			return IndexGuard.Branch.valueOf(in.getMnemonicString().toUpperCase(Locale.ROOT));
+		}
+		catch (IllegalArgumentException e) {
+			return null;
+		}
 	}
 
 	/**

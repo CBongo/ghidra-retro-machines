@@ -65,10 +65,18 @@ public class Spc700RetTrickDispatchTest extends AbstractProgramTest {
 
 	/** Lays the dispatcher bytes at {@code DISPATCH + 2}, decodes them, runs the analyzer. */
 	private void run(String dispatcherBytes) throws Exception {
+		lay(dispatcherBytes);
+		analyze();
+	}
+
+	private void lay(String dispatcherBytes) throws Exception {
 		long start = RET - dispatcherBytes.split(" ").length + 1;
 		builder.setBytes(hex(start), dispatcherBytes, false);
 		int len = dispatcherBytes.split(" ").length;
 		builder.disassemble(hex(start), len, true);
+	}
+
+	private void analyze() throws Exception {
 		RtsTrickDispatchAnalyzer analyzer = new RtsTrickDispatchAnalyzer();
 		assertTrue(analyzer.canAnalyze(program));
 		inTx(program, "analyze", () -> {
@@ -269,5 +277,176 @@ public class Spc700RetTrickDispatchTest extends AbstractProgramTest {
 		run("f6 c1 16 2d f6 c0 16 2d ce 6f");
 		assertNull(RtsTrickDispatch.recognize(program,
 			program.getListing().getInstructionAt(addr(RET))));
+	}
+
+	// ---- grm-gipk.18: caller-side CMP guard (7th Saga 077f) --------------------------------
+
+	/** The 7th Saga dispatcher: ASL A / MOV Y,A / table $16c0 (low) $16c1 (high) / RET at $0e10. */
+	private static final String ASL_DISPATCH = "1c fd f6 c1 16 2d f6 c0 16 2d 6f";
+	private static final long LOAD = 0x0e08; // MOV A,!$16c1+Y, the first table load
+
+	/** The guarded range of Y at the first table load, or null. */
+	private IndexGuard.Range guard() {
+		IndexGuardRecovery.LoadGuard g = IndexGuardRecovery
+				.guardedIndexedLoad(program, program.getListing().getInstructionAt(addr(LOAD)));
+		return g == null ? null : g.range();
+	}
+	private static final long SHIFTED = 0x1780;
+
+	/** {@code CMP A,#$df / BEQ end / BCC end / CALL !$0e06 / RET}: A in $e0..$ff, at {@code at}. */
+	private void guardedCaller(long at) throws Exception {
+		builder.setBytes(hex(at), "68 df f0 05 90 03 3f 06 0e 6f", false);
+		builder.disassemble(hex(at), 10, true);
+	}
+
+	private void shiftedTable(int n) throws Exception {
+		// the unshifted reading ($16c0..) is junk: words pointing into the table itself
+		builder.setBytes("0x16c0", ("c0 16 ").repeat(0x60).trim(), false);
+		StringBuilder t = new StringBuilder();
+		for (int i = 0; i < n; i++) {
+			long x = 0x2000 + 0x10L * i;
+			builder.setBytes(hex(x), "00 6f", false);
+			t.append(word(x)).append(' ');
+		}
+		t.append(word(SHIFTED));
+		builder.setBytes(hex(SHIFTED), t.toString().trim(), false);
+	}
+
+	private void assertShifted(int n) {
+		if (n == 0) { // the shifted table was NOT used
+			RtsTrickDispatch.Site site = RtsTrickDispatch.scan(program, RtsTrickDispatch.recognize(
+				program, program.getListing().getInstructionAt(addr(RET))));
+			assertTrue(site == null || !addr(SHIFTED).equals(site.loBase));
+			return;
+		}
+		List<Address> want = new ArrayList<>();
+		for (int i = 0; i < n; i++) {
+			want.add(addr(0x2000 + 0x10L * i));
+		}
+		assertEquals(want, computedJumpTargets());
+	}
+
+	@Test
+	public void callerGuardShiftsTheTable() throws Exception {
+		shiftedTable(6);
+		lay(ASL_DISPATCH);
+		guardedCaller(0x0d00);
+		analyze();
+		assertEquals(new IndexGuard.Range(0xc0, 0xfe, 2), guard());
+		assertShifted(6);
+	}
+
+	@Test
+	public void guardCapsTheCount() throws Exception {
+		// CMP A,#3 / BCS end: A in 0..2, so 3 entries although the words run on.
+		for (int i = 0; i < 8; i++) {
+			builder.setBytes(hex(0x2000 + 0x10L * i), "00 6f", false);
+		}
+		StringBuilder t = new StringBuilder();
+		for (int i = 0; i < 8; i++) {
+			t.append(word(0x2000 + 0x10L * i)).append(' ');
+		}
+		builder.setBytes("0x16c0", t.toString().trim(), false);
+		lay(ASL_DISPATCH);
+		builder.setBytes("0x0d00", "68 03 b0 03 3f 06 0e 6f", false);
+		builder.disassemble("0x0d00", 8, true);
+		analyze();
+		assertEquals(new IndexGuard.Range(0, 4, 2), guard());
+		assertShifted(3);
+	}
+
+	@Test
+	public void guardInsideTheDispatcherCounts() throws Exception {
+		shiftedTable(6);
+		// CMP A,#$df / BEQ end / BCC end / ASL A / MOV Y,A / ... : the guard falls into the entry.
+		builder.setBytes("0x0e00", "68 df f0 0f 90 0d", false);
+		lay(ASL_DISPATCH);
+		builder.setBytes("0x0e00", "68 df f0 0f 90 0d", false);
+		builder.disassemble("0x0e00", 6, true);
+		analyze();
+		assertEquals(new IndexGuard.Range(0xc0, 0xfe, 2), guard());
+		assertShifted(6);
+	}
+
+	@Test
+	public void callersThatDisagreeJoinToTheHull() throws Exception {
+		shiftedTable(6);
+		lay(ASL_DISPATCH);
+		guardedCaller(0x0d00);
+		builder.setBytes("0x0d20", "68 ef f0 05 90 03 3f 06 0e 6f", false);
+		builder.disassemble("0x0d20", 10, true);
+		analyze();
+		// A in e0..ff and f0..ff: the hull, Y c0..fe
+		assertEquals(new IndexGuard.Range(0xc0, 0xfe, 2), guard());
+		assertShifted(6);
+	}
+
+	@Test
+	public void oneUnguardedCallerGivesNoGuard() throws Exception {
+		shiftedTable(6);
+		lay(ASL_DISPATCH);
+		guardedCaller(0x0d00);
+		builder.setBytes("0x0d20", "3f 06 0e 6f", false);
+		builder.disassemble("0x0d20", 4, true);
+		analyze();
+		assertNull(guard());
+		assertShifted(0);
+	}
+
+	@Test
+	public void unguardedCallerGivesNoGuard() throws Exception {
+		shiftedTable(6);
+		lay(ASL_DISPATCH);
+		builder.setBytes("0x0d00", "3f 06 0e 6f", false);
+		builder.disassemble("0x0d00", 4, true);
+		analyze();
+		assertNull(guard());
+		assertShifted(0);
+	}
+
+	@Test
+	public void instructionBetweenGuardAndCallGivesNoGuard() throws Exception {
+		shiftedTable(6);
+		lay(ASL_DISPATCH);
+		// a MOV A,X between the branches and the CALL replaces A
+		builder.setBytes("0x0d00", "68 df f0 06 90 04 7d 3f 06 0e 6f", false);
+		builder.disassemble("0x0d00", 11, true);
+		analyze();
+		assertNull(guard());
+		assertShifted(0);
+	}
+
+	@Test
+	public void joinIntoTheCallGivesNoGuard() throws Exception {
+		shiftedTable(6);
+		lay(ASL_DISPATCH);
+		guardedCaller(0x0d00);
+		// BRA straight to the CALL bypasses the guard
+		builder.setBytes("0x0d30", "2f " + String.format("%02x", (0x0d06 - 0x0d32) & 0xff), false);
+		builder.disassemble("0x0d30", 2, true);
+		analyze();
+		assertNull(guard());
+		assertShifted(0);
+	}
+
+	@Test
+	public void joinIntoTheBranchChainGivesNoGuard() throws Exception {
+		shiftedTable(6);
+		lay(ASL_DISPATCH);
+		guardedCaller(0x0d00);
+		// BRA into the BCC (0d04) skips the CMP, so the chain is not fall-through-only
+		builder.setBytes("0x0d30", "2f " + String.format("%02x", (0x0d04 - 0x0d32) & 0xff), false);
+		builder.disassemble("0x0d30", 2, true);
+		analyze();
+		assertNull(guard());
+		assertShifted(0);
+	}
+
+	@Test
+	public void guardIsIgnoredOutsideSpc700Shape() throws Exception {
+		// AND-masked index: no guard lookup, the mask rules.
+		table(0x2000, 0x2010);
+		run(CT_DISPATCH);
+		assertEquals(List.of(addr(0x2000), addr(0x2010)), computedJumpTargets());
 	}
 }

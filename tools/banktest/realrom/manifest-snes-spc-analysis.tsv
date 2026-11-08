@@ -8,3 +8,9 @@ spca_som	Secret of Mana (USA).sfc	4c15013131351e694e05f22e38bb1b3e4031dedac77ec7
 spca_lemmings	Lemmings (USA) (Rev 1).sfc	cd016c41c7ef9f4f243d57c2b1564b4ceb3b4c38cc165cd02ab6c8e35c93aa2e	-	snes_lorom	spca_lemmings.dump		
 spca_gradius3	Gradius III (USA).sfc	93da752a0c76167d0907efa832367e5d14aab8e835b864f345c386071a9af718	-	snes_lorom	spca_gradius3.dump		
 spca_lufia	Lufia & the Fortress of Doom (USA).sfc	73731a5a7932965de02a9e98055dcf88b4d17b8f710a6ecfde3e36a1f248773b	-	snes_lorom	spca_lufia.dump		
+spca_alunser	Al Unser Jr.'s Road to the Top (USA).sfc	0099bdb56e4190f81440c8c29395ecc15d78eeabfc38a93dca4773817d6f720f	-	snes_lorom	spca_alunser.dump		
+spca_speedracer	Speed Racer (USA).sfc	54046ec1fc57f6165ad33080502f72809d1b06b438a5a0d0a80ffa2bb3df8b0b	-	snes_lorom	spca_speedracer.dump		
+spca_cannondale	Cannondale Cup (USA).sfc	6cdec3cb9c91aa23feb13005f874bda580c2f548302874491a31951031c9dbbd	-	snes_lorom	spca_cannondale.dump		
+spca_pugsley	Addams Family, The - Pugsley's Scavenger Hunt (USA).sfc	b6957bae7fd97ba681afbf8962fe2138e209649fd88ed9add2d5233178680aaa	-	snes_lorom	spca_pugsley.dump		
+spca_7thsaga	7th Saga, The (USA).sfc	4dd631433c867ba920997fd3add2c838b62e70e06e0ef55c53884b8b68b0dd27	-	snes_hirom	spca_7thsaga.dump		
+spca_ffight3	Final Fight 3 (USA).sfc	f9dac709b2c2859f828103a0dd980716817e2bde3b9d7e2fdea36e9bb9bed7f2	-	snes_hirom	spca_ffight3.dump		

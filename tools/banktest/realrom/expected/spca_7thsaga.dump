@@ -1,0 +1,13 @@
+=== REALROM BEGIN ===
+REALROM program spca_7thsaga.sfc
+REALROM sha256 4dd631433c867ba920997fd3add2c838b62e70e06e0ef55c53884b8b68b0dd27
+REALROM language 65816:LE:24:retro
+REALROM spca recovery stop IPL_DONE blocks 7 entry 0600
+REALROM spca instructions 1222
+REALROM spca functions 35
+REALROM spca bookmarks.error 0
+REALROM spca computed sites=1 withTargets=1
+REALROM spca computed 0d7d jump JMP n=9 0deb 0dec 0e0e 0e13 0e17 0e33 0f6b 0f92 0f9b
+REALROM spca retTrick sites=1
+REALROM spca retTrick 077f RET n=25 07b8 080f 081f 082f 0830 083f 085e 0871 0877 087e 0885 088c 08aa 08c0 08c6 08e7 08e8 090e 0917 09aa 09ab 09bd 09e7 0a12 0a1c
+=== REALROM END ===
