@@ -189,6 +189,25 @@ Each is minutes of work and settles something specific. Highest value per unit e
   records). Either way, once `fb1b` is disassembled, the `fb28` RESTORED proof (`grm-hsv.13`) stops
   depending on the closed-world assumption.
 
+### 1.16 Metroid: two facts behind the live-bank set (`grm-5tl.20.3`, `grm-5tl.20.5`)
+
+- [ ] **Question.** Metroid requests an area bank by writing `$24`. `c4de`→`c4e8` commits it later
+  as `$24`−1 and records it in `$23`. The agent derived the set of possible live banks, {0..5},
+  from the bytes. Two parts of that need a human:
+  - **Is the `ca30` table index really 0–4?** `ca28`–`ca2b` does `AND #$0F / TAY / LDA $CA30,Y /
+    STA $24`. The table is `02 03 05 04 06`, and `ca35` is already code. The index comes from
+    `$030F` at caller `d8e7` (`c81a` passes index 0). Does `$030F` only ever hold 0–4 (the five
+    areas)? If yes, the hint can say so with that as its provenance. If not, something else bounds
+    it.
+  - **Which bank is live at `e5e0 JSR $A29E`?** The other targets that only decode in bank 0
+    (`988a`, `9f54`, `8ac7`, `a93e`) are called from sites that are mostly behind a `$1D`/`$1F`
+    title-mode check in the fixed bank (e.g. `c1b4`, `c1e0`). `e5e0` is not. At `$A29E`, bank 0 holds a pointer table and only bank 3 decodes as code,
+    in what looks like the middle of a routine. Is this a real bank-3 entry point, a call that
+    never runs, or data reached some other way?
+
+  The answers set `grm-5tl.20.3`'s value set and provenance, and tell `grm-5tl.20.5` whether
+  dropping banks that don't decode is right at `e5e0`, or would drop the only real target.
+
 ---
 
 ## 2. Def-use passes on untraced titles

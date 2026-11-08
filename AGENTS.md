@@ -335,6 +335,25 @@ Run `shellcheck <file>` on any `.sh` you edit (`shellcheck $(git ls-files '*.sh'
 
 Run `ruff check <file>` on any `.py` you edit (`ruff check .` must exit 0; rules F/E9/B only, config in `ruff.toml`). It is a bug-finder, not a formatter: never run `ruff format`. A new finding is fixed or justified with a narrow `# noqa: XXXX  # reason`, never left (bead `grm-l9s7`).
 
+## Analysis scripts: look in `tools/` first, and keep what you write
+
+**Before writing a one-off script, check `tools/` for one that already does the job, and extend it
+if one does.** Run `git ls-files 'tools/*.py' 'tools/*.sh'` and read the docstrings. The usual
+duplicates are a 6502 disassembler (`tools/banktest/dis6502.py` decodes any pinned row's bytes:
+`--find <row-id>`, any bank window, word tables) and ROM-corpus scanners under `tools/recon/`.
+Two agents in one session have each written their own scratchpad disassembler, and a third
+script broke because it parsed the other's opcode table out of a file that was later
+overwritten.
+
+**Keep one-offs unless they truly have no possible future value** (owner, 2026-11-08). A scanner,
+a cross-bank comparator or a cell-writer finder written for one bead is usually the next bead's
+starting point, and the scratchpad does not survive the session. Move it into `tools/` (corpus
+and ROM recon under `tools/recon/`), give it a usage docstring that names the bead it was written
+for, take paths from arguments or `GRM_ROM_DIR` rather than hardcoding them (see
+"Machine-specific paths" above), import shared helpers rather than copying an opcode table, and
+run ruff on it. Only throwaway glue, such as a single `print` of one address, stays in the
+scratchpad.
+
 ## Java: keep javac lint at zero warnings
 
 `build.gradle` compiles with `-Xlint:all` minus two Ghidra-induced categories, plus the Error Prone plugin (`grm-tl0o`) minus the style checks its comment lists, and the build is kept at **zero** warnings from both. The owner decided against `-Werror` (`grm-uv3l`), and against letting Error Prone's ERROR-severity checks fail the build (`allErrorsAsWarnings`, `grm-tl0o`), for the same reason. So nothing enforces this but you. After changing Java, run `./gradlew compileJava --rerun compileTestJava --rerun compileGdtBuilderJava --rerun 2>&1 | grep -c "warning: \["`, which must print 0. Both tools print `warning: [Name]`, so the one count covers both. Use `--rerun` because an incremental or `UP-TO-DATE` compile skips unchanged files and hides their warnings. A new warning is fixed, or suppressed with a narrow `@SuppressWarnings("xxx")` on the smallest element plus a one-line reason, never left. Disable an Error Prone check project-wide only by adding it to the `build.gradle` list with its reason.
