@@ -128,18 +128,6 @@ Each is minutes of work and settles something specific. Highest value per unit e
   An answer becomes an agent bead to recover the true reference, so the code comes back as
   reached code rather than through the over-read.
 
-### 1.7 FF3 `$C5:3D1C`: what follows the sample pointer table? (`grm-hb6.28`)
-
-- [ ] **Question.** The sample (BRR) pointer table at `$C5:3C5F` has **63** real 3-byte entries
-  (`00`–`3E`, all `$C5:xxxx`–`$C8:xxxx`), so it ends at `$C5:3D1B`. `ff3mus.pl:147` reads 0x45
-  (69) entries, and the extra six (`3F`–`44`) read as `$B1:0B88 $07:5903 $47:0F39 $06:3910
-  $04:0441 $03:8D08`, none of them ROM pointers (measured 2026-10-28 on FF3 USA Rev 1).
-  - What table starts at `$C5:3D1C`? Another per-sample table (loop points, tuning, ADSR), and
-    with what entry size and count?
-  - Is 63 the real sample count, or does the sound code index past it?
-
-  The answer sets the counts in grm-hb6.28's FF3 descriptor hint, and may add a third table to it.
-
 ### 1.8 65816 tables where the bytes outvote the code's start or bias (`grm-gipk.16.8`)
 
 - [ ] **Question.** The start/bias check (grm-gipk.16.6) logs where reading a table one entry
@@ -497,3 +485,4 @@ Agents don't write into your ROM library or other personal directories.
 | Install PSScriptAnalyzer, the PowerShell linter (6.2) | **Installed (owner, 2026-11-07):** 1.25.0, CurrentUser scope, confirmed with `Get-Module -ListAvailable PSScriptAnalyzer`. `grm-kk77` (static audit of the three tracked `.ps1`) is now unblocked agent work; agents still never RUN `tools/install-gui.ps1`. | `grm-76hw` |
 | FF3 `$C0:196F` / `$C0:1AB6`, fzero `$00:B59F`: what width does the code after `JSR` really run at? (1.4) | **M=0 on every live route at all three (owner, 2026-11-07).** fzero: `$00:D1F0` does `PHP`, `SEP #$30`, pushes a bank and (address after its `JML`) − 1, then `JML`s. The callee's `RTL` lands at `$D1FB`, which does `PLP` / `RTS`, so the call is flag-neutral. The warning is a false positive from the effect walk, which cannot follow the pushed return (`grm-9nxj.33`, P4). FF3: `$C0:1A2A` leaving with M set is a real game bug that never runs. It is called only when the "set parent map" flag `$02` is set in the entrance-tile flags byte. No long-table entry (`196F`) has it, and the short-table entries (`1AB6`) that do are handled by the world-map handler at `$EE:20DF`, which never calls `1A2A`. The FF3 warnings are honest and the current M=0 decode is right. **Do not repair these continuations to M=1.** | `grm-9nxj.5.7`; `grm-9nxj.33` |
 | FF3 `$C1:0008`: how many jump-table entries are real? (the FF3 half of 1.5) | **14, exactly as the analyzer lays it (owner, 2026-11-07).** These are the battle graphics handlers. Entry 4 (`950f`) is a real handler even though it sits well away from the other `00xx`–`02xx` targets. A target far from its siblings is not evidence of an over-read: **do not shorten this table, and do not add a "distant target" cut for it.** With the CT half answered earlier, `grm-9nxj.5.8` item 3 is fully closed. | `grm-9nxj.5.8` |
+| FF3 `$C5:3D1C`: what follows the sample pointer table? (1.7) | **The sample loop table; 63 is the real sample count (owner, 2026-11-07).** The sample uploader adds each loop entry to its sample's base address when it sets the loop point in the instrument table. `ff3mus.pl`'s `0x45` (69) is probably wrong, and the script barely uses the sample tables anyway. **Lay the sample tables at 63 entries, not 69.** Agent arithmetic, not confirmed by the owner: `$3D1C`→`$3E96` (the song table) is 378 bytes = 63 × 6, which fits three 63-word tables (loop, then `$3D9A`, `$3E18`). | `grm-hb6.28` |
