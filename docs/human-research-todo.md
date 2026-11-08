@@ -161,22 +161,6 @@ Each is minutes of work and settles something specific. Highest value per unit e
   they decide whether `grm-c9d.8.8` adds a "table bytes decode as code" end test or leaves the
   table alone.
 
-### 1.15 dodge bank 5: what are the 5-byte records that point at `fb1b`? (`grm-gipk.20`)
-
-- [ ] **Question.** `fb1b`–`fb26` (`LDA $BFF9 / PHA / LDA #3 / JSR ff08 / JSR $8003`, falling
-  into the shared tail `fb27 PLA / JSR ff08 / RTS`) is real code that nothing flows to. Its only
-  references are a word inside 5-byte records in bank 5, at `$9514`, `$9724`, `$9744`, `$BCC2` and
-  `$BD76`. Six sibling routines (`fb2c`–`fb77`) have the same bracket and are disassembled.
-  - What is the record layout? Which byte or word is the `fb1b` pointer, and what are the others?
-  - What walks the records, and how does it reach `fb1b` (`JMP (ind)`, RTS trick, `JSR` through
-    a vector)?
-  - How many records are there? Do other records point at code Ghidra has also missed?
-
-  The answer decides `grm-gipk.20`. If the shape is a common one, it gets a recognizer. If it is
-  dodge-only, it gets a per-game code-pointer hint (the `grm-hb6.29` route, as for kicarus' 5-byte
-  records). Either way, once `fb1b` is disassembled, the `fb28` RESTORED proof (`grm-hsv.13`) stops
-  depending on the closed-world assumption.
-
 ---
 
 ## 2. Def-use passes on untraced titles
@@ -492,3 +476,4 @@ Agents don't write into your ROM library or other personal directories.
 | FF3 `$C5:3D1C`: what follows the sample pointer table? (1.7) | **The sample loop table; 63 is the real sample count (owner, 2026-11-07).** The sample uploader adds each loop entry to its sample's base address when it sets the loop point in the instrument table. `ff3mus.pl`'s `0x45` (69) is most likely a count copied from another game's script and never updated, and the script barely uses the sample tables anyway. Its song count, `0x55`, is right (owner). **Lay the sample tables at 63 entries, not 69.** The next two tables are the per-sample pitch multipliers at `$C5:3D9A` and the ADSR at `$C5:3E18` (owner). `$3D1C`→`$3E96` (the song table) is 378 bytes = 63 × 6, and each of the three is 63 word entries (owner): the loop entry is an offset into the sample, the multiplier a word, and the ADSR entry the two 8-bit DSP ADSR register values. | `grm-hb6.28` |
 | Metroid (1.16): is the `ca30` table index really 0–4, and which bank is live at `e5e0 JSR $A29E`? | **Index 0–4, and `e5e0` is not a call (owner, 2026-11-08; bytes agent-checked).** `ca18`, which holds the table load, is called only from `d8e7` (elevator handling: area changes always go through an elevator) and from the new-game init (Brinstar, area 0). At `d8e7` the value comes from `$030F,X` with X=`#$20`, the elevator object's status. The pre-AND value is what `ca23` stores in `$74`, which the nmikstas disassembly gives as `$00` or `$10`–`$14`, so `AND #$0F` gives 0–4 and the five bytes at `ca30` are the whole table. `e5e0` is data: the `JSR $c376` before it never returns there, because `c376` ends `PLA / PLA / RTS` and returns to its caller's caller. **Do not treat `$A29E` as a banked call target in any bank, and do not use `e5e0` as evidence for or against bank pruning.** The general fix (pop-return helpers) is `grm-ed6h`. | `grm-5tl.20.3`, `grm-5tl.20.5`; `grm-ed6h` |
 | 65816 start/bias close calls (1.8): BoF2 `$C4:3042`, Timecop `$81:AF35`, Madden NFL 95 `$C6:B892` — code's reading or the bytes'? | **One each way, and one that is neither (owner, 2026-11-08).** BoF2 `$C4:3045` is 3 entries: the code is right. Madden 95 `$C6:B8DE` is bias 0, 19 entries: the bytes are right. Timecop: the code's start `$AF90` is right but not its length. A second `JSR ($AF92,X)` at `$81:AF84` indexes the same words one entry later. `$AF92` is not code, and most likely the two tables are 11 and 10 entries, both ending before the shared `RTS` at `$AFA6`. **Do not adopt an entry-count margin rule for overriding a code reading that resolves something**: BoF2 (3 vs 15) and Madden 95 (3 vs 19) look the same by count and go opposite ways. Overlapping tables are `grm-gipk.16.11`. | `grm-gipk.16.9`; `grm-gipk.16.11` |
+| dodge bank 5 (1.15): what are the 5-byte records whose words point at `fb1b`, and what walks them? | **They are not pointers, and `fb1b` is unused code (owner, 2026-11-08).** The words at `$9514`, `$9724`, `$9744`, `$BCC2` and `$BD76` belong to some other kind of data and only happen to equal `fb1b`. The owner found no hidden reference to `fb1b`: the seventh `$BFF9` bracket is never called. **Do not build a recognizer or a code-pointer hint for these records, and do not disassemble `fb1b`.** `grm-hsv.13`'s `fb28` RESTORED note stands: its fall-through never runs, so the closed-world assumption holds. | `grm-gipk.20` (closed) |
