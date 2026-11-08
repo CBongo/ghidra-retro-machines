@@ -1767,17 +1767,18 @@ public class VerifyNesCriteria extends VerifyBase {
 				"CallerE's JSR (E22C): \"" + c8 + "\" warning=\"" +
 				warningBookmarkText(0xE22C) + "\"");
 
-		// G9 (bead grm-67g): CallerF ($E240) is the intervening-call CONTROL -- establishes
-		// select=7/prg_mode=1 itself like CallerE, then is otherwise identical except a JSR
-		// to a harmless subroutine ($E230) sits between the store to $0720 and the JSR to
-		// H2. A JSR may write anywhere (LocalStoreForwarding#forwardedStoreValue's call-
-		// abort), so the caller-side forward scan cannot attribute the $0720 store across
-		// it. This is the control that proves G8 is not merely pattern-matching H2's shape:
-		// without a provable store reaching the call, the ONLY sound answer is a warning,
-		// and specifically not a confident r7=5 that CallerE's OWN value happens to equal.
-		criterion("G9", hasWarningBookmark(0xE24D) && !eol(0xE24D).contains("r7=5"),
-			"an intervening call between the store and the JSR to H2 blocks caller-side " +
-				"attribution -- warning, no r7=5 claim, at CallerF's JSR (E24D): warning=" +
+		// G9 (bead grm-67g, restated by grm-hsv.9): CallerF ($E240) establishes select=7/
+		// prg_mode=1 itself like CallerE, then is otherwise identical except a JSR to a
+		// harmless subroutine ($E230, a bare RTS) sits between the store to $0720 and the JSR
+		// to H2. Until grm-hsv.9 any call ended the caller-side forward scan, so this was the
+		// control that G8 is not merely pattern-matching H2's shape (a warning, no r7=5). The
+		// scan now steps over a call whose callee closure provably never writes the cell
+		// (SaveSlotForwarding#callCensus), and $E230 is exactly that, so CallerF resolves to
+		// r7=5 like CallerE. The dirty-callee control moved to the JUnit layer
+		// (CallCrossingCellForwardingProgramTest, StoreForwardingProgramTest).
+		criterion("G9", !hasWarningBookmark(0xE24D) && eol(0xE24D).contains("r7=5"),
+			"a call whose callee provably never writes $0720, between the store and the JSR to " +
+				"H2, is crossed -- r7=5 and no warning at CallerF's JSR (E24D): warning=" +
 				hasWarningBookmark(0xE24D) + " comment=\"" + eol(0xE24D) + "\"");
 
 		// G10 (bead grm-67g): H3/CallerG ($E260/$E280) is the SELF-WRITTEN-CELL control --

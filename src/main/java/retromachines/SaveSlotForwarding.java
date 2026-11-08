@@ -435,7 +435,7 @@ final class SaveSlotForwarding {
 	 * execute writes {@code cell}. The call must have exactly one resolved, disassembled target in
 	 * a known bank; see {@link #calleeClosureCensus} for the closure itself.
 	 */
-	private static CensusResult callCensus(Program program, Listing listing, ProofMemo memo,
+	static CensusResult callCensus(Program program, Listing listing, ProofMemo memo,
 			Instruction call, Address cell) {
 		Address[] flows = call.getFlows();
 		if (call.getFlowType().isComputed() || flows == null || flows.length != 1) {

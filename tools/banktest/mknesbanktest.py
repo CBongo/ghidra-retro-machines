@@ -299,11 +299,11 @@ than testing the inbound-argument-cell shape these scenarios exist for.
               negative controls pass without testing anything, since an out-of-range
               wrong answer is suppressed on its way out whatever produced it.
   CallerF ($E240): LDA #$47 / STA $8000 / LDA #$05 / STA $0720 / JSR Harmless / JSR H2 --
-              the control: an intervening call between the store and the JSR to H2. A
-              JSR may write anywhere, so the caller-side scan (which declines at any
-              call it cannot see through -- see StoredValueScanner#forwardedStoreValue)
-              cannot attribute the store across it. Expect a WARNING at the JSR $E210
-              (E24D), not a value (no r7=5 claim).
+              an intervening call between the store and the JSR to H2. Harmless is a bare
+              RTS, so its callee closure provably never writes $0720 and the caller-side
+              scan crosses it (grm-hsv.9; before that any call ended the scan, and this was
+              the control expecting a WARNING at E24D). Expect r7=5 at the JSR $E210
+              (E24D), like CallerE. The dirty-callee control lives in the JUnit layer.
   H3 ($E260) / CallerG ($E280): LDA #$47 / STA $0720 / STA $8000 / LDA $0720 /
               STA $8001 / RTS -- the self-written-cell shape: H3 writes the SAME cell
               it later reads back, so the byte at $0720 when H3's LDA runs is H3's own
@@ -2189,7 +2189,8 @@ def make_prg_mmc3_2():
 
     # Harmless ($E230): an arbitrary intervening subroutine CallerF calls between its
     # store to $0720 and its call to H2 -- content doesn't matter, only that it is a CALL
-    # (a JSR may write anywhere, so the caller-side scan must decline across it).
+    # (before grm-hsv.9 a JSR could write anywhere, so the caller-side scan declined across it;
+    # now a bare RTS callee is provably clean and is crossed).
     asm.rts()
 
     # CallerF ($E240): the intervening-call control -- establishes select=7/prg_mode=1

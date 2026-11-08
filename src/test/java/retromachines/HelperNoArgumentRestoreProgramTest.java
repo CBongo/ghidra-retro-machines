@@ -184,12 +184,48 @@ public class HelperNoArgumentRestoreProgramTest extends AbstractProgramTest {
 	@Test
 	public void somethingBetweenTheLoadAndTheSwitchDeclines() throws Exception {
 		builder.setBytes("0x9030", "ad 10 07", true); // LDA $0710
-		builder.setBytes("0x9033", "ea", true); // NOP        -- something in between
-		builder.setBytes("0x9034", "8d 00 e0", true); // STA $E000  <- firstSite/switchSite
-		builder.setBytes("0x9037", "60", true); // RTS
-		Function f = builder.createEmptyFunction("gapBeforeSwitch", "0x9030", 8, null);
+		builder.setBytes("0x9033", "a9 00", true); // LDA #$00   -- redefines the register
+		builder.setBytes("0x9035", "ea", true); // NOP
+		builder.setBytes("0x9036", "8d 00 e0", true); // STA $E000  <- firstSite/switchSite
+		builder.setBytes("0x9039", "60", true); // RTS
+		Function f = builder.createEmptyFunction("gapBeforeSwitch", "0x9030", 10, null);
 
-		HelperModel model = wrapperModel(f, 0x9030, 0x9034, 'A');
+		HelperModel model = wrapperModel(f, 0x9030, 0x9036, 'A');
+
+		assertNull(HelperArgumentRecovery.restoreSourceCell(program, model, 'A'));
+	}
+
+	/**
+	 * grm-hsv.9, cv2's {@code FUN_c185}: {@code LDA $1C / PHA / LDA #1 / STA $0103 / PLA / STA
+	 * $FFFF}. The span redefines A but a push/pull pair puts the loaded byte back, and the store
+	 * to {@code $0103} is a different cell, so the load still directly reaches the switch.
+	 */
+	@Test
+	public void aPushPullPairKeepingTheLoadedByteIsStillARestore() throws Exception {
+		builder.setBytes("0x9100", "a5 1c", true); // LDA $1C
+		builder.setBytes("0x9102", "48", true); // PHA
+		builder.setBytes("0x9103", "a9 01", true); // LDA #$01
+		builder.setBytes("0x9105", "8d 03 01", true); // STA $0103
+		builder.setBytes("0x9108", "68", true); // PLA
+		builder.setBytes("0x9109", "8d 00 e0", true); // STA $E000  <- firstSite/switchSite
+		builder.setBytes("0x910c", "60", true); // RTS
+		Function f = builder.createEmptyFunction("c185Shape", "0x9100", 13, null);
+
+		HelperModel model = wrapperModel(f, 0x9100, 0x9109, 'A');
+
+		assertEquals(addr(0x001c), HelperArgumentRecovery.restoreSourceCell(program, model, 'A'));
+	}
+
+	/** ... but not when the span stores to the loaded cell itself. */
+	@Test
+	public void aSpanWritingTheLoadedCellDeclines() throws Exception {
+		builder.setBytes("0x9120", "a5 1c", true); // LDA $1C
+		builder.setBytes("0x9122", "e6 1c", true); // INC $1C
+		builder.setBytes("0x9124", "8d 00 e0", true); // STA $E000
+		builder.setBytes("0x9127", "60", true); // RTS
+		Function f = builder.createEmptyFunction("rmwCell", "0x9120", 8, null);
+
+		HelperModel model = wrapperModel(f, 0x9120, 0x9124, 'A');
 
 		assertNull(HelperArgumentRecovery.restoreSourceCell(program, model, 'A'));
 	}

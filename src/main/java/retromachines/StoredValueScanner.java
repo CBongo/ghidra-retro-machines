@@ -41,7 +41,7 @@ import retromachines.SaveSlotForwarding.SlotWrite;
 import static retromachines.SaveSlotForwarding.RETURN_DISPATCH_LOOKBACK;
 import static retromachines.CrossBlockStackPairing.crossBlockMatchingPush;
 import static retromachines.CrossBlockStackPairing.findMatchingPush;
-import static retromachines.LocalStoreForwarding.forwardedStoreValue;
+import static retromachines.LocalStoreForwarding.forwardedStoreScan;
 import static retromachines.LocalStoreForwarding.operandByte;
 import static retromachines.CrossBlockStackPairing.pairedArms;
 import static retromachines.SaveSlotForwarding.saveSlotForwarded;
@@ -970,10 +970,16 @@ final class StoredValueScanner {
 				// this same block (grm-mej.1). A partial answer is fine here -- combine() folds
 				// a partially known base per bit -- unlike the AND/ORA operand case, which needs
 				// all eight bits to compose into the accumulator.
-				PartialByte forwarded = forwardedStoreValue(program, prev, target, inState,
+				Scan forwardedScan = forwardedStoreScan(program, prev, target, inState,
 					hooks, env, budget, depth);
+				PartialByte forwarded = forwardedScan.value();
 				if (forwarded.knownMask() != 0) {
 					return stopped(aAcc, oAcc, mask, forwarded, BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
+				}
+				if (forwardedScan.stop() == BankSwitchStrategy.ValueStop.HELPER_ARGUMENT) {
+					// grm-hsv.9: the cell was filled from the helper's inbound register.
+					return stopped(aAcc, oAcc, mask, forwarded,
+						BankSwitchStrategy.ValueStop.HELPER_ARGUMENT);
 				}
 				// Last resort (grm-mej.2): does this address MIRROR the live bank? Strictly below
 				// forwarding -- see Hooks.resolveMirrorLoad for the cv2 case that ordering exists

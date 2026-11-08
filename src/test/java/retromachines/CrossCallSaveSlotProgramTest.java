@@ -589,7 +589,9 @@ public class CrossCallSaveSlotProgramTest extends AbstractProgramTest {
 
 	@Test
 	public void noOracleHooksDeclineByteIdentically() throws Exception {
-		String site = saveCallRestore("a9 05");
+		// A mirror source: the save-slot proof (a read-back carried across the call) needs the
+		// oracle. Since grm-hsv.9 a CONSTANT is forwarded across a clean call with no oracle.
+		String site = saveCallRestore("a5 db");
 		put("0xc040", "60"); // RTS
 		StoredValueScanner.Hooks direct = new StoredValueScanner.Hooks() {
 			@Override
@@ -620,7 +622,9 @@ public class CrossCallSaveSlotProgramTest extends AbstractProgramTest {
 
 	@Test
 	public void proofAndCensusAreMemoized() throws Exception {
-		String site = saveCallRestore("a9 05");
+		// A mirror source: an immediate would be resolved by plain cell forwarding across the
+		// clean call (grm-hsv.9) before the save-slot proof was ever asked.
+		String site = saveCallRestore("a5 db");
 		put("0xc040", "60"); // RTS
 		StoredValueScanner.ProofMemo memo = new StoredValueScanner.ProofMemo();
 		StoredValueScanner.Hooks base = oracle();
@@ -647,14 +651,19 @@ public class CrossCallSaveSlotProgramTest extends AbstractProgramTest {
 			}
 
 			@Override
+			public boolean isLiveBankMirror(Address target) {
+				return base.isLiveBankMirror(target);
+			}
+
+			@Override
 			public StoredValueScanner.ProofMemo saveSlotMemo() {
 				return memo;
 			}
 		};
-		assertBank(5, scan(site, memoHooks).value());
+		assertEquals(BankSwitchStrategy.ValueStop.RESTORED_BANK, scan(site, memoHooks).stop());
 		assertEquals(1, memo.slotProofs.size());
 		assertEquals(1, memo.censuses.size());
-		assertBank(5, scan(site, memoHooks).value());
+		assertEquals(BankSwitchStrategy.ValueStop.RESTORED_BANK, scan(site, memoHooks).stop());
 		assertEquals(1, memo.slotProofs.size());
 	}
 

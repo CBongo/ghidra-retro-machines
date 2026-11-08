@@ -24,6 +24,7 @@ import ghidra.program.model.symbol.Reference;
 
 import retromachines.StoredValueScanner.Budget;
 import retromachines.StoredValueScanner.Hooks;
+import retromachines.StoredValueScanner.Scan;
 import java.util.Locale;
 
 import static retromachines.StoredValueScanner.MAX_BACKWARD_SCAN;
@@ -229,23 +230,44 @@ final class LocalStoreForwarding {
 	static PartialByte forwardedStoreValue(Program program, Instruction useInstr,
 			Address target, MechanismState inStateAtStore, Hooks hooks, RegisterEnv env, Budget budget,
 			int depth) {
+		return forwardedStoreScan(program, useInstr, target, inStateAtStore, hooks, env, budget,
+			depth).value();
+	}
+
+	/** An unresolved forward: unknown, and no claim about WHY (bead grm-hsv.9). */
+	private static final Scan NO_FORWARD =
+		new Scan(PartialByte.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
+
+	/**
+	 * {@link #forwardedStoreValue} with the stop reason of the store's own resolution kept
+	 * (bead grm-hsv.9): a cell filled from the helper's INBOUND register -- dodge's
+	 * {@code FUN_ff08} ({@code PLA / STA $0103 ... LDA $0103}) and {@code FUN_fe96}
+	 * ({@code STA $69 ... JSR $FE8A ... LDA $69}) -- is the helper's argument all the same, and
+	 * the caller needs to be able to say so ({@code HELPER_ARGUMENT}) rather than report a
+	 * value it merely failed to pin down. Every other reason collapses to the bare unknown
+	 * the value-only form always returned.
+	 */
+	static Scan forwardedStoreScan(Program program, Instruction useInstr,
+			Address target, MechanismState inStateAtStore, Hooks hooks, RegisterEnv env, Budget budget,
+			int depth) {
 		if (target == null || depth >= MAX_RESOLVE_DEPTH) {
-			return PartialByte.unknown();
+			return NO_FORWARD;
 		}
 		if (StackFloor.mayAliasStack(program, target)) {
 			// A push between the store and the use would be stepped over silently -- see javadoc.
-			return PartialByte.unknown();
+			return NO_FORWARD;
 		}
 		Listing listing = program.getListing();
 		// Withdrawn rather than aborted on, exactly as in resolveStoredValue -- see grm-4bgh.7.
 		MechanismState inState = inStateAtStore;
+		boolean crossedCall = false;
 		Instruction cur = useInstr;
 		for (int i = 0; i < MAX_BACKWARD_SCAN; i++) {
 			if (env.stopsAt(cur.getMinAddress())) {
-				return PartialByte.unknown(); // the caller's memory is not modeled -- see javadoc
+				return NO_FORWARD; // the caller's memory is not modeled -- see javadoc
 			}
 			if (!budget.spend()) {
-				return PartialByte.unknown();
+				return NO_FORWARD;
 			}
 			// Block start, left the basic block, or another path reaches cur with a different
 			// cell value -- unless the env licenses this exact join (grm-k90) or names the arm
@@ -256,7 +278,7 @@ final class LocalStoreForwarding {
 			// crossed would make the two disagree about what the same instruction stream did.
 			Instruction prev = pathPredecessor(program, listing, cur, env);
 			if (prev == null) {
-				return PartialByte.unknown();
+				return NO_FORWARD;
 			}
 			if (hooks.isMechanismWrite(prev)) {
 				// Same rule as the register scan's, and now the same REMEDY (grm-4bgh.7): the
@@ -268,6 +290,26 @@ final class LocalStoreForwarding {
 				inState = MechanismState.unknown();
 			}
 
+			if (prev.getFlowType().isCall()) {
+				// bead grm-hsv.9: a call is stepped over when its callee closure PROVABLY never
+				// writes the cell (the same writer census a save-slot proof crosses a call on).
+				// dodge's FUN_fe96 parks its argument at $69, calls FUN_fe8a (a PPU-control mask,
+				// which touches only $FF and $2000) and reloads $69. Reaching the fall-through is
+				// the witness that the call returned (as in the pairing walks); a callee that
+				// reaches a computed jump, an unresolved or undisassembled target, or any writer of
+				// the cell makes the census DIRTY and the walk ends exactly as before.
+				if (!SaveSlotForwarding.callCensus(program, listing, hooks.saveSlotMemo(), prev,
+					target).clean()) {
+					return NO_FORWARD; // a subroutine may write anywhere
+				}
+				// The callee may have switched banks, so the in-state at the use no longer
+				// describes the instructions before the call. Only the oracle can say what the
+				// state was at the store this walk is heading for; without one, withdraw (never
+				// guess), as the mechanism-write branch below does.
+				crossedCall = true;
+				cur = prev;
+				continue;
+			}
 			if (writesMemory(prev)) {
 				Character storeReg = MosOperands.storeRegister(prev);
 				// The store's own target shares this query tree's budget, unlike the LD<reg>
@@ -276,20 +318,26 @@ final class LocalStoreForwarding {
 				Address storeTarget = storeReg == null ? null
 						: effectiveTarget(program, prev, hooks, env, budget, depth + 1);
 				if (storeTarget == null) {
-					return PartialByte.unknown(); // a memory write this scanner cannot place
+					return NO_FORWARD; // a memory write this scanner cannot place
 				}
 				if (storeTarget.equals(target)) {
-					return resolveStoredValue(program, prev, storeReg, inState, PartialByte.BYTE_MASK, hooks,
-						env, budget, depth + 1).value();
+					if (crossedCall) {
+						inState = hooks.hasStateOracle() ? hooks.stateAt(prev.getMinAddress())
+								: MechanismState.unknown();
+						if (inState == null) {
+							return NO_FORWARD; // no state at the store: abandon
+						}
+					}
+					Scan stored = resolveStoredValue(program, prev, storeReg, inState,
+						PartialByte.BYTE_MASK, hooks, env, budget, depth + 1);
+					return stored.stop() == BankSwitchStrategy.ValueStop.HELPER_ARGUMENT
+							|| stored.value().knownMask() != 0 ? stored : NO_FORWARD;
 				}
 				// provably a different cell -- harmless, keep walking
 			}
-			if (prev.getFlowType().isCall()) {
-				return PartialByte.unknown(); // a subroutine may write anywhere
-			}
 			cur = prev;
 		}
-		return PartialByte.unknown();
+		return NO_FORWARD;
 	}
 
 	/**

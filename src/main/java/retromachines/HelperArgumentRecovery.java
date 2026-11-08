@@ -1324,6 +1324,17 @@ final class HelperArgumentRecovery {
 		SURVIVES, DEFINITELY_CLOBBERED, INDETERMINATE
 	}
 
+	/** Whether {@code call}'s callee closure provably writes none of {@code cells}. */
+	private static boolean argumentCellsSurviveCall(Program program, Listing listing,
+			Instruction call, Set<Address> cells) {
+		for (Address cell : cells) {
+			if (!SaveSlotForwarding.callCensus(program, listing, null, call, cell).clean()) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	static boolean argumentSurvivesPrologue(Program program, Address entry, Address firstSite,
 			char reg) {
 		return prologueOutcome(program, entry, firstSite, reg) == PrologueOutcome.SURVIVES;
@@ -1402,8 +1413,26 @@ final class HelperArgumentRecovery {
 		Address cursor = entry;
 		while (cursor.compareTo(firstSite) < 0) {
 			Instruction instr = listing.getInstructionAt(cursor);
-			if (instr == null || instr.getFlowType().isCall()) {
+			if (instr == null) {
 				return PrologueOutcome.INDETERMINATE;
+			}
+			if (instr.getFlowType().isCall()) {
+				// bead grm-hsv.9: a call is crossable only when the caller's byte lives ONLY in
+				// tracked RAM cells (register already lost, no copy on the saved stack) and the
+				// callee closure provably writes none of them -- dodge's FUN_fe96 parks A at $69,
+				// calls FUN_fe8a and reloads $69. The register is clobbered by the call, which
+				// costs nothing here: it no longer held the argument. Anything else, or any dirty
+				// census, is INDETERMINATE exactly as before.
+				if (holdsArgument || !straightLine || argumentCells.isEmpty() ||
+					saved.contains(Boolean.TRUE) ||
+					!argumentCellsSurviveCall(program, listing, instr, argumentCells)) {
+					return PrologueOutcome.INDETERMINATE;
+				}
+				cursor = instr.getMaxAddress().next();
+				if (cursor == null) {
+					return PrologueOutcome.INDETERMINATE;
+				}
+				continue;
 			}
 			if (isStackPageIndexedAccess(instr)) {
 				sawStackRelativeAccess = true;
@@ -2282,7 +2311,8 @@ final class HelperArgumentRecovery {
 							// indexed access (no fixed cell to name)
 		}
 		Address afterInstr = instr.getMaxAddress().next();
-		if (afterInstr == null || !afterInstr.equals(segment.to())) {
+		if (afterInstr == null || !loadedValueReaches(program, afterInstr, segment.to(), reload,
+			reg)) {
 			return null; // something else runs between the load and the switch -- this load is not
 							// what directly reaches the mechanism, so the restore claim is not sound
 		}
@@ -2291,6 +2321,75 @@ final class HelperArgumentRecovery {
 		}
 		MemoryBlock block = program.getMemory().getBlock(reload);
 		return block != null && block.isWrite() ? reload : null;
+	}
+
+	/**
+	 * Whether {@code reg} still holds the value just loaded from {@code cell} when control reaches
+	 * {@code to}, over the straight line {@code [from, to)} (bead grm-hsv.9). Empty (from == to) is
+	 * the original one-instruction case. Otherwise the span may hold only straight-line code that
+	 * keeps the loaded byte: a push/pull pair around anything (cv2's {@code FUN_c185} loads
+	 * {@code $1C}, pushes it, stores a constant to {@code $0103} and pulls it back), stores to
+	 * cells other than {@code cell}, and writes to other registers. A flow, a call, a write to
+	 * {@code cell}, a stack-pointer move, an unbalanced pull, or a redefinition of {@code reg}
+	 * that is not undone by a pull ends it with {@code false}.
+	 */
+	private static boolean loadedValueReaches(Program program, Address from, Address to,
+			Address cell, char reg) {
+		Register register = program.getLanguage().getRegister(String.valueOf(reg));
+		Register stackPointer = program.getCompilerSpec().getStackPointer();
+		if (register == null || stackPointer == null) {
+			return false;
+		}
+		Listing listing = program.getListing();
+		boolean holds = true;
+		Deque<Boolean> saved = new ArrayDeque<>();
+		Address cursor = from;
+		while (!cursor.equals(to)) {
+			if (cursor.compareTo(to) > 0) {
+				return false;
+			}
+			Instruction instr = listing.getInstructionAt(cursor);
+			if (instr == null || instr.getFlows().length > 0 || instr.getFlowType().isCall() ||
+				!instr.getFlowType().isFallthrough()) {
+				return false;
+			}
+			if (StoredValueScanner.classifySlotWrite(program, instr, cell) !=
+				SaveSlotForwarding.SlotWrite.NONE) {
+				return false;
+			}
+			String mnem = instr.getMnemonicString();
+			if (reg == 'A' && mnem.equals("PHA")) {
+				saved.push(holds);
+			}
+			else if (reg == 'A' && mnem.equals("PLA")) {
+				if (saved.isEmpty()) {
+					return false;
+				}
+				holds = saved.pop();
+			}
+			else if (mnem.equals("PHP")) {
+				saved.push(Boolean.FALSE);
+			}
+			else if (mnem.equals("PLP")) {
+				if (saved.isEmpty()) {
+					return false;
+				}
+				saved.pop();
+			}
+			else {
+				if (writesStackPointer(instr, stackPointer)) {
+					return false;
+				}
+				if (MosOperands.writesRegister(instr, register)) {
+					holds = false;
+				}
+			}
+			cursor = instr.getMaxAddress().next();
+			if (cursor == null) {
+				return false;
+			}
+		}
+		return holds && saved.isEmpty();
 	}
 
 	/**

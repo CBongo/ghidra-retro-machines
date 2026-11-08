@@ -51,7 +51,7 @@ COMMENT e21b bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=
 COMMENT e222 bank -> select=7,prg_mode=1,r6=0,r7=1 [switch-value flow]
 COMMENT e22c bank -> select=7,prg_mode=1,r6=0,r7=5 via FUN_e210 [switch-value flow]
 COMMENT e242 bank -> select=7,prg_mode=1,r6=0,r7=1 [switch-value flow]
-COMMENT e24d bank -> select=7,prg_mode=1,r6=0,r7=1? via FUN_e210 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0; assumed from initial: r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+COMMENT e24d bank -> select=7,prg_mode=1,r6=0,r7=5 via FUN_e210 [switch-value flow]
 COMMENT e265 bank -> select=7,prg_mode=1,r6=0,r7=1 [switch-value flow]
 COMMENT e26b bank -> select=7,prg_mode=1,r6=0,r7=7 [switch-value flow]
 COMMENT e282 bank -> select=7,prg_mode=1,r6=0,r7=1 [switch-value flow]
@@ -73,7 +73,6 @@ BOOKMARK Warning e003
 BOOKMARK Warning e015
 BOOKMARK Warning e128
 BOOKMARK Warning e140
-BOOKMARK Warning e24d
 BOOKMARK Warning e34f
 BOOKMARK Warning e360
 SYMBOL 0720 bank_shadow_0720 ANALYSIS primary=true

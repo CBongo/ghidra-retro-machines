@@ -323,7 +323,10 @@ public class StoreForwardingProgramTest extends AbstractProgramTest {
 			MechanismState.unknown()));
 	}
 
-	/** A subroutine may write anywhere, so a call between store and load ends the walk. */
+	/**
+	 * A subroutine whose closure may write the cell ends the walk. Since grm-hsv.9 a callee that
+	 * provably never writes it is crossed instead (see below); this one does write it.
+	 */
 	@Test
 	public void declinesWhenCallIntervenes() throws Exception {
 		builder.setBytes("0x8000", "a9 05", true); // LDA #$05
@@ -331,9 +334,25 @@ public class StoreForwardingProgramTest extends AbstractProgramTest {
 		builder.setBytes("0x8004", "20 20 80", true); // JSR $8020
 		builder.setBytes("0x8007", "a5 c3", true); // LDA $C3
 		builder.setBytes("0x8009", "8d 00 80", true); // STA $8000
-		builder.setBytes("0x8020", "60", true); // RTS
+		builder.setBytes("0x8020", "e6 c3", true); // INC $C3
+		builder.setBytes("0x8022", "60", true); // RTS
 
 		assertUnresolved(axromLatch().computeSwitch(program, instructionAt("0x8009"),
+			MechanismState.unknown()));
+	}
+
+	/** grm-hsv.9: a callee whose closure provably never writes the cell is stepped over. */
+	@Test
+	public void forwardsAcrossACallThatNeverWritesTheCell() throws Exception {
+		builder.setBytes("0x8000", "a9 05", true); // LDA #$05
+		builder.setBytes("0x8002", "85 c3", true); // STA $C3
+		builder.setBytes("0x8004", "20 20 80", true); // JSR $8020
+		builder.setBytes("0x8007", "a5 c3", true); // LDA $C3
+		builder.setBytes("0x8009", "8d 00 80", true); // STA $8000
+		builder.setBytes("0x8020", "e6 10", true); // INC $10
+		builder.setBytes("0x8022", "60", true); // RTS
+
+		assertBank(5, axromLatch().computeSwitch(program, instructionAt("0x8009"),
 			MechanismState.unknown()));
 	}
 
