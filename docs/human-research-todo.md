@@ -114,21 +114,6 @@ Each is minutes of work and settles something specific. Highest value per unit e
   the likely cause is a wrong assumption about which bank `e72a JSR $8574` enters (`$80` gives 16K
   bank 0). Say so, and `grm-mej.19` can aim for a full RESTORED note.
 
-### 1.6 ff1 bank 14: what really reaches `a61d`, `a667`, `aadf`, ...? (`grm-vrkk.11`)
-
-- [ ] **Question.** Switch `W8000_B14::a354` (the shop dispatcher; its real table is the 8 entries
-  at `a320`, see the Answered table) was over-read by stock analysis. Its stale cases were the
-  only reference to about 160 instructions of bank-14 code: `a61d`–`a648`, `a667`, `a678`,
-  `a8d3`, `a8e4`, `aadf`–`ab68`, `ad03`. Most of it is well-formed (`LDA $62 / ROR x3 / ... /
-  RTS`, `TYA CLC ADC TAX ... RTS`, `PLA PLA JMP` epilogues). grm-vrkk.11 retracts the over-read,
-  and per the owner's ruling that code leaves the listing.
-  - Is this code reached some other way: a neighbouring pointer table, a second dispatch, or an
-    RTS trick? If so, which address holds the table, and what is the entry format? Or is it
-    unused, like dodge `fb1b`?
-
-  An answer becomes an agent bead to recover the true reference, so the code comes back as
-  reached code rather than through the over-read.
-
 ### 1.10 Three over-read NES jump tables: where does each real table end? (`grm-c9d.8.7`, `grm-c9d.8.8`)
 
 - [ ] **Question.** Each table below was read to 83–128 entries and no bound rule cut it. The
@@ -479,3 +464,4 @@ Agents don't write into your ROM library or other personal directories.
 | 65816 start/bias close calls (1.8): BoF2 `$C4:3042`, Timecop `$81:AF35`, Madden NFL 95 `$C6:B892` — code's reading or the bytes'? | **One each way, and one that is neither (owner, 2026-11-08).** BoF2 `$C4:3045` is 3 entries: the code is right. Madden 95 `$C6:B8DE` is bias 0, 19 entries: the bytes are right. Timecop: the code's start `$AF90` is right but not its length. A second `JSR ($AF92,X)` at `$81:AF84` indexes the same words one entry later. `$AF92` is not code, and most likely the two tables are 11 and 10 entries, both ending before the shared `RTS` at `$AFA6`. **Do not adopt an entry-count margin rule for overriding a code reading that resolves something**: BoF2 (3 vs 15) and Madden 95 (3 vs 19) look the same by count and go opposite ways. Overlapping tables are `grm-gipk.16.11`. | `grm-gipk.16.9`; `grm-gipk.16.11` |
 | dodge bank 5 (1.15): what are the 5-byte records whose words point at `fb1b`, and what walks them? | **They are not pointers, and `fb1b` is unused code (owner, 2026-11-08).** The words at `$9514`, `$9724`, `$9744`, `$BCC2` and `$BD76` belong to some other kind of data and only happen to equal `fb1b`. The owner found no hidden reference to `fb1b`: the seventh `$BFF9` bracket is never called. **Do not build a recognizer or a code-pointer hint for these records, and do not disassemble `fb1b`.** `grm-hsv.13`'s `fb28` RESTORED note stands: its fall-through never runs, so the closed-world assumption holds. | `grm-gipk.20` (closed) |
 | ff1 bank 14 (1.6, first half): what is switch `a354`'s real table, and where does it end? | **The shop dispatcher, using the 8-entry table at `a320`, which ends where the code that uses it starts, at `$a330` (owner, 2026-11-08).** This matches the 2026-10-03 ruling above (`E:a358`, 8 entries) and grm-fxtp's bound, so the stale cases past entry 8 were over-read. Retracting them (grm-vrkk.11) was right. **Do not re-read this bound.** The second half of 1.6, what (if anything) reaches the ~160 retracted instructions, is still open in section 1. | `grm-vrkk.11` |
+| ff1 bank 14 (1.6, second half): what reaches the ~160 instructions retracted with `a354`'s over-read (`a61d`, `a8d3`, `aadf`, ...)? | **The shop pointers at `a320` do: it is real shop code (owner, 2026-11-08; labels from Entroper/FF1Disassembly `bank_0E.asm`).** The table's 8 words (`a3b4 a3b4 a360 a360 a5a2 a508 a47c a47a`, agent-decoded) are the shop entry points. The extension lays them out as data instead of disassembling them, so their callees are lost too: e.g. the equipment shop `a3b4` calls `a8d3` (ShopLoop_BuySellExit) at `a3b9` and `a61d` (EquipShop_GiveItemToCharacter) at `a3f7`. **Do not treat that region as unused, and do not bring back the over-read to recover it.** Disassembling the bounded targets is agent work. | `grm-vrkk.11`; follow-up `grm-gipk.21` |
