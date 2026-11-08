@@ -28,6 +28,7 @@ import org.junit.Test;
 import ghidra.program.database.ProgramBuilder;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSet;
+import ghidra.program.model.listing.FlowOverride;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.symbol.RefType;
@@ -670,5 +671,93 @@ public class CrossBlockPushPullProgramTest extends AbstractProgramTest {
 		// A second scan reuses the SAME memoized proof rather than recomputing.
 		assertBank(5, scan("0xc00a", memoHooks).value());
 		assertEquals(1, memo.size());
+	}
+
+	// ==================================================================
+	// 7. Shared-return-call tail entry (grm-hsv.13, dodge fb27)
+	// ==================================================================
+
+	/**
+	 * dodge's {@code FUN_fb27}, reduced: two sibling routines each {@code LDA $10 / PHA / JSR
+	 * helper / JMP tail}, the tail being its own function ({@code PLA / STA $8000 / RTS}). The
+	 * {@code JMP}s are re-typed as calls the way shared-return analysis does (flow override
+	 * {@code CALL_RETURN}), so the tail is a function entry with "call" references only.
+	 * {@code secondIsJsr} makes the second source a genuine {@code JSR} instead.
+	 */
+	private StoredValueScanner.Scan sharedReturnTailScan(boolean secondPushes, boolean secondIsJsr)
+			throws Exception {
+		put("0xc000", "a5 10 48 20 40 c0"); // A: LDA $10 / PHA / JSR helper
+		put("0xc006", "4c 20 c0"); // A: JMP tail
+		if (secondPushes) {
+			put("0xc010", "a5 10 48 20 40 c0"); // B: LDA $10 / PHA / JSR helper
+		}
+		else {
+			put("0xc010", "ea ea ea 20 40 c0"); // B: no push
+		}
+		put("0xc016", secondIsJsr ? "20 20 c0" : "4c 20 c0"); // B: JMP tail  (or a real JSR)
+		put("0xc019", "60"); // B: RTS (after a real JSR)
+		put("0xc020", "68"); // tail: PLA
+		put("0xc021", "8d 00 80"); // tail: STA $8000
+		put("0xc024", "60"); // tail: RTS
+		put("0xc040", "60"); // helper: RTS
+
+		inTx(program, "create functions and re-type the tail jumps", () -> {
+			program.getFunctionManager()
+				.createFunction("tail", builder.addr("0xc020"),
+					new AddressSet(builder.addr("0xc020"), builder.addr("0xc024")),
+					SourceType.ANALYSIS);
+			program.getFunctionManager()
+				.createFunction("sibA", builder.addr("0xc000"),
+					new AddressSet(builder.addr("0xc000"), builder.addr("0xc008")),
+					SourceType.ANALYSIS);
+			program.getFunctionManager()
+				.createFunction("sibB", builder.addr("0xc010"),
+					new AddressSet(builder.addr("0xc010"), builder.addr("0xc019")),
+					SourceType.ANALYSIS);
+			for (String jmp : new String[] { "0xc006", "0xc016" }) {
+				Instruction i = program.getListing().getInstructionAt(builder.addr(jmp));
+				if (i.getMnemonicString().equals("JMP")) {
+					i.setFlowOverride(FlowOverride.CALL_RETURN);
+				}
+			}
+		});
+		return scan("0xc021", oracleHooksWithMirror(builder.addr("0x10")));
+	}
+
+	@Test
+	public void sharedReturnTailOverJumpSourcesRestores() throws Exception {
+		StoredValueScanner.Scan scan = sharedReturnTailScan(true, false);
+		for (var ref : program.getReferenceManager().getReferencesTo(builder.addr("0xc020"))) {
+			assertEquals("the override must have re-typed the JMP as a call", true,
+				ref.getReferenceType().isCall());
+		}
+		assertEquals(BankSwitchStrategy.ValueStop.RESTORED_BANK, scan.stop());
+		assertEquals(2, scan.readBack().reads().size());
+		assertEquals(builder.addr("0xc000"), scan.readBack().reads().get(0).readAt());
+		assertEquals(builder.addr("0xc010"), scan.readBack().reads().get(1).readAt());
+	}
+
+	@Test
+	public void sharedReturnTailWithAnArmThatDoesNotPushStaysUnknown() throws Exception {
+		assertEquals(BankSwitchStrategy.ValueStop.ANALYZER_LIMIT,
+			sharedReturnTailScan(false, false).stop());
+	}
+
+	/** A genuine {@code JSR} into the tail makes it a function with callers: not a join. */
+	@Test
+	public void sharedReturnTailAlsoCalledByAJsrStaysUnknown() throws Exception {
+		assertEquals(BankSwitchStrategy.ValueStop.ANALYZER_LIMIT,
+			sharedReturnTailScan(true, true).stop());
+	}
+
+	/** The strict and cross-function forms keep refusing the tail entry; only the opt-in admits it. */
+	@Test
+	public void sharedReturnTailEntryIsAdmittedOnlyByTheOptIn() throws Exception {
+		sharedReturnTailScan(true, false);
+		Address tail = builder.addr("0xc020");
+		assertEquals(null, CrossBlockStackPairing.closedWorldPredecessors(program,
+			program.getListing(), tail, true));
+		assertEquals(2, CrossBlockStackPairing.closedWorldPredecessors(program,
+			program.getListing(), tail, true, true).size());
 	}
 }

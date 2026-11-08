@@ -274,9 +274,56 @@ final class CrossBlockStackPairing {
 	 */
 	static List<Address> closedWorldPredecessors(Program program, Listing listing,
 			Address headAddr, boolean admitCrossFunctionJumps) {
+		return closedWorldPredecessors(program, listing, headAddr, admitCrossFunctionJumps, false);
+	}
+
+	/**
+	 * True when {@code headAddr} is a SHARED-RETURN-CALL TAIL entry (bead grm-hsv.13): a function
+	 * entry whose every incoming reference, of ANY kind, is a flow reference from a
+	 * {@code JMP} that Ghidra's shared-return analysis re-typed as a call
+	 * ({@code UNCONDITIONAL_CALL}). dodge's {@code FUN_fb27} ({@code PLA / JSR ff08 / RTS}) is the
+	 * case: six sibling routines end {@code JMP fb27}. Such a "call" is a plain jump -- it pushes
+	 * nothing -- so the entry is a join over those jumps, not a function with callers. Any other
+	 * reference (a real {@code JSR}, a data pointer, an entry-point mark) makes the entry reachable
+	 * some way this rule cannot enumerate, so it is refused.
+	 */
+	private static boolean isSharedReturnTailEntry(Program program, Listing listing,
+			Address headAddr) {
+		int jumps = 0;
+		for (Reference ref : program.getReferenceManager().getReferencesTo(headAddr)) {
+			if (!ref.getReferenceType().isCall() || !ref.getReferenceType().isFlow()) {
+				return false;
+			}
+			Instruction src = listing.getInstructionAt(ref.getFromAddress());
+			if (src == null || !"JMP".equalsIgnoreCase(src.getMnemonicString())) {
+				return false; // a genuine JSR (or an undisassembled source)
+			}
+			jumps++;
+		}
+		return jumps > 0;
+	}
+
+	/**
+	 * {@link #closedWorldPredecessors(Program, Listing, Address, boolean)}, optionally treating a
+	 * shared-return-call tail entry ({@link #isSharedReturnTailEntry}) as a join over its
+	 * {@code JMP} sources (bead grm-hsv.13). Only {@link #solveCrossBlock} opts in, because it is
+	 * the one consumer that walks every enumerated edge to a push and so checks each arm itself.
+	 * The rule is the same closed-world one every other join uses: the world is what Ghidra has
+	 * disassembled, and a physical fall-through into the entry from a disassembled instruction is
+	 * enumerated too (so an arm discovered later joins the proof automatically). It implies
+	 * {@code admitCrossFunctionJumps}.
+	 */
+	static List<Address> closedWorldPredecessors(Program program, Listing listing,
+			Address headAddr, boolean admitCrossJumps, boolean admitSharedReturnTails) {
 		FunctionManager fm = program.getFunctionManager();
+		boolean sharedTail = false;
+		boolean crossFunctionOk = admitCrossJumps;
 		if (fm.getFunctionAt(headAddr) != null) {
-			return null; // entered by callers, not a predecessor edge in this function
+			if (!admitSharedReturnTails || !isSharedReturnTailEntry(program, listing, headAddr)) {
+				return null; // entered by callers, not a predecessor edge in this function
+			}
+			sharedTail = true;
+			crossFunctionOk = true;
 		}
 		Function scope = fm.getFunctionContaining(headAddr);
 		List<Address> preds = new ArrayList<>();
@@ -289,7 +336,7 @@ final class CrossBlockStackPairing {
 			if (!type.isFlow()) {
 				continue;
 			}
-			if (type.isCall()) {
+			if (type.isCall() && !sharedTail) {
 				return null; // a call reference into the span -- not a closed world
 			}
 			Address fromAddr = ref.getFromAddress();
@@ -300,7 +347,7 @@ final class CrossBlockStackPairing {
 				return null; // undisassembled predecessor
 			}
 			if (!Objects.equals(fm.getFunctionContaining(fromAddr), scope) &&
-				!admitCrossFunctionJumps) {
+				!crossFunctionOk) {
 				return null; // from a different function
 			}
 			preds.add(fromAddr);
@@ -351,7 +398,7 @@ final class CrossBlockStackPairing {
 	 * as its own walk, and the answer is adopted only when every one of them ends on a read-back
 	 * of the same cell, so this bounds work rather than soundness. cv3's {@code e63d} needs two.
 	 */
-	private static final int CROSS_BLOCK_PUSH_CAP = 4;
+	private static final int CROSS_BLOCK_PUSH_CAP = 8;
 
 	/**
 	 * Mutable search-wide state for one {@link #crossBlockMatchingPush} call.
@@ -581,7 +628,7 @@ final class CrossBlockStackPairing {
 		if (env.stopsAt(addr)) {
 			throw CrossBlockAbandon.INSTANCE; // the caller's stack is not modeled
 		}
-		List<Address> preds = closedWorldPredecessors(program, listing, addr, true);
+		List<Address> preds = closedWorldPredecessors(program, listing, addr, true, true);
 		if (preds == null || preds.isEmpty()) {
 			throw CrossBlockAbandon.INSTANCE; // unsound edge, or a dead end
 		}
@@ -596,7 +643,10 @@ final class CrossBlockStackPairing {
 				throw CrossBlockAbandon.INSTANCE;
 			}
 			boolean mech = hooks.isMechanismWrite(predInstr);
-			if (predInstr.getFlowType().isCall()) {
+			if (predInstr.getFlowType().isCall() &&
+				!"JMP".equalsIgnoreCase(predInstr.getMnemonicString())) {
+				// (A JMP re-typed as a call by shared-return analysis is a plain jump into a
+				// shared tail -- grm-hsv.13 -- and takes the default branch below.)
 				// Stepped over via the same fall-through witness findMatchingPush already relies
 				// on: reaching the fall-through proves the callee returned, and JSR/RTS are
 				// balanced by construction, so the depth counter stays exact across it.
