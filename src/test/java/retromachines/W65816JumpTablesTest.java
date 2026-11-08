@@ -135,13 +135,27 @@ public class W65816JumpTablesTest {
 
 	/** Where $xx:0000 is a plausible target (HiROM ROM) a zero run is not cut: FF3 $C0:7807. */
 	@Test
-	public void aPlausibleZeroTargetIsNotAPlaceholder() {
-		int[] words = { 0xe400, 0, 0, 0, 0, 0xe410 };
+	public void whereZeroIsPlausibleZerosArePlaceholdersWithNoRunLimit() {
+		// grm-gipk.16.10: HiROM, $C0:0000 is ROM. FF3 $C0:7807's real zero runs of 4 are kept,
+		// but as placeholders, not as flows to $C0:0000; trailing zeros still go.
+		int[] words = { 0xe400, 0, 0, 0, 0, 0xe410, 0, 0 };
+		TableScorer.Result<Long, W65816JumpTables.End> r = W65816JumpTables.trimUnused(
+			W65816JumpTables.score(0xc07807L, 0xc00000L, 128, false, true,
+				i -> i < words.length ? words[i] : null, b -> true, t -> true, i -> null));
+		assertEquals(6, r.count());
+		assertEquals(4, W65816JumpTables.unusedCount(r.targets()));
+		assertEquals(false, r.targets().contains(0xc00000L));
+	}
+
+	/** A placeholder still ends the table at a strong outside reference to its position. */
+	@Test
+	public void aReferencedPlaceholderPositionEndsTheTable() {
+		int[] words = { 0xe400, 0, 0xe410 };
 		TableScorer.Result<Long, W65816JumpTables.End> r = W65816JumpTables.score(0xc07807L,
 			0xc00000L, 128, false, true, i -> i < words.length ? words[i] : null, b -> true,
-			t -> true, i -> null);
-		assertEquals(6, r.count());
-		assertEquals(0, W65816JumpTables.unusedCount(r.targets()));
+			t -> true, i -> i == 1 ? new EntryReferences.Hit(true, "test") : null);
+		assertEquals(1, r.count());
+		assertEquals(W65816JumpTables.End.ENTRY_REFERENCED, r.endedBy());
 	}
 
 	/** Without the opt-in (the RTS trick's call), a zero word is still target $xx:0000. */

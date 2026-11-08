@@ -191,29 +191,39 @@ final class W65816JumpTables {
 	 * As above, plus {@code zeroIsPlaceholder} (grm-8lr2): a raw word of $0000 after entry 0 is an
 	 * {@link #UNUSED_ENTRY} (soft {@link End#UNUSED_SLOT}), not target $xx:0000 that
 	 * {@code targetPlausible} rejects. FF2 {@code $00:E2E6} holds a zero for a value the code
-	 * special-cases before the dispatch, with real handlers after it. At most
-	 * {@link #MAX_UNUSED_RUN} placeholders in a row: zero padding after a real table must not let
-	 * the walk run on into whatever follows. Only where $xx:0000 is NOT a plausible target: in a
-	 * HiROM bank offset 0 is ROM, the walk already took the zero as an ordinary target, and FF3 {@code $C0:7807} is a real table with
-	 * zero runs of 2, 3 and 4 that the run limit would have cut. Entry 0 stays a hard
-	 * {@link End#IMPLAUSIBLE} end.
-	 * Trailing placeholders stay in the result; {@link #trimUnused} drops them.
+	 * special-cases before the dispatch, with real handlers after it. Entry 0 is unchanged (a hard
+	 * {@link End#IMPLAUSIBLE} end where $xx:0000 is implausible). Trailing placeholders stay in the
+	 * result; {@link #trimUnused} drops them.
+	 *
+	 * <p>How many placeholders may run together depends on whether $xx:0000 is itself plausible:
+	 * <ul>
+	 * <li>Implausible (LoROM banks, bank $00's WRAM): at most {@link #MAX_UNUSED_RUN} in a row.
+	 * Before grm-8lr2 a zero ended such a table outright, so the limit keeps zero padding after a
+	 * real table from carrying the walk on into whatever follows.</li>
+	 * <li>Plausible (HiROM, where offset 0 is ROM; grm-gipk.16.10): no limit. The walk always took
+	 * such a zero as an ordinary target and read on, so every table keeps the length it had, and
+	 * only the bogus {@code $xx:0000} target (a flow into the bank's first byte) goes. A run limit
+	 * would be wrong here: FF3 {@code $C0:7807} is a real table with zero runs of 3 and 4, and a
+	 * limit of 2 cut it at 12 entries and orphaned 220 instructions of handlers.</li>
+	 * </ul>
 	 */
 	static TableScorer.Result<Long, End> score(long tableStart, long targetBank, int cap,
 			boolean sameHalf, boolean zeroIsPlaceholder, IntFunction<Integer> word,
 			LongPredicate tableByteFree, LongPredicate targetPlausible,
 			IntFunction<EntryReferences.Hit> entryRef) {
+		long bankBase = targetBank & 0xff0000L;
+		boolean zeroPlausible = zeroIsPlaceholder && targetPlausible.test(bankBase);
 		return scoreCore(tableStart, 2, cap, sameHalf, false, n -> {
 			Integer w = word.apply(n);
 			if (w == null) {
 				return null;
 			}
-			if (zeroIsPlaceholder && n > 0 && (w & 0xffff) == 0 &&
-				!targetPlausible.test((targetBank & 0xff0000L))) {
+			if (zeroIsPlaceholder && n > 0 && (w & 0xffff) == 0) {
 				return UNUSED_ENTRY;
 			}
-			return (targetBank & 0xff0000L) | (w & 0xffff);
-		}, tableByteFree, targetPlausible, entryRef, zeroIsPlaceholder ? MAX_UNUSED_RUN : -1);
+			return bankBase | (w & 0xffff);
+		}, tableByteFree, targetPlausible, entryRef,
+			!zeroIsPlaceholder || zeroPlausible ? -1 : MAX_UNUSED_RUN);
 	}
 
 	/** Most consecutive placeholders a zero-word-placeholder walk keeps; see {@link #score}. */
@@ -293,6 +303,12 @@ final class W65816JumpTables {
 					if (run >= maxUnusedRun) {
 						return TableScorer.Entry.rejected(End.UNUSED_SLOT);
 					}
+				}
+				// A word table's placeholder still ends at an outside reference to its position, as
+				// the ordinary $xx:0000 entry it replaces did (records keep their grm-gipk.14 rule).
+				EntryReferences.Hit hit = !bankFilter && n >= 1 ? entryRef.apply(n) : null;
+				if (hit != null && hit.strong()) {
+					return TableScorer.Entry.rejected(End.ENTRY_REFERENCED);
 				}
 				sure.add(true);
 				return TableScorer.Entry.accepted(target,
