@@ -23,6 +23,7 @@ import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressOutOfBoundsException;
 import ghidra.program.model.address.AddressRange;
 import ghidra.program.model.address.AddressSet;
+import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.data.AbstractIntegerDataType;
 import ghidra.program.model.data.Array;
 import ghidra.program.model.data.ArrayDataType;
@@ -343,6 +344,74 @@ final class JumpTableArrays {
 			return false;
 		}
 		return true;
+	}
+
+	/**
+	 * grm-gipk.21: clears what is left of stock's OVER-READ load-table data after a bound, outside
+	 * {@code keep} (the array just laid over the kept entries). Stock
+	 * {@code DecompilerSwitchAnalysisCmd.labelLoadTable} lays one unsigned-integer unit per load
+	 * entry, marked constant, over its own read length, and when it cannot lay an array those are
+	 * single units that {@link #layRuns}' array-tail absorption never sees. ff1 B14 {@code a354}:
+	 * the 2x128 one-byte loads from {@code a320}/{@code a321} left single bytes over the shop code
+	 * at {@code a35c..a41f}, so the kept entries {@code a360}/{@code a3b4} could never be
+	 * disassembled. A unit is cleared only when it is exactly stock's shape: not an array, an
+	 * integer or undefined type of the load size, constant mutability, starting inside the extent.
+	 * Data refs from it go with it. Returns the number of units cleared.
+	 *
+	 * @param extents stock's load tables as {start offset, entry size, count}, in {@code space}
+	 */
+	static int clearStaleLoadTableData(Program program, AddressSpace space,
+			List<long[]> extents, AddressSet keep) {
+		Listing listing = program.getListing();
+		AddressSet clear = new AddressSet();
+		for (long[] e : extents) {
+			long start = e[0];
+			int size = (int) e[1];
+			long num = e[2];
+			if (num < 2 || size < 1) {
+				continue;
+			}
+			Address lo;
+			Address hi;
+			try {
+				lo = space.getAddress(start);
+				hi = lo.add(size * num - 1);
+			}
+			catch (AddressOutOfBoundsException ex) {
+				continue;
+			}
+			for (Data d : listing.getDefinedData(new AddressSet(lo, hi), true)) {
+				if (keep.contains(d.getMinAddress()) || d.getDataType() instanceof Array ||
+					d.getLength() != size || !isStockLoadUnit(d)) {
+					continue;
+				}
+				clear.add(d.getMinAddress(), d.getMaxAddress());
+			}
+		}
+		if (clear.isEmpty()) {
+			return 0;
+		}
+		removeAnalysisDataRefs(program, clear);
+		int n = 0;
+		for (AddressRange r : clear) {
+			listing.clearCodeUnits(r.getMinAddress(), r.getMaxAddress(), false);
+			n += (int) r.getLength();
+		}
+		return n;
+	}
+
+	/** Stock's load-table unit: an integer (or undefined) type, marked constant. */
+	private static boolean isStockLoadUnit(Data d) {
+		DataType dt = d.getDataType();
+		if (!(dt instanceof AbstractIntegerDataType) && !Undefined.isUndefined(dt)) {
+			return false;
+		}
+		for (SettingsDefinition def : dt.getSettingsDefinitions()) {
+			if (def instanceof MutabilitySettingsDefinition m) {
+				return m.getChoice(d) == MutabilitySettingsDefinition.CONSTANT;
+			}
+		}
+		return false;
 	}
 
 	private static boolean isByteArray(Data d, int count) {

@@ -38,6 +38,7 @@ import ghidra.app.services.AnalyzerType;
 import ghidra.app.util.PseudoDisassembler;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.program.model.address.Address;
+import ghidra.program.model.address.AddressOutOfBoundsException;
 import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.address.AddressSetView;
 import ghidra.program.model.address.AddressSpace;
@@ -991,6 +992,7 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 							planarAt.add(planarGap)
 								: "declined at " + planarAt));
 		}
+		clearStaleLoadTablesAndRelay(program, function, table, targetSpace, reached, monitor);
 		long tableStart = 0;
 		boolean haveStart = false;
 		for (JumpTableBound.LoadTableEntry lt : loadTables) {
@@ -1437,6 +1439,89 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		AnalyzerLog.info(this, "jump table array at " + switchAddr + ": " +
 			(laid ? "laid word[" + layout.count() + "] at " + arrayAt + " (count confirmed)"
 					: "declined at " + arrayAt));
+	}
+
+	/**
+	 * grm-gipk.21: once the bound has landed, clears stock's leftover over-read load-table data past
+	 * the kept entries ({@link JumpTableArrays#clearStaleLoadTableData}), then disassembles every
+	 * kept target that is still undefined. ff1 B14 {@code a354}: stock's single-byte load units
+	 * over {@code a35c..a41f} sat on the kept shop entries {@code a360}/{@code a3b4}, and the pin
+	 * skips a target that is not undefined, so the shop code (and its callees {@code a61d},
+	 * {@code a8d3}) was never disassembled. The relay also covers a kept target cleared by the
+	 * stale-case retraction's forward clear. Kept targets are the bound's real entries, so this
+	 * restores real code only.
+	 *
+	 * <p>What counts as kept table bytes is generous on purpose (over-protecting only leaves data
+	 * in place): each load table's first {@code size * kept} bytes, plus {@code kept} entries of
+	 * the summed load size from the lowest table (two interleaved byte loads at {@code t}/{@code t+1}
+	 * are one word table).
+	 */
+	private void clearStaleLoadTablesAndRelay(Program program, Function function, JumpTable table,
+			AddressSpace targetSpace, List<Address> kept, TaskMonitor monitor) {
+		int keptCount = kept.size();
+		List<long[]> extents = new ArrayList<>();
+		AddressSet keep = new AddressSet();
+		AddressSpace space = null;
+		long base = Long.MAX_VALUE;
+		int entryBytes = 0;
+		for (JumpTable.LoadTable lt : table.getLoadTables()) {
+			if (!sameMemory(lt.getAddress().getAddressSpace(), targetSpace) || lt.getNum() < 2 ||
+				lt.getNum() <= keptCount) {
+				continue;
+			}
+			Address a = lt.getAddress();
+			if (space == null) {
+				space = a.getAddressSpace();
+			}
+			else if (!space.equals(a.getAddressSpace())) {
+				continue;
+			}
+			extents.add(new long[] { a.getOffset(), lt.getSize(), lt.getNum() });
+			try {
+				keep.add(a, a.add((long) lt.getSize() * Math.max(keptCount, 1) - 1));
+			}
+			catch (AddressOutOfBoundsException e) {
+				// keep nothing extra for this table
+			}
+			base = Math.min(base, a.getOffset());
+			entryBytes += lt.getSize();
+		}
+		if (extents.isEmpty()) {
+			return;
+		}
+		try {
+			Address b = space.getAddress(base);
+			keep.add(b, b.add((long) entryBytes * Math.max(keptCount, 1) - 1));
+		}
+		catch (AddressOutOfBoundsException e) {
+			// the per-table keeps stand
+		}
+		int cleared = JumpTableArrays.clearStaleLoadTableData(program, space, extents, keep);
+		if (cleared == 0) {
+			return;
+		}
+		Listing listing = program.getListing();
+		AddressSet relay = new AddressSet();
+		for (Address k : kept) {
+			if (listing.getUndefinedDataAt(k) != null) {
+				relay.add(k);
+			}
+		}
+		if (!relay.isEmpty()) {
+			new DisassembleCommand(relay, null, true).applyTo(program, monitor);
+			// The switch's cases belong to its function, as after the stale-case retraction.
+			if (function != null && !function.isDeleted() &&
+				!(function instanceof UndefinedFunction)) {
+				try {
+					CreateFunctionCmd.fixupFunctionBody(program, function, monitor);
+				}
+				catch (CancelledException e) {
+					// leave the body as it is
+				}
+			}
+		}
+		AnalyzerLog.info(this, "cleared " + cleared + " byte(s) of stock's over-read load-table " +
+			"data; re-disassembled " + relay.getNumAddresses() + " kept target(s)");
 	}
 
 	/** grm-deve: whether a target lies inside the array's own bytes -- code over the table (tables

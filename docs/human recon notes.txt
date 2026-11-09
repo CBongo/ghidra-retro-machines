@@ -337,6 +337,8 @@ madden95 c6b892: the bias 0 (19 entries) reading appears correct.
 dragonpower 803e is indeed 9 entries and is being recovered correctly now.
 tmnt 5:823b: code at 82c1 is reached from a JMP (bounds check to skip the indirect jump) at 8226 as part of the flow preceding the table read.  67 is the correct entry count.
 
+cv3 e7ec: after jsr e2e0, 21=96, 22=94. after jsr 9fc9, both are unchanged.
+
   Next session's shortest path
 
   1. bd list --label background-ok → farm out immediately (grm-hhd first; it blocks every parallel agent).
