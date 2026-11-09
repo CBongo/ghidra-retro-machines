@@ -43,50 +43,7 @@ bash tools/banktest/realrom-test.sh nominate <romdir>   # board-gap survey
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
-### 1.1 cv3 `e681`: at runtime, does the shared `LDA $22` restore give back the caller's bank on the `e725` and `e7ec` arms? (`grm-mej.19`)
-
-- [ ] **Question.** One emulator check, nothing else. All the agent-side machinery this item used
-  to list has landed (`grm-mej.22`–`.25`), and the sibling site `ebdd` is resolved (7637e00). The
-  only open site on `grm-mej.19` is `e681`. It is the last warning of its kind in cv3's golden, and
-  the bead is labelled `blocked-on-human` on this item.
-
-  **The setup.** `e67f LDA $22 / e681 JMP e2e6` is the shared tail of ~30 far-call trampolines,
-  each `LDA #$8n / JSR e2e0 / JSR <far> / JMP e67f`. `FUN_e2e0` saves the old bank shadow into
-  `$22` (`e2e1 LDA $21 / e2e3 STA $22`, the only plain writer of `$22` in the image) before it
-  switches. The analyzer will only call `e681` RESTORED if **every** arm gives back its caller's
-  bank. The static read says two arms do not, because their far callee calls another trampoline,
-  which overwrites `$22`:
-  - **`FUN_e725`** (`JSR e2e0` at `e727`, far callee `8574` in 16K bank 0): `8574 → JSR 85bb →
-    JSR ece9`, then `85c4 JMP ece9`. `ece9` is a PHA/PLA trampoline (`PHA / LDA #$80 / JSR e2e0 /
-    PLA / JSR 9825 / JMP e67f`), so `$22` becomes the bank live inside the far call, bank 0.
-  - **`FUN_e7ec`** (`LDA #$96 / JSR e2e0 / JSR 9fc9 / JMP e67f`, `9fc9` in 16K bank 11): the
-    closure walk also reaches `e2e3 STA $22`. That path has not been traced.
-
-**What to check:**
-
-1. **`e725`.** Break at `e727` and note `$21` (the caller's bank). On that same pass, break at
-   `e67f` and read `$22`. The prediction is that `$22` = 0, not the caller's bank.
-   - `e725` has no `JSR`/`JMP` callers. It is reached by a push-then-`RTS` dispatch: the word
-     `$e724` sits at PRG `0x1622a` and `0x16273` (16K bank 5, CPU `$A22A`/`$A273` at `$8000`). If
-     the breakpoint is hard to hit, break on whatever reads those words to find the game state
-     that dispatches there.
-2. **`e7ec`.** The same check: `$21` at its `JSR e2e0`, then `$22` at `e67f`.
-3. *(Optional, as a control.)* A clean arm, such as `FUN_e677` (`LDA #$88 / JSR e2e0 / JSR b1fb`).
-   Expect `$22` at `e67f` to equal `$21` at `e679`.
-
-**What the answer changes:**
-- **`$22` ≠ the caller's bank on `e725` (or `e7ec`):** the `e681` warning is honest and stays.
-  `grm-mej.19` can close as "correct as it stands". The only possible follow-up is making the
-  warning name the nesting arms, and only if you think that is worth a bead.
-- **`$22` = the caller's bank on both:** the static nest reading is wrong somewhere, most likely
-  in which bank `e72a JSR $8574` enters (`$80` gives 16K bank 0). That is an agent bug to find,
-  and `e681` could then become RESTORED.
-- Whether a wrong restore *matters* to the game (whether `e725`'s callers care about the bank at
-  `$8000` afterwards) does not change the analyzer's answer. Note it if you see it, but it is not
-  needed.
-
-The full static record (writer census, the list of trampolines, the per-callee census) is in
-`grm-mej.19`'s comments.
+_No open items (2026-11-08)._
 
 ---
 
@@ -407,3 +364,4 @@ Agents don't write into your ROM library or other personal directories.
 | ff1 bank 14 (1.6, first half): what is switch `a354`'s real table, and where does it end? | **The shop dispatcher, using the 8-entry table at `a320`, which ends where the code that uses it starts, at `$a330` (owner, 2026-11-08).** This matches the 2026-10-03 ruling above (`E:a358`, 8 entries) and grm-fxtp's bound, so the stale cases past entry 8 were over-read. Retracting them (grm-vrkk.11) was right. **Do not re-read this bound.** The second half of 1.6, what (if anything) reaches the ~160 retracted instructions, is still open in section 1. | `grm-vrkk.11` |
 | ff1 bank 14 (1.6, second half): what reaches the ~160 instructions retracted with `a354`'s over-read (`a61d`, `a8d3`, `aadf`, ...)? | **The shop pointers at `a320` do: it is real shop code (owner, 2026-11-08; labels from Entroper/FF1Disassembly `bank_0E.asm`).** The table's 8 words (`a3b4 a3b4 a360 a360 a5a2 a508 a47c a47a`, agent-decoded) are the shop entry points. The extension lays them out as data instead of disassembling them, so their callees are lost too: e.g. the equipment shop `a3b4` calls `a8d3` (ShopLoop_BuySellExit) at `a3b9` and `a61d` (EquipShop_GiveItemToCharacter) at `a3f7`. **Do not treat that region as unused, and do not bring back the over-read to recover it.** Disassembling the bounded targets is agent work. | `grm-vrkk.11`; follow-up `grm-gipk.21` |
 | Three over-read NES jump tables (1.10): are dbz_saiyan `d286` = 20, tmnt `B5:823b` = 67 and dragonpower `803e` = 9 right? | **All three right (owner, 2026-11-08), so nothing reopens.** dbz_saiyan: `d2ae` is code, and 20 is `d286`'s real length. tmnt: 67 is right, entries 65/66 included. The code at `82c1` is reached from the `JMP` at `8226`, the bounds check that skips the indirect jump in the flow before the table read. dragonpower: 9 entries, and the current build recovers exactly that. **The shipped `grm-c9d.8.7` rule changes (below-table confirm, fixed-bank same-block) and `grm-c9d.8.8`'s tail cut are confirmed. Do not re-read these three tables.** | `grm-c9d.8.7`, `grm-c9d.8.8` |
+| cv3 `e681` (1.1): does the shared `LDA $22` restore give back the caller's bank on the `e725` and `e7ec` arms? | **`e7ec` does; `e725` was not observed; and the question's premise is stale (owner + agent probe, 2026-11-08).** At `e7ec`, `$21=$96`/`$22=$94` after `JSR e2e0` and both are unchanged after `JSR 9fc9`, so `e67f` restores `$94`. The owner also confirmed from the code that `9fc9` never touches `$21`/`$22`: the static "nest" was an over-approximation. `e725`'s breakpoint did not fire in the first level. A `SiteStateProbe` on today's build shows neither `e725` nor `e7ec` is disassembled, so **neither is an arm the analyzer sees**. The `e681` warning comes from another of `e67f`'s 20 visible arms (suspects: the PHA/PLA trampolines `ece6`/`ecf3`/`ed00`). Finding it is agent work, and `grm-mej.19` is no longer blocked on a human. **Do not ask for the `e725` breakpoint again.** The two routines' missing reachability is `grm-gipk.22`. | `grm-mej.19`; `grm-gipk.22` |
