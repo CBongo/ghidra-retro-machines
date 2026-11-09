@@ -211,8 +211,29 @@ final class W65816JumpTables {
 			boolean sameHalf, boolean zeroIsPlaceholder, IntFunction<Integer> word,
 			LongPredicate tableByteFree, LongPredicate targetPlausible,
 			IntFunction<EntryReferences.Hit> entryRef) {
+		return score(tableStart, targetBank, cap, sameHalf, zeroIsPlaceholder, false, word,
+			tableByteFree, targetPlausible, entryRef);
+	}
+
+	/**
+	 * As above, plus {@code fillerIsPlaceholder} (grm-gipk.16.12): an entry after entry 0 whose
+	 * target is the table's own first byte is a FILLER slot, an {@link #UNUSED_ENTRY} (soft
+	 * {@link End#UNUSED_SLOT}) that neither ends the table nor carries a reference. Madden NFL 95
+	 * {@code $C6:B892} fills 13 of its 19 slots with {@code $B8DD}; the RTS trick's +1 makes that
+	 * {@code $C6:B8DE}, the table's own label: the programmer's "nothing here" marker, not a handler.
+	 * Every other target inside the table keeps its hard {@link End#INTO_TABLE} cut, entry 0 pointing
+	 * at itself included, and more than {@link #MAX_FILLER_RUN} fillers in a row end the table
+	 * ({@link End#UNUSED_SLOT}). Whether a trailing filler run is kept is decided by
+	 * {@link #trimFillerOverrun}: kept when real evidence ended the walk, trimmed when the run limit
+	 * did; entry 0 is always a real handler, so fillers can never make a table by themselves.
+	 */
+	static TableScorer.Result<Long, End> score(long tableStart, long targetBank, int cap,
+			boolean sameHalf, boolean zeroIsPlaceholder, boolean fillerIsPlaceholder,
+			IntFunction<Integer> word, LongPredicate tableByteFree,
+			LongPredicate targetPlausible, IntFunction<EntryReferences.Hit> entryRef) {
 		long bankBase = targetBank & 0xff0000L;
 		boolean zeroPlausible = zeroIsPlaceholder && targetPlausible.test(bankBase);
+		int zeroRun = !zeroIsPlaceholder || zeroPlausible ? -1 : MAX_UNUSED_RUN;
 		return scoreCore(tableStart, 2, cap, sameHalf, false, n -> {
 			Integer w = word.apply(n);
 			if (w == null) {
@@ -221,10 +242,17 @@ final class W65816JumpTables {
 			if (zeroIsPlaceholder && n > 0 && (w & 0xffff) == 0) {
 				return UNUSED_ENTRY;
 			}
-			return bankBase | (w & 0xffff);
+			long target = bankBase | (w & 0xffff);
+			if (fillerIsPlaceholder && n > 0 && target == tableStart) {
+				return UNUSED_ENTRY;
+			}
+			return target;
 		}, tableByteFree, targetPlausible, entryRef,
-			!zeroIsPlaceholder || zeroPlausible ? -1 : MAX_UNUSED_RUN);
+			fillerIsPlaceholder ? MAX_FILLER_RUN : zeroRun);
 	}
+
+	/** Most consecutive filler slots a walk keeps; see {@link #score}. Madden 95's longest is 7. */
+	static final int MAX_FILLER_RUN = 16;
 
 	/** Most consecutive placeholders a zero-word-placeholder walk keeps; see {@link #score}. */
 	static final int MAX_UNUSED_RUN = 2;
@@ -243,6 +271,17 @@ final class W65816JumpTables {
 		}
 		return new TableScorer.Result<>(List.copyOf(r.targets().subList(0, n)), r.endedBy(),
 			List.copyOf(r.scores().subList(0, n)));
+	}
+
+	/**
+	 * grm-gipk.16.12: a filler walk's result. A trailing filler run is kept when the walk ended on
+	 * real evidence (Madden 95 {@code $C6:B892}: seven {@code $B8DD} slots, then a word that is not
+	 * an entry): a word equal to the table's own label is evidence of membership, and entry 0 is
+	 * always a real handler, so the run cannot make a table by itself. When the run limit ended the
+	 * walk, nothing vouches for the run and it is trimmed like trailing zero placeholders.
+	 */
+	static TableScorer.Result<Long, End> trimFillerOverrun(TableScorer.Result<Long, End> r) {
+		return r.endedBy() == End.UNUSED_SLOT ? trimUnused(r) : r;
 	}
 
 	/** The number of {@link #UNUSED_ENTRY}s in {@code targets}. */
@@ -344,7 +383,7 @@ final class W65816JumpTables {
 		long lo = Long.MAX_VALUE;
 		long hi = Long.MIN_VALUE;
 		for (int j = 0; j < before.size(); j++) {
-			if (sure.get(j)) {
+			if (sure.get(j) && before.get(j) != UNUSED_ENTRY) {
 				lo = Math.min(lo, before.get(j));
 				hi = Math.max(hi, before.get(j));
 			}

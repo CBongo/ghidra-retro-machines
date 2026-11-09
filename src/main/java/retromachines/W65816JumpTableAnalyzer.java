@@ -140,10 +140,17 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 			p -> Collections.synchronizedMap(new LinkedHashMap<>()));
 		// Every dispatch's table start, program-wide: one table ends where another begins.
 		Set<Address> tableStarts = new LinkedHashSet<>();
+		// grm-gipk.16.11: the dispatch instructions (site and index load) reading each start.
+		Map<Address, Set<Address>> readers = new LinkedHashMap<>();
 		for (Instruction in : listing.getInstructions(true)) {
 			Dispatch d = in.getFlowType().isComputed() ? dispatchOf(listing, in) : null;
 			if (d != null) {
 				tableStarts.add(d.table());
+				Set<Address> r = readers.computeIfAbsent(d.table(), t -> new LinkedHashSet<>());
+				r.add(in.getMinAddress());
+				if (d.index() != null) {
+					r.add(d.index().getMinAddress());
+				}
 			}
 		}
 		repairOverreads(program, tables, tableStarts, adopted, monitor);
@@ -186,6 +193,13 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 				own.add(siteAddr);
 				if (dispatch.index() != null) {
 					own.add(dispatch.index().getMinAddress());
+				}
+				// grm-gipk.16.11: another dispatch's reference to an entry-aligned overlapping
+				// start is the same table seen from one entry over, not an outside reference.
+				for (Map.Entry<Address, Set<Address>> rd : readers.entrySet()) {
+					if (alignedOverlap(table, rd.getKey())) {
+						own.addAll(rd.getValue());
+					}
 				}
 				TableScorer.Result<Long, W65816JumpTables.End> r =
 					walkTable(program, table, targetBank, cap, ctx, tableStarts, own);
@@ -237,6 +251,13 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 			}
 			boolean call = site.getFlowType().isCall();
 			// grm-iv4i: one DATA reference per entry into bank:word, as on the NES side.
+			if (!shared) {
+				for (Address s : tableStarts) {
+					if (alignedOverlap(laid, s)) {
+						JumpTableArrays.unlay(program, s);   // laid from the overlapping start
+					}
+				}
+			}
 			if (!shared && !JumpTableArrays.layWords(program, laid, entryTargets(laid, targets))) {
 				AnalyzerLog.info(this, "dispatch " + siteAddr + ": could not define table at " +
 					laid);
@@ -375,6 +396,9 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 			for (Address other : tableStarts) {
 				if (table.equals(adopted.get(other))) {
 					continue;   // its own code-derived start, one entry in (grm-gipk.16.8)
+				}
+				if (alignedOverlap(table, other)) {
+					continue;   // the same table read from one entry over (grm-gipk.16.11)
 				}
 				if (other.compareTo(table) > 0 && other.compareTo(end) <= 0) {
 					int k = (int) (other.subtract(table) / 2);
@@ -769,11 +793,21 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 	private static int sharedTableEntries(Program program, Address table, long targetBank,
 			int cap, List<Long> targets) {
 		Data d = program.getListing().getDataAt(table);
+		int skip = 0;
+		if (d == null || !(d.getDataType() instanceof Array)) {
+			// grm-gipk.16.11: inside a table laid from an entry-aligned overlapping start.
+			Data c = program.getListing().getDataContaining(table);
+			if (c != null && alignedOverlap(c.getMinAddress(), table) &&
+				ANALYSIS_LAID.test(program, c)) {
+				d = c;
+				skip = (int) (table.subtract(c.getMinAddress()) / 2);
+			}
+		}
 		if (d == null || !(d.getDataType() instanceof Array a) ||
 			!(a.getDataType() instanceof WordDataType)) {
 			return 0;
 		}
-		int n = Math.min(cap, a.getNumElements());
+		int n = Math.min(cap, a.getNumElements() - skip);
 		for (int i = 0; i < n; i++) {
 			Long e = laidEntry(program, table, i, targetBank);
 			if (e == null) {
@@ -973,13 +1007,48 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 	/** Whether a byte may belong to the table: free of code and data, not another table. */
 	static boolean tableByteFree(Program program, Address b, Address table,
 			Set<Address> tableStarts) {
-		if (!b.equals(table) && tableStarts.contains(b)) {
+		if (!b.equals(table) && tableStarts.contains(b) && !alignedOverlap(table, b)) {
 			return false;
 		}
 		Listing listing = program.getListing();
-		return listing.getInstructionContaining(b) == null &&
-			listing.getDefinedDataContaining(b) == null;
+		if (listing.getInstructionContaining(b) != null) {
+			return false;
+		}
+		Data d = listing.getDefinedDataContaining(b);
+		if (d == null) {
+			return true;
+		}
+		// grm-gipk.16.11: the array another dispatch laid from an entry-aligned overlapping start
+		// is this table's own bytes; it is re-laid from here (see added()).
+		return d.getMinAddress().compareTo(table) > 0 && tableStarts.contains(d.getMinAddress()) &&
+			alignedOverlap(table, d.getMinAddress()) && ANALYSIS_LAID.test(program, d);
 	}
+
+	/**
+	 * Most entries one table's start may sit past another's and still be that table read from one
+	 * entry over (grm-gipk.16.11): Timecop's {@code JSR ($AF90,X)} / {@code JSR ($AF92,X)}.
+	 */
+	static final int MAX_OVERLAP_ENTRIES = 1;
+
+	/**
+	 * Whether {@code other} is a start the table at {@code table} may run through: same bank, at
+	 * most {@link #MAX_OVERLAP_ENTRIES} entries past it, on an entry boundary. A start any further
+	 * on is the next table, and the walk ends there as before.
+	 */
+	static boolean alignedOverlap(Address table, Address other) {
+		if (!table.getAddressSpace().equals(other.getAddressSpace()) ||
+			(table.getOffset() & 0xff0000L) != (other.getOffset() & 0xff0000L)) {
+			return false;
+		}
+		long d = other.getOffset() - table.getOffset();
+		return d > 0 && d % 2 == 0 && d <= 2L * MAX_OVERLAP_ENTRIES;
+	}
+
+	/** Whether {@code d} is a word array this analyzer laid (its first entry has an ANALYSIS ref). */
+	private static final java.util.function.BiPredicate<Program, Data> ANALYSIS_LAID =
+		(program, d) -> d.getDataType() instanceof Array a &&
+			a.getDataType() instanceof WordDataType &&
+			program.getReferenceManager().getReferencesFrom(d.getMinAddress()).length > 0;
 
 	/**
 	 * Whether {@code t} can start a handler: initialized, executable, read-only memory (ROM), not

@@ -16,6 +16,7 @@
 package retromachines;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -182,6 +183,63 @@ public class W65816JumpTablesTest {
 		TableScorer.Result<Long, W65816JumpTables.End> r = rtsTrick(0xc09000L, words);
 		assertEquals(6, r.count());
 		assertEquals(W65816JumpTables.End.UNREADABLE, r.endedBy());
+	}
+
+	private static TableScorer.Result<Long, W65816JumpTables.End> fillerWalk(int[] words) {
+		// RTS trick bias +1 is folded in by the caller's words, as W65816RtsTrickAnalyzer does.
+		return W65816JumpTables.trimFillerOverrun(W65816JumpTables.score(0xc6b8deL, 0xc60000L, 128, true,
+			false, true, i -> i < words.length ? (words[i] + 1) & 0xffff : null, b -> true,
+			t -> t != 0xc67ef5L, i -> null));
+	}
+
+	/**
+	 * grm-gipk.16.12: Madden NFL 95 {@code $C6:B892} (table {@code $C6:B8DE}, bias +1). Thirteen of
+	 * its 19 slots are {@code $B8DD}, whose +1 is the table's own first byte: filler, skipped, so the
+	 * six real handlers all resolve and none points at {@code $C6:B8DE}.
+	 */
+	@Test
+	public void fillerSlotsAreSkippedNotCuts() {
+		int[] words = { 0xb8a7, 0xb892, 0xb89b, 0xb8dd, 0xb8dd, 0xb8dd, 0xb8c5, 0xb8dd, 0xb8b6,
+			0xb8dd, 0xb8dd, 0xb8d0, 0xb8dd, 0xb8dd, 0xb8dd, 0xb8dd, 0xb8dd, 0xb8dd, 0xb8dd,
+			0x7ef4 };
+		TableScorer.Result<Long, W65816JumpTables.End> r = fillerWalk(words);
+		assertEquals(19, r.count());
+		assertEquals(13, W65816JumpTables.unusedCount(r.targets()));
+		assertTrue(!r.targets().contains(0xc6b8deL));
+		assertEquals(0xc6b8a8L, (long) r.targets().get(0));
+		assertEquals(0xc6b8d1L, (long) r.targets().get(11));
+		assertEquals(W65816JumpTables.End.IMPLAUSIBLE, r.endedBy());
+	}
+
+	/** A trailing filler run is kept when the walk ends on real evidence; entry 0 is always real. */
+	@Test
+	public void aTrailingFillerRunIsKeptWhenRealEvidenceEndsTheWalk() {
+		int[] words = { 0xb8a7, 0xb892, 0xb8dd, 0xb8dd, 0xb8dd };
+		TableScorer.Result<Long, W65816JumpTables.End> r = fillerWalk(words);
+		assertEquals(5, r.count());
+		assertEquals(3, W65816JumpTables.unusedCount(r.targets()));
+	}
+
+	/** Entry 0 pointing at the table, and any OTHER in-table target, keep the hard cut. */
+	@Test
+	public void otherInTableTargetsStillCutWithFillerOn() {
+		assertEquals(0, fillerWalk(new int[] { 0xb8dd, 0xb8a7 }).count());
+		TableScorer.Result<Long, W65816JumpTables.End> r =
+			fillerWalk(new int[] { 0xb8a7, 0xb8dd, 0xb8e1, 0xb8a7 });
+		assertEquals(2, r.count());   // the real entry and the filler between; the cut is at the in-table target
+		assertEquals(W65816JumpTables.End.INTO_TABLE, r.endedBy());
+	}
+
+	/** A filler run longer than {@link W65816JumpTables#MAX_FILLER_RUN} ends the table before it. */
+	@Test
+	public void anEndlessFillerRunEndsTheTable() {
+		int[] words = new int[40];
+		words[0] = 0xb8a7;
+		for (int i = 1; i < 40; i++) {
+			words[i] = i == 39 ? 0xb8b0 : 0xb8dd;
+		}
+		TableScorer.Result<Long, W65816JumpTables.End> r = fillerWalk(words);
+		assertEquals(1, r.count());
 	}
 
 	/** Madden '94 shape, over-read long: the table ends before a sustained far, cross-half run. */

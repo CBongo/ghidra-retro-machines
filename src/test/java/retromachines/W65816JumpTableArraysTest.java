@@ -92,6 +92,76 @@ public class W65816JumpTableArraysTest extends AbstractProgramTest {
 	}
 
 	/**
+	 * grm-gipk.16.11 (Timecop {@code JSR ($AF90,X)} / {@code JSR ($AF92,X)}): two dispatches over
+	 * the same words, one entry apart. The lower table runs through the upper one's start; the upper
+	 * is the same words read from one entry over, so it shares the array rather than cutting it.
+	 */
+	@Test
+	public void entryAlignedOverlappingTablesShareTheWordsLowerFirst() throws Exception {
+		builder.setBytes("0x8000", "7c 00 81 7c 02 81", false);   // two dispatches, both decoded
+		builder.disassemble("0x8000", 6, false);
+		analyzeSite("0x8000");
+		assertWordArray(0x8100, 4);
+		analyzeSite("0x8003");
+		assertWordArray(0x8100, 4);
+		assertSiteTargets("0x8000", 0x8200, 0x8210, 0x8220, 0x8230);
+		assertSiteTargets("0x8003", 0x8210, 0x8220, 0x8230);
+		analyzeNothing();
+		assertWordArray(0x8100, 4);   // a later run does not cut it at the other start
+	}
+
+	@Test
+	public void entryAlignedOverlappingTablesShareTheWordsUpperFirst() throws Exception {
+		builder.setBytes("0x8000", "7c 00 81 7c 02 81", false);
+		builder.disassemble("0x8000", 6, false);
+		analyzeSite("0x8003");
+		assertWordArray(0x8102, 3);
+		analyzeSite("0x8000");
+		assertWordArray(0x8100, 4);
+		assertSiteTargets("0x8000", 0x8200, 0x8210, 0x8220, 0x8230);
+		assertSiteTargets("0x8003", 0x8210, 0x8220, 0x8230);
+		analyzeNothing();
+		assertWordArray(0x8100, 4);
+	}
+
+	/** Starts two entries apart are neighbours, not one table: the lower is cut at the upper. */
+	@Test
+	public void startsTwoEntriesApartStayCut() throws Exception {
+		builder.setBytes("0x8000", "7c 00 81 7c 04 81", false);
+		builder.disassemble("0x8000", 6, false);
+		analyzeSite("0x8000");
+		analyzeSite("0x8003");
+		analyzeNothing();
+		assertWordArray(0x8100, 2);
+		assertWordArray(0x8104, 2);
+	}
+
+	private void analyzeSite(String site) throws Exception {
+		Address s = addr(site);
+		inTx(program, "analyze", () -> new W65816JumpTableAnalyzer().added(program,
+			new AddressSet(s, s.add(2)), TaskMonitor.DUMMY, new MessageLog()));
+	}
+
+	private void analyzeNothing() throws Exception {
+		inTx(program, "analyze", () -> new W65816JumpTableAnalyzer().added(program,
+			new AddressSet(), TaskMonitor.DUMMY, new MessageLog()));
+	}
+
+	private void assertSiteTargets(String site, long... targets) {
+		java.util.Set<Address> got = new java.util.TreeSet<>();
+		for (Reference r : program.getReferenceManager().getReferencesFrom(addr(site))) {
+			if (r.getReferenceType().isFlow()) {
+				got.add(r.getToAddress());
+			}
+		}
+		java.util.Set<Address> want = new java.util.TreeSet<>();
+		for (long t : targets) {
+			want.add(addr(t));
+		}
+		assertEquals("flow targets of " + site, want, got);
+	}
+
+	/**
 	 * grm-9nxj.25: the dispatch refers to its table (a primary READ on the operand), so the
 	 * table's XREFs name the dispatcher -- for both dispatches when one later cuts the other.
 	 */

@@ -159,7 +159,9 @@ public class W65816RtsTrickAnalyzer extends AbstractAnalyzer {
 			}
 			Set<Address> unique = new LinkedHashSet<>();
 			for (long t : targets) {
-				unique.add(table.getNewAddress(t));
+				if (t != W65816JumpTables.UNUSED_ENTRY) {
+					unique.add(table.getNewAddress(t));
+				}
 			}
 			for (Address t : unique) {
 				program.getReferenceManager().addMemoryReference(rtsAddr, t,
@@ -204,7 +206,9 @@ public class W65816RtsTrickAnalyzer extends AbstractAnalyzer {
 			Set<Address> own) {
 		// grm-gipk.16.7: references at an entry position that are not the table's own.
 		List<EntryReferences.Extent> extent = W65816JumpTableAnalyzer.extentOf(table, cap);
-		return W65816JumpTables.score(table.getOffset(), bank, cap, true,
+		// grm-gipk.16.12: a slot whose target is the table's own first byte is filler, skipped.
+		return W65816JumpTables.trimFillerOverrun(W65816JumpTables.score(table.getOffset(), bank, cap, true,
+			false, true,
 			i -> {
 				Integer w = W65816JumpTableAnalyzer.word(program.getMemory(), table.add(2L * i));
 				return w == null ? null : (w + bias) & 0xffff;
@@ -212,7 +216,7 @@ public class W65816RtsTrickAnalyzer extends AbstractAnalyzer {
 			b -> W65816JumpTableAnalyzer.tableByteFree(program, table.getNewAddress(b), table,
 				Set.of()),
 			t -> W65816JumpTableAnalyzer.plausibleTarget(program, table.getNewAddress(t), ctx),
-			i -> EntryReferences.find(program, table.add(2L * i), extent, own));
+			i -> EntryReferences.find(program, table.add(2L * i), extent, own)));
 	}
 
 	/** Which check entry {@code i} fails, for the decline log. */
@@ -248,7 +252,9 @@ public class W65816RtsTrickAnalyzer extends AbstractAnalyzer {
 			if (w == null) {
 				return i;
 			}
-			targets.add(bank | ((w + bias) & 0xffff));
+			long t = bank | ((w + bias) & 0xffff);
+			// A filler slot (target = the table's own start, grm-gipk.16.12) carries no reference.
+			targets.add(i > 0 && t == table.getOffset() ? W65816JumpTables.UNUSED_ENTRY : t);
 		}
 		return n;
 	}
