@@ -52,6 +52,16 @@ Each is minutes of work and settles something specific. Highest value per unit e
   entry 0 is not code, `$51C6` is a different table, and the one-entry overlap rule needs a
   stricter test than alignment.
 
+### 1.18 cv3 bank 20 `$8527`: how many entity types does the outer table really have? (`grm-gipk.23`)
+
+- [ ] **Question.** The new two-level dispatch recognizer reads the outer table at `$8527`
+  (indexed by `LDA $07c2,X / ASL / TAY` at `$8505`) as **83 entries**, `$8527`–`$85cc`. It stops
+  only because the next word, `$1960` at `$85cd`, points into RAM. Every one of the 83 words
+  points at a valid-looking handler table, so no rule trims it further. What is the largest entity
+  type ever stored to `$07c2,X`? If it is well below 82, the tail entries are other data read as
+  pointers, and the recognizer needs a better outer bound. A breakpoint on writes to
+  `$07c2`–`$07c7`, or the type list in a disassembly, would settle it.
+
 ---
 
 ## 2. Def-use passes on untraced titles
