@@ -43,7 +43,14 @@ bash tools/banktest/realrom-test.sh nominate <romdir>   # board-gap survey
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
-_No open items (2026-11-08)._
+### 1.17 WeaponLord: is `$E9:51C6`/`$51C8` one jump table read from two offsets? (`grm-gipk.16.11`)
+
+- [ ] **Question.** The new overlap rule (Timecop `$AF90`/`$AF92`) also merged a second pair:
+  `JMP ($51C6,X)` (file offset `0x296EAF`) and `JSR ($51C8,X)` (`0x296CB6`) now share one
+  3-entry table, `37ce 51b7 5198`, ending before `70a9`. Before, `$51C6` kept 1 entry and
+  `$51C8` kept 2. Is `$E9:37CE` a real handler, and is the shared 3-entry reading right? If
+  entry 0 is not code, `$51C6` is a different table, and the one-entry overlap rule needs a
+  stricter test than alignment.
 
 ---
 
