@@ -572,6 +572,10 @@ grm_decompiler_build_name() {
 			echo "12.2 stock, MinGW rebuild (control arm)" ;;
 		ff1834fcb7f8caed95f1af711212260750045879bb324a97bb557e2454ab0b8d)
 			echo "12.2 + GP-6936 + no bad-data cap local patch (grm-qp5x.3, grm-6m24)" ;;
+		9eaf26a05a250c2335f04ecfeb73146e6a5274a79525283ec020015d04464dd7)
+			echo "12.2 patched + grm-gipk.25 two-leaf override switch (candidate)" ;;
+		588ec6c9c2a3fbebd7e1eaef6e8161b06b38fb815635ecb97c67b6de49f99496)
+			echo "12.2 patched, MinGW rebuild of ff1834fc's source (grm-gipk.25 control arm)" ;;
 		72a0ff7ed2032d3bc69703bf79db8d617197e00ea53519f4c3815d54c10662f0)
 			echo "12.2 + GP-6936 only (superseded: lacks the grm-6m24 bad-data-cap hunk)" ;;
 		1afff91d3130115546cf7904fb8c95047345155049c8b76661b307761e3820a1)
