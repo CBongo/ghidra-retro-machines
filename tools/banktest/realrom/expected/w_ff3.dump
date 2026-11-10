@@ -3,7 +3,7 @@ REALROM program w_ff3.sfc
 REALROM sha256 10eccc5d2fab81346dd759f6be478dcb682eef981e8d3d662da176e1f9a996bc
 REALROM language 65816:LE:24:retro
 REALROM instrs 92865
-REALROM functions 3085
+REALROM functions 3084
 REALROM ctx E0M0X0 20183
 REALROM ctx E0M0X1 4050
 REALROM ctx E0M1X0 59720
@@ -82,7 +82,7 @@ REALROM widtheffect exitX preserves=1804 sets0=123 sets1=8 mixedOrNone=287
 REALROM widthconflict sites=7203 entry=0 entryTargets=0 return=2 returnTargets=1
 REALROM widthconflict.return c0196c -> c01a2a returns=M1 continuation=M0X0
 REALROM widthconflict.return c01ab3 -> c01a2a returns=M1 continuation=M0X0
-REALROM exitwidth functions=3085 returnsAtOtherWidth=156
+REALROM exitwidth functions=3084 returnsAtOtherWidth=156
 REALROM exitwidth c01a2a entry=M0X0 exits=M1X0
 REALROM exitwidth c01a46 entry=M0X0 exits=M1X0
 REALROM exitwidth c0215d entry=M0X0 exits=M1X0

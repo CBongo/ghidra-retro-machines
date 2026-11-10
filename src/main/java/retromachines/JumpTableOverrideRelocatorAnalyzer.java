@@ -57,7 +57,9 @@ import ghidra.util.task.TaskMonitor;
  * TwoLevelPointerDispatchAnalyzer} resolves runs before the function holding its {@code JMP (zp)}
  * exists, and a switch override needs that function. For each new function containing such a
  * {@code JMP} that still has no override, this writes it, via {@link
- * TwoLevelPointerDispatchAnalyzer#writeDeferredOverride}. No state is carried over from the
+ * TwoLevelPointerDispatchAnalyzer#writeDeferredOverride}. Fourth job (grm-hf5h.3): the same
+ * for a 65816 table dispatch {@link W65816JumpTableAnalyzer} resolved, via {@link
+ * W65816JumpTableAnalyzer#writeDeferredOverride}. No state is carried over from the
  * dispatch analyzer: the {@code JMP}'s own references and shape say what is owed.
  */
 public class JumpTableOverrideRelocatorAnalyzer extends AbstractAnalyzer {
@@ -77,7 +79,7 @@ public class JumpTableOverrideRelocatorAnalyzer extends AbstractAnalyzer {
 
 	@Override
 	public boolean canAnalyze(Program program) {
-		return AnalyzerGates.is8BitPcode(program);
+		return AnalyzerGates.is8BitPcode(program) || W65816WidthEffects.applies(program);
 	}
 
 	@Override
@@ -100,8 +102,11 @@ public class JumpTableOverrideRelocatorAnalyzer extends AbstractAnalyzer {
 					instr.getMinAddress(), monitor, log)) {
 					moved++;
 				}
-				else if (TwoLevelPointerDispatchAnalyzer.writeDeferredOverride(this, program,
-					function, instr, log)) {
+				else if (W65816WidthEffects.applies(program)
+					? W65816JumpTableAnalyzer.writeDeferredOverride(this, program, function, instr,
+						log)
+					: TwoLevelPointerDispatchAnalyzer.writeDeferredOverride(this, program,
+						function, instr, log)) {
 					twoLevel++;
 				}
 				else if (!function.isThunk() &&
@@ -114,7 +119,7 @@ public class JumpTableOverrideRelocatorAnalyzer extends AbstractAnalyzer {
 			AnalyzerLog.info(this, "moved " + moved + " stranded jump table override(s)");
 		}
 		if (twoLevel > 0) {
-			AnalyzerLog.info(this, "wrote " + twoLevel + " deferred two-level dispatch override(s)");
+			AnalyzerLog.info(this, "wrote " + twoLevel + " deferred dispatch override(s)");
 		}
 		// grm-kon2: a switch the bound analyzer reached only while no real function contained it was
 		// pinned by references, and stock switch analysis never revisits a site with computed

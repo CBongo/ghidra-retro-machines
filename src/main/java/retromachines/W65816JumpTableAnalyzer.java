@@ -46,6 +46,7 @@ import ghidra.program.model.listing.CodeUnit;
 import ghidra.program.model.listing.CommentType;
 import ghidra.program.model.listing.ContextChangeException;
 import ghidra.program.model.listing.Data;
+import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
@@ -57,8 +58,13 @@ import ghidra.program.model.symbol.FlowType;
 import ghidra.program.model.symbol.RefType;
 import ghidra.program.model.symbol.Reference;
 import ghidra.program.model.symbol.ReferenceManager;
+import ghidra.program.model.symbol.Symbol;
+import ghidra.program.model.symbol.SymbolTable;
+import ghidra.program.model.pcode.HighFunction;
+import ghidra.program.model.symbol.Namespace;
 import ghidra.program.model.symbol.SourceType;
 import ghidra.util.exception.CancelledException;
+import ghidra.util.exception.InvalidInputException;
 import ghidra.util.task.TaskMonitor;
 
 /**
@@ -112,6 +118,10 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 	 * overread repair does not cut such a table at its own code start.
 	 */
 	private static final Map<Program, Map<Address, Address>> ADOPTED =
+		Collections.synchronizedMap(new WeakHashMap<>());
+
+	/** grm-hf5h.3: the jump site of each switch override written, to the entry of its owner. */
+	private static final Map<Program, Map<Address, Address>> OVERRIDES =
 		Collections.synchronizedMap(new WeakHashMap<>());
 
 	public W65816JumpTableAnalyzer() {
@@ -292,6 +302,14 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 			tables.computeIfAbsent(laid, t -> new LinkedHashSet<>()).add(siteAddr);
 			AnalyzerCommentRecord.replaceOwn(program, siteAddr, CommentType.EOL,
 				note(laid, n, unique.size(), ctx, cap) + placeholders(targets), COMMENT_PREFIX);
+			// grm-hf5h.3: the switch override, now if a function already holds the jump, else the
+			// relocator writes it when one is created (see writeOverrideFor).
+			if (!call) {
+				Function owner = program.getFunctionManager().getFunctionContaining(siteAddr);
+				if (owner != null) {
+					writeOverrideFor(this, program, owner, site, log);
+				}
+			}
 			resolved++;
 		}
 		if (resolved > 0) {
@@ -299,6 +317,156 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 				" new target(s); " + warned + " target(s) already decoded at another width");
 		}
 		return true;
+	}
+
+	/**
+	 * grm-hf5h.3: the destinations of a 65816 dispatch's switch override: the {@code ANALYSIS}
+	 * computed-jump references this analyzer laid on {@code jmp}, in the space the references
+	 * point to (the bank or overlay the entries were decoded in).
+	 */
+	private static List<Address> overrideDests(Instruction jmp) {
+		Set<Address> dests = new LinkedHashSet<>();
+		for (Reference ref : jmp.getReferencesFrom()) {
+			if (RefType.COMPUTED_JUMP.equals(ref.getReferenceType()) &&
+				ref.getSource() == SourceType.ANALYSIS) {
+				dests.add(ref.getToAddress());
+			}
+		}
+		return new ArrayList<>(dests);
+	}
+
+	/**
+	 * grm-hf5h.3: writes the {@link ghidra.program.model.pcode.JumpTable} override for the
+	 * {@code JMP (abs,X)} / {@code JML [abs]} dispatch {@code jmp} on {@code function}, with the
+	 * entries this analyzer referenced as its destinations, when it has none yet. Without it the
+	 * decompiler cannot model the 65816 dispatch and prints "Could not recover jumptable".
+	 * Calls ({@code JSR (abs,X)}) are skipped: they decompile as CALLIND, which a switch override
+	 * does not apply to. The RTS/RTL tricks have no indirect branch to override either.
+	 *
+	 * @return whether an override was written
+	 */
+	static boolean writeOverrideFor(Analyzer analyzer, Program program, Function function,
+			Instruction jmp, MessageLog log) {
+		if (jmp.getFlowType().isCall() || !jmp.getFlowType().isComputed() ||
+			!jmp.getFlowType().isJump()) {
+			return false;
+		}
+		Address at = jmp.getMinAddress();
+		if (JumpTableBoundAnalyzer.alreadyOverridden(program, function, at)) {
+			return false;
+		}
+		List<Address> dests = overrideDests(jmp);
+		// A destination with no instruction (the analyzer could not decode it) makes the
+		// decompiler process die on the override (w_ff3, six functions); leave those to the
+		// "treat as call" fallback.
+		for (Address d : dests) {
+			if (program.getListing().getInstructionAt(d) == null) {
+				AnalyzerLog.info(analyzer, "no switch override at " + at + ": destination " + d +
+					" is not decoded");
+				return false;
+			}
+		}
+		boolean wrote = TwoLevelPointerDispatchAnalyzer.writeOverride(analyzer, program, function,
+			at, dests, log);
+		if (wrote) {
+			OVERRIDES.computeIfAbsent(program,
+				p -> Collections.synchronizedMap(new LinkedHashMap<>())).put(at,
+					function.getEntryPoint());
+		}
+		return wrote;
+	}
+
+	/**
+	 * grm-hf5h.3: the deferred half, called by {@link JumpTableOverrideRelocatorAnalyzer} for each
+	 * computed jump in a newly created function: writes the override when {@code jmp} is a
+	 * dispatch this analyzer resolved (a 65816 table shape, with its references) and has none.
+	 */
+	static boolean writeDeferredOverride(Analyzer analyzer, Program program, Function function,
+			Instruction jmp, MessageLog log) {
+		if (!W65816WidthEffects.applies(program) ||
+			dispatchOf(program.getListing(), jmp) == null) {
+			return false;
+		}
+		return writeOverrideFor(analyzer, program, function, jmp, log);
+	}
+
+	/**
+	 * grm-hf5h.3: after {@link #repairOverreads} changed a table's references, an override written
+	 * from the old ones is stale: removes it and writes one from the references that remain.
+	 */
+	private void refreshOverride(Program program, Instruction site, Address at) {
+		Function owner = program.getFunctionManager().getFunctionContaining(at);
+		if (owner == null || !clearOverride(program, owner, at)) {
+			return;
+		}
+		if (site != null) {
+			writeOverrideFor(this, program, owner, site, new MessageLog());
+		}
+	}
+
+	/** Removes {@code owner}'s override namespace for the jump at {@code at}; whether there was one. */
+	private static boolean clearOverride(Program program, Function owner, Address at) {
+		Namespace overrideSpace = HighFunction.findOverrideSpace(owner);
+		if (overrideSpace == null) {
+			return false;
+		}
+		SymbolTable symtab = program.getSymbolTable();
+		Namespace jmpSpace = HighFunction.findNamespace(symtab, overrideSpace, "jmp_" + at);
+		if (jmpSpace == null) {
+			return false;
+		}
+		Symbol jmpSym = symtab.getNamespaceSymbol(jmpSpace.getName(), overrideSpace);
+		try {
+			HighFunction.clearNamespace(symtab, jmpSpace);
+		}
+		catch (InvalidInputException e) {
+			return false;
+		}
+		if (jmpSym != null) {
+			jmpSym.delete();
+		}
+		return true;
+	}
+
+	/**
+	 * grm-hf5h.3: an override is only valid while its owner function still contains the jump. A
+	 * later pass can shrink the function (w_ff3 FUN_c31ff4, cut after a non-returning JSR) or clear
+	 * the bytes of a dispatch that turned out to be data; the decompiler process then dies on the
+	 * override. At the end of analysis, drops every override this analyzer wrote whose owner no
+	 * longer contains a decoded jump at its site.
+	 */
+	@Override
+	public void analysisEnded(Program program) {
+		Map<Address, Address> written = OVERRIDES.get(program);
+		if (written == null || written.isEmpty()) {
+			return;
+		}
+		int dropped = 0;
+		int tx = program.startTransaction("Drop stranded 65816 jump table overrides");
+		try {
+			for (Map.Entry<Address, Address> e : new ArrayList<>(written.entrySet())) {
+				Address site = e.getKey();
+				Function owner = program.getFunctionManager().getFunctionAt(e.getValue());
+				if (owner == null) {
+					written.remove(site);
+					continue;
+				}
+				if (!owner.getBody().contains(site) ||
+					program.getListing().getInstructionAt(site) == null) {
+					if (clearOverride(program, owner, site)) {
+						dropped++;
+					}
+					written.remove(site);
+				}
+			}
+		}
+		finally {
+			program.endTransaction(tx, true);
+		}
+		if (dropped > 0) {
+			AnalyzerLog.info(this, "dropped " + dropped +
+				" stranded switch override(s): owner no longer contains the jump");
+		}
 	}
 
 	/**
@@ -455,6 +623,7 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 					}
 				}
 				Instruction in = listing.getInstructionAt(site);
+				refreshOverride(program, in, site);
 				if (keep == 0) {
 					Dispatch dp = in == null ? null : dispatchOf(listing, in);
 					unreferTable(program, dp == null ? site : dp.index().getMinAddress(), table);
