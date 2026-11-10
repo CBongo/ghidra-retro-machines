@@ -21,6 +21,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -32,9 +33,15 @@ import ghidra.program.database.ProgramBuilder;
 import ghidra.program.database.ProgramDB;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSet;
+import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Instruction;
+import ghidra.program.model.pcode.HighFunction;
 import ghidra.program.model.symbol.RefType;
+import ghidra.program.model.symbol.Namespace;
 import ghidra.program.model.symbol.Reference;
+import ghidra.program.model.symbol.SourceType;
+import ghidra.program.model.symbol.Symbol;
+import ghidra.program.model.symbol.SymbolTable;
 import ghidra.util.task.TaskMonitor;
 
 /**
@@ -257,6 +264,107 @@ public class TwoLevelPointerDispatchTest extends AbstractBundledLanguageTest {
 		run(program);
 		// IA still ends at IB, but IB runs on with nothing to end it: only IA's handlers count.
 		assertEquals(handlers(0, 2), computedTargets(program));
+	}
+
+	// ---- grm-gipk.24: the switch override on the dispatcher's function ----
+
+	/** Creates the dispatcher's function over the straight-line code, JMP included. */
+	private Function createDispatcher(ProgramDB program) throws Exception {
+		Function[] out = new Function[1];
+		inTx(program, "function", () -> {
+			try {
+				out[0] = program.getFunctionManager().createFunction("dispatch", addr(BASE),
+					new AddressSet(addr(BASE), addr(jmpAt + 2)), SourceType.USER_DEFINED);
+			}
+			catch (Exception e) {
+				throw new AssertionError(e);
+			}
+		});
+		assertNotNull(out[0]);
+		return out[0];
+	}
+
+	/** The override's destinations (its {@code case*} labels), or null when it has none. */
+	private Set<Address> overrideDests(ProgramDB program, Function f) {
+		Namespace overrideSpace = HighFunction.findOverrideSpace(f);
+		if (overrideSpace == null) {
+			return null;
+		}
+		SymbolTable symtab = program.getSymbolTable();
+		Namespace jmpSpace =
+			HighFunction.findNamespace(symtab, overrideSpace, "jmp_" + addr(jmpAt).toString());
+		if (jmpSpace == null) {
+			return null;
+		}
+		List<Symbol> cases = new ArrayList<>();
+		for (Symbol sym : symtab.getSymbols(jmpSpace)) {
+			if (sym.getName().startsWith("case")) {
+				cases.add(sym);
+			}
+		}
+		cases.sort(Comparator.comparing(Symbol::getAddress));
+		Set<Address> out = new LinkedHashSet<>();
+		for (Symbol sym : cases) {
+			out.add(sym.getAddress());
+		}
+		return out;
+	}
+
+	private void relocate(ProgramDB program, Function f) throws Exception {
+		JumpTableOverrideRelocatorAnalyzer relocator = new JumpTableOverrideRelocatorAnalyzer();
+		inTx(program, "relocate", () -> {
+			relocator.added(program, f.getBody(), TaskMonitor.DUMMY, new MessageLog());
+		});
+	}
+
+	@Test
+	public void writesTheOverrideAtOnceWhenAFunctionAlreadyHoldsTheJmp() throws Exception {
+		ProgramDB program = build(Variant.BASELINE);
+		Function f = createDispatcher(program);
+		long bodyBefore = f.getBody().getNumAddresses();
+		run(program);
+		assertEquals("override on the dispatcher, no relocator needed", handlers(0, 6),
+			overrideDests(program, f));
+		assertEquals("handlers did not join the dispatcher's body", bodyBefore,
+			f.getBody().getNumAddresses());
+	}
+
+	@Test
+	public void defersTheOverrideUntilTheFunctionIsCreated() throws Exception {
+		ProgramDB program = build(Variant.BASELINE);
+		run(program);
+		assertNull("no function yet, so no override",
+			program.getFunctionManager().getFunctionContaining(addr(jmpAt)));
+		Function f = createDispatcher(program);
+		assertNull(overrideDests(program, f));
+		relocate(program, f);
+		assertEquals(handlers(0, 6), overrideDests(program, f));
+		// idempotent: a second pass over the same function leaves the override alone
+		relocate(program, f);
+		assertEquals(handlers(0, 6), overrideDests(program, f));
+	}
+
+	@Test
+	public void overrideDestinationsAreExactlyTheResolvedHandlers() throws Exception {
+		ProgramDB program = build(Variant.BASELINE);
+		TwoLevelPointerDispatch.Shape shape = TwoLevelPointerDispatch.match(program,
+			program.getListing().getInstructionAt(addr(jmpAt)));
+		Set<Address> resolved = TwoLevelPointerDispatch.resolve(program, shape).handlers();
+		run(program);
+		Function f = createDispatcher(program);
+		relocate(program, f);
+		assertEquals(resolved, overrideDests(program, f));
+		assertTrue("H7 behind the AND cap is not a destination",
+			!overrideDests(program, f).contains(addr(H1 + 12)));
+	}
+
+	@Test
+	public void declinedSiteGetsNoOverride() throws Exception {
+		ProgramDB program = build(Variant.TABLE_IN_CODE);
+		run(program);
+		Function f = createDispatcher(program);
+		relocate(program, f);
+		assertNull(overrideDests(program, f));
 	}
 
 	private void assertDeclined(Variant v) throws Exception {

@@ -99,7 +99,7 @@ REALROM count instrs.inOverlay 22493
 REALROM count bankComments 180
 REALROM count warnings 14
 REALROM count notes 15
-REALROM count symbols 154
+REALROM count symbols 306
 REALROM count jumptable.wordArrays 63
 REALROM count jumptable.planarArrays 0
 REALROM sample.bankcomment 8065 bank -> prg_mode=2,bank_5114=0,bank_5115=0,bank_5116=7,bank_5117=31? via FUN_e2d6 [known: prg_mode.0=0,prg_mode.1=1,bank_5116.0=1,bank_5116.1=1,bank_5116.2=1,bank_5116.3=0,bank_5116.4=0,bank_5116.5=0,bank_5116.6=0; assumed from initial: bank_5114.0,bank_5114.1,bank_5114.2,bank_5114.3,bank_5114.4,bank_5114.5,bank_5114.6,bank_5115.0,bank_5115.1,bank_5115.2,bank_5115.3,bank_5115.4,bank_5115.5,bank_5115.6,bank_5117.0,bank_5117.1,bank_5117.2,bank_5117.3,bank_5117.4,bank_5117.5,bank_5117.6] [switch-value flow]
@@ -341,28 +341,28 @@ REALROM sample.symbol 07ee case_10 USER_DEFINED primary=true
 REALROM sample.symbol 07f3 case_2 USER_DEFINED primary=true
 REALROM sample.symbol 3790 case_13 USER_DEFINED primary=true
 REALROM sample.symbol 494c case_14 USER_DEFINED primary=true
+REALROM sample.symbol 8027 case_0 USER_DEFINED primary=false
+REALROM sample.symbol 8038 case_2 USER_DEFINED primary=false
+REALROM sample.symbol 8048 case_9 USER_DEFINED primary=false
+REALROM sample.symbol 8080 case_3 USER_DEFINED primary=false
+REALROM sample.symbol 8087 case_4 USER_DEFINED primary=false
 REALROM sample.symbol 80a1 switch USER_DEFINED primary=true
+REALROM sample.symbol 80c3 case_5 USER_DEFINED primary=false
+REALROM sample.symbol 80ea case_6 USER_DEFINED primary=false
+REALROM sample.symbol 80f8 case_7 USER_DEFINED primary=false
+REALROM sample.symbol 8116 case_8 USER_DEFINED primary=false
 REALROM sample.symbol 813a switch USER_DEFINED primary=true
-REALROM sample.symbol 841d switch USER_DEFINED primary=true
-REALROM sample.symbol 8434 case_0 USER_DEFINED primary=false
-REALROM sample.symbol 8434 case_1 USER_DEFINED primary=false
-REALROM sample.symbol 8434 case_2 USER_DEFINED primary=false
-REALROM sample.symbol 8434 case_3 USER_DEFINED primary=false
-REALROM sample.symbol 8434 case_4 USER_DEFINED primary=false
-REALROM sample.symbol 8434 case_5 USER_DEFINED primary=false
-REALROM sample.symbol 8434 case_6 USER_DEFINED primary=false
-REALROM sample.symbol 8434 case_7 USER_DEFINED primary=false
-REALROM sample.symbol 8434 case_8 USER_DEFINED primary=false
-REALROM sample.symbol 8434 case_9 USER_DEFINED primary=true
-REALROM sample.symbol 8510 case_8 USER_DEFINED primary=true
-REALROM sample.symbol 8667 switch USER_DEFINED primary=true
-REALROM sample.symbol 866a case_0 USER_DEFINED primary=true
-REALROM sample.symbol 866a case_1 USER_DEFINED primary=false
-REALROM sample.symbol 866a case_6 USER_DEFINED primary=false
-REALROM sample.symbol 867c case_2 USER_DEFINED primary=true
-REALROM sample.symbol 8684 case_3 USER_DEFINED primary=true
-REALROM sample.symbol 8684 case_4 USER_DEFINED primary=false
-REALROM sample.symbol.truncated 25 of 142
+REALROM sample.symbol 8191 case_10 USER_DEFINED primary=false
+REALROM sample.symbol 8277 case_11 USER_DEFINED primary=false
+REALROM sample.symbol 82a0 case_12 USER_DEFINED primary=false
+REALROM sample.symbol 82b0 case_13 USER_DEFINED primary=false
+REALROM sample.symbol 82cc case_14 USER_DEFINED primary=false
+REALROM sample.symbol 835b case_15 USER_DEFINED primary=false
+REALROM sample.symbol 838a case_1 USER_DEFINED primary=false
+REALROM sample.symbol 8393 case_16 USER_DEFINED primary=false
+REALROM sample.symbol 83dd case_17 USER_DEFINED primary=false
+REALROM sample.symbol 83fd case_18 USER_DEFINED primary=false
+REALROM sample.symbol.truncated 25 of 294
 REALROM sample.jumptable W8000_B18::8671 word[75]
 REALROM sample.jumptable W8000_B20::8527 word[83]
 REALROM sample.jumptable W8000_B20::85d3 word[2]

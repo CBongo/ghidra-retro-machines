@@ -22,7 +22,7 @@ REALROM count instrs.inOverlay 2979
 REALROM count bankComments 22
 REALROM count warnings 4
 REALROM count notes 1
-REALROM count symbols 26
+REALROM count symbols 39
 REALROM count jumptable.wordArrays 13
 REALROM count jumptable.planarArrays 0
 REALROM sample.bankcomment c094 bank -> 1 (bank=1) via FUN_c139
@@ -86,12 +86,24 @@ REALROM sample.symbol 8673 case_2 USER_DEFINED primary=false
 REALROM sample.symbol 8683 case_4 USER_DEFINED primary=false
 REALROM sample.symbol 86a6 case_3 USER_DEFINED primary=false
 REALROM sample.symbol 86a6 case_5 USER_DEFINED primary=false
+REALROM sample.symbol b989 switch USER_DEFINED primary=true
+REALROM sample.symbol b9e0 case_0 USER_DEFINED primary=false
+REALROM sample.symbol b9e3 case_5 USER_DEFINED primary=false
+REALROM sample.symbol ba2f case_6 USER_DEFINED primary=false
+REALROM sample.symbol ba32 case_10 USER_DEFINED primary=false
+REALROM sample.symbol ba46 case_1 USER_DEFINED primary=false
+REALROM sample.symbol ba4f case_3 USER_DEFINED primary=false
+REALROM sample.symbol ba60 case_4 USER_DEFINED primary=false
+REALROM sample.symbol ba7c case_7 USER_DEFINED primary=false
+REALROM sample.symbol ba82 case_8 USER_DEFINED primary=false
+REALROM sample.symbol ba8b case_9 USER_DEFINED primary=false
+REALROM sample.symbol baa7 case_11 USER_DEFINED primary=false
+REALROM sample.symbol bc1e case_2 USER_DEFINED primary=false
 REALROM sample.symbol c001 RESET IMPORTED primary=true
 REALROM sample.symbol c060 NMI IMPORTED primary=true
 REALROM sample.symbol c0b5 IRQ IMPORTED primary=true
 REALROM sample.symbol fffa NMI_VEC IMPORTED primary=true
-REALROM sample.symbol fffc RESET_VEC IMPORTED primary=true
-REALROM sample.symbol fffe IRQ_VEC IMPORTED primary=true
+REALROM sample.symbol.truncated 25 of 27
 REALROM sample.jumptable PRG_LO_B1::86bf word[7]
 REALROM sample.jumptable PRG_LO_B1::86cd word[4]
 REALROM sample.jumptable PRG_LO_B6::b98c word[12]

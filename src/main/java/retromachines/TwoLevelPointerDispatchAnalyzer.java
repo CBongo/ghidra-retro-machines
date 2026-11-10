@@ -16,12 +16,14 @@
 package retromachines;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 
 import ghidra.app.cmd.disassemble.DisassembleCommand;
 import ghidra.app.plugin.core.analysis.AutoAnalysisManager;
 import ghidra.app.services.AbstractAnalyzer;
 import ghidra.app.services.AnalysisPriority;
+import ghidra.app.services.Analyzer;
 import ghidra.app.services.AnalyzerType;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.program.model.address.Address;
@@ -30,15 +32,19 @@ import ghidra.program.model.address.AddressSetView;
 import ghidra.program.model.lang.Register;
 import ghidra.program.model.lang.RegisterValue;
 import ghidra.program.model.listing.ContextChangeException;
+import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.InstructionIterator;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.listing.ProgramContext;
+import ghidra.program.model.pcode.EquateSymbol;
+import ghidra.program.model.pcode.JumpTable;
 import ghidra.program.model.symbol.RefType;
 import ghidra.program.model.symbol.Reference;
 import ghidra.program.model.symbol.SourceType;
 import ghidra.util.exception.CancelledException;
+import ghidra.util.exception.InvalidInputException;
 import ghidra.util.task.TaskMonitor;
 
 /**
@@ -57,6 +63,23 @@ import ghidra.util.task.TaskMonitor;
  * {@code RTS} returns to the dispatch routine's caller, so each is entered like a tail-called
  * function, exactly as {@link InlineJumpTableDispatchAnalyzer}'s targets are. The tables are laid
  * before any handler is disassembled, so disassembly cannot run over them.
+ *
+ * <p><b>Switch override</b> (grm-gipk.24). The handlers stay functions of their own, and the
+ * dispatcher's function additionally gets a {@link JumpTable} override listing every handler, so
+ * the decompiler shows the dispatch as a {@code switch} (case bodies inlined, keyed by handler
+ * address) instead of {@code Could not recover jumptable ... Too many branches} and an opaque
+ * indirect call. The override is NOT followed by a body fixup: the handlers do not join the
+ * dispatcher's body, so they keep their own bodies, callers and call-graph edges. It needs a
+ * function containing the {@code JMP}, and when this analyzer runs that function usually does
+ * not exist yet (function creation comes later). If one already contains the {@code JMP} the
+ * override is written here, from the resolved handlers; otherwise it is DEFERRED to
+ * {@link JumpTableOverrideRelocatorAnalyzer}, which reacts to every newly created function and
+ * calls {@link #writeDeferredOverride}. Nothing is remembered in memory between the two: the
+ * program itself says what is owed, namely a {@code JMP (zp)} that {@link
+ * TwoLevelPointerDispatch#match} still recognizes, that carries {@code ANALYSIS}
+ * {@link RefType#COMPUTED_JUMP} references (only this analyzer adds them here, since stock switch
+ * recovery cannot follow two levels and this analyzer skips a {@code JMP} that already has one),
+ * and that has no override yet.
  *
  * <p><b>Priority</b> {@link AnalysisPriority#CODE_ANALYSIS}{@code .before()}, with
  * {@link IndirectJumpConstantPointerAnalyzer} and {@link JumpTableBoundAnalyzer}: neither claims
@@ -170,8 +193,68 @@ public class TwoLevelPointerDispatchAnalyzer extends AbstractAnalyzer {
 			}
 			analysisManager.createFunction(h, false);
 		}
+		// grm-gipk.24: the switch override, now if a function already holds the JMP, else the
+		// relocator writes it when one is created (see the class javadoc).
+		Function owner = program.getFunctionManager().getFunctionContaining(jmp.getMinAddress());
+		if (owner != null) {
+			writeOverride(this, program, owner, jmp.getMinAddress(), r.handlers(), log);
+		}
 		AnalyzerLog.info(this, "site " + shape.jmp() + ": outer " + outer.start() + "[" +
 			outer.entries().size() + ", " + outer.cut() + "], " + r.inner().size() +
 			" inner table(s) (" + laidInner + " laid), " + handlers + " handler(s)");
+	}
+
+	/**
+	 * Writes the {@link JumpTable} override for {@code jmp} on {@code owner} with {@code handlers}
+	 * as its destinations (grm-gipk.24). The one place both the immediate and the deferred path
+	 * write it. Does not touch the function body.
+	 *
+	 * @return whether the override was written
+	 */
+	static boolean writeOverride(Analyzer analyzer, Program program, Function owner, Address jmp,
+			Collection<Address> handlers, MessageLog log) {
+		if (handlers.isEmpty()) {
+			return false;
+		}
+		try {
+			new JumpTable(jmp, new ArrayList<>(handlers), true, EquateSymbol.FORMAT_DEFAULT)
+					.writeOverride(owner);
+		}
+		catch (InvalidInputException | RuntimeException e) {
+			AnalyzerLog.warn(analyzer, log, "could not write the jump table override at " + jmp +
+				": " + e.getMessage());
+			return false;
+		}
+		AnalyzerLog.info(analyzer, "wrote switch override at " + jmp + " on " + owner.getName() +
+			" (" + handlers.size() + " handler(s))");
+		return true;
+	}
+
+	/**
+	 * The deferred half of the switch override (grm-gipk.24): called by {@link
+	 * JumpTableOverrideRelocatorAnalyzer} for each computed jump in a newly created function.
+	 * Writes the override when {@code jmp} is a dispatch this analyzer resolved (see the class
+	 * javadoc) and has none yet. The destinations are the {@code ANALYSIS} computed-jump
+	 * references, which this analyzer added from exactly the handlers it resolved.
+	 *
+	 * @return whether an override was written
+	 */
+	static boolean writeDeferredOverride(Analyzer analyzer, Program program, Function function,
+			Instruction jmp, MessageLog log) {
+		Address at = jmp.getMinAddress();
+		if (JumpTableBoundAnalyzer.alreadyOverridden(program, function, at)) {
+			return false;
+		}
+		List<Address> handlers = new ArrayList<>();
+		for (Reference ref : jmp.getReferencesFrom()) {
+			if (RefType.COMPUTED_JUMP.equals(ref.getReferenceType()) &&
+				ref.getSource() == SourceType.ANALYSIS) {
+				handlers.add(ref.getToAddress());
+			}
+		}
+		if (handlers.isEmpty() || TwoLevelPointerDispatch.match(program, jmp) == null) {
+			return false;
+		}
+		return writeOverride(analyzer, program, function, at, handlers, log);
 	}
 }

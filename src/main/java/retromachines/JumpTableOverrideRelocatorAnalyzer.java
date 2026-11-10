@@ -52,6 +52,13 @@ import ghidra.util.task.TaskMonitor;
  * either way. dragonpower a546 (inside the NMI handler's flow) got its override only when the
  * NMI function's body happened to reach it before the bound analyzer's second pass: 168 symbols
  * or 152, flipped by timing, which is why the analysis thread pin seemed to matter (grm-uioc).
+ * <p>
+ * Third job, same event (grm-gipk.24): the two-level dispatch {@link
+ * TwoLevelPointerDispatchAnalyzer} resolves runs before the function holding its {@code JMP (zp)}
+ * exists, and a switch override needs that function. For each new function containing such a
+ * {@code JMP} that still has no override, this writes it, via {@link
+ * TwoLevelPointerDispatchAnalyzer#writeDeferredOverride}. No state is carried over from the
+ * dispatch analyzer: the {@code JMP}'s own references and shape say what is owed.
  */
 public class JumpTableOverrideRelocatorAnalyzer extends AbstractAnalyzer {
 
@@ -78,6 +85,7 @@ public class JumpTableOverrideRelocatorAnalyzer extends AbstractAnalyzer {
 			throws CancelledException {
 		FunctionIterator functions = program.getFunctionManager().getFunctions(set, true);
 		int moved = 0;
+		int twoLevel = 0;
 		Set<Function> pinnedOnly = new LinkedHashSet<>();
 		while (functions.hasNext()) {
 			monitor.checkCancelled();
@@ -92,6 +100,10 @@ public class JumpTableOverrideRelocatorAnalyzer extends AbstractAnalyzer {
 					instr.getMinAddress(), monitor, log)) {
 					moved++;
 				}
+				else if (TwoLevelPointerDispatchAnalyzer.writeDeferredOverride(this, program,
+					function, instr, log)) {
+					twoLevel++;
+				}
 				else if (!function.isThunk() &&
 					JumpTableBoundAnalyzer.boundWithoutOverride(program, instr.getMinAddress())) {
 					pinnedOnly.add(function);
@@ -100,6 +112,9 @@ public class JumpTableOverrideRelocatorAnalyzer extends AbstractAnalyzer {
 		}
 		if (moved > 0) {
 			AnalyzerLog.info(this, "moved " + moved + " stranded jump table override(s)");
+		}
+		if (twoLevel > 0) {
+			AnalyzerLog.info(this, "wrote " + twoLevel + " deferred two-level dispatch override(s)");
 		}
 		// grm-kon2: a switch the bound analyzer reached only while no real function contained it was
 		// pinned by references, and stock switch analysis never revisits a site with computed

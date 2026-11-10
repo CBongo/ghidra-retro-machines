@@ -2054,7 +2054,7 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 	 *  earlier analysis round, or a human's from the GUI. Mirrors the private namespace naming
 	 *  {@code JumpTable}'s own {@code writeOverride}/{@code getSwitchNamespace} use
 	 *  ({@code "jmp_" + switchAddr}) under the function's {@code "override"} namespace. */
-	private boolean alreadyOverridden(Program program, Function function, Address switchAddr) {
+	static boolean alreadyOverridden(Program program, Function function, Address switchAddr) {
 		Namespace overrideSpace = HighFunction.findOverrideSpace(function);
 		if (overrideSpace == null) {
 			return false;
