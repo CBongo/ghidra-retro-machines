@@ -3,7 +3,7 @@ REALROM program w_fzero.sfc
 REALROM sha256 bf16c3c867c58e2ab061c70de9295b6930d63f29f81cc986f5ecae03e0ad18d2
 REALROM language 65816:LE:24:retro
 REALROM instrs 16628
-REALROM functions 479
+REALROM functions 477
 REALROM ctx E0M0X0 1345
 REALROM ctx E0M0X1 3717
 REALROM ctx E0M1X0 1221
@@ -30,7 +30,7 @@ REALROM vector EMU_ABORT 008138 code=yes ctx=E0M0X0 function=true
 REALROM vector EMU_NMI 008138 code=yes ctx=E0M0X0 function=true
 REALROM vector EMU_RESET 008000 code=yes ctx=E1M1X1 function=true
 REALROM vector EMU_IRQBRK 008138 code=yes ctx=E0M0X0 function=true
-REALROM calls direct=840 decodedTarget=840 widthDisagree=45 distinctTargets=29
+REALROM calls direct=839 decodedTarget=839 widthDisagree=45 distinctTargets=29
 REALROM calls.disagree 00890c E0M1X1 -> 00b0c8 E0M0X1
 REALROM calls.disagree 00890f E0M1X1 -> 00b164 E0M0X1
 REALROM calls.disagree 008a3a E0M0X1 -> 009eec E0M1X1
@@ -72,12 +72,12 @@ REALROM calls.disagree 03800a E0M1X0 -> 008364 E0M1X1
 REALROM calls.disagree 038d3c E0M0X0 -> 039806 E0M1X0
 REALROM calls.disagree 038d46 E0M0X0 -> 038031 E0M0X1
 REALROM calls.disagree.truncated 40 of 45
-REALROM widtheffect callees=452 needsM=199 needsX=114
-REALROM widtheffect exitM preserves=301 sets0=15 sets1=81 mixedOrNone=55
-REALROM widtheffect exitX preserves=365 sets0=7 sets1=47 mixedOrNone=33
-REALROM widthconflict sites=840 entry=0 entryTargets=0 return=1 returnTargets=1
+REALROM widtheffect callees=451 needsM=198 needsX=113
+REALROM widtheffect exitM preserves=301 sets0=15 sets1=81 mixedOrNone=54
+REALROM widtheffect exitX preserves=365 sets0=7 sets1=47 mixedOrNone=32
+REALROM widthconflict sites=839 entry=0 entryTargets=0 return=1 returnTargets=1
 REALROM widthconflict.return 00b59c -> 00d1f0 returns=M1 continuation=M0X1
-REALROM exitwidth functions=479 returnsAtOtherWidth=83
+REALROM exitwidth functions=477 returnsAtOtherWidth=83
 REALROM exitwidth 00808c entry=M1X1 exits=M0X1
 REALROM exitwidth 008140 entry=M1X1 exits=M0X0
 REALROM exitwidth 00824f entry=M1X1 exits=M1X0

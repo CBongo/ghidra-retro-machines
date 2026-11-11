@@ -52,12 +52,13 @@ public class FunctionListDump extends GhidraScript {
 						dests.get(dests.size() - 1)) +
 					" inBody=" + inBody + " notInstrStart=" + notInstr);
 				String want = System.getenv("GRM_LIST_SITES");   // e.g. jmp_038074,jmp_c25ade
-				if (want != null && want.contains(s.getName())) {
+				if (want != null && (want.equals("1") || want.contains(s.getName()))) {
 					for (Address d : dests) {
 						Function in = currentProgram.getFunctionManager().getFunctionContaining(d);
 						println("OVERRIDE-CASE " + s.getName() + " " + d + " inOwnerBody=" +
 							f.getBody().contains(d) + " containingFn=" + (in == null ? "-" : in.getName()) +
-							" instr=" + currentProgram.getListing().getInstructionAt(d));
+							" instr=" + currentProgram.getListing().getInstructionAt(d) + " refFromSite=" +
+							hasRef(s.getName(), d));
 					}
 				}
 				if (notInstr > 0 && System.getenv("GRM_LIST_BADDESTS") != null) {
@@ -83,5 +84,19 @@ public class FunctionListDump extends GhidraScript {
 				}
 			}
 		}
+	}
+
+	/** Whether the jump named jmp_<addr> still has a reference to d (grm-hf5h.5). */
+	private boolean hasRef(String jmpName, Address d) {
+		Address site = currentProgram.getAddressFactory().getAddress(jmpName.substring(4));
+		if (site == null) {
+			return false;
+		}
+		for (ghidra.program.model.symbol.Reference r : currentProgram.getReferenceManager().getReferencesFrom(site)) {
+			if (r.getToAddress().equals(d)) {
+				return true;
+			}
+		}
+		return false;
 	}
 }

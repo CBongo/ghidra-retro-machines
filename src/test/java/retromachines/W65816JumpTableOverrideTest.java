@@ -167,6 +167,24 @@ public class W65816JumpTableOverrideTest extends AbstractProgramTest {
 		assertNull(overrideDests(f, "0x8000"));
 	}
 
+	/** grm-hf5h.5: the handlers become part of the dispatcher's body; a handler that already is
+	 *  another function's entry stays that function's. */
+	@Test
+	public void theOwnerBodyGainsTheHandlersExceptExistingFunctions() throws Exception {
+		builder.setBytes("0x8000", "7c 00 81", false);
+		builder.disassemble("0x8000", 3, false);
+		builder.disassemble("0x8210", 1, false);
+		Function other = createFunction("0x8210", "0x8210");
+		Function f = createFunction("0x8000", "0x8002");
+		analyze("0x8000");
+		assertEquals(handlers(4), overrideDests(f, "0x8000"));
+		assertEquals(true, f.getBody().contains(addr(0x8200)));
+		assertEquals(true, f.getBody().contains(addr(0x8220)));
+		assertEquals(true, f.getBody().contains(addr(0x8230)));
+		assertEquals(false, f.getBody().contains(addr(0x8210)));
+		assertEquals(other, program.getFunctionManager().getFunctionAt(addr(0x8210)));
+	}
+
 	/** A later dispatch cuts the table; the override is rewritten from the surviving references. */
 	@Test
 	public void aShortenedTableRewritesItsOverride() throws Exception {

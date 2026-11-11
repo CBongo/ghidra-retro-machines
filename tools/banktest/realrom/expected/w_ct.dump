@@ -34,7 +34,7 @@ REALROM vector EMU_ABORT 00ffff code=no function=false
 REALROM vector EMU_NMI 00ffff code=no function=false
 REALROM vector EMU_RESET 00ff00 code=yes ctx=E1M1X1 function=true
 REALROM vector EMU_IRQBRK 00ffff code=no function=false
-REALROM calls direct=3504 decodedTarget=3501 widthDisagree=102 distinctTargets=26
+REALROM calls direct=3501 decodedTarget=3498 widthDisagree=102 distinctTargets=26
 REALROM calls.disagree c0418d E0M1X0 -> fdc000 E0M1X1
 REALROM calls.disagree c047e9 E0M1X1 -> c0e12a E0M1X0
 REALROM calls.disagree c08aac E0M1X1 -> c09ad3 E0M1X0
@@ -79,7 +79,7 @@ REALROM calls.disagree.truncated 40 of 102
 REALROM widtheffect callees=1043 needsM=646 needsX=487
 REALROM widtheffect exitM preserves=398 sets0=15 sets1=366 mixedOrNone=264
 REALROM widtheffect exitX preserves=788 sets0=45 sets1=17 mixedOrNone=193
-REALROM widthconflict sites=3501 entry=0 entryTargets=0 return=0 returnTargets=0
+REALROM widthconflict sites=3498 entry=0 entryTargets=0 return=0 returnTargets=0
 REALROM exitwidth functions=1819 returnsAtOtherWidth=75
 REALROM exitwidth c01e9a entry=M0X0 exits=M1X0
 REALROM exitwidth c01ec7 entry=M0X0 exits=M1X0
@@ -128,12 +128,12 @@ REALROM computed JMP (!$0xn,X) sites=11 withTargets=11
 REALROM computed JSR (!$0xn,X) sites=58 withTargets=57
 REALROM computed RTI <UNSUPPORTn> sites=8 withTargets=0
 REALROM plp sites=74 paired=71 ambiguous=1 unpaired=2 stale=0
-REALROM dp operands=13633 known=4112 withRef=4164 knownWithRef=4112
+REALROM dp operands=13633 known=4328 withRef=4384 knownWithRef=4328
 REALROM dp writer PLD sites=105 knownAfter=43
 REALROM dp writer TCD sites=64 knownAfter=60
 REALROM dp value 0000=387
 REALROM dp value 0100=845
-REALROM dp value 0200=156
+REALROM dp value 0200=372
 REALROM dp value 0300=168
 REALROM dp value 0400=60
 REALROM dp value 0500=207
@@ -146,5 +146,5 @@ REALROM dp value 1e00=329
 REALROM dp value 2100=393
 REALROM dp value 4200=32
 REALROM dp value 4300=48
-REALROM dp entry assumedPastUnknown=60 conflict=3
+REALROM dp entry assumedPastUnknown=57 conflict=3
 === REALROM END ===

@@ -82,7 +82,7 @@ REALROM widtheffect exitX preserves=1804 sets0=123 sets1=8 mixedOrNone=287
 REALROM widthconflict sites=7203 entry=0 entryTargets=0 return=2 returnTargets=1
 REALROM widthconflict.return c0196c -> c01a2a returns=M1 continuation=M0X0
 REALROM widthconflict.return c01ab3 -> c01a2a returns=M1 continuation=M0X0
-REALROM exitwidth functions=3084 returnsAtOtherWidth=156
+REALROM exitwidth functions=3084 returnsAtOtherWidth=157
 REALROM exitwidth c01a2a entry=M0X0 exits=M1X0
 REALROM exitwidth c01a46 entry=M0X0 exits=M1X0
 REALROM exitwidth c0215d entry=M0X0 exits=M1X0
@@ -111,6 +111,7 @@ REALROM exitwidth c21a80 entry=M1X1 exits=M0X1,M1X0
 REALROM exitwidth c21c40 entry=M1X1 exits=M0X1
 REALROM exitwidth c21c86 entry=M1X1 exits=M0X1
 REALROM exitwidth c21d16 entry=M1X1 exits=M0X1
+REALROM exitwidth c21e5e entry=M1X1 exits=M0X1
 REALROM exitwidth c2202d entry=M1X1 exits=M0X1
 REALROM exitwidth c22037 entry=M1X1 exits=M0X1
 REALROM exitwidth c2204e entry=M1X1 exits=M0X1
@@ -122,18 +123,17 @@ REALROM exitwidth c22966 entry=M1X1 exits=M1X0
 REALROM exitwidth c22a37 entry=M1X1 exits=M1X0
 REALROM exitwidth c22b9d entry=M1X1 exits=M0X1
 REALROM exitwidth c22c30 entry=M1X0 exits=M1X1
-REALROM exitwidth c22d71 entry=M0X0 exits=M1X0
-REALROM exitwidth.truncated 40 of 156
+REALROM exitwidth.truncated 40 of 157
 REALROM computed JMP (!$0x8,X) sites=1 withTargets=1
 REALROM computed JMP (!$0xn) sites=3 withTargets=2
 REALROM computed JMP (!$0xn,X) sites=43 withTargets=43
 REALROM computed JSR (!$0xn,X) sites=38 withTargets=37
 REALROM computed RTI <UNSUPPORTn> sites=12 withTargets=0
 REALROM plp sites=222 paired=218 ambiguous=0 unpaired=4 stale=0
-REALROM dp operands=15495 known=2644 withRef=2645 knownWithRef=2644
+REALROM dp operands=15495 known=2656 withRef=2657 knownWithRef=2656
 REALROM dp writer PLD sites=51 knownAfter=28
 REALROM dp writer TCD sites=3 knownAfter=3
-REALROM dp value 0000=2134
+REALROM dp value 0000=2146
 REALROM dp value 0100=8
 REALROM dp value 0500=53
 REALROM dp value 1000=40

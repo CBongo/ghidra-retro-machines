@@ -18,6 +18,7 @@ package retromachines;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -36,7 +37,9 @@ import ghidra.app.services.AnalyzerType;
 import ghidra.app.util.PseudoDisassembler;
 import ghidra.app.util.PseudoDisassemblerContext;
 import ghidra.app.util.importer.MessageLog;
+import ghidra.program.database.function.OverlappingFunctionException;
 import ghidra.program.model.address.Address;
+import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.address.AddressSetView;
 import ghidra.program.model.data.Array;
 import ghidra.program.model.data.WordDataType;
@@ -372,8 +375,40 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 			OVERRIDES.computeIfAbsent(program,
 				p -> Collections.synchronizedMap(new LinkedHashMap<>())).put(at,
 					function.getEntryPoint());
+			growBodyToHandlers(program, function);
 		}
 		return wrote;
+	}
+
+	/**
+	 * grm-hf5h.5: the switch's handlers belong to the dispatcher, as on 6502. The references were
+	 * laid after the body was computed, so recompute the flow body and ADD to the owner what no
+	 * other function holds. Stock {@code fixupFunctionBody} is not used: its overlap handling
+	 * carves address ranges out of other functions (w_fzero lost FUN_008acd and FUN_00d0aa that
+	 * way, their code left in no function). A handler that is inside, or the entry of, another
+	 * function stays that function's.
+	 */
+	private static void growBodyToHandlers(Program program, Function function) {
+		AddressSet grown = new AddressSet(function.getBody());
+		AddressSet flow = new AddressSet(CreateFunctionCmd.getFunctionBody(program,
+			function.getEntryPoint(), false, TaskMonitor.DUMMY));
+		Iterator<Function> others = program.getFunctionManager().getFunctionsOverlapping(flow);
+		while (others.hasNext()) {
+			Function other = others.next();
+			if (!other.equals(function)) {
+				flow.delete(other.getBody());
+			}
+		}
+		grown.add(flow);
+		if (grown.equals(function.getBody())) {
+			return;
+		}
+		try {
+			function.setBody(grown);
+		}
+		catch (OverlappingFunctionException e) {
+			// leave the body as it is
+		}
 	}
 
 	/**
@@ -457,6 +492,16 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 						dropped++;
 					}
 					written.remove(site);
+				}
+			}
+			// grm-hf5h.5: function creation and body fixups that ran after an override was
+			// written carve addresses out of the grown owner (w_fzero FUN_0088d8: 1299 -> 1105
+			// addresses, its flow still reaching the handlers), so grow each survivor once more.
+			Set<Address> grownOwners = new LinkedHashSet<>(written.values());
+			for (Address entry : grownOwners) {
+				Function owner = program.getFunctionManager().getFunctionAt(entry);
+				if (owner != null) {
+					growBodyToHandlers(program, owner);
 				}
 			}
 		}
