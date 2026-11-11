@@ -578,6 +578,10 @@ grm_decompiler_build_name() {
 			echo "12.2 patched + grm-gipk.25 two-leaf override switch, table-depth guard (candidate 2)" ;;
 		8d0417c1e1ccf97306e7769832795dc0d2e20c51e1cb023feb9005eac37545b4)
 			echo "12.2 patched + grm-gipk.25 + grm-hf5h.1/.2 index labels for shifted and split-table switches (candidate 3)" ;;
+		5ee2cb88fb38071b1398ab5255dd46ad619e533a7b8cf44fb9328af3a71e4955)
+			echo "12.2 patched + grm-gipk.25 + grm-hf5h.1/.2 + grm-hf5h.6 heritage splits wrap-around varnodes + opCollapseIndirectsForCopy size fix (candidate 4, NOT FOR INSTALL: prints return-address byte stores)" ;;
+		a3d9a384cb92a699854d1807678aba87b79ffc3c183d51841204035153753b2d)
+			echo "12.2 patched + grm-gipk.25 + grm-hf5h.1/.2 + grm-hf5h.6 wrap-around split only on collision + opCollapseIndirectsForCopy size fix (candidate 5)" ;;
 		588ec6c9c2a3fbebd7e1eaef6e8161b06b38fb815635ecb97c67b6de49f99496)
 			echo "12.2 patched, MinGW rebuild of ff1834fc's source (grm-gipk.25 control arm)" ;;
 		72a0ff7ed2032d3bc69703bf79db8d617197e00ea53519f4c3815d54c10662f0)
