@@ -582,6 +582,8 @@ grm_decompiler_build_name() {
 			echo "12.2 patched + grm-gipk.25 + grm-hf5h.1/.2 + grm-hf5h.6 heritage splits wrap-around varnodes + opCollapseIndirectsForCopy size fix (candidate 4, NOT FOR INSTALL: prints return-address byte stores)" ;;
 		a3d9a384cb92a699854d1807678aba87b79ffc3c183d51841204035153753b2d)
 			echo "12.2 patched + grm-gipk.25 + grm-hf5h.1/.2 + grm-hf5h.6 wrap-around split only on collision + opCollapseIndirectsForCopy size fix (candidate 5)" ;;
+		5ba203ed1385c004c622b5fa92efd882ada975ab51dae77a6011fcf4a8110352)
+			echo "12.2 patched + grm-gipk.25 + grm-hf5h.1/.2 + grm-hf5h.8 wrap-aware heritage ranges (no split) + opCollapseIndirectsForCopy size fix (candidate 6)" ;;
 		588ec6c9c2a3fbebd7e1eaef6e8161b06b38fb815635ecb97c67b6de49f99496)
 			echo "12.2 patched, MinGW rebuild of ff1834fc's source (grm-gipk.25 control arm)" ;;
 		72a0ff7ed2032d3bc69703bf79db8d617197e00ea53519f4c3815d54c10662f0)
