@@ -85,25 +85,53 @@ def fmt(mem, a):
     return n, (mn + ' ' + s).strip()
 
 
-def find(row_id):
+def _pin(row_id):
     sha = None
     for m in glob.glob('tools/banktest/realrom/manifest*.tsv'):
         for line in open(m, encoding='utf-8'):
             f = line.rstrip('\n').split('\t')
             if len(f) > 2 and f[0] == row_id:
                 sha = f[2]
-    if sha is None:
-        sys.exit('no manifest row ' + row_id)
+    return sha
+
+
+def _rom_files():
     # Same rule as realrom-test.sh (grm-3rel): a value containing ';' splits on ';' only (so a
     # dir name may contain spaces), otherwise on any whitespace.
     dirs = os.environ.get('GRM_ROM_DIR', '')
     dirs = [d.strip() for d in dirs.split(';')] if ';' in dirs else dirs.split()
     for d in filter(None, dirs):
         for p in glob.glob(os.path.join(d, '*')):
-            if p.lower().endswith('.nes') and \
-                    hashlib.sha256(open(p, 'rb').read()).hexdigest() == sha:
-                print(p)
-                return
+            if p.lower().endswith('.nes'):
+                yield p
+
+
+def find_many(row_ids):
+    """{row_id: path} for every row whose pinned image is under $GRM_ROM_DIR, hashing each file
+    once and stopping as soon as every row is found (find() per row rehashes whole dirs)."""
+    want = {}
+    for r in row_ids:
+        sha = _pin(r)
+        if sha:
+            want.setdefault(sha, []).append(r)
+    out = {}
+    for p in _rom_files():
+        if len(out) == sum(len(v) for v in want.values()):
+            break
+        sha = hashlib.sha256(open(p, 'rb').read()).hexdigest()
+        for r in want.get(sha, []):
+            out.setdefault(r, p)
+    return out
+
+
+def find(row_id):
+    sha = _pin(row_id)
+    if sha is None:
+        sys.exit('no manifest row ' + row_id)
+    for p in _rom_files():
+        if hashlib.sha256(open(p, 'rb').read()).hexdigest() == sha:
+            print(p)
+            return
     sys.exit('row %s (sha256 %s...) not found under $GRM_ROM_DIR' % (row_id, sha[:12]))
 
 
