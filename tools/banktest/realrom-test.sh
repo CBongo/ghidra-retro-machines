@@ -783,10 +783,13 @@ all_declared_manifests() {
 # trailing field and an empty one identically -- so this warns and continues. It exists
 # because the fix (a trailing tab on rows with no loader_opts) is invisible whitespace that
 # editors and paste buffers strip, so without a reminder the GitHub table quietly degrades.
+# The width is the file's own header's, not a constant: manifest-c64.tsv carries a ninth column
+# (member_sha256, for D64 container rows) that the cartridge manifests do not (grm-rhbg).
 for m in "${MANIFESTS[@]}"; do
-	ragged="$(tr -d '\r' < "$m" | awk -F'\t' '!/^#/ && NF && NF != 8 { printf "%s ", $1 }')"
+	width="$(tr -d '\r' < "$m" | awk -F'\t' '!/^#/ && $1 == "id" { print NF; exit }')"
+	ragged="$(tr -d '\r' < "$m" | awk -F'\t' -v w="${width:-8}" '!/^#/ && NF && NF != w { printf "%s ", $1 }')"
 	[ -z "$ragged" ] || {
-		echo "NOTE: $(basename "$m") has rows that are not 8 fields wide: $ragged" >&2
+		echo "NOTE: $(basename "$m") has rows that are not ${width:-8} fields wide: $ragged" >&2
 		echo "      GitHub's table view wants a uniform column count; pad with a trailing tab." >&2
 	}
 done

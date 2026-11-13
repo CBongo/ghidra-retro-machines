@@ -1,15 +1,15 @@
 id	title	sha256	mapper	board	golden	loader_opts	member	member_sha256
-c64_sg_loader	Summer Games loader.prg	067700034545087ea7e5894875c79ce59d8183baa691012d7e677c2a307b47c1	-	-	c64_sg_loader.dump
-c64_sg_a	Summer Games a.prg	69f4cd3e9083a6d211c8e4b4b96682564be58766b1b36d81c7606c9cf5910a99	-	-	c64_sg_a.dump
-c64_sg_h	Summer Games h.prg	926fb4a269089a80bf3cf68f56b487718f3aecbf5043f815b3bc271e921ea0da	-	-	c64_sg_h.dump
-c64_7cg_game	Seven Cities of Gold game.prg	c644efc6d28bfa168d05a1fc27ae79c24867cce8078d1e3b4375c207ee0ca9bd	-	-	c64_7cg_game.dump
-c64_7cg_ea2	Seven Cities of Gold ea2.prg	3b84d6b9f294a4c5af83c8dc219a566c51d1de13ea444a49a46ac8b59696b894	-	-	c64_7cg_ea2.dump
-c64_mm_loader	Marble Madness loader.prg	23899583700b3671790274932d20786e1e553c7346d8937990b2d15268107ff2	-	-	c64_mm_loader.dump
-c64_mm_ea	Marble Madness ea.prg	1a3eec6b610c8ec395abc95de9668d11d65e8af4ebb846b6c4851e6adbdbc5be	-	-	c64_mm_ea.dump
-c64_acs_a	ACS1 A.PRG	5b7b94850864ebe4c590ad890df1543515347ea42f883f80480429b0c6d621d3	-	-	c64_acs_a.dump
-c64_sid_obj	Sidplayer sid.obj.64.prg	848a6de43b834061e371b2af5252eaf8275bb292a5972eb641040eb79d368979	-	-	c64_sid_obj.dump
-c64_sid_player	Sidplayer sid player.64.prg	5ef3cc9e49dbad61acd3b61c53a45ad21d76af0c8d90df5ad11bf8bfedd29984	-	-	c64_sid_player.dump
-c64_acs_g	ACS1 G.PRG	79635850751092768ad757204f5acb69a947ad566a3c5eab72a97022247d85ef	-	-	c64_acs_g.dump
-c64_acs_b	ACS1 B.PRG	99d031beb09a65d095a3b5af1e8660eb11bec20fdcb40f1de86c24558e05c994	-	-	c64_acs_b.dump
-c64_acs_o	ACS1 O.PRG	7621b80676860356c15bbd35ee9a04d2623bcc2f5186a3a9c7ad29cb20c755b5	-	-	c64_acs_o.dump
+c64_sg_loader	Summer Games loader.prg	067700034545087ea7e5894875c79ce59d8183baa691012d7e677c2a307b47c1	-	-	c64_sg_loader.dump			
+c64_sg_a	Summer Games a.prg	69f4cd3e9083a6d211c8e4b4b96682564be58766b1b36d81c7606c9cf5910a99	-	-	c64_sg_a.dump			
+c64_sg_h	Summer Games h.prg	926fb4a269089a80bf3cf68f56b487718f3aecbf5043f815b3bc271e921ea0da	-	-	c64_sg_h.dump			
+c64_7cg_game	Seven Cities of Gold game.prg	c644efc6d28bfa168d05a1fc27ae79c24867cce8078d1e3b4375c207ee0ca9bd	-	-	c64_7cg_game.dump			
+c64_7cg_ea2	Seven Cities of Gold ea2.prg	3b84d6b9f294a4c5af83c8dc219a566c51d1de13ea444a49a46ac8b59696b894	-	-	c64_7cg_ea2.dump			
+c64_mm_loader	Marble Madness loader.prg	23899583700b3671790274932d20786e1e553c7346d8937990b2d15268107ff2	-	-	c64_mm_loader.dump			
+c64_mm_ea	Marble Madness ea.prg	1a3eec6b610c8ec395abc95de9668d11d65e8af4ebb846b6c4851e6adbdbc5be	-	-	c64_mm_ea.dump			
+c64_acs_a	ACS1 A.PRG	5b7b94850864ebe4c590ad890df1543515347ea42f883f80480429b0c6d621d3	-	-	c64_acs_a.dump			
+c64_sid_obj	Sidplayer sid.obj.64.prg	848a6de43b834061e371b2af5252eaf8275bb292a5972eb641040eb79d368979	-	-	c64_sid_obj.dump			
+c64_sid_player	Sidplayer sid player.64.prg	5ef3cc9e49dbad61acd3b61c53a45ad21d76af0c8d90df5ad11bf8bfedd29984	-	-	c64_sid_player.dump			
+c64_acs_g	ACS1 G.PRG	79635850751092768ad757204f5acb69a947ad566a3c5eab72a97022247d85ef	-	-	c64_acs_g.dump			
+c64_acs_b	ACS1 B.PRG	99d031beb09a65d095a3b5af1e8660eb11bec20fdcb40f1de86c24558e05c994	-	-	c64_acs_b.dump			
+c64_acs_o	ACS1 O.PRG	7621b80676860356c15bbd35ee9a04d2623bcc2f5186a3a9c7ad29cb20c755b5	-	-	c64_acs_o.dump			
 c64_acs_kernel	ACS1.D64 EA_BOOT_IMAGE.prg	469d583b4feb375e1407e74e183e3f6eae6c2b89d49e83dc6d7bedeed7bb0a63	-	-	c64_acs_kernel.dump	-	EA_BOOT_IMAGE.prg	719d9167b9abde7eef4f57dc1b6a328c2044e2021132835828cf790e1b469695
