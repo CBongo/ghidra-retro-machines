@@ -154,6 +154,66 @@ public class CrossBankJumpTableProgramTest extends AbstractBundledLanguageTest {
 		assertEquals(bankAddr(2, TABLE), resolved);
 	}
 
+	/**
+	 * grm-vk15: replaces the inline {@code LDX/STX} switch with {@code JSR $8020} (padded with
+	 * NOPs so everything after it keeps its address) and gives every bank the helper at
+	 * {@code $8020}.
+	 */
+	private void switchThroughHelper(String helper) throws Exception {
+		switchThroughHelper("20 20 80 ea ea ea", helper); // JSR $8020 ; NOP x3
+	}
+
+	private void switchThroughHelper(String caller, String helper) throws Exception {
+		inTx(program, "switch through a helper", () -> {
+			program.getListing().clearCodeUnits(bankAddr(0, 0x8000), bankAddr(0, 0x8040), false);
+		});
+		for (int b = 0; b <= 3; b++) {
+			builder.setBytes(bankAddr(b, 0x8020).toString(), helper, false);
+			builder.setBytes(bankAddr(b, 0x8000).toString(), caller, false);
+		}
+		builder.disassemble(bankAddr(0, 0x8000).toString(), 0x15, true);
+		builder.disassemble(bankAddr(0, 0x8020).toString(), helper.split(" ").length, true);
+	}
+
+	/** cv3's IRQ shape: the switch is a leaf helper the dispatch CALLS just before reading. */
+	@Test
+	public void stateIsCarriedOverACallToALeafSwitchHelper() throws Exception {
+		switchThroughHelper("ae 00 81 8e 00 81 60"); // LDX $8100 ; STX $8100 ; RTS
+		Instruction jmpInstr = program.getListing().getInstructionAt(bankAddr(0, 0x8012));
+		assertNotNull("JMP not disassembled", jmpInstr);
+		BankContext ctx = BankContext.forProgram(program);
+		BankState state = ctx.stateBefore(jmpInstr);
+		assertEquals("bank bits must be known after the helper call", 3, state.knownMask() & 3);
+		assertEquals(2, state.bits() & 3);
+		assertEquals(bankAddr(2, TABLE), ctx.resolve(jmpInstr, builder.addr(hex(TABLE))));
+	}
+
+	/**
+	 * cv3's exact shape: the caller passes the bank in A as an immediate, which the 6502 sleigh
+	 * exports through a p-code temporary, and the helper only stores it.
+	 */
+	@Test
+	public void stateIsCarriedOverACallThatPassesTheBankInA() throws Exception {
+		// LDA #$02 ; JSR $8020 ; NOP  /  helper: STA $8100 ; RTS (bank 2's byte at $8100 is 02)
+		switchThroughHelper("a9 02 20 20 80 ea", "8d 00 81 60");
+		Instruction jmpInstr = program.getListing().getInstructionAt(bankAddr(0, 0x8012));
+		BankContext ctx = BankContext.forProgram(program);
+		BankState state = ctx.stateBefore(jmpInstr);
+		assertEquals("bank bits must be known from the caller's A", 3, state.knownMask() & 3);
+		assertEquals(2, state.bits() & 3);
+	}
+
+	/** A helper that switches and switches back is not a leaf switch: nothing is assumed. */
+	@Test
+	public void noStateIsCarriedOverAHelperThatWritesTwice() throws Exception {
+		// LDX $8100 ; STX $8100 ; LDX $8101 ; STX $8101 ; RTS
+		switchThroughHelper("ae 00 81 8e 00 81 ae 01 81 8e 01 81 60");
+		Instruction jmpInstr = program.getListing().getInstructionAt(bankAddr(0, 0x8012));
+		BankContext ctx = BankContext.forProgram(program);
+		assertEquals(0, ctx.stateBefore(jmpInstr).knownMask() & 3);
+		assertNull(ctx.resolve(jmpInstr, builder.addr(hex(TABLE))));
+	}
+
 	@Test
 	public void noStateIsInventedAcrossAJoin() throws Exception {
 		// The LDA $9000,X is not preceded by the STX within the walk once a join is introduced:

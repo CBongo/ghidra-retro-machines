@@ -85,14 +85,17 @@ final class BankContext {
 	private final List<ConfiguredMechanism> mechanisms;
 	private final Map<String, Set<Integer>> bankUniverse;
 	private final Map<String, Integer> placementOverride;
+	private final BankState walkSeed;
 
 	private BankContext(Program program, BoardModel board, List<ConfiguredMechanism> mechanisms,
-			Map<String, Set<Integer>> bankUniverse, Map<String, Integer> placementOverride) {
+			Map<String, Set<Integer>> bankUniverse, Map<String, Integer> placementOverride,
+			BankState walkSeed) {
 		this.program = program;
 		this.board = board;
 		this.mechanisms = mechanisms;
 		this.bankUniverse = bankUniverse;
 		this.placementOverride = placementOverride;
+		this.walkSeed = walkSeed;
 	}
 
 	/** The board, bank universe and placement override, in the form the dataflow guards take. */
@@ -163,26 +166,210 @@ final class BankContext {
 			return null;
 		}
 		return new BankContext(program, board, mechanisms,
-			BankAnnotationAdapter.bankUniverse(program, board), placementOverride);
+			BankAnnotationAdapter.bankUniverse(program, board), placementOverride,
+			walkSeed(program, board));
+	}
+
+	/**
+	 * What every local walk may assume before its first instruction (grm-vk15): the fields a game
+	 * descriptor's {@code banking.fixed_after_init} declares never change after init, at their
+	 * initial value (the same bits {@link BankDataflowEngine} seeds asynchronous entries with),
+	 * and the layout-mode field at the mode the loader KNEW for this image
+	 * ({@link DescriptorHints#LAYOUT_MODE_PROPERTY}). A program imported with a known mode has
+	 * only that mode's windows, so no other mode is representable here anyway. Without the mode,
+	 * no address in a mode-planned window ever resolves from a local walk: cv3's IRQ never sees
+	 * the {@code $5100} write RESET made.
+	 */
+	private static BankState walkSeed(Program program, BoardModel board) {
+		int known = DescriptorHints.readFixedAfterInitMask(program) & board.mask();
+		int bits = board.initialState() & known;
+		Integer mode = DescriptorHints.readLayoutMode(program);
+		if (mode != null && board.modeField() != null) {
+			int m = board.modeField().positionedMask() & board.mask();
+			known |= m;
+			bits = (bits & ~m) | ((mode << board.modeField().lsb()) & m);
+		}
+		return new BankState(known, bits);
 	}
 
 	/**
 	 * The bank state provably in force just before {@code use} executes, from a local
 	 * straight-line walk: back through fall-through predecessors, stopping at a function entry,
 	 * at an instruction with any incoming non-fall-through flow (a join), after a call, or after
-	 * {@link #MAX_WALK} instructions. The state is seeded from the residence the run's first
-	 * instruction implies (code in overlay {@code WINDOW_B<n>} runs only while the field is n;
+	 * {@link #MAX_WALK} instructions. A run that stops at a call to a leaf switch helper continues
+	 * from the state that helper leaves ({@link #stateAfterLeafCall}, grm-vk15). Otherwise the
+	 * state is seeded from {@link #walkSeed} (fixed-after-init fields and the loader-known layout
+	 * mode) and the residence the run's first instruction implies (code in overlay
+	 * {@code WINDOW_B<n>} runs only while the field is n;
 	 * {@link BankDataflowEngine#clampToResidence}), then each instruction before {@code use} is
 	 * applied through the board's mechanisms. Bits nothing proved stay unknown.
 	 */
 	BankState stateBefore(Instruction use) {
+		return stateBefore(use, MAX_CALL_STEPS);
+	}
+
+	/**
+	 * How many calls {@link #stateBefore} may step back over (grm-vk15). Each step is one more
+	 * straight-line run, so this also bounds the walk to {@code (MAX_CALL_STEPS + 1) * MAX_WALK}.
+	 */
+	static final int MAX_CALL_STEPS = 2;
+
+	private BankState stateBefore(Instruction use, int callSteps) {
 		List<Instruction> run = straightLineRun(use);
-		BankState state = BankDataflowEngine.clampToResidence(run.get(0).getMinAddress(),
-			new BankState(0, 0), board, new HashMap<>());
+		BankState state = null;
+		if (callSteps > 0) {
+			// grm-vk15: a run that starts right after a call to a LEAF switch helper (cv3's IRQ:
+			// LDA #$82 / JSR $e2e8, where e2e8 is STA $5115 / RTS) inherits the state the helper
+			// leaves, instead of knowing nothing.
+			state = stateAfterLeafCall(run.get(0), callSteps - 1);
+		}
+		if (state == null) {
+			state = BankDataflowEngine.clampToResidence(run.get(0).getMinAddress(), walkSeed,
+				board, new HashMap<>());
+		}
 		for (Instruction step : run.subList(0, run.size() - 1)) {
 			state = BankDataflowEngine.applyDirectSwitch(program, step, state, mechanisms);
 		}
 		return state;
+	}
+
+	/**
+	 * The bank state just after the call that falls into {@code head}, when that call goes to a
+	 * LEAF helper: one straight-line run from its entry to an {@code RTS}, with no branch, jump or
+	 * call, and at most one mechanism write, which must pin the mechanism's whole field under the
+	 * registers the caller's own straight-line run gives it ({@link #switchedByEntry}). A helper
+	 * with no write passes the state through. {@code null} when {@code head} does not follow a
+	 * direct call, or the callee is anything more than that: a helper that switches, works and
+	 * restores (a far-call trampoline) must not leave its inner bank behind, so nothing longer
+	 * than a leaf is trusted here. The whole-program dataflow is the place for the rest.
+	 */
+	private BankState stateAfterLeafCall(Instruction head, int callSteps) {
+		Listing listing = program.getListing();
+		if (hasIncomingNonFallThroughFlow(head)) {
+			return null;
+		}
+		Instruction call = listing.getInstructionBefore(head.getMinAddress());
+		if (call == null || !call.getFlowType().isCall() || call.getFlowType().isComputed() ||
+			!head.getMinAddress().equals(call.getFallThrough())) {
+			return null;
+		}
+		Address[] flows = call.getFlows();
+		if (flows.length != 1) {
+			return null;
+		}
+		Address entry = flows[0];
+		// The callee's run: entry to RTS, straight line, at most one mechanism write.
+		Address writeSite = null;
+		Instruction cur = listing.getInstructionAt(entry);
+		boolean returns = false;
+		for (int i = 0; cur != null && i < MAX_WALK; i++) {
+			for (ConfiguredMechanism cm : mechanisms) {
+				if (cm.strategy().computeSwitchOutcome(program, cur, MechanismState.unknown()) != null) {
+					if (writeSite != null) {
+						return null; // a second write: not a plain switch helper
+					}
+					writeSite = cur.getMinAddress();
+					break;
+				}
+			}
+			var ft = cur.getFlowType();
+			if (ft.isTerminal()) {
+				returns = "RTS".equals(cur.getMnemonicString());
+				break;
+			}
+			if (ft.isJump() || ft.isCall() || ft.isConditional() || ft.isComputed()) {
+				return null;
+			}
+			Address next = cur.getFallThrough();
+			cur = next == null ? null : listing.getInstructionAt(next);
+		}
+		if (!returns) {
+			return null;
+		}
+		BankState before = stateBefore(call, callSteps);
+		if (writeSite == null) {
+			return before;
+		}
+		Map<String, Integer> regs = registersBefore(straightLineRun(call));
+		EntrySwitch sw = switchedByEntry(entry, regByte(regs.get("A")), regByte(regs.get("X")),
+			regByte(regs.get("Y")));
+		if (sw == null || !sw.writeSite().equals(writeSite)) {
+			return null;
+		}
+		return BankDataflowEngine.overwrite(before, sw.state(), sw.state().knownMask());
+	}
+
+	private static PartialByte regByte(Integer v) {
+		return v == null ? PartialByte.unknown() : PartialByte.fullyKnown(v);
+	}
+
+	/**
+	 * A, X and Y as constants just before the LAST instruction of {@code run}, from its p-code: a
+	 * {@code COPY} of a constant or of another tracked register propagates, any other write to one
+	 * makes it unknown. Registers only, on purpose: a helper's argument is a register, and memory
+	 * stores (an interrupt handler's {@code PHA} prologue) cannot change one. (grm-vk15; the
+	 * richer {@link IndirectJumpConstantPointer#walkToAddress} gives up on the first store whose
+	 * address it cannot pin, which every push is.)
+	 */
+	private Map<String, Integer> registersBefore(List<Instruction> run) {
+		Map<String, Integer> regs = new HashMap<>();
+		for (Instruction step : run.subList(0, run.size() - 1)) {
+			// The sleigh spec exports an immediate through a temporary (LDA #$82 is
+			// "tmp = 0x82; A = tmp"), so constants are followed through unique varnodes, which
+			// live only within one instruction's p-code.
+			Map<Long, Integer> temps = new HashMap<>();
+			for (ghidra.program.model.pcode.PcodeOp op : step.getPcode()) {
+				ghidra.program.model.pcode.Varnode out = op.getOutput();
+				Integer value = null;
+				if (op.getOpcode() == ghidra.program.model.pcode.PcodeOp.COPY) {
+					ghidra.program.model.pcode.Varnode in = op.getInput(0);
+					if (in.isConstant()) {
+						value = (int) (in.getOffset() & 0xff);
+					}
+					else if (in.isUnique()) {
+						value = temps.get(in.getOffset());
+					}
+					else {
+						String from = trackedRegister(in);
+						value = from == null ? null : regs.get(from);
+					}
+				}
+				if (out != null && out.isUnique()) {
+					if (value == null) {
+						temps.remove(out.getOffset());
+					}
+					else {
+						temps.put(out.getOffset(), value);
+					}
+					continue;
+				}
+				String name = trackedRegister(out);
+				if (name == null) {
+					continue;
+				}
+				if (value == null) {
+					regs.remove(name);
+				}
+				else {
+					regs.put(name, value);
+				}
+			}
+		}
+		return regs;
+	}
+
+	/** "A", "X" or "Y" when {@code vn} is exactly that one-byte register, else null. */
+	private String trackedRegister(ghidra.program.model.pcode.Varnode vn) {
+		if (vn == null || !vn.isRegister() || vn.getSize() != 1) {
+			return null;
+		}
+		ghidra.program.model.lang.Register r =
+			program.getRegister(vn.getAddress(), vn.getSize());
+		if (r == null) {
+			return null;
+		}
+		String name = r.getName().toUpperCase(java.util.Locale.ROOT);
+		return name.equals("A") || name.equals("X") || name.equals("Y") ? name : null;
 	}
 
 	/**
@@ -224,11 +411,23 @@ final class BankContext {
 	 */
 	boolean switchedInCopyReadsTableIn(Instruction use, AddressSpace space, long lo, long hi) {
 		long end = use.getMinAddress().getOffset();
+		List<Instruction> run = straightLineRun(use);
 		Address at;
 		try {
-			at = space.getAddress(straightLineRun(use).get(0).getMinAddress().getOffset());
+			at = space.getAddress(run.get(0).getMinAddress().getOffset());
 		}
 		catch (AddressOutOfBoundsException e) {
+			return false;
+		}
+		if (program.getMemory().getBlock(at) == null) {
+			// grm-vk15: the routine lies outside the switched window (cv3's IRQ in the fixed bank),
+			// so the switch does not replace it: the bytes that run are the listing's own.
+			for (Instruction step : run) {
+				Long base = indexedLoadBase(step);
+				if (base != null && base >= lo && base < hi) {
+					return true;
+				}
+			}
 			return false;
 		}
 		ghidra.app.util.PseudoDisassembler pd = new ghidra.app.util.PseudoDisassembler(program);
