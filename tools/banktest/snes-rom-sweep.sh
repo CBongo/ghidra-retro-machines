@@ -104,7 +104,8 @@ grm_preflight snes-loader
 grm_print_identity_banners ab row
 grm_headless_timeout_init 200 330
 WORK="$(grm_work_dir sweep)" || exit 1
-trap 'rm -rf "$WORK"' EXIT
+# Not a bare trap: grm_preflight's stage-reader hook must survive (grm-r324).
+grm_on_exit "rm -rf '$WORK'"
 echo "== sweep: ${#ROMS[@]} ROM(s), script $SCRIPT_NAME, analysis=$ANALYSIS, batch=$BATCH_N, timeout $TIMEOUT_BANNER =="
 echo "== out: $OUT   work: $WORK =="
 

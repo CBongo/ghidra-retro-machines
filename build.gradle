@@ -1110,4 +1110,47 @@ task stageExtensionForTests(type: Sync) {
 	}
 
 	into grmExtTarget
+
+	// Reader guard (bead grm-r324). Every runner registers itself as a READER of this staged
+	// install for its whole run (lib/common.sh grm_register_stage_reader: a file
+	// build/ghidra-home/.readers/<pid>). Re-staging under a live reader silently swaps the
+	// classes a running gate loads while its banner, EXT_ID and cache key still name the old
+	// build -- the misattribution grm-4t2d exists to remove. The guard sits in doFirst
+	// because Gradle runs task actions ONLY when the task is out of date: two gates on an
+	// unchanged tree stay UP-TO-DATE, never reach this, and never serialize. The runner that
+	// is staging for itself is excluded via GRM_STAGE_READER (the gradle daemon is not its
+	// child, so ancestry cannot identify it). A file whose pid is dead, or whose pid now names
+	// a process started AFTER the file was written (pid reuse), is stale and removed.
+	def grmReadersDir = new File(grmSettingsBase, '.readers')
+	def grmSelfReader = providers.environmentVariable('GRM_STAGE_READER').orElse('')
+	doFirst {
+		def self = grmSelfReader.get()
+		def live = []
+		(grmReadersDir.listFiles() ?: []).each { File f ->
+			if (f.name == self) {
+				return
+			}
+			def alive = false
+			if (f.name.isLong()) {
+				def ph = ProcessHandle.of(f.name.toLong())
+				if (ph.isPresent() && ph.get().isAlive()) {
+					def start = ph.get().info().startInstant()
+					alive = !(start.isPresent() && start.get().toEpochMilli() > f.lastModified())
+				}
+			}
+			if (alive) {
+				live << "pid ${f.name} (${f.text.trim()})"
+			} else {
+				f.delete()
+			}
+		}
+		if (live) {
+			throw new GradleException("refusing to re-stage ${grmSettingsBase}: the staged " +
+				"extension would change, and a gate is running against the CURRENT one in this " +
+				"worktree: ${live.join(', ')}. Re-staging now would swap its classes mid-run " +
+				"while its banner and cache key still name the old build (grm-r324). Wait for " +
+				"it to finish, or run in a separate git worktree. If that process is not a " +
+				"gate, delete the file under ${grmReadersDir}.")
+		}
+	}
 }

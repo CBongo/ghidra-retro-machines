@@ -346,8 +346,40 @@ grm_lock_work_dir() {
 		fi
 	fi
 	echo "$$" >"$lock/pid"
-	# shellcheck disable=SC2064 # expand $lock now: the path is fixed for this run
-	trap "rm -rf '$lock'" EXIT
+	grm_on_exit "rm -rf '$lock'"
+}
+
+# Composable EXIT cleanup (bead grm-r324). A bare `trap ... EXIT` replaces any earlier one, and
+# a runner can hold more than one thing to release (a work-dir lock, a stage-reader file), so
+# every lib/runner cleanup registers here instead. Hooks run in registration order.
+GRM_EXIT_HOOKS=()
+grm_run_exit_hooks() {
+	local h
+	for h in ${GRM_EXIT_HOOKS[@]+"${GRM_EXIT_HOOKS[@]}"}; do
+		eval "$h" || true
+	done
+}
+grm_on_exit() {
+	GRM_EXIT_HOOKS+=("$1")
+	trap grm_run_exit_hooks EXIT
+}
+
+# Register this run as a READER of the staged extension in build/ghidra-home for its lifetime
+# (bead grm-r324). build.gradle's stageExtensionForTests refuses to re-stage a CHANGED extension
+# while another live reader exists -- otherwise a second gate started after a Java edit would swap
+# the classes under a running one whose banner, EXT_ID and cache key still name the old build.
+# The file is named by the WINDOWS pid under git bash (/proc/$$/winpid), because the gradle daemon
+# checks liveness with Java's ProcessHandle, which cannot see MSYS pids; elsewhere $$ is the OS pid.
+# GRM_STAGE_READER is exported so (a) gradle skips our own file when we stage, and (b) a nested
+# runner in the same run (build-and-test.sh -> run-banktest.sh) shares this registration.
+grm_register_stage_reader() {
+	[ -z "${GRM_STAGE_READER:-}" ] || return 0
+	local dir="$REPO_ROOT/build/ghidra-home/.readers" pid
+	pid="$(cat "/proc/$$/winpid" 2>/dev/null || echo "$$")"
+	mkdir -p "$dir"
+	printf '%s (bash pid %s)\n' "$(basename "$0")" "$$" >"$dir/$pid"
+	export GRM_STAGE_READER="$pid"
+	grm_on_exit "rm -f '$dir/$pid'"
 }
 
 # The work BASE grm_work_dir() creates run dirs under -- factored out (bead grm-uqhd) so
@@ -1044,6 +1076,9 @@ grm_preflight() {
 		grm_ensure_extension_staged
 	fi
 	if [ "${GRM_SHARED_GHIDRA_INSTALL:-}" != 1 ]; then
+		# Before anything reads the install. --no-build runs register too: they read it all the
+		# same (grm-r324).
+		grm_register_stage_reader
 		grm_settings_base_fallback "$1"
 	fi
 	grm_apply_settings_base
