@@ -709,7 +709,7 @@ final class BankAnnotationAdapter {
 		if (bankUniverse.isEmpty()) {
 			return null;
 		}
-		int effective = state.effective(board.initialState(), board.mask());
+		int effective = board.effective(state, board.mask());
 		for (ComputedWindowModel w : board.computedWindows().values()) {
 			ImpossibleBank bad =
 				checkBank(board, bankUniverse, w.name(), w.name(), w.field(), state, effective);
@@ -1441,7 +1441,7 @@ final class BankAnnotationAdapter {
 	private static String bankCommentBody(BankState newState, BoardModel board,
 			Map<String, Set<Integer>> bankUniverse, String via) {
 		int mask = board.mask();
-		int effective = newState.effective(board.initialState(), mask);
+		int effective = board.effective(newState, mask);
 		String desc = describeState(board, bankUniverse, effective);
 
 		// Whether describeState resolved this state to an occupant ROW (enumerated board,
@@ -1469,6 +1469,10 @@ final class BankAnnotationAdapter {
 		else {
 			List<String> known = new ArrayList<>();
 			List<String> assumed = new ArrayList<>();
+			// Unknown bits an interrupt handler's constant exit defaults (grm-5tl.21): named
+			// apart from "assumed from initial" -- a default, not a fact, with its own source.
+			int defaulted = board.interruptDefault().knownMask();
+			int defaultedUnknown = 0;
 			// Walk every tracked state bit, not just the low 8: boards can carry >8
 			// (nes-serialtest = 9). mask is a contiguous low mask ((1<<N)-1), so its
 			// width is N; the mask guard below still skips any bit outside it.
@@ -1483,9 +1487,19 @@ final class BankAnnotationAdapter {
 				if ((newState.knownMask() & bitMask) != 0) {
 					known.add(name + "=" + ((newState.bits() & bitMask) != 0 ? 1 : 0));
 				}
+				else if ((defaulted & bitMask) != 0) {
+					defaultedUnknown |= bitMask;
+				}
 				else {
 					assumed.add(name);
 				}
+			}
+			String defaultText = board.interruptDefault().describe(defaultedUnknown);
+			if (defaultText != null) {
+				// `via` sits between the head and the known/assumed breakdown, as it always has.
+				return headQ + via + " [known: " + String.join(",", known) +
+					(assumed.isEmpty() ? "" : "; assumed from initial: " + String.join(",", assumed)) +
+					"; " + defaultText + "]";
 			}
 			// `via` sits between the head and the known/assumed breakdown, as it always has.
 			return headQ + via + " [known: " + String.join(",", known) +
@@ -2178,7 +2192,7 @@ final class BankAnnotationAdapter {
 			BankCommentProvenance provenance, boolean makePrimary, Set<BaseRefKey> replaced,
 			Set<BaseRefKey> keepBase, OverlayRefProvenance.Placements placed) {
 
-		int effective = inState.effective(board.initialState(), board.mask());
+		int effective = board.effective(inState, board.mask());
 		Map<String, String> stateRow = board.occupantByWindowForState().get(effective);
 		// An enumerated window's occupant row is keyed by the WHOLE effective state, so the
 		// resolution is only as certain as every bit of it.
@@ -2369,7 +2383,7 @@ final class BankAnnotationAdapter {
 	static OffsetResolution resolveOffsetOccupant(BoardModel board,
 			Map<String, Set<Integer>> bankUniverse, BankState state, long offset,
 			Map<String, Integer> placementOverride) {
-		int effective = state.effective(board.initialState(), board.mask());
+		int effective = board.effective(state, board.mask());
 		boolean wholeStateKnown = (state.knownMask() & board.mask()) == board.mask();
 		WindowModel window = findWindow(board.windows(), offset);
 		if (window != null) {
@@ -2429,7 +2443,7 @@ final class BankAnnotationAdapter {
 		}
 		if (board.modeField() != null) {
 			int modeValue =
-				board.modeField().valueIn(state.effective(board.initialState(), board.mask()));
+				board.modeField().valueIn(board.effective(state, board.mask()));
 			ModeWindowModel ma = findModeWindowAt(board.modeWindows(), modeValue, a);
 			ModeWindowModel mb = findModeWindowAt(board.modeWindows(), modeValue, b);
 			return ma != null && mb != null && ma.name().equals(mb.name());

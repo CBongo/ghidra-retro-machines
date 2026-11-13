@@ -420,9 +420,9 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			return false;
 		}
 
-		BoardModel board = BoardModel.parse(map, log, getName(), mapPath,
+		BoardModel parsedBoard = BoardModel.parse(map, log, getName(), mapPath,
 			DescriptorHints.readResolvedInitialState(program), DescriptorHints.readLayoutMode(program));
-		if (board == null) {
+		if (parsedBoard == null) {
 			return true;
 		}
 
@@ -431,7 +431,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 
 		JsonObject banking = map.getAsJsonObject("banking");
 		List<ConfiguredMechanism> mechanisms = BankStrategyRegistry.configureStrategies(this,
-			program, banking.getAsJsonArray("mechanisms"), board, log);
+			program, banking.getAsJsonArray("mechanisms"), parsedBoard, log);
 		if (mechanisms.isEmpty()) {
 			AnalyzerLog.warn(this, log, "no usable bank-switch strategy in " + mapPath +
 				" banking; skipping bank-state analysis");
@@ -447,7 +447,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// cannot change under the analysis. Hoisted above BOTH dataflow passes: bank-mirror
 		// derivation asks the same realized-bank question (grm-mej.2), and pass 1 needs it to
 		// keep state out of base-space bytes the flowing bank does not map (grm-dos9.5).
-		Map<String, Set<Integer>> bankUniverse = BankAnnotationAdapter.bankUniverse(program, board);
+		Map<String, Set<Integer>> bankUniverse = BankAnnotationAdapter.bankUniverse(program, parsedBoard);
 		// bead grm-hb6.4: banking.switch_sites -- disassemble (and, for entry: true, create a
 		// function at) each hinted address so the engine's worklist can see it; the engine itself
 		// seeds them. Idempotent, and read from the program property so a re-analysis picks up a
@@ -459,8 +459,8 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		}
 		DataflowResult flow =
 			runDataflow(program, monitor, listing,
-				BankDataflowEngine.DataflowInputs.of(mechanisms, board)
-						.withBankResolution(new HelperDiscovery.BankResolution(board,
+				BankDataflowEngine.DataflowInputs.of(mechanisms, parsedBoard)
+						.withBankResolution(new HelperDiscovery.BankResolution(parsedBoard,
 							bankUniverse, placementOverride)));
 
 		// Order is load-bearing. findCallEdgeWrappers runs LAST so its relay lookups see
@@ -495,7 +495,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// configured strategy BEFORE the second pass so a strategy that consumes them sees them
 		// at every site rather than at the ones pass 2 happens to revisit. ---
 		BankMirrors mirrors =
-			BankAnnotationAdapter.deriveBankMirrors(program, board, bankUniverse, flow, helpers,
+			BankAnnotationAdapter.deriveBankMirrors(program, parsedBoard, bankUniverse, flow, helpers,
 				placementOverride);
 		// bead grm-mej.7: a game descriptor's bank_identifying_offsets hint licenses ONLY the
 		// membership premise of a shift-encoded identifying cell, and only once it verifies
@@ -542,7 +542,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			log.appendMsg(problem);
 		}
 		List<SaveRestoreTrampolines.FieldPairing> pairings =
-			BankStackBrackets.resolvePairings(board, pairedFields);
+			BankStackBrackets.resolvePairings(parsedBoard, pairedFields);
 		for (HelperModel h : helpers.values()) {
 			SaveRestoreTrampolines.Classification c = SaveRestoreTrampolines.classify(program, h,
 				mirrors, flow.switchResults().keySet(), saveCells, pairings);
@@ -576,18 +576,18 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// bead grm-hb6.26: banking.shadow_commits -- validated once here against the modelled
 		// helpers; a hint that fails is reported (below) and not applied.
 		ShadowCommits.Plan shadowCommits =
-			ShadowCommits.plan(program, board, helpers, flow.switchResults());
+			ShadowCommits.plan(program, parsedBoard, helpers, flow.switchResults());
 		for (String mode : shadowCommits.modeLines()) {
 			AnalyzerLog.info(this, mode);
 		}
 		if (!helpers.isEmpty() || !mirrors.isEmpty()) {
 			flow = runDataflow(program, monitor, listing,
-				BankDataflowEngine.DataflowInputs.of(mechanisms, board)
+				BankDataflowEngine.DataflowInputs.of(mechanisms, parsedBoard)
 						.withHelpers(helpers)
 						.withRestoringTrampolines(restoringTrampolines)
 						.withSecondTierRelaySites(secondTier.relayCallSites())
 						.withBracketClaims(bracketClaims)
-						.withBankResolution(new HelperDiscovery.BankResolution(board,
+						.withBankResolution(new HelperDiscovery.BankResolution(parsedBoard,
 							bankUniverse, placementOverride))
 						.withShadowCommits(shadowCommits));
 		}
@@ -626,6 +626,17 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		Set<Address> asyncEntries = DescriptorHints.parseAsyncEntryPoints(program);
 		// `flow` and `mirrors` are reassigned above; the call-site classifier's lazy supplier needs
 		// effectively final copies.
+		// The game's default for bits nothing pins down, learned from how its interrupt handlers
+		// exit (grm-5tl.21). Computed from the CONVERGED states and used only from here on: it is
+		// a fallback for annotation, never an input to the fixpoint, so the dataflow above ran
+		// against the plain parsed board.
+		InterruptExitDefault.Result interruptDefault = InterruptExitDefault.compute(listing,
+			asyncEntries, flow.stateIn(), parsedBoard.fieldSpecs());
+		if (!interruptDefault.isEmpty()) {
+			AnalyzerLog.info(this, "interrupt-exit default (fallback for unknown bank state, " +
+				"not a fact): " + interruptDefault.describe(~0));
+		}
+		BoardModel board = parsedBoard.withInterruptDefault(interruptDefault);
 		DataflowResult finalFlow = flow;
 		BankMirrors finalMirrors = mirrors;
 		for (Map.Entry<Address, BankState> entry : flow.stateIn().entrySet()) {
@@ -1376,7 +1387,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	private static String multiValuedWarning(BoardModel board, List<BankState> arms) {
 		List<Integer> effective = new ArrayList<>();
 		for (BankState arm : arms) {
-			effective.add(arm.effective(board.initialState(), board.mask()));
+			effective.add(board.effective(arm, board.mask()));
 		}
 		Collections.sort(effective); // the arms come in edge order; the reader wants numeric
 		List<String> values = new ArrayList<>();

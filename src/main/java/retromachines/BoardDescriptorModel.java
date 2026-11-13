@@ -229,7 +229,52 @@ final class BoardDescriptorModel {
 			Map<Integer, Map<String, String>> occupantByWindowForState,
 			Map<String, String> homeOccupantByWindow, FieldSpec modeField, int homeModeValue,
 			List<ModeWindowModel> modeWindows, BankWrap bankWrap,
-			List<FixedWindowModel> fixedWindows) {
+			List<FixedWindowModel> fixedWindows,
+			InterruptExitDefault.Result interruptDefault) {
+
+		/**
+		 * Board with no interrupt-exit default (everything the parser and hand-built test boards
+		 * produce): the fallback for unknown bits is {@code initial_state} alone.
+		 */
+		BoardModel(int mask, int initialState, List<String> stateBitNames,
+				List<FieldSpec> fieldSpecs, Map<String, WindowModel> windows,
+				Map<String, ComputedWindowModel> computedWindows,
+				Map<Integer, Map<String, String>> occupantByWindowForState,
+				Map<String, String> homeOccupantByWindow, FieldSpec modeField, int homeModeValue,
+				List<ModeWindowModel> modeWindows, BankWrap bankWrap,
+				List<FixedWindowModel> fixedWindows) {
+			this(mask, initialState, stateBitNames, fieldSpecs, windows, computedWindows,
+				occupantByWindowForState, homeOccupantByWindow, modeField, homeModeValue,
+				modeWindows, bankWrap, fixedWindows, InterruptExitDefault.Result.NONE);
+		}
+
+		/**
+		 * This board with the interrupt-exit default (bead grm-5tl.21) attached. Everything
+		 * else -- notably {@code initialState}, which still states the power-on value -- is
+		 * unchanged.
+		 */
+		BoardModel withInterruptDefault(InterruptExitDefault.Result def) {
+			return new BoardModel(mask, initialState, stateBitNames, fieldSpecs, windows,
+				computedWindows, occupantByWindowForState, homeOccupantByWindow, modeField,
+				homeModeValue, modeWindows, bankWrap, fixedWindows,
+				def == null ? InterruptExitDefault.Result.NONE : def);
+		}
+
+		/**
+		 * The state assumed for bits dataflow leaves UNKNOWN: {@code initialState} with the
+		 * fields an interrupt handler's constant exit defaults overwritten (bead grm-5tl.21).
+		 * Use this, never {@link #initialState}, wherever the question is "what do we assume
+		 * where we know nothing"; {@code initialState} answers "what does the board power up
+		 * holding". {@link #effective} is the one place that applies it.
+		 */
+		int fallbackState() {
+			return interruptDefault.apply(initialState);
+		}
+
+		/** {@link BankState#effective} against {@link #fallbackState}. */
+		int effective(BankState state, int stateMask) {
+			return state.effective(fallbackState(), stateMask);
+		}
 
 		/** Board without fixed-window declarations (hand-built boards in tests). */
 		BoardModel(int mask, int initialState, List<String> stateBitNames,
