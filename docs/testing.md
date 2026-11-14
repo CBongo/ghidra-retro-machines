@@ -862,9 +862,9 @@ it is never a `run-banktest.sh` chunk (whose `all` would otherwise pull it in).
   This replaced a design where a flag (`--gme`/`--all`/`--snes`) selected a platform-specific
   subset, and where a bare `check` silently meant "the curated NES set, one-third of the tier".
   Those flags were deprecated aliases until grm-x4y1.5 removed them; they now exit 2 with a hint
-  (`--gme`→`nes-gme`, `--all`→`nes` — both NES manifests, 36 rows today — `--snes`→`snes`). The
+  (`--gme`→`nes-gme`, `--all`→`nes` — both NES manifests, 37 rows today — `--snes`→`snes`). The
   *bare word* `all` is the one that changed meaning: before grm-ughg there was no such word, and
-  now it spans every platform (77 rows today).
+  now it spans every platform (78 rows today).
 - **A bare `check` now runs `core`, not the curated NES set.** `core` (`realrom/sets.tsv`) is a
   new always-run floor — five rows (kicarus, cv2, tmnt, smb, zelda) drawn across both NES
   manifests, measured at ~46s — added beneath the full-tier requirement below for changes that

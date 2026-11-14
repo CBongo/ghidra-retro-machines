@@ -1,0 +1,65 @@
+=== REALROM BEGIN ===
+REALROM program rygar.nes
+REALROM sha256 520ef6d7f6beb0eec5f67b57f8ecef284534ba50bfccd751a6be04b512cf9d32
+REALROM prgsha256 9bef1813dbcfa003b3b1978a66a8da3ff59c93dd74f1332801515aa4b633c51e
+REALROM map machines/nes-uxrom.map
+REALROM placement NONE
+REALROM block PRG_HI c000-ffff overlay=false
+REALROM block PRG_LO 8000-bfff overlay=false
+REALROM block PRG_LO_B1 8000-bfff overlay=true
+REALROM block PRG_LO_B2 8000-bfff overlay=true
+REALROM block PRG_LO_B3 8000-bfff overlay=true
+REALROM block PRG_LO_B4 8000-bfff overlay=true
+REALROM block PRG_LO_B5 8000-bfff overlay=true
+REALROM block PRG_LO_B6 8000-bfff overlay=true
+REALROM block PRG_LO_B7 8000-bfff overlay=true
+REALROM block RAM 0000-07ff overlay=false
+REALROM count blocks.total 12
+REALROM count blocks.overlay 7
+REALROM count refs.intoOverlay.retargeted 3
+REALROM count refs.intoOverlay.intraOverlay 42
+REALROM count instrs.inOverlay 258
+REALROM count bankComments 2
+REALROM count warnings 2
+REALROM count notes 1
+REALROM count symbols 18
+REALROM count jumptable.wordArrays 0
+REALROM count jumptable.planarArrays 0
+REALROM sample.bankcomment c111 bank -> 6 (bank=6) via FUN_c0ec
+REALROM sample.bankcomment c144 bank -> 3 (bank=3) via FUN_c0ec
+REALROM sample.ref 8007 -> PRG_LO_B3::802e CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8016 -> PRG_LO_B3::8026 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8020 -> PRG_LO_B3::806b UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 802b -> PRG_LO_B3::806b UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8030 -> PRG_LO_B3::803d CONDITIONAL_JUMP primary=true
+REALROM sample.ref 803b -> PRG_LO_B3::8034 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 803d -> PRG_LO_B3::80aa UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8042 -> PRG_LO_B3::805f CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8052 -> PRG_LO_B3::805a CONDITIONAL_JUMP primary=true
+REALROM sample.ref 805d -> PRG_LO_B3::8048 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8066 -> PRG_LO_B3::8061 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 806f -> PRG_LO_B3::8139 DATA primary=true
+REALROM sample.ref 8074 -> PRG_LO_B3::813a DATA primary=true
+REALROM sample.ref 80a5 -> PRG_LO_B3::8082 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 80b8 -> PRG_LO_B3::8131 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 80cb -> PRG_LO_B3::80cf CONDITIONAL_JUMP primary=true
+REALROM sample.ref 80d0 -> PRG_LO_B3::8674 DATA primary=false
+REALROM sample.ref 80d0 -> PRG_LO_B3::8774 DATA primary=true
+REALROM sample.ref 80d5 -> PRG_LO_B3::8674 DATA primary=false
+REALROM sample.ref 80d5 -> PRG_LO_B3::8774 DATA primary=true
+REALROM sample.ref 8107 -> PRG_LO_B3::8126 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8116 -> PRG_LO_B3::8126 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 811d -> PRG_LO_B3::8125 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8129 -> PRG_LO_B3::8138 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 812d -> PRG_LO_B3::80ec CONDITIONAL_JUMP primary=true
+REALROM sample.ref.truncated 25 of 45
+REALROM sample.warn c0ef [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn c18d [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c0ec, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
+REALROM sample.note c085 [CopyLoopAnalyzer] copy-shaped loop RAM:c0ab -> RAM:00c4 (8 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.symbol c000 RESET IMPORTED primary=true
+REALROM sample.symbol c0f6 IRQ IMPORTED primary=false
+REALROM sample.symbol c0f6 NMI IMPORTED primary=true
+REALROM sample.symbol fffa NMI_VEC IMPORTED primary=true
+REALROM sample.symbol fffc RESET_VEC IMPORTED primary=true
+REALROM sample.symbol fffe IRQ_VEC IMPORTED primary=true
+=== REALROM END ===
