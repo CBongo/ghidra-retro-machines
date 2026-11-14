@@ -43,14 +43,7 @@ bash tools/banktest/realrom-test.sh nominate <romdir>   # board-gap survey
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
-### 1.17 WeaponLord: is `$E9:51C6`/`$51C8` one jump table read from two offsets? (`grm-gipk.16.11`)
-
-- [ ] **Question.** The new overlap rule (Timecop `$AF90`/`$AF92`) also merged a second pair:
-  `JMP ($51C6,X)` (file offset `0x296EAF`) and `JSR ($51C8,X)` (`0x296CB6`) now share one
-  3-entry table, `37ce 51b7 5198`, ending before `70a9`. Before, `$51C6` kept 1 entry and
-  `$51C8` kept 2. Is `$E9:37CE` a real handler, and is the shared 3-entry reading right? If
-  entry 0 is not code, `$51C6` is a different table, and the one-entry overlap rule needs a
-  stricter test than alignment.
+_No open items._
 
 ---
 
@@ -238,6 +231,7 @@ Agents don't write into your ROM library or other personal directories.
 
 | question | answer | bead |
 |---|---|---|
+| WeaponLord `$E9:51C6`/`$51C8` (1.17): is the overlap-merged 3-entry table `37ce 51b7 5198` right? | **Right in effect; keep the overlap rule as is (owner, 2026-11-14).** Index 0 is never dispatched through `$51C6`: the branch at `$E9:6EAC` skips the `JMP ($51C6,X)` at `$E9:6EAF` when the index (loaded from `$5465`) is zero. So entry 0 is dead for that site, but `$E9:37CE` happens to be the start of a real function, so laying it as a target does no harm. **Do not add a stricter overlap test for this pair.** A zero-index guard that excludes entry 0 is a possible refinement, but only worth building if another title shows a dead entry 0 that is not code. | `grm-gipk.16.11` |
 | cv3 bank 20 `$8527` (1.18): how many entity types does the two-level dispatch's outer table really have? | **83, exactly what the recognizer lays (owner, 2026-11-14, from cyneprepou4uk/NES-Games-Disassembly `Castlevania 3/bank_94.asm`).** The type stored to `$07c2,X` is loaded from tables at `B2_a207`, whose values are at most `$52` = 82, so indices 0–82 fill `$8527`–`$85cc`. The bound that ends the table (the RAM word `$1960` at `$85cd`) coincides with the real type range. **Do not add a tighter outer bound for this table.** | `grm-gipk.23` |
 | tmnt `$FE21`/`$FE26` and megaman `$CADA`/`$CB07`/`$F2E6` (1.19): is the bank candidate 1 attributed really live? | **Yes, all five: the old refs were right and candidate 7 lost real information (owner, 2026-11-14).** tmnt `FUN_fe0e` is called only from `$D136`, which explicitly sets bank 6 first. megaman `$CADA`/`$CB07` are in `FUN_ca2d`, called from `FUN_c8b2`, which is called only from bank 5; `FUN_f28e` (`$F2E6`) is called from `ca2d`, so it is bank 5 too. **`grm-50l5` is a real regression: chase it, do not close it as stale refs.** Side finding: megaman `$C89E`-`$C8A8` is the switch table for the dispatch at `$C847`, but is disassembled as code instead of laid as data. | `grm-50l5`; megaman table: `grm-mav1` |
 | CT `$C7:0AD9` and `$C1:0051`: how many jump-table entries are real? (the CT half of 1.5) | **`$C7:0AD9`: 8 entries; `$C1:0051`: 10, which is what the analyzer already lays (owner, 2026-11-01).** At `$C7:0173` the index is guarded by `CMP #$10`/`BCC` and `CMP #$18`/`BCS`, then `AND #$0F`/`ASL`. The `AND` folds `$10`–`$17` to 0–7, so the table starts at `$0AD9` itself (agent's reading, owner confirmed; the first answer said `$0AF9`). Its 8 words are `01a1`/`0192` alternating in pairs, both real code. From `$0AED` the bytes are a 3-byte long-pointer table, which read as junk words from `$0AF9`. `$C5:06FE` is reached or pointed to by nothing. `$C1:0051` runs exactly up to the function at `$C1:0065`, the next dispatch. Scattered targets do not make a table junk: **do not shorten it further.** Side finding: 65816 `JMP`/`JSR (abs,X)` sites carry only target refs, never a ref to the table. | `grm-9nxj.5.8`; `grm-9nxj.24` (CMP range cap); `grm-9nxj.25` (site→table ref) |
