@@ -62,6 +62,17 @@ Each is minutes of work and settles something specific. Highest value per unit e
   pointers, and the recognizer needs a better outer bound. A breakpoint on writes to
   `$07c2`–`$07c7`, or the type list in a disassembly, would settle it.
 
+### 1.19 tmnt `$FE21` and megaman `$CADA`/`$CB07`/`$F2E6`: which bank is live? (`grm-50l5`)
+
+- [ ] **Question.** Installing decompiler candidate 7 dropped five bank attributions that
+  candidate 1 made, and both were blessed (owner, 2026-11-13). tmnt `FUN_fe0e` (called from
+  `$D13B`): `LDA $8E11,Y` / `LDA $8E12,Y` at `$FE21`/`$FE26` used to read from bank 6. megaman
+  `FUN_ca2d` `JMP $915E` at `$CADA`, `JSR $AEFD` at `$CB07`, and `FUN_f28e` `JSR $98EA` at
+  `$F2E6` used to target bank 5 (`PRG_LO`). Is bank 6 / bank 5 really mapped at those points at
+  runtime? A breakpoint on each site that reads the mapper's current bank answers it. If so, the
+  new build lost real information and `grm-50l5` is worth chasing; if not, the old refs were
+  wrong and the bead closes.
+
 ---
 
 ## 2. Def-use passes on untraced titles

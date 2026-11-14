@@ -24,8 +24,8 @@ REALROM count instrs.inOverlay 3964
 REALROM count bankComments 62
 REALROM count warnings 7
 REALROM count notes 23
-REALROM count symbols 84
-REALROM count jumptable.wordArrays 3
+REALROM count symbols 96
+REALROM count jumptable.wordArrays 4
 REALROM count jumptable.planarArrays 0
 REALROM sample.bankcomment 0325 bank -> 3 (bank=3)
 REALROM sample.bankcomment 0344 bank -> 2 (bank=2)
@@ -170,8 +170,9 @@ REALROM sample.symbol b77a case_22 USER_DEFINED primary=false
 REALROM sample.symbol b77a case_23 USER_DEFINED primary=false
 REALROM sample.symbol b77a case_24 USER_DEFINED primary=false
 REALROM sample.symbol b77a case_25 USER_DEFINED primary=false
-REALROM sample.symbol.truncated 25 of 72
+REALROM sample.symbol.truncated 25 of 84
 REALROM sample.jumptable PRG_ALL_B1::b5d4 word[51]
 REALROM sample.jumptable bcbc word[4]
 REALROM sample.jumptable e6d7 word[8]
+REALROM sample.jumptable eeee word[11]
 === REALROM END ===

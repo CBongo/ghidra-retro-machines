@@ -80,7 +80,7 @@ REALROM count instrs.inOverlay 11978
 REALROM count bankComments 159
 REALROM count warnings 16
 REALROM count notes 13
-REALROM count symbols 31
+REALROM count symbols 68
 REALROM count jumptable.wordArrays 1
 REALROM count jumptable.planarArrays 0
 REALROM sample.bankcomment 85b8 bank -> select=7,prg_mode=1,r6=0,r7=12 via FUN_ffc2 [switch-value flow]
@@ -297,24 +297,31 @@ REALROM sample.note f57e [NesBankingAnalyzer] Bank value is RESTORED here, not r
 REALROM sample.note f5c0 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_fc6f restores r6 from $071F and r7 from $0720 (the shadow cell(s) the game committed through earlier). The field is also written directly elsewhere in the game (not through the cell), so the cell tracks the last value committed through it, not the live bank; the bank after this call is that saved value, not a fresh one this analyzer failed to pin down -- a property of the game, not a gap in analysis.
 REALROM sample.note f6a9 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_fc6f restores r6 from $071F and r7 from $0720 (the shadow cell(s) the game committed through earlier). The field is also written directly elsewhere in the game (not through the cell), so the cell tracks the last value committed through it, not the live bank; the bank after this call is that saved value, not a fresh one this analyzer failed to pin down -- a property of the game, not a gap in analysis.
 REALROM sample.note ffbf [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_ffd1 restores r6 from $071F (the shadow cell(s) the game committed through earlier). The field is also written directly elsewhere in the game (not through the cell), so the cell tracks the last value committed through it, not the live bank; the bank after this call is that saved value, not a fresh one this analyzer failed to pin down -- a property of the game, not a gap in analysis.
+REALROM sample.symbol a21f case_23 USER_DEFINED primary=true
+REALROM sample.symbol a284 case_1 USER_DEFINED primary=true
+REALROM sample.symbol a36c case_2 USER_DEFINED primary=true
+REALROM sample.symbol a3b9 case_4 USER_DEFINED primary=true
+REALROM sample.symbol a3f1 case_5 USER_DEFINED primary=true
+REALROM sample.symbol a507 case_6 USER_DEFINED primary=true
+REALROM sample.symbol a695 case_9 USER_DEFINED primary=true
+REALROM sample.symbol a709 case_10 USER_DEFINED primary=true
+REALROM sample.symbol a77e case_11 USER_DEFINED primary=true
+REALROM sample.symbol a7d6 case_12 USER_DEFINED primary=true
+REALROM sample.symbol a871 case_13 USER_DEFINED primary=true
+REALROM sample.symbol a9da case_25 USER_DEFINED primary=true
+REALROM sample.symbol aa21 case_26 USER_DEFINED primary=true
+REALROM sample.symbol aa76 case_27 USER_DEFINED primary=true
+REALROM sample.symbol ab7b case_28 USER_DEFINED primary=true
+REALROM sample.symbol abd4 case_30 USER_DEFINED primary=true
+REALROM sample.symbol ac62 case_31 USER_DEFINED primary=true
+REALROM sample.symbol ad38 case_7 USER_DEFINED primary=true
+REALROM sample.symbol ad7f case_8 USER_DEFINED primary=true
+REALROM sample.symbol adbe case_33 USER_DEFINED primary=true
+REALROM sample.symbol adbe case_34 USER_DEFINED primary=false
+REALROM sample.symbol adbe case_35 USER_DEFINED primary=false
+REALROM sample.symbol aec4 case_14 USER_DEFINED primary=true
 REALROM sample.symbol b7ce switch USER_DEFINED primary=true
 REALROM sample.symbol b7e9 case_0 USER_DEFINED primary=false
-REALROM sample.symbol b7ec case_1 USER_DEFINED primary=true
-REALROM sample.symbol b7fa case_2 USER_DEFINED primary=true
-REALROM sample.symbol b808 case_3 USER_DEFINED primary=true
-REALROM sample.symbol b810 case_4 USER_DEFINED primary=false
-REALROM sample.symbol b830 case_5 USER_DEFINED primary=true
-REALROM sample.symbol b840 case_6 USER_DEFINED primary=false
-REALROM sample.symbol b890 case_7 USER_DEFINED primary=true
-REALROM sample.symbol b89d case_8 USER_DEFINED primary=true
-REALROM sample.symbol b8b1 case_9 USER_DEFINED primary=true
-REALROM sample.symbol b8bc case_10 USER_DEFINED primary=true
-REALROM sample.symbol b90d case_11 USER_DEFINED primary=true
-REALROM sample.symbol f486 NMI IMPORTED primary=true
-REALROM sample.symbol f795 IRQ IMPORTED primary=true
-REALROM sample.symbol ff40 RESET IMPORTED primary=true
-REALROM sample.symbol fffa NMI_VEC IMPORTED primary=true
-REALROM sample.symbol fffc RESET_VEC IMPORTED primary=true
-REALROM sample.symbol fffe IRQ_VEC IMPORTED primary=true
+REALROM sample.symbol.truncated 25 of 56
 REALROM sample.jumptable WA000_B8::b7d1 word[12]
 === REALROM END ===

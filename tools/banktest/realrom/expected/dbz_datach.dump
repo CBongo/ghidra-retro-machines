@@ -30,8 +30,8 @@ REALROM count instrs.inOverlay 0
 REALROM count bankComments 0
 REALROM count warnings 3
 REALROM count notes 0
-REALROM count symbols 18
-REALROM count jumptable.wordArrays 0
+REALROM count symbols 35
+REALROM count jumptable.wordArrays 1
 REALROM count jumptable.planarArrays 0
 REALROM sample.warn c099 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn cc11 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_cc28, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
@@ -39,7 +39,25 @@ REALROM sample.warn cc2a [NesBankingAnalyzer] Bank state becomes unknown here: m
 REALROM sample.symbol c001 RESET IMPORTED primary=true
 REALROM sample.symbol c115 NMI IMPORTED primary=true
 REALROM sample.symbol c257 IRQ IMPORTED primary=true
+REALROM sample.symbol c28f switch USER_DEFINED primary=true
+REALROM sample.symbol c2b2 case_0 USER_DEFINED primary=true
+REALROM sample.symbol c2b3 case_1 USER_DEFINED primary=true
+REALROM sample.symbol c2c1 case_2 USER_DEFINED primary=true
+REALROM sample.symbol c2cf case_3 USER_DEFINED primary=true
+REALROM sample.symbol c2f1 case_4 USER_DEFINED primary=true
+REALROM sample.symbol c2f1 case_5 USER_DEFINED primary=false
+REALROM sample.symbol c2f1 case_6 USER_DEFINED primary=false
+REALROM sample.symbol c2f1 case_7 USER_DEFINED primary=false
+REALROM sample.symbol c2f1 case_8 USER_DEFINED primary=false
+REALROM sample.symbol c30a case_9 USER_DEFINED primary=true
+REALROM sample.symbol c31d case_10 USER_DEFINED primary=true
+REALROM sample.symbol c323 case_11 USER_DEFINED primary=true
+REALROM sample.symbol c331 case_12 USER_DEFINED primary=true
+REALROM sample.symbol c33f case_13 USER_DEFINED primary=true
+REALROM sample.symbol c34b case_14 USER_DEFINED primary=true
+REALROM sample.symbol c34b case_15 USER_DEFINED primary=false
 REALROM sample.symbol fffa NMI_VEC IMPORTED primary=true
 REALROM sample.symbol fffc RESET_VEC IMPORTED primary=true
 REALROM sample.symbol fffe IRQ_VEC IMPORTED primary=true
+REALROM sample.jumptable c292 word[16]
 === REALROM END ===

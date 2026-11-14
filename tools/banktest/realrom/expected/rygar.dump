@@ -22,8 +22,8 @@ REALROM count instrs.inOverlay 258
 REALROM count bankComments 2
 REALROM count warnings 2
 REALROM count notes 1
-REALROM count symbols 18
-REALROM count jumptable.wordArrays 0
+REALROM count symbols 29
+REALROM count jumptable.wordArrays 1
 REALROM count jumptable.planarArrays 0
 REALROM sample.bankcomment c111 bank -> 6 (bank=6) via FUN_c0ec
 REALROM sample.bankcomment c144 bank -> 3 (bank=3) via FUN_c0ec
@@ -59,7 +59,19 @@ REALROM sample.note c085 [CopyLoopAnalyzer] copy-shaped loop RAM:c0ab -> RAM:00c
 REALROM sample.symbol c000 RESET IMPORTED primary=true
 REALROM sample.symbol c0f6 IRQ IMPORTED primary=false
 REALROM sample.symbol c0f6 NMI IMPORTED primary=true
+REALROM sample.symbol e243 switch USER_DEFINED primary=true
+REALROM sample.symbol e25a case_0 USER_DEFINED primary=true
+REALROM sample.symbol e275 case_1 USER_DEFINED primary=true
+REALROM sample.symbol e289 case_2 USER_DEFINED primary=true
+REALROM sample.symbol e296 case_3 USER_DEFINED primary=true
+REALROM sample.symbol e2c0 case_4 USER_DEFINED primary=true
+REALROM sample.symbol e2d7 case_5 USER_DEFINED primary=true
+REALROM sample.symbol e300 case_6 USER_DEFINED primary=true
+REALROM sample.symbol e328 case_7 USER_DEFINED primary=true
+REALROM sample.symbol e343 case_8 USER_DEFINED primary=true
+REALROM sample.symbol e357 case_9 USER_DEFINED primary=true
 REALROM sample.symbol fffa NMI_VEC IMPORTED primary=true
 REALROM sample.symbol fffc RESET_VEC IMPORTED primary=true
 REALROM sample.symbol fffe IRQ_VEC IMPORTED primary=true
+REALROM sample.jumptable e246 word[10]
 === REALROM END ===

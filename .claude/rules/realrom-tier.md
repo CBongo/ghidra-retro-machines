@@ -161,16 +161,20 @@ re-applied to `Ghidra_12.2_build` and rebuilt, plus a fourth hunk (owner ruling,
 12.2's GP-6945 caps a decompile at 4 bad-data flows, and stock switch analysis then abandons
 functions that flow into unresolved bank windows -- real code lost on tmnt/ff1/cv3/contra. No
 program or tool option reaches that cap, so the local build sets `max_baddata` unlimited
-(`ff1834fc…`, patch on `grm-75ey`). The stock binary sits beside it as
-`decompile.exe.stock-12.2`. Every runner prints `== decompiler: … ==`
+(`ff1834fc…`, patch on `grm-75ey`). **Since 2026-11-13 the installed build is candidate 7
+(`d1064ec1…`, `grm-hf5h.9`)**: those four hunks plus the switch-label work (`grm-gipk.25`,
+`grm-hf5h.1`/`.2`), wrap-aware heritage (`grm-hf5h.8`, which also fixes the rcransom crash
+`grm-gz42`) and a `RuleSLess2Zero` fold; the goldens are blessed on it. The owner keeps the
+earlier builds beside it (`decompile.exe.stock-12.2`, `.gp6936-nocap` = ff1834fc, `.gipk25` =
+candidate 1, `.hf5h9` = candidate 7); `build/decompiler-candidates/` has the source diffs. Every runner prints `== decompiler: … ==`
 naming the build by sha256 (`grm_decompiler_build_name` in `tools/banktest/lib/common.sh`), and the
 `REALROM STALENESS` stamp records it, so **a `megaman`/`wizwarr` failure whose banner says `12.1.x
 stock` is the missing patch, not a regression**. The candidate cache keys on the same hash, so a
 swap can never serve the other build's dump. `rcransom` was re-blessed at
 1221/5722 on it (owner, 2026-09-20, `grm-qp5x.4`): the patch turned out to be innocent — stock in
 a shadow install gives the same numbers — and the old 6434 was a 128-entry jump-table over-read
-that only one configuration ever produced; the real blocker is a decompiler crash on `FUN_9314`
-(`grm-gz42`). See `grm-qp5x`, and the **`realrom-current-fails`** bd
+that only one configuration ever produced; the real blocker was a decompiler crash on `FUN_9314`
+(`grm-gz42`), fixed by candidate 7's wrap-aware heritage. See `grm-qp5x`, and the **`realrom-current-fails`** bd
 memory for the current, authoritative row list — that memory is the single place a row's status
 lives, is revised as rows get fixed or reclassified, and supersedes any older summary including
 this one. It holds current state only. **A bless is recorded in its commit, not in a file**

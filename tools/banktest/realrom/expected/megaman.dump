@@ -16,14 +16,14 @@ REALROM block PRG_LO_B7 8000-bfff overlay=true
 REALROM block RAM 0000-07ff overlay=false
 REALROM count blocks.total 12
 REALROM count blocks.overlay 7
-REALROM count refs.intoOverlay.retargeted 35
+REALROM count refs.intoOverlay.retargeted 32
 REALROM count refs.intoOverlay.intraOverlay 1673
 REALROM count instrs.inOverlay 7816
-REALROM count bankComments 115
+REALROM count bankComments 116
 REALROM count warnings 27
 REALROM count notes 13
-REALROM count symbols 233
-REALROM count jumptable.wordArrays 10
+REALROM count symbols 242
+REALROM count jumptable.wordArrays 11
 REALROM count jumptable.planarArrays 0
 REALROM sample.bankcomment 9067 bank -> 5 (bank=5) via FUN_d846
 REALROM sample.bankcomment 9173 bank -> 6 (bank=6) via FUN_c3bf
@@ -35,6 +35,7 @@ REALROM sample.bankcomment 9a5f bank -> 6 (bank=6) via FUN_c53d
 REALROM sample.bankcomment 9d05 bank -> 5 (bank=5) via FUN_c55d
 REALROM sample.bankcomment a044 bank -> 5 (bank=5) via FUN_d131
 REALROM sample.bankcomment a082 bank -> 5 (bank=5) via FUN_d131
+REALROM sample.bankcomment a0aa bank -> 0? (bank=0) [known: bank.0=0,bank.1=0; assumed from initial: bank.2,bank.3]
 REALROM sample.bankcomment a0c8 bank -> 5 (bank=5) via FUN_d131
 REALROM sample.bankcomment a24e bank -> 5 (bank=5) via FUN_c219
 REALROM sample.bankcomment ab3c bank -> 6 (bank=6) via FUN_c442
@@ -165,7 +166,7 @@ REALROM sample.ref 9065 -> PRG_LO_B5::906a CONDITIONAL_JUMP primary=true
 REALROM sample.ref 906e -> PRG_LO_B5::9075 CONDITIONAL_JUMP primary=true
 REALROM sample.ref 9070 -> PRG_LO_B5::9424 DATA primary=true
 REALROM sample.ref 9086 -> PRG_LO_B4::907d CONDITIONAL_JUMP primary=true
-REALROM sample.ref.truncated 25 of 1708
+REALROM sample.ref.truncated 25 of 1705
 REALROM sample.warn 91bc [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_d896, which this analyzer models with no argument register, so no caller argument was sought at this call site; its effect is not resolved here
 REALROM sample.warn ac9f [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c666, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
 REALROM sample.warn c3ab [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
@@ -223,15 +224,16 @@ REALROM sample.symbol 9b0c case_12 USER_DEFINED primary=true
 REALROM sample.symbol 9b18 case_13 USER_DEFINED primary=true
 REALROM sample.symbol 9b1b case_14 USER_DEFINED primary=true
 REALROM sample.symbol 9b67 case_15 USER_DEFINED primary=true
-REALROM sample.symbol a380 switch USER_DEFINED primary=true
-REALROM sample.symbol a393 case_1 USER_DEFINED primary=true
-REALROM sample.symbol a465 case_3 USER_DEFINED primary=true
-REALROM sample.symbol a4c7 case_4 USER_DEFINED primary=true
-REALROM sample.symbol a512 case_5 USER_DEFINED primary=true
-REALROM sample.symbol a5c1 case_6 USER_DEFINED primary=true
-REALROM sample.symbol a620 case_7 USER_DEFINED primary=true
-REALROM sample.symbol a709 case_0 USER_DEFINED primary=false
-REALROM sample.symbol.truncated 25 of 221
+REALROM sample.symbol a285 switch USER_DEFINED primary=true
+REALROM sample.symbol a298 case_0 USER_DEFINED primary=true
+REALROM sample.symbol a2ab case_1 USER_DEFINED primary=true
+REALROM sample.symbol a2b1 case_2 USER_DEFINED primary=true
+REALROM sample.symbol a2c7 case_3 USER_DEFINED primary=true
+REALROM sample.symbol a2d4 case_4 USER_DEFINED primary=true
+REALROM sample.symbol a2da case_5 USER_DEFINED primary=true
+REALROM sample.symbol a318 case_6 USER_DEFINED primary=true
+REALROM sample.symbol.truncated 25 of 230
+REALROM sample.jumptable PRG_LO_B5::a288 word[8]
 REALROM sample.jumptable PRG_LO_B5::a383 word[8]
 REALROM sample.jumptable PRG_LO_B5::a737 word[8]
 REALROM sample.jumptable PRG_LO_B5::aa3b word[75]
@@ -239,6 +241,5 @@ REALROM sample.jumptable e0ed word[18]
 REALROM sample.jumptable e2a2 word[19]
 REALROM sample.jumptable e55a word[10]
 REALROM sample.jumptable e6ca word[21]
-REALROM sample.jumptable ec2b word[8]
-REALROM sample.jumptable.truncated 8 of 10
+REALROM sample.jumptable.truncated 8 of 11
 === REALROM END ===

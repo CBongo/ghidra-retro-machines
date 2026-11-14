@@ -17,7 +17,7 @@ REALROM block W8000_B7 8000-bfff overlay=true
 REALROM block WC000 c000-ffff overlay=false
 REALROM count blocks.total 13
 REALROM count blocks.overlay 7
-REALROM count refs.intoOverlay.retargeted 72
+REALROM count refs.intoOverlay.retargeted 70
 REALROM count refs.intoOverlay.intraOverlay 3742
 REALROM count instrs.inOverlay 15097
 REALROM count bankComments 106
@@ -157,7 +157,7 @@ REALROM sample.ref 803b -> W8000_B5::8212 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 803b -> W8000_B6::8047 CONDITIONAL_JUMP primary=true
 REALROM sample.ref 8041 -> W8000_B5::803b CONDITIONAL_JUMP primary=true
 REALROM sample.ref 8043 -> W8000_B5::93f0 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref.truncated 25 of 3814
+REALROM sample.ref.truncated 25 of 3812
 REALROM sample.warn 97a5 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn ced2 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_cea7 whose bank argument could not be recovered at this call site
 REALROM sample.warn cf0d [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_cea7 whose bank argument could not be recovered at this call site
