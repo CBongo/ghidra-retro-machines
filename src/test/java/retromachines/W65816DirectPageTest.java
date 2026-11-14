@@ -507,6 +507,75 @@ public class W65816DirectPageTest extends AbstractProgramTest {
 		assertNull(dataRef(0x8008));
 	}
 
+	// ---- grm-9nxj.30/.31: summaries past Ghidra's body, and recursion ----
+
+	/** Decoded code with no function over it. */
+	private void layCode(String at, String bytes) throws Exception {
+		builder.setBytes(at, bytes, false);
+		builder.disassemble(at, bytes.split(" ").length, false);
+	}
+
+	/**
+	 * FF2 {@code $01:8D2F}'s shape: a stub sets X and branches into a shared tail Ghidra made no
+	 * function of. The summary follows the branch past the body.
+	 */
+	@Test
+	public void sharedTailWithoutFunctionIsWalked() throws Exception {
+		lay("0x8200", "a2 00 a6 80 7b", "STUB");   // LDX #$a600 ; BRA $8280
+		layCode("0x8280", "0b a9 00 1e 5b 2b 60");  // PHD ; LDA #$1e00 ; TCD ; PLD ; RTS
+		lay("0x8000", SET_600_CALL_8200_STA, "C");
+		analyzeAll();
+		assertRef(0x8008, 0x063d, RefType.WRITE);
+	}
+
+	/** FF2 {@code $00:e66b}: a conditional branch to another function's entry is a tail call. */
+	@Test
+	public void conditionalBranchToFunctionEntryIsATailCall() throws Exception {
+		lay("0x8200", "f0 7e 60", "S");   // BEQ $8280 ; RTS
+		lay("0x8280", "0b a9 00 1e 5b 85 10 2b 60", "BODY");   // bracketed DP change
+		lay("0x8000", SET_600_CALL_8200_STA, "C");
+		analyzeAll();
+		assertRef(0x8008, 0x063d, RefType.WRITE);
+	}
+
+	/** The same, but the branch target returns its own DP: the two exits disagree. */
+	@Test
+	public void conditionalTailCallDisagreeingWithRtsIsUnknown() throws Exception {
+		lay("0x8200", "f0 7e 60", "S");
+		lay("0x8280", "a2 00 07 da 2b 60", "BODY");   // LDX #$0700 ; PHX ; PLD ; RTS
+		lay("0x8000", SET_600_CALL_8200_STA, "C");
+		analyzeAll();
+		assertNull(dataRef(0x8008));
+	}
+
+	/**
+	 * FF2's {@code df63 -> ... -> efa5 -> df63} cycle, shrunk: A brackets a DP change around a
+	 * call to B, which may call A back. Assuming A returns its entry DP is confirmed by A's walk.
+	 */
+	@Test
+	public void recursionThroughBracketedBodyReturnsCallersDp() throws Exception {
+		// PHD ; LDA #$1e00 ; TCD ; JSR B ; PLD ; RTS
+		lay("0x8100", "0b a9 00 1e 5b 20 00 82 2b 60", "A");
+		lay("0x8200", "f0 03 20 00 81 60", "B");   // BEQ +3 ; JSR A ; RTS
+		// LDX #$600 ; PHX ; PLD ; JSR A ; STA <$3d ; RTS
+		lay("0x8000", "a2 00 06 da 2b 20 00 81 85 3d 60", "C");
+		analyzeAll();
+		assertRef(0x8008, 0x063d, RefType.WRITE);
+	}
+
+	/**
+	 * A recursive callee that returns a constant: the first assumption (entry DP) is refuted by
+	 * its walk, and the retry assuming the constant is confirmed.
+	 */
+	@Test
+	public void refutedRecursionAssumptionIsRetried() throws Exception {
+		// BEQ +3 ; JSR A ; LDA #$1e00 ; TCD ; RTS
+		lay("0x8100", "f0 03 20 00 81 a9 00 1e 5b 60", "A");
+		lay("0x8000", "a2 00 06 da 2b 20 00 81 85 3d 60", "C");
+		analyzeAll();
+		assertRef(0x8008, 0x1e3d, RefType.WRITE);
+	}
+
 	/** A pointer to the entry that no dispatch resolved is an unknown way in. */
 	@Test
 	public void dataReferenceToEntryLeavesItUnknown() throws Exception {

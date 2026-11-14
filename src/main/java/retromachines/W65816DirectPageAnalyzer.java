@@ -20,6 +20,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -105,8 +106,53 @@ import ghidra.util.task.TaskMonitor;
  * changes it. Stamps from an earlier run are not cleared where DP later becomes unknown.
  *
  * <p>Priority: just before the stock constant propagator, after functions exist.
+ *
+ * <p><b>Diagnostic (grm-9nxj.30).</b> Set the environment variable {@code GRM_DP_SUMMARY_TRACE}
+ * to {@code all} or a comma-separated list of hex addresses (e.g. {@code e01a,b0d1}; a value up
+ * to $FFFF matches that offset in any bank) and every call-summary judgement for a matching
+ * target prints one stdout line prefixed {@code DPS }: {@code exitDp} gives the result, the
+ * first failing instruction and why (UNKNOWN exit DP, non-empty or poisoned stack, disagreeing
+ * exits, RTI, jump out of body or without target, walk gave up at STEP_LIMIT), where DP turned
+ * UNKNOWN along the walk (a call whose summary failed, or a merge of disagreeing paths), and a
+ * recursion-in-progress UNKNOWN naming the in-progress chain; {@code recHits} counts those
+ * recursion hits during a judgement (a failure with recHits&gt;0 may be cycle poisoning). The
+ * top-level {@link Walker#preserves} verdict is logged as {@code DPS preserves}. Unset, it costs one
+ * boolean test per judgement.
  */
 public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
+
+	/** {@code GRM_DP_SUMMARY_TRACE}: null (off), or the hex offsets to trace; empty set = all. */
+	private static final Set<Long> TRACE = parseTrace(System.getenv("GRM_DP_SUMMARY_TRACE"));
+
+	private static Set<Long> parseTrace(String v) {
+		if (v == null || v.isBlank()) {
+			return null;
+		}
+		Set<Long> out = new HashSet<>();
+		if (v.trim().equalsIgnoreCase("all")) {
+			return out;
+		}
+		for (String p : v.split(",")) {
+			try {
+				out.add(Long.parseLong(p.trim().replace("$", "").replace("0x", ""), 16));
+			}
+			catch (NumberFormatException e) {
+				// ignore a malformed item
+			}
+		}
+		return out;
+	}
+
+	private static boolean traced(Address a) {
+		if (TRACE == null) {
+			return false;
+		}
+		if (TRACE.isEmpty()) {
+			return true;
+		}
+		long o = a.getOffset();
+		return TRACE.contains(o) || TRACE.contains(o & 0xffff);
+	}
 
 	private static final String NAME = "65816 Direct Page";
 	private static final String DESCRIPTION =
@@ -278,7 +324,18 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 		private final Register ctxX;
 		private final Map<Address, Boolean> preserves = new HashMap<>();
 		private final Map<Address, Integer> exitDp = new HashMap<>();
-		private final Set<Address> exitInProgress = new HashSet<>();
+		private final Set<Address> exitInProgress = new LinkedHashSet<>();
+		/** exitDp's current assumption for each in-progress target (grm-9nxj.30). */
+		private final Map<Address, Integer> exitAssume = new HashMap<>();
+		/** The in-progress targets the current exitDp judgement has leaned on. */
+		private Set<Address> exitLeaned = new HashSet<>();
+		/** Results awaiting confirmation of the assumptions they leaned on. */
+		private final List<Provisional> exitProvisional = new ArrayList<>();
+		/** Trace only (GRM_DP_SUMMARY_TRACE): where DP turned UNKNOWN in the walk in progress. */
+		private Set<String> notes;
+		private Set<String> lastNotes;
+		private int recHits;
+		private final List<String> recLog = new ArrayList<>();
 
 		Walker(Program program) {
 			this.program = program;
@@ -446,10 +503,32 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 
 		/** @param summary a call-summary walk: dispatch JMPs end the path (see isDispatchJmp) */
 		Map<Address, State> walk(Function f, State entry, boolean summary) {
+			return walk(f.getEntryPoint(), f, entry, summary);
+		}
+
+		/**
+		 * @param start where the walk begins (a function's entry, or for a summary any address)
+		 * @param f the body bounding a non-summary walk; for a summary walk, null means "no body"
+		 *     (see {@link #inline})
+		 */
+		private Map<Address, State> walk(Address start, Function f, State entry, boolean summary) {
+			Set<String> outerNotes = notes;
+			notes = TRACE == null ? null : new LinkedHashSet<>();
+			try {
+				return walkBody(start, f, entry, summary);
+			}
+			finally {
+				lastNotes = notes;
+				notes = outerNotes;
+			}
+		}
+
+		private Map<Address, State> walkBody(Address start, Function f, State entry,
+				boolean summary) {
 			Map<Address, State> in = new LinkedHashMap<>();
 			ArrayDeque<Address> work = new ArrayDeque<>();
-			in.put(f.getEntryPoint(), entry);
-			work.add(f.getEntryPoint());
+			in.put(start, entry);
+			work.add(start);
 			int steps = 0;
 			while (!work.isEmpty() && steps++ < STEP_LIMIT) {
 				Address at = work.poll();
@@ -458,9 +537,18 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 					continue;
 				}
 				State out = transfer(ins, in.get(at));
-				for (Address next : successors(f, ins, summary)) {
+				if (notes != null && in.get(at).dp != UNKNOWN && out.dp == UNKNOWN &&
+					!ins.getFlowType().isCall()) {
+					notes.add("DP written UNKNOWN at " + at + ": " + ins);
+				}
+				for (Address next : successors(start, f, ins, summary)) {
 					State old = in.get(next);
 					State merged = old == null ? out : old.meet(out);
+					if (notes != null && old != null && old.dp != UNKNOWN && out.dp != UNKNOWN &&
+						merged.dp == UNKNOWN) {
+						notes.add("merge at " + next + " of DP " + dpName(old.dp) + " and " +
+							dpName(out.dp) + " (from " + at + ")");
+					}
 					if (!merged.equals(old)) {
 						in.put(next, merged);
 						work.add(next);
@@ -474,31 +562,51 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 		}
 
 		private List<Address> successors(Function f, Instruction ins, boolean summary) {
+			return successors(f.getEntryPoint(), f, ins, summary);
+		}
+
+		private List<Address> successors(Address start, Function f, Instruction ins,
+				boolean summary) {
 			List<Address> out = new ArrayList<>();
 			var ft = ins.getFlowType();
 			if (summary && isDispatchJmp(ins)) {
 				return out;
 			}
 			if (ft.isCall()) {
-				addIfBody(f, out, ins.getFallThrough());
+				add(start, f, summary, out, ins.getFallThrough());
 				return out;
 			}
 			if (ft.isTerminal()) {
 				return out;
 			}
 			for (Address a : ins.getFlows()) {
-				addIfBody(f, out, a);
+				add(start, f, summary, out, a);
 			}
 			if (ins.hasFallthrough()) {
-				addIfBody(f, out, ins.getFallThrough());
+				add(start, f, summary, out, ins.getFallThrough());
 			}
 			return out;
 		}
 
-		private static void addIfBody(Function f, List<Address> out, Address a) {
-			if (a != null && f.getBody().contains(a)) {
+		private void add(Address start, Function f, boolean summary, List<Address> out,
+				Address a) {
+			if (a != null && (summary ? inline(start, f, a) : f.getBody().contains(a))) {
 				out.add(a);
 			}
+		}
+
+		/**
+		 * Whether a summary walk from {@code start} follows flow into {@code a} (grm-9nxj.30/.31):
+		 * yes inside {@code f}'s body, and yes outside it too unless {@code a} is another
+		 * function's entry -- that is a tail exit judged by its own (cached) summary instead. Ghidra's
+		 * body is an artifact of its function creation, not of the code: FF2's shared-tail stubs
+		 * ({@code $01:8D2F}: {@code LDX #imm / BRA common}) and tail calls into code that is no
+		 * function ({@code $00:B288}, {@code $15:B4B7}) leave every body without entering another.
+		 * The empty-stack rule at each return still decides which RTS/RTL is the call's.
+		 */
+		private boolean inline(Address start, Function f, Address a) {
+			return a.equals(start) || (f != null && f.getBody().contains(a)) ||
+				program.getFunctionManager().getFunctionAt(a) == null;
 		}
 
 		private int width(Instruction ins, Register flag) {
@@ -622,9 +730,17 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 			return push(s, new Pushed(w, w == 2 ? value : UNKNOWN));
 		}
 
+		private static String dpName(int dp) {
+			return dp == UNKNOWN ? "UNKNOWN" : dp == ENTRY_DP ? "ENTRY" :
+				dp == CONFLICT ? "CONFLICT" : String.format("$%04X", dp);
+		}
+
 		private State afterCall(Instruction ins, State s) {
 			Address[] flows = ins.getFlows();
 			int dp = UNKNOWN;
+			if (notes != null && s.dp != UNKNOWN && flows.length != 1) {
+				notes.add("call at " + ins.getAddress() + " has " + flows.length + " flow targets");
+			}
 			if (flows.length == 1) {
 				if (preserves(flows[0])) {
 					dp = s.dp;
@@ -634,6 +750,10 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 					dp = e == ENTRY_DP ? s.dp : e;
 				}
 			}
+			if (notes != null && s.dp != UNKNOWN && dp == UNKNOWN && flows.length == 1) {
+				notes.add("call at " + ins.getAddress() + " to " + flows[0] +
+					" lost DP (callee summary UNKNOWN)");
+			}
 			return new State(dp, UNKNOWN, UNKNOWN, UNKNOWN, s.stack);
 		}
 
@@ -642,29 +762,106 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 		 * constant, {@link #ENTRY_DP} (it hands back the DP it was given), or UNKNOWN. The
 		 * function is walked from a symbolic entry DP; it must reach at least one RTS/RTL, every
 		 * one with the same known-or-entry DP and an empty, unpoisoned stack (so it returns to the
-		 * caller); and it must have no other way out -- no RTI, no jump leaving its body except a
-		 * tail call (judged by its target's summary), no jump without a target. An exit taken after
+		 * caller); and it must have no other way out -- no RTI, no computed jump leaving it, no
+		 * jump without a target. Flow is followed past Ghidra's body into code that is no function
+		 * (and {@code target} itself need not be one); a branch or jump into another function's
+		 * entry, conditional or not, is a tail call judged by that target's summary (see
+		 * {@link #inline}, grm-9nxj.30/.31). An exit taken after
 		 * pulling below the entry stack with nothing pushed since ({@link #UNDER}) is ignored: it
 		 * cannot return to the call. A callee that sets DP itself ({@code LDX #$0600 / PHX / PLD ... RTS})
 		 * so passes its constant back, and one that brackets its own DP change
 		 * ({@code PHD ... TCD ... PLD ... RTS}, FF2 {@code $04:8008}) returns the caller's DP.
-		 * Recursion is judged UNKNOWN.
+		 *
+		 * <p>Recursion (grm-9nxj.30, FF2 {@code df63 -> e01a -> e221 -> a966 -> 9c1d -> a5c4 ->
+		 * efa5 -> df63}) is assumed, then verified: a call to a target whose summary is in progress
+		 * returns that target's current assumption ({@link #ENTRY_DP} first, as {@link #preserves}
+		 * assumes a cycle preserves). When the target's walk ends with the value it assumed, the
+		 * assumption is a consistent fixpoint and stands; otherwise it is retried once assuming
+		 * the value it did produce, and then judged with recursion UNKNOWN (the old, sound rule).
+		 * A result that leaned on an assumption still open is held provisionally and cached only
+		 * once every assumption it leaned on has been confirmed, so a refuted guess never sticks.
 		 */
 		private int exitDp(Address target) {
 			Integer known = exitDp.get(target);
 			if (known != null) {
 				return known;
 			}
-			Function callee = program.getFunctionManager().getFunctionAt(target);
-			if (callee == null || !exitInProgress.add(target)) {
-				return UNKNOWN;
+			if (exitInProgress.contains(target)) {
+				int v = exitAssume.getOrDefault(target, ENTRY_DP);
+				exitLeaned.add(target);
+				recHits++;
+				if (TRACE != null) {
+					String m = "recursion: " + target + " in progress, assumed " + dpName(v) +
+						", chain=" + exitInProgress;
+					recLog.add(m);
+					if (traced(target)) {
+						System.out.println("DPS exitDp " + target + " = " + dpName(v) + ": " + m);
+					}
+				}
+				return v;
 			}
+			Set<Address> outerLeaned = exitLeaned;
+			int result = UNKNOWN;
+			Set<Address> leaned = Set.of();
+			int assume = ENTRY_DP;
+			for (int attempt = 0; attempt < 3; attempt++) {
+				exitAssume.put(target, assume);
+				exitLeaned = new HashSet<>();
+				exitInProgress.add(target);
+				result = exitDpOnce(target);
+				exitInProgress.remove(target);
+				leaned = exitLeaned;
+				boolean self = leaned.remove(target);
+				if (!self || result == assume || assume == UNKNOWN) {
+					break;
+				}
+				// The assumption was refuted: forget every result that leaned on it, and retry.
+				exitProvisional.removeIf(p -> p.leaned().contains(target));
+				assume = attempt == 0 && result != UNKNOWN ? result : UNKNOWN;
+			}
+			exitAssume.remove(target);
+			// The assumption about target stands: results that leaned only on it are now final.
+			Iterator<Provisional> it = exitProvisional.iterator();
+			while (it.hasNext()) {
+				Provisional p = it.next();
+				if (p.leaned().remove(target) && p.leaned().isEmpty()) {
+					exitDp.putIfAbsent(p.target(), p.dp());
+					it.remove();
+				}
+			}
+			exitLeaned = outerLeaned;
+			if (leaned.isEmpty()) {
+				exitDp.put(target, result);
+			}
+			else {
+				exitProvisional.add(new Provisional(target, result, leaned));
+				exitLeaned.addAll(leaned);
+			}
+			return result;
+		}
+
+		/** A summary computed while leaning on assumptions about in-progress targets. */
+		private record Provisional(Address target, int dp, Set<Address> leaned) {}
+
+		/** One walk of {@link #exitDp}'s judgement; caching and recursion are the caller's. */
+		private int exitDpOnce(Address target) {
+			// No function at the target (a tail call into shared code Ghidra made no function of):
+			// walk from the target with no body; see inline.
+			Function callee = program.getFunctionManager().getFunctionAt(target);
+			boolean tr = traced(target);
+			int hits0 = recHits;
+			int log0 = recLog.size();
 			int d = UNKNOWN;
 			boolean ok = true;
+			String why = null;
+			Address whyAt = null;
 			Map<Address, State> states =
-				walk(callee, new State(ENTRY_DP, UNKNOWN, UNKNOWN, UNKNOWN, List.of()), true);
+				walk(target, callee, new State(ENTRY_DP, UNKNOWN, UNKNOWN, UNKNOWN, List.of()), true);
+			Set<String> wnotes = lastNotes;
 			if (states.isEmpty()) {
 				ok = false;
+				why = "walk gave up at STEP_LIMIT";
+				whyAt = target;
 			}
 			for (Map.Entry<Address, State> e : states.entrySet()) {
 				Instruction i = program.getListing().getInstructionAt(e.getKey());
@@ -681,15 +878,21 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 					exit = true;
 					out = st.dp;
 				}
-				else if (!ft.isComputed() && !ft.isConditional() && fl.length == 1 &&
-					((!ft.isCall() && ft.isJump() && !callee.getBody().contains(fl[0])) ||
-						(ft.isCall() && ft.isTerminal()))) {
+				else if (!ft.isComputed() && fl.length == 1 &&
+					((!ft.isCall() && ft.isJump() && !inline(target, callee, fl[0])) ||
+						(ft.isCall() && ft.isTerminal() && !ft.isConditional()))) {
 					// A tail call (FF2's bank-$14 JMP thunks; or a JMP carrying Ghidra's CALL_RETURN
 					// flow override, which reads as a terminal call, FF2 $00:e660): it returns what
-					// its target returns, with the DP at the jump standing in for its entry DP.
+					// its target returns, with the DP at the jump standing in for its entry DP. A
+					// conditional branch to another function's entry is one too (grm-9nxj.31, FF2
+					// $00:e66b BNE); its fall-through is walked as usual.
 					exit = true;
 					int te = exitDp(fl[0]);
 					out = te == ENTRY_DP ? st.dp : te;
+					if (tr && te == UNKNOWN) {
+						System.out.println("DPS   tail call at " + i.getAddress() + " to " + fl[0] +
+							" has summary UNKNOWN");
+					}
 				}
 				else if (isDispatchJmp(i)) {
 					// Rule A (owner ruling 2026-11-06, grm-9nxj.27): see isDispatchJmp.
@@ -702,6 +905,24 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 					continue;
 				}
 				if (exit) {
+					if (ok) {
+						if (out == UNKNOWN) {
+							why = "exit (" + mn + ") with UNKNOWN dp";
+						}
+						else if (st.stack == null) {
+							why = "exit (" + mn + ") with poisoned stack";
+						}
+						else if (!st.stack.isEmpty()) {
+							why = "exit (" + mn + ") with non-empty stack " + st.stack;
+						}
+						else if (d != UNKNOWN && d != out) {
+							why = "disagreeing exits: " + dpName(d) + " vs " + dpName(out) + " (" +
+								mn + ")";
+						}
+						if (why != null) {
+							whyAt = i.getAddress();
+						}
+					}
 					if (out == UNKNOWN || st.stack == null || !st.stack.isEmpty() ||
 						(d != UNKNOWN && d != out)) {
 						ok = false;
@@ -709,23 +930,52 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 					d = out;
 				}
 				else if (mn.equals("RTI")) {
+					if (ok) {
+						why = "RTI";
+						whyAt = i.getAddress();
+					}
 					ok = false;
 				}
 				else if (!ft.isCall() && (ft.isJump() || ft.isComputed())) {
+					boolean was = ok;
 					if (fl.length == 0 && !ft.isConditional()) {
 						ok = false;
+						if (was && why == null) {
+							why = "jump without a target (" + mn + ")";
+						}
 					}
 					for (Address t : fl) {
-						ok &= callee.getBody().contains(t);
+						if (!inline(target, callee, t) && ft.isComputed()) {
+							ok = false;
+							if (was && why == null) {
+								why = "jump out of body to " + t + " (" + mn + ")";
+							}
+						}
+					}
+					if (was && !ok) {
+						whyAt = i.getAddress();
 					}
 				}
 				if (!ok) {
 					break;
 				}
 			}
-			exitInProgress.remove(target);
 			int result = ok ? d : UNKNOWN;
-			exitDp.put(target, result);
+			if (tr) {
+				StringBuilder sb =
+					new StringBuilder("DPS exitDp " + target + " = " + dpName(result));
+				if (!ok) {
+					sb.append(": ").append(why).append(" at ").append(whyAt);
+					if (wnotes != null && !wnotes.isEmpty()) {
+						sb.append("; DP lost: ").append(wnotes);
+					}
+				}
+				sb.append("; recHits=").append(recHits - hits0);
+				if (recHits > hits0) {
+					sb.append(" ").append(recLog.subList(log0, recLog.size()));
+				}
+				System.out.println(sb);
+			}
 			return result;
 		}
 
@@ -773,14 +1023,22 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				if (ins == null || !seen.add(at)) {
 					continue;
 				}
-				work.addAll(successors(f, ins, true));
+				for (Address a : successors(f, ins, true)) {
+					if (f.getBody().contains(a)) {   // the live set is of f's body only
+						work.add(a);
+					}
+				}
 			}
 			return seen;
 		}
 
 		/** Whether a call to {@code target} leaves DP alone, as far as its code visibly shows. */
 		private boolean preserves(Address target) {
-			return preserves(target, new HashSet<>(), new HashSet<>());
+			boolean r = preserves(target, new HashSet<>(), new HashSet<>());
+			if (traced(target)) {
+				System.out.println("DPS preserves " + target + " = " + r);
+			}
+			return r;
 		}
 
 		/**
