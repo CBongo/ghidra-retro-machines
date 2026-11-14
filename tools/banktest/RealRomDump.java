@@ -100,7 +100,7 @@ public class RealRomDump extends GhidraScript {
 	// Program-info property the loader stamps with this image's per-game identity,
 	// "prg:<64 hex> file:<64 hex>" (DescriptorHints.GAME_IDENTITY_PROPERTY -- kept as a
 	// literal here for the same reason as the two above).
-	private static final String GAME_IDENTITY_PROPERTY = "Retro Machines.Game Identity";
+	private static final String GAME_IDENTITY_PROPERTY = "Game Identity";
 
 	// Program-info property the bank analyzer stamps with the interrupt-exit default (grm-5tl.23;
 	// DescriptorHints.INTERRUPT_EXIT_DEFAULT_PROPERTY, a literal for the same reason as above).

@@ -59,7 +59,7 @@ import ghidra.program.model.util.StringPropertyMap;
  *
  * <p><b>What is exported, and why only that.</b>
  * <ul>
- * <li><b>Identity</b>, read back from the {@code Retro Machines.Game Identity} property the
+ * <li><b>Identity</b>, read back from the {@code Game Identity} property the
  * loader wrote, so the export cannot disagree with the import.</li>
  * <li><b>Labels:</b> only {@code USER_DEFINED} symbols in the global namespace (labels and
  * function names). An analyzer- or descriptor-created label is a guess or someone else's fact;
@@ -128,8 +128,7 @@ public final class GameDescriptorExporter {
 
 	/** The program's recorded identity as {prg, file}, or null if it has none. */
 	public static String[] identityOf(Program program) {
-		String spec = DescriptorHints.programInfoString(program,
-			DescriptorHints.GAME_IDENTITY_PROPERTY);
+		String spec = DescriptorHints.gameIdentity(program);
 		if (spec == null) {
 			return null;
 		}

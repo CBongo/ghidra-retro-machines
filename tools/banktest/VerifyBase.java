@@ -77,7 +77,7 @@ public abstract class VerifyBase {
 	// literal here rather than referenced; this script links against only the public analyzer
 	// classes). Same convention as the "Retro Machine Map" literal in checkPet4032() and the
 	// literals at tools/banktest/RealRomDump.java:57-60.
-	protected static final String GAME_IDENTITY_PROPERTY = "Retro Machines.Game Identity";
+	protected static final String GAME_IDENTITY_PROPERTY = "Game Identity";
 
 	// Program-info property a loader stamps with the entry points reached asynchronously --
 	// the 6502 NMI/IRQ vector targets (DescriptorHints.ASYNC_ENTRY_POINTS_PROPERTY, bead

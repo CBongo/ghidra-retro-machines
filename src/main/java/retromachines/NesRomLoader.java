@@ -978,11 +978,13 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 			// unqualified overlay names (grm-ic5 increment 2; see LAYOUT_MODE_PROPERTY).
 			program.getOptions(Program.PROGRAM_INFO).setString(
 				DescriptorHints.LAYOUT_MODE_PROPERTY, Integer.toString(liveMode));
+			ProgramInfoDisplay.recordLayoutMode(program, map, liveMode);
 		}
 		if (initialState != null &&
 			!initialState.equals(BoardStateFields.initialState(map))) {
 			program.getOptions(Program.PROGRAM_INFO).setString(
 				DescriptorHints.INITIAL_STATE_PROPERTY, Long.toString(initialState));
+			ProgramInfoDisplay.recordInitialState(program, map, initialState);
 			log.appendMsg("banking.initial_state resolved to " + initialState +
 				" against the " + header.prgSize() + "-byte PRG image");
 		}

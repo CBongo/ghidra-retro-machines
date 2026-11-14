@@ -106,7 +106,42 @@ final class DescriptorHints {
 	 * reads the key to write off this property. Grammar and semantics:
 	 * {@link GameIdentities#parseGameIdentity}. Design: docs/per-game-descriptors-design.md section 2.
 	 */
-	static final String GAME_IDENTITY_PROPERTY = "Retro Machines.Game Identity";
+	static final String GAME_IDENTITY_PROPERTY = "Game Identity";
+
+	/**
+	 * The pre-grm-4x8f dotted name of {@link #GAME_IDENTITY_PROPERTY}. Ghidra's About Program view
+	 * skips names containing '.', so the property was renamed; programs saved before that still
+	 * carry this one. Never written; read only through {@link #programInfoStringOrLegacy}.
+	 */
+	static final String LEGACY_GAME_IDENTITY_PROPERTY = "Retro Machines.Game Identity";
+
+	/** Pre-grm-4x8f dotted name of {@link #GAME_DESCRIPTOR_PROPERTY}; read-only, see above. */
+	static final String LEGACY_GAME_DESCRIPTOR_PROPERTY = "Retro Machines.Game Descriptor";
+
+	/**
+	 * Display-only decoding of {@link #LAYOUT_MODE_PROPERTY} (bead grm-4x8f), e.g.
+	 * {@code "prg_mode = 1: $8000 = PRG[second_last]; ..."}. Undotted so About Program shows it;
+	 * written beside the raw property and never read back.
+	 */
+	static final String LAYOUT_MODE_DISPLAY_PROPERTY = "Bank Layout Mode";
+
+	/**
+	 * Display-only decoding of {@link #INITIAL_STATE_PROPERTY} (bead grm-4x8f), e.g.
+	 * {@code "select=0 prg_mode=1 r6=0 r7=1"}. Written beside the raw property, never read back.
+	 */
+	static final String INITIAL_STATE_DISPLAY_PROPERTY = "Initial Bank State";
+
+	/**
+	 * Display-only SNES mapping chosen by {@link SnesRomLoader}, e.g. {@code "LoROM (FastROM)"},
+	 * with a note when the declared map type disagrees with where the header was found.
+	 */
+	static final String SNES_MAPPING_PROPERTY = "SNES Mapping";
+
+	/**
+	 * Display-only SNES file arrangement chosen by {@link SnesRomLoader}: the layout description
+	 * and which option mode (Auto/Off/Force) decided it.
+	 */
+	static final String SNES_ROM_LAYOUT_PROPERTY = "SNES ROM Layout";
 
 	/**
 	 * A Program Info string property, or null when the program does not carry it. Use this, not
@@ -121,6 +156,28 @@ final class DescriptorHints {
 	}
 
 	/**
+	 * Reads {@code name}, falling back to {@code legacyName} when the program does not carry the
+	 * new one (programs saved before a rename, grm-4x8f). Neither read registers an option, so a
+	 * new program never acquires the legacy name.
+	 */
+	static String programInfoStringOrLegacy(Program program, String name, String legacyName) {
+		String value = programInfoString(program, name);
+		return value != null ? value : programInfoString(program, legacyName);
+	}
+
+	/** {@link #GAME_IDENTITY_PROPERTY} with the legacy-name fallback; null when neither exists. */
+	static String gameIdentity(Program program) {
+		return programInfoStringOrLegacy(program, GAME_IDENTITY_PROPERTY,
+			LEGACY_GAME_IDENTITY_PROPERTY);
+	}
+
+	/** {@link #GAME_DESCRIPTOR_PROPERTY} with the legacy-name fallback; null when neither exists. */
+	static String gameDescriptorPath(Program program) {
+		return programInfoStringOrLegacy(program, GAME_DESCRIPTOR_PROPERTY,
+			LEGACY_GAME_DESCRIPTOR_PROPERTY);
+	}
+
+	/**
 	 * Program-info property where {@link GameDescriptorRegistry#resolve} records the resolved
 	 * game descriptor's path, absent when nothing matched -- the title-tier counterpart of
 	 * {@link #MAP_PATH_PROPERTY}.
@@ -131,7 +188,7 @@ final class DescriptorHints {
 	 * {@code grm-hb6.2}) and runtime YAML (bead {@code grm-hb6.3}) remain future work; this
 	 * property's value is unaffected by which source eventually resolved it.
 	 */
-	static final String GAME_DESCRIPTOR_PROPERTY = "Retro Machines.Game Descriptor";
+	static final String GAME_DESCRIPTOR_PROPERTY = "Game Descriptor";
 
 	/**
 	 * Program-info property listing the entry points a loader knows are reached

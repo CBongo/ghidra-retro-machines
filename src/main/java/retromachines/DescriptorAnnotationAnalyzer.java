@@ -278,8 +278,7 @@ public class DescriptorAnnotationAnalyzer extends AbstractAnalyzer {
 
 	/** The program's recorded game identity, or null when absent or malformed. */
 	private static GameIdentities.GameIdentity identityOf(Program program) {
-		String spec = DescriptorHints.programInfoString(program,
-			DescriptorHints.GAME_IDENTITY_PROPERTY);
+		String spec = DescriptorHints.gameIdentity(program);
 		if (spec == null) {
 			return null;
 		}

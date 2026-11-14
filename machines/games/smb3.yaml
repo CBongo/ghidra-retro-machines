@@ -66,7 +66,7 @@ game:
     # see docs/per-game-descriptors-design.md section 2.2. Verified two ways: recomputed by
     # hand from the pinned image the same way NesRomLoader.gameIdentity does (skip the 16-byte
     # header, no trainer, take prgBanks*16384 = 262144 bytes), and cross-checked against this
-    # program's "Retro Machines.Game Identity" property after import.
+    # program's "Game Identity" property after import.
     prg_sha256: "f4130ba655229d9999fa3b2c59984165810c9b9b125c43b1ff899872e7fedff4"
     # Whole-file SHA-256, copied from the smb3 row of tools/banktest/realrom/manifest.tsv
     # (docs/per-game-descriptors-design.md section 2.3's copy-from-the-manifest workflow).

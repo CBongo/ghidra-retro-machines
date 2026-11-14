@@ -256,6 +256,12 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 				" but was found at offset $" + Integer.toHexString(header.headerOffset()) +
 				"; using the declared mapping");
 		}
+		var info = program.getOptions(Program.PROGRAM_INFO);
+		info.setString(DescriptorHints.SNES_MAPPING_PROPERTY, ProgramInfoDisplay.snesMappingText(
+			header.mapType(), header.fastRom(), header.mapTypeMatchesLocation(),
+			header.headerOffset()));
+		info.setString(DescriptorHints.SNES_ROM_LAYOUT_PROPERTY,
+			layout.describe() + " (" + layoutMode.label() + ")");
 		log.appendMsg(NAME + ": " + header.title() + " -- " + header.mapType() +
 			(header.fastRom() ? " (FastROM)" : "") + ", " + (header.romSizeBytes() / 1024) +
 			" KiB declared" + (header.copierHeader() ? ", copier header present" : ""));

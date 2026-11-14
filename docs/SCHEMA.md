@@ -759,7 +759,7 @@ banking:
   the loader at import (`NesRomLoader.gameIdentity`) the same way for every image, so a
   descriptor's hashes can be copied straight from `tools/banktest/realrom/manifest.tsv`
   (which already pins the whole-file hash) or read back from a program's
-  `Retro Machines.Game Identity` property after an import with no descriptor.
+  `Game Identity` property after an import with no descriptor.
 - **`game.board`** is a cross-check, never a selector: the board is still chosen the
   normal way (iNES mapper number, or a user override). A descriptor whose `game.board`
   disagrees with the board actually resolved is logged and ignored whole -- its addresses
@@ -783,7 +783,7 @@ hint requires a RE-IMPORT of the ROM, not a re-analysis.** A curated file's `ban
 initial_state` is therefore worth getting right the first time; it does not carry
 one-shot re-run support the way an analyzer-consumed hint would. It does keep
 provenance -- the resolved descriptor's path is recorded on the program
-(`Retro Machines.Game Descriptor`), and every field the hint actually changes is logged.
+(`Game Descriptor`), and every field the hint actually changes is logged.
 
 ### `banking.bank_identifying_offsets` (bead `grm-mej.7`)
 
@@ -1059,7 +1059,7 @@ applied by `DescriptorAnnotationAnalyzer` (so also on re-analysis) as `IMPORTED`
 an EOL comment, never overwriting a `USER_DEFINED` label.
 
 `ghidra_scripts/ExportGameDescriptor.java` writes exactly this shape from the open program:
-identity (from the `Retro Machines.Game Identity` property), `banking.initial_state` copied
+identity (from the `Game Identity` property), `banking.initial_state` copied
 from the descriptor in force, and one `user-annotations` set holding the program's
 `USER_DEFINED` global-namespace labels and the EOL comments at those addresses (text the
 extension's own analyzers/loaders wrote is removed by exact recorded provenance --

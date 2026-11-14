@@ -61,7 +61,7 @@ public class C64RealRomDump extends GhidraScript {
 	private static final int SAMPLE_BIT = 100;
 
 	private static final String PLACEMENT_OVERRIDE_PROPERTY = "Retro Machines.Placement Override";
-	private static final String GAME_IDENTITY_PROPERTY = "Retro Machines.Game Identity";
+	private static final String GAME_IDENTITY_PROPERTY = "Game Identity";
 
 	private static final String CAT_DECRYPT = "C64DecryptLoopAnalyzer";
 	private static final String CAT_COPY = "CopyLoopAnalyzer";

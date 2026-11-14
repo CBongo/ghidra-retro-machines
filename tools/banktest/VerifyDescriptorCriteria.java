@@ -32,7 +32,7 @@ public class VerifyDescriptorCriteria extends VerifyBase {
 	// descoverlaytest / descoverlayctltest criteria (user-directory overlay, bead grm-hb6.15)
 	// ------------------------------------------------------------------
 
-	protected static final String GAME_DESCRIPTOR_PROPERTY = "Retro Machines.Game Descriptor";
+	protected static final String GAME_DESCRIPTOR_PROPERTY = "Game Descriptor";
 
 	// ------------------------------------------------------------------
 	// descbankhinttest / descbankhintmmc3test criteria (switch_sites bank: value hints,

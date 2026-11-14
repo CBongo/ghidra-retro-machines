@@ -163,8 +163,8 @@ Two Program Info string properties, alongside the two that already exist in
 |---|---|---|
 | `Retro Machine Map` | `MAP_PATH_PROPERTY` (`:79`) | existing — the board descriptor's resource path |
 | `Retro Machines.Placement Override` | `PLACEMENT_OVERRIDE_PROPERTY` (`:89`) | existing — user bank placement |
-| `Retro Machines.Game Identity` | *new* | `prg:<64 hex> file:<64 hex>` |
-| `Retro Machines.Game Descriptor` | *new* | resolved descriptor path, or absent |
+| `Game Identity` | *new* | `prg:<64 hex> file:<64 hex>` |
+| `Game Descriptor` | *new* | resolved descriptor path, or absent |
 | `iNES Mapper` | `INES_MAPPER_PROPERTY` (bead `grm-3ppn`) | decimal mapper number, e.g. `4`, or `4 (submapper 1)` on an NES 2.0 header |
 | `NES Board` | `BOARD_NAME_PROPERTY` (bead `grm-3ppn`) | resolved board's human name, e.g. `NES MMC3 (iNES mapper 4)`; absent when no board matched |
 
@@ -800,7 +800,7 @@ cost of it and should not surprise anyone:
   reading the schema reference, not only here.
 - **Such a consumer cannot have one-shot re-run support or idempotent application, by
   construction** — the two of the three properties below that are analyzer-side mechanics. It DOES
-  keep the third, provenance: `Retro Machines.Game Descriptor` records which file resolved, and
+  keep the third, provenance: `Game Descriptor` records which file resolved, and
   the loader logs what each hint actually changed. Say this explicitly rather than leaving a
   reader to notice the omission by trying to find a re-run button that isn't there.
 
@@ -1040,7 +1040,7 @@ A `GhidraScript` alongside the existing `RunFromElsewhereTransfer.java` and
 `build.gradle:189-192` already ships). It writes a YAML game descriptor
 containing:
 
-- the computed identity (§2), read back from the `Retro Machines.Game Identity` property so the
+- the computed identity (§2), read back from the `Game Identity` property so the
   export cannot disagree with what the loader computed;
 - the bank-switch sites this program's analysis resolved, plus any it was hinted with;
 - `USER_DEFINED` labels and comments as a `symbols:` set with a `provenance` block naming the
@@ -1181,8 +1181,8 @@ document does not hedge in the sections above.
 ## 10. Deliverable status
 
 Design only, except for the identity line below, which ships in bead grm-hb6.1: every NES import
-now carries `Retro Machines.Game Identity` (`prg:<64 hex> file:<64 hex>`), and its companion
-`Retro Machines.Game Descriptor` is *declared but never written* — nothing resolves a game
+now carries `Game Identity` (`prg:<64 hex> file:<64 hex>`), and its companion
+`Game Descriptor` is *declared but never written* — nothing resolves a game
 descriptor yet, which is beads grm-hb6.2/grm-hb6.3. Nothing else below is implemented.
 
 - [x] Identity: PRG-slice + whole-file SHA-256, two Program Info properties — §2
