@@ -43,6 +43,7 @@ data/languages/*.sla.lock
 .classpath
 .project
 .settings/
+.factorypath
 .idea/
 bin/
 
@@ -101,3 +102,7 @@ data/descriptor-sources.sha256
 docs/drafts/
 !tools/banktest/realrom/manifest-c64.tsv
 !tools/banktest/realrom/manifest-spc-snap.tsv
+
+# JVM crash dumps (hs_err_pid*.log, replay_pid*.log)
+hs_err_pid*.log
+replay_pid*.log
