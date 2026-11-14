@@ -265,6 +265,18 @@ final class DescriptorHints {
 	 */
 	static final String DETECTED_PRG_MODE_PROPERTY = "Detected PRG mode";
 
+	/**
+	 * Program-info property carrying the interrupt-exit default (bead {@code grm-5tl.23}): the
+	 * {@link InterruptExitDefault.Result#describe} text, e.g.
+	 * {@code "default: interrupt exit bank=3 (c0f6)"}. A fallback for unknown bank state, never a
+	 * fact. Written by the bank analyzer when a default exists and REMOVED otherwise, so a stale
+	 * value cannot survive a re-analysis. Before this the default was only logged, and the
+	 * real-ROM dump (which reads this property) could not see it at all.
+	 * <p>
+	 * Named for people, like {@link #DETECTED_PRG_MODE_PROPERTY}.
+	 */
+	static final String INTERRUPT_EXIT_DEFAULT_PROPERTY = "Interrupt-exit default";
+
 	/** One {@code window:bank} token: capture group 1 = window name, 2 = bank digits. The
 	 *  separator is a colon, not '=': the headless {@code analyzeHeadless.bat} arg parser
 	 *  (cmd.exe) splits values on '=', so an '='-based grammar can't be passed on Windows. */

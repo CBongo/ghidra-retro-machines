@@ -102,6 +102,13 @@ public class RealRomDump extends GhidraScript {
 	// literal here for the same reason as the two above).
 	private static final String GAME_IDENTITY_PROPERTY = "Retro Machines.Game Identity";
 
+	// Program-info property the bank analyzer stamps with the interrupt-exit default (grm-5tl.23;
+	// DescriptorHints.INTERRUPT_EXIT_DEFAULT_PROPERTY, a literal for the same reason as above).
+	// Emitted ONLY when present, so rows without a default keep their goldens. Without it the
+	// default was invisible here: it reaches the listing only inside a bank comment whose state
+	// has unknown bits, and rygar's are fully known, so breaking it passed the whole tier.
+	private static final String INTERRUPT_DEFAULT_PROPERTY = "Interrupt-exit default";
+
 	// Fixed by the NES loader's machine definition on EVERY row (identical in all 35 goldens
 	// before grm-x4y1.6), so they are CHECKED, not printed: a mismatch prints
 	// `REALROM invariant FAIL ...`. They still count toward `count blocks.total`.
@@ -322,6 +329,11 @@ public class RealRomDump extends GhidraScript {
 		println("REALROM prgsha256 " + prgSha);
 		println("REALROM map " + out.mapPath());
 		println("REALROM placement " + (placement == null ? "NONE" : placement));
+		String interruptDefault = currentProgram.getOptions(Program.PROGRAM_INFO)
+				.getString(INTERRUPT_DEFAULT_PROPERTY, null);
+		if (interruptDefault != null) {
+			println("REALROM interruptDefault " + interruptDefault);
+		}
 
 		// Full block layout -- bounded by the board's window/bank count (<=~200).
 		for (String line : blocks) {

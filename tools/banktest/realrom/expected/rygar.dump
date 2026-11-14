@@ -4,6 +4,7 @@ REALROM sha256 520ef6d7f6beb0eec5f67b57f8ecef284534ba50bfccd751a6be04b512cf9d32
 REALROM prgsha256 9bef1813dbcfa003b3b1978a66a8da3ff59c93dd74f1332801515aa4b633c51e
 REALROM map machines/nes-uxrom.map
 REALROM placement NONE
+REALROM interruptDefault default: interrupt exit bank=3 (c0f6)
 REALROM block PRG_HI c000-ffff overlay=false
 REALROM block PRG_LO 8000-bfff overlay=false
 REALROM block PRG_LO_B1 8000-bfff overlay=true

@@ -23,6 +23,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.WeakHashMap;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -636,6 +637,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			AnalyzerLog.info(this, "interrupt-exit default (fallback for unknown bank state, " +
 				"not a fact): " + interruptDefault.describe(~0));
 		}
+		recordInterruptDefault(program, interruptDefault, monitor);
 		BoardModel board = parsedBoard.withInterruptDefault(interruptDefault);
 		DataflowResult finalFlow = flow;
 		BankMirrors finalMirrors = mirrors;
@@ -1452,6 +1454,41 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		Address tableStart = addr.add(instr.getLength());
 		return BankAnnotationAdapter.retargetInlineJumpTablePointers(this, program, refMgr, baseSpace,
 			tableStart, board, bankUniverse, flow.statesAt(addr), placementOverride, monitor, log);
+	}
+
+	/**
+	 * Records the interrupt-exit default (grm-5tl.23) where people and scripts can see it: the
+	 * {@link DescriptorHints#INTERRUPT_EXIT_DEFAULT_PROPERTY} program-info property, and an INFO
+	 * bookmark on each providing handler's entry. Before this it was only logged, and it reached the
+	 * listing only inside a bank comment whose state had unknown bits, so a fully-known program
+	 * like Rygar showed no trace of it. Both are cleared first on every round, so a default an
+	 * earlier round derived cannot outlive the round that stopped deriving it. The bookmarks use
+	 * their own category, which keeps them out of the switch-site bookmarks (one bookmark per
+	 * address, type and category) and out of the synthetic dump, which lists only the analyzer's
+	 * own category.
+	 */
+	private void recordInterruptDefault(Program program, InterruptExitDefault.Result def,
+			TaskMonitor monitor) throws CancelledException {
+		String category = getBookmarkCategory() + " interrupt default";
+		BookmarkManager bm = program.getBookmarkManager();
+		bm.removeBookmarks(BookmarkType.INFO, category, monitor);
+		Options info = program.getOptions(Program.PROGRAM_INFO);
+		if (def.isEmpty()) {
+			info.removeOption(DescriptorHints.INTERRUPT_EXIT_DEFAULT_PROPERTY);
+			return;
+		}
+		info.setString(DescriptorHints.INTERRUPT_EXIT_DEFAULT_PROPERTY, def.describe(~0));
+		Map<Address, List<String>> byEntry = new TreeMap<>();
+		for (InterruptExitDefault.FieldDefault f : def.fields()) {
+			byEntry.computeIfAbsent(f.entry(), k -> new ArrayList<>())
+					.add(f.name() + "=" + f.value());
+		}
+		for (Map.Entry<Address, List<String>> e : byEntry.entrySet()) {
+			bm.setBookmark(e.getKey(), BookmarkType.INFO, category, "Interrupt-exit default " +
+				String.join(", ", e.getValue()) + ": every exit of every interrupt handler leaves " +
+				"this value, so it is assumed wherever the bank state is otherwise unknown. A " +
+				"fallback, not a fact.");
+		}
 	}
 
 	/**

@@ -4,6 +4,7 @@ REALROM sha256 1dff2d002168e0234d206938afc5189a79eb0ec055ada12f2cd4e105f713fc7d
 REALROM prgsha256 085e5397a3487357c263dfa159fb0fe20a5f3ea8ef82d7af6a7e848d3b9364e8
 REALROM map machines/nes-mmc1.map
 REALROM placement NONE
+REALROM interruptDefault default: interrupt exit prg_bank=0 (e484)
 REALROM block COPY_6c90 6c90-7eff overlay=false
 REALROM block PRG_RAM 6000-6c8f overlay=false
 REALROM block PRG_RAM_7F00 7f00-7fff overlay=false
