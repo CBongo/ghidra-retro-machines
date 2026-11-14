@@ -626,7 +626,7 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 			targetSpace = realCases.get(0).getAddressSpace();
 		}
 		JumpTableBound.Result deduped =
-			trim != null ? null : boundDistinctWords(program, table, realCases);
+			trim != null ? null : boundDistinctWords(program, table, switchAddr, realCases);
 		boolean mixed = false;
 		List<Long> targets = new ArrayList<>(realCases.size());
 		for (Address a : realCases) {
@@ -1035,6 +1035,9 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 			why = "lowest target " + Long.toHexString(result.lowestTarget()) +
 				", cases deduplicated by target"; // grm-uzep
 		}
+		else if (result.rule() == JumpTableBound.Rule.DISTINCT_WORDS_WINDOW) {
+			why = "targets between switch and table, cases deduplicated by target"; // grm-50l5
+		}
 		else {
 			why = "lowest target " + Long.toHexString(result.lowestTarget());
 		}
@@ -1360,7 +1363,7 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 	 * table's words from memory. Returns null when it is not that shape.
 	 */
 	private static JumpTableBound.Result boundDistinctWords(Program program, JumpTable table,
-			List<Address> realCases) {
+			Address switchAddr, List<Address> realCases) {
 		JumpTable.LoadTable found = null;
 		for (JumpTable.LoadTable lt : table.getLoadTables()) {
 			if (lt.getNum() <= 1) {
@@ -1389,6 +1392,12 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		}
 		JumpTableBound.Result r = JumpTableBound.boundByDistinctWords(words,
 			found.getAddress().getOffset(), caseTargets);
+		if (!r.isBounded() &&
+			sameMemory(switchAddr.getAddressSpace(), found.getAddress().getAddressSpace())) {
+			// grm-50l5: the table after its code (megaman e34e / e41c).
+			r = JumpTableBound.boundByDistinctWordsInWindow(words, switchAddr.getOffset(),
+				found.getAddress().getOffset(), caseTargets);
+		}
 		return r.isBounded() ? r : null;
 	}
 

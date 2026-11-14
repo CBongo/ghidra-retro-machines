@@ -1173,6 +1173,9 @@ public final class JumpTableBound {
 		/** {@link #boundByDistinctWords}: grm-uzep -- lowest-target walk over the table's own
 		 *  words, for a decompiler case list deduplicated by target. */
 		DISTINCT_WORDS,
+		/** {@link #boundByDistinctWordsInWindow}: grm-50l5 -- the same, for a table after its
+		 *  code: the words are walked while their targets lie between the switch and the table. */
+		DISTINCT_WORDS_WINDOW,
 		/** {@link #boundByIndexGuard}: grm-c9d.8.2 -- the slots a recovered {@code CMP #imm}
 		 *  guard says the dispatch reaches ({@link IndexGuardRecovery}). */
 		INDEX_GUARD,
@@ -1222,6 +1225,66 @@ public final class JumpTableBound {
 			return Result.decline();
 		}
 		return Result.bounded(distinct.size(), minTarget, Rule.DISTINCT_WORDS);
+	}
+
+	/**
+	 * grm-50l5: {@link #boundByDistinctWords} for a table AFTER its code, the way
+	 * {@link #boundBySwitchWindow} is {@link #bound}'s counterpart (grm-akiv). The lowest-target
+	 * walk declines such a table by design (its first word already lies below it), so instead the
+	 * table's own words are walked while each target lies in the window {@code [switchAddr,
+	 * tableStart)} between the dispatch and the table; the first word outside ends it, and, as for
+	 * the plain window rule, a word coming back into the window within {@link #WINDOW_CONFIRM}
+	 * entries after that makes the end ambiguous and declines. The distinct targets of the kept
+	 * words must be exactly the leading cases.
+	 * <p>
+	 * The case it exists for: megaman's fixed-bank dispatch at {@code e34e} carries its pointer
+	 * across a {@code PHA}/{@code PLA} bracket ({@code LDA $e41c,Y / PHA / LDA $e41d,Y / PHA ...
+	 * PLA / STA $05 / PLA / STA $04 / JMP ($0004)}), with an undoubled {@code Y}. Once the
+	 * decompiler sees through the stack (grm-hf5h.8), it recovers 98 distinct targets from all
+	 * 256 byte offsets; the real table is 12 words with 6 distinct handlers, all between the
+	 * switch and the table, and entry 13 is {@code 56a5}. One of the junk targets landed
+	 * mid-function at {@code c90f} and its unknown-bank edge erased three bank-5 references.
+	 *
+	 * @param words the table's words, in slot order, over the whole load-table extent
+	 * @param switchAddr flat offset of the dispatch instruction
+	 * @param tableStart flat offset of the table's first byte
+	 * @param caseTargets the decompiler's case targets, in its order (default excluded)
+	 * @return bounded with the number of kept CASES (distinct targets), rule
+	 *         {@link Rule#DISTINCT_WORDS_WINDOW}, or a decline
+	 */
+	public static Result boundByDistinctWordsInWindow(List<Long> words, long switchAddr,
+			long tableStart, List<Long> caseTargets) {
+		if (tableStart <= switchAddr) {
+			return Result.decline();
+		}
+		int slots = 0;
+		while (slots < words.size() && words.get(slots) >= switchAddr &&
+			words.get(slots) < tableStart) {
+			slots++;
+		}
+		if (slots < 2 || slots == words.size()) {
+			return Result.decline();
+		}
+		for (int j = slots + 1; j < Math.min(words.size(), slots + 1 + WINDOW_CONFIRM); j++) {
+			long t = words.get(j);
+			if (t >= switchAddr && t < tableStart) {
+				return Result.decline(); // the table comes back into the window; ambiguous
+			}
+		}
+		long minTarget = Long.MAX_VALUE;
+		List<Long> distinct = new ArrayList<>();
+		for (int i = 0; i < slots; i++) {
+			long target = words.get(i);
+			minTarget = Math.min(minTarget, target);
+			if (!distinct.contains(target)) {
+				distinct.add(target);
+			}
+		}
+		if (distinct.size() < 2 || distinct.size() >= caseTargets.size() ||
+			!caseTargets.subList(0, distinct.size()).equals(distinct)) {
+			return Result.decline();
+		}
+		return Result.bounded(distinct.size(), minTarget, Rule.DISTINCT_WORDS_WINDOW);
 	}
 
 	/**

@@ -905,6 +905,39 @@ public class JumpTableBoundTest {
 				.isBounded());
 	}
 
+	/** megaman e34e (grm-50l5): table e41c AFTER its handlers, undoubled index, so the decompiler
+	 *  reads 98 distinct targets from 256 byte offsets. The real 12 words hold 6 distinct handlers,
+	 *  all in [e34e, e41c); word 13 is 56a5. The lowest-target walk declines; the window walk
+	 *  keeps 12 slots and 6 cases. */
+	@Test
+	public void distinctWordsInWindowBoundsATableAfterItsCode() {
+		List<Long> words = new ArrayList<>(targets(0xe351, 0xe399, 0xe3ba, 0xe3e6, 0xe3c7, 0xe3e6,
+			0xe3c7, 0xe3e6, 0xe3c7, 0xe3e6, 0xe3c7, 0xe403, 0x56a5, 0x0cf0, 0x1fc9, 0x0890));
+		List<Long> cases = targets(0xe351, 0xe399, 0xe3ba, 0xe3e6, 0xe3c7, 0xe403, 0x56a5, 0x0cf0,
+			0x1fc9, 0x0890, 0x12a0);
+		assertFalse(JumpTableBound.boundByDistinctWords(words, 0xe41c, cases).isBounded());
+		Result r = JumpTableBound.boundByDistinctWordsInWindow(words, 0xe34e, 0xe41c, cases);
+		assertTrue(r.isBounded());
+		assertEquals(6, r.count());
+		assertEquals(0xe351, r.lowestTarget());
+		assertEquals(JumpTableBound.Rule.DISTINCT_WORDS_WINDOW, r.rule());
+		// Cases not in the words' first-seen order: not this shape.
+		assertFalse(JumpTableBound.boundByDistinctWordsInWindow(words, 0xe34e, 0xe41c,
+			targets(0xe399, 0xe351, 0xe3ba, 0xe3e6, 0xe3c7, 0xe403, 0x56a5, 1)).isBounded());
+		// A table before its switch: no window.
+		assertFalse(JumpTableBound.boundByDistinctWordsInWindow(words, 0xe41c, 0xe34e, cases)
+				.isBounded());
+	}
+
+	/** grm-50l5: a word coming back into the window just after the cut makes the end ambiguous. */
+	@Test
+	public void distinctWordsInWindowDeclinesWhenTheTableReturnsToTheWindow() {
+		List<Long> words = new ArrayList<>(targets(0xe351, 0xe399, 0x56a5, 0x0cf0, 0xe3ba, 0x0890));
+		List<Long> cases = targets(0xe351, 0xe399, 0x56a5, 0x0cf0, 0xe3ba, 0x0890);
+		assertFalse(JumpTableBound.boundByDistinctWordsInWindow(words, 0xe34e, 0xe41c, cases)
+				.isBounded());
+	}
+
 	/** Every target decodes: nothing to cut. */
 	@Test
 	public void codePrefixKeepsAllWhenEveryTargetDecodes() {
