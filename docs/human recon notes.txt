@@ -343,3 +343,4 @@ tmnt fe21: fe0e is only called from d136 which explicitly sets bank 6 before cal
 megaman cada,cb07: part of ca2d which is called from fun_c8b2 which is only called from bank 5.  similarly, f28e is called from ca2d.
 to fix: megaman c89e-c8a8 is a switch table for c847 that gets disassembled instead of data tabled.
 
+cv3 8527: disassembly at https://github.com/cyneprepou4uk/NES-Games-Disassembly/blob/main/Castlevania%203/bank_94.asm has it loaded from tables at B2_a207, whose values are at most $52, so table size of 83 checks out.

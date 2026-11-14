@@ -52,16 +52,6 @@ Each is minutes of work and settles something specific. Highest value per unit e
   entry 0 is not code, `$51C6` is a different table, and the one-entry overlap rule needs a
   stricter test than alignment.
 
-### 1.18 cv3 bank 20 `$8527`: how many entity types does the outer table really have? (`grm-gipk.23`)
-
-- [ ] **Question.** The new two-level dispatch recognizer reads the outer table at `$8527`
-  (indexed by `LDA $07c2,X / ASL / TAY` at `$8505`) as **83 entries**, `$8527`–`$85cc`. It stops
-  only because the next word, `$1960` at `$85cd`, points into RAM. Every one of the 83 words
-  points at a valid-looking handler table, so no rule trims it further. What is the largest entity
-  type ever stored to `$07c2,X`? If it is well below 82, the tail entries are other data read as
-  pointers, and the recognizer needs a better outer bound. A breakpoint on writes to
-  `$07c2`–`$07c7`, or the type list in a disassembly, would settle it.
-
 ---
 
 ## 2. Def-use passes on untraced titles
@@ -248,6 +238,7 @@ Agents don't write into your ROM library or other personal directories.
 
 | question | answer | bead |
 |---|---|---|
+| cv3 bank 20 `$8527` (1.18): how many entity types does the two-level dispatch's outer table really have? | **83, exactly what the recognizer lays (owner, 2026-11-14, from cyneprepou4uk/NES-Games-Disassembly `Castlevania 3/bank_94.asm`).** The type stored to `$07c2,X` is loaded from tables at `B2_a207`, whose values are at most `$52` = 82, so indices 0–82 fill `$8527`–`$85cc`. The bound that ends the table (the RAM word `$1960` at `$85cd`) coincides with the real type range. **Do not add a tighter outer bound for this table.** | `grm-gipk.23` |
 | tmnt `$FE21`/`$FE26` and megaman `$CADA`/`$CB07`/`$F2E6` (1.19): is the bank candidate 1 attributed really live? | **Yes, all five: the old refs were right and candidate 7 lost real information (owner, 2026-11-14).** tmnt `FUN_fe0e` is called only from `$D136`, which explicitly sets bank 6 first. megaman `$CADA`/`$CB07` are in `FUN_ca2d`, called from `FUN_c8b2`, which is called only from bank 5; `FUN_f28e` (`$F2E6`) is called from `ca2d`, so it is bank 5 too. **`grm-50l5` is a real regression: chase it, do not close it as stale refs.** Side finding: megaman `$C89E`-`$C8A8` is the switch table for the dispatch at `$C847`, but is disassembled as code instead of laid as data. | `grm-50l5`; megaman table: `grm-mav1` |
 | CT `$C7:0AD9` and `$C1:0051`: how many jump-table entries are real? (the CT half of 1.5) | **`$C7:0AD9`: 8 entries; `$C1:0051`: 10, which is what the analyzer already lays (owner, 2026-11-01).** At `$C7:0173` the index is guarded by `CMP #$10`/`BCC` and `CMP #$18`/`BCS`, then `AND #$0F`/`ASL`. The `AND` folds `$10`–`$17` to 0–7, so the table starts at `$0AD9` itself (agent's reading, owner confirmed; the first answer said `$0AF9`). Its 8 words are `01a1`/`0192` alternating in pairs, both real code. From `$0AED` the bytes are a 3-byte long-pointer table, which read as junk words from `$0AF9`. `$C5:06FE` is reached or pointed to by nothing. `$C1:0051` runs exactly up to the function at `$C1:0065`, the next dispatch. Scattered targets do not make a table junk: **do not shorten it further.** Side finding: 65816 `JMP`/`JSR (abs,X)` sites carry only target refs, never a ref to the table. | `grm-9nxj.5.8`; `grm-9nxj.24` (CMP range cap); `grm-9nxj.25` (site→table ref) |
 | kicarus bank 4: what is the record array at `$A180`, and what walks it? | **Two-level bit-priority dispatch, not a stride-10 array (owner, 2026-11-01; bytes re-checked against the pinned ROM).** Stubs `a210`–`a23a` do `LDA <RAM>` / `LDX #key` / `BNE a22c`, then `a22c JSR a3d7` / `JMP ($eb)`. `a3d7` reads a 5-byte record at `$A100+X`: a word pointing to an 8-word handler table, a default target word, and a `$034e` byte. There are 10 records at `$A17E`–`$A1AF`. The highest set bit of A picks the handler from that table (bit 7 first); if A is zero, the default word is used. Defaults chain in pairs: rec0's default is stub `a217`, which dispatches rec1, whose default is `$A404`, a bare `RTS`. The handler tables are `$A1B0` (48 words) and `$ABB7` (24 words). **Do not build a recognizer for it.** Resolving it needs a value set for X over six callers plus a double dereference through one game's helper, and the corpus has one customer. It goes to a per-game code-pointer-table hint instead. | `grm-gipk.6` **closed**; `grm-hb6.29` |
