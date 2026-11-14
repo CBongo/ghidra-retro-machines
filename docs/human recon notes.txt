@@ -344,3 +344,5 @@ megaman cada,cb07: part of ca2d which is called from fun_c8b2 which is only call
 to fix: megaman c89e-c8a8 is a switch table for c847 that gets disassembled instead of data tabled.
 
 cv3 8527: disassembly at https://github.com/cyneprepou4uk/NES-Games-Disassembly/blob/main/Castlevania%203/bank_94.asm has it loaded from tables at B2_a207, whose values are at most $52, so table size of 83 checks out.
+
+weaponlord e9:51c6: index 0 cannot be used, as the JMP at e96eaf that uses 51c6 as a base is skipped when the index (from 5465) is zero by the branch at e96eac.  it doesn't hurt anything though, as 37ce happens to be the start of a valid function.
