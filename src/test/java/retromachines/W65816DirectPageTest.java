@@ -119,6 +119,50 @@ public class W65816DirectPageTest extends AbstractProgramTest {
 		assertNull(dataRef(0x8006));
 	}
 
+	/** grm-9nxj.35: runs the absolute-long reference analyzer over the decoded bytes. */
+	private void runLong(String bytes) throws Exception {
+		builder.setBytes("0x8000", bytes, false);
+		int n = bytes.split(" ").length;
+		builder.disassemble("0x8000", n, false);
+		W65816AbsLongRefAnalyzer a = new W65816AbsLongRefAnalyzer();
+		assertTrue(a.canAnalyze(program));
+		inTx(program, "analyze", () -> a.added(program,
+			new AddressSet(addr(0x8000), addr(0x8000L + n - 1)), TaskMonitor.DUMMY,
+			new MessageLog()));
+	}
+
+	@Test
+	public void absLongReadAndWriteGetReferences() throws Exception {
+		builder.createMemory(".wram", "0x7e0000", 0x2000);
+		runLong("af 10 01 7e 8f 20 01 7e");   // LDA $7e0110 ; STA $7e0120
+		Reference r = dataRef(0x8000);
+		assertNotNull(r);
+		assertEquals(addr(0x7e0110), r.getToAddress());
+		assertEquals(RefType.READ, r.getReferenceType());
+		assertTrue(r.isPrimary());
+		assertEquals(0, r.getOperandIndex());
+		Reference w = dataRef(0x8004);
+		assertNotNull(w);
+		assertEquals(addr(0x7e0120), w.getToAddress());
+		assertEquals(RefType.WRITE, w.getReferenceType());
+	}
+
+	@Test
+	public void absLongIndexedReferencesBase() throws Exception {
+		builder.createMemory(".wram", "0x7e0000", 0x2000);
+		runLong("bf 00 01 7e");   // LDA $7e0100,X
+		Reference r = dataRef(0x8000);
+		assertNotNull(r);
+		assertEquals(addr(0x7e0100), r.getToAddress());
+		assertEquals(RefType.READ, r.getReferenceType());
+	}
+
+	@Test
+	public void absLongOutsideMemoryGetsNoReference() throws Exception {
+		runLong("af 00 00 7f");   // LDA $7f0000: no block there
+		assertNull(dataRef(0x8000));
+	}
+
 	@Test
 	public void conflictingDpAtMergeStaysUnknown() throws Exception {
 		// LDX #$600 ; PHX ; PLD ; BEQ +5 ; LDX #$700 ; PHX ; PLD ; STA <$3d ; RTS

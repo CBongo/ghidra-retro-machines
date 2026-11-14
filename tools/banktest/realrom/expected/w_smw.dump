@@ -45,4 +45,5 @@ REALROM dp operands=121 known=6 withRef=6 knownWithRef=6
 REALROM dp writer TCD sites=1 knownAfter=1
 REALROM dp value 0000=6
 REALROM dp entry assumedPastUnknown=0 conflict=0
+REALROM long operands=24 withRef=13
 === REALROM END ===

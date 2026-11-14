@@ -130,4 +130,5 @@ REALROM dp writer PLD sites=1 knownAfter=0
 REALROM dp writer TCD sites=2 knownAfter=2
 REALROM dp value 0000=131
 REALROM dp entry assumedPastUnknown=3 conflict=0
+REALROM long operands=221 withRef=204
 === REALROM END ===

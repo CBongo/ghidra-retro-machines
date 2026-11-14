@@ -1213,13 +1213,14 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				SourceType.ANALYSIS, 0);
 			return true;
 		}
+	}
 
-		private static RefType typeOf(String mn) {
-			return switch (mn) {
-				case "STA", "STX", "STY", "STZ" -> RefType.WRITE;
-				case "INC", "DEC", "ASL", "LSR", "ROL", "ROR", "TSB", "TRB" -> RefType.READ_WRITE;
-				default -> RefType.READ;
-			};
-		}
+	/** Data-reference type for a 65816 mnemonic (shared with {@link W65816AbsLongRefAnalyzer}). */
+	static RefType typeOf(String mn) {
+		return switch (mn) {
+			case "STA", "STX", "STY", "STZ" -> RefType.WRITE;
+			case "INC", "DEC", "ASL", "LSR", "ROL", "ROR", "TSB", "TRB" -> RefType.READ_WRITE;
+			default -> RefType.READ;
+		};
 	}
 }

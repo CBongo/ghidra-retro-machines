@@ -115,6 +115,7 @@ public class W65816WidthDump extends GhidraScript {
 		emitComputed();
 		emitPlp();
 		emitDirectPage();
+		emitAbsLong();
 		out.end();
 	}
 
@@ -646,6 +647,39 @@ public class W65816WidthDump extends GhidraScript {
 	}
 
 	// ------------------------------------------------------------------
+
+	/**
+	 * Absolute-long operand coverage (grm-9nxj.35): long and long,X data instructions (opcode low
+	 * five bits $0F / $1F) and how many carry a non-flow memory reference. Counts only.
+	 */
+	private void emitAbsLong() {
+		int ops = 0;
+		int withRef = 0;
+		InstructionIterator it = currentProgram.getListing().getInstructions(true);
+		while (it.hasNext()) {
+			Instruction in = it.next();
+			if (in.getLength() != 4) {
+				continue;
+			}
+			try {
+				int op = in.getByte(0) & 0x1f;
+				if (op != 0x0f && op != 0x1f) {
+					continue;
+				}
+			}
+			catch (MemoryAccessException e) {
+				continue;
+			}
+			ops++;
+			for (Reference r : in.getReferencesFrom()) {
+				if (r.isMemoryReference() && !r.getReferenceType().isFlow()) {
+					withRef++;
+					break;
+				}
+			}
+		}
+		println("REALROM long operands=" + ops + " withRef=" + withRef);
+	}
 
 	/** DP coverage: see the header. Counts only, no addresses. */
 	private void emitDirectPage() {

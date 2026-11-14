@@ -147,4 +147,5 @@ REALROM dp value 2100=421
 REALROM dp value 4200=32
 REALROM dp value 4300=48
 REALROM dp entry assumedPastUnknown=87 conflict=3
+REALROM long operands=3666 withRef=3658
 === REALROM END ===
