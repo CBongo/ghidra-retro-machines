@@ -299,7 +299,7 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 				continue;
 			}
 			if (planar ? JumpTableArrays.layPlanar(program, e.getKey(), rec.gap(), rec.targets())
-					: JumpTableArrays.layWords(program, e.getKey(), rec.targets())) {
+					: JumpTableArrays.layWords(program, e.getKey(), rec.targets(), true)) {
 				restored++;
 				AnalyzerLog.info(this, "re-laid " + (planar ? "byte" : "word") + "[" +
 					rec.targets().size() + "] at " + e.getKey() +
@@ -314,7 +314,7 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 
 	/** {@link JumpTableArrays#layWords}, recording the array for {@link #relayCleared}. */
 	private boolean layArray(Program program, Address at, List<Address> targets) {
-		boolean laid = JumpTableArrays.layWords(program, at, targets);
+		boolean laid = JumpTableArrays.layWords(program, at, targets, true);
 		if (laid) {
 			laidArrays.put(at, new LaidArray(0, List.copyOf(targets)));
 		}

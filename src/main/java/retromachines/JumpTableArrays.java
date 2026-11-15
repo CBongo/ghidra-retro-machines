@@ -36,6 +36,7 @@ import ghidra.program.model.data.Undefined1DataType;
 import ghidra.program.model.data.Undefined;
 import ghidra.program.model.data.WordDataType;
 import ghidra.program.model.listing.Data;
+import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.symbol.RefType;
@@ -100,8 +101,15 @@ final class JumpTableArrays {
 	 * array was laid.
 	 */
 	static boolean layWords(Program program, Address start, List<Address> targets) {
+		return layWords(program, start, targets, false);
+	}
+
+	/** {@link #layWords(Program, Address, List)}; with {@code overJunkCode} (grm-mav1) instructions
+	 *  that only fall-through reaches are cleared rather than declining (see {@link #onlyFallThroughCode}). */
+	static boolean layWords(Program program, Address start, List<Address> targets,
+			boolean overJunkCode) {
 		int n = targets.size();
-		if (!layRuns(program, List.of(new Run(start, n, 2, WordDataType.dataType)))) {
+		if (!layRuns(program, List.of(new Run(start, n, 2, WordDataType.dataType)), overJunkCode)) {
 			return false;
 		}
 		ReferenceManager refs = program.getReferenceManager();
@@ -160,7 +168,7 @@ final class JumpTableArrays {
 	static boolean layRecords(Program program, Address start, int stride, boolean bankFirst,
 			List<Address> targets) {
 		int n = targets.size();
-		if (!layRuns(program, List.of(new Run(start, n, stride, recordType(stride, bankFirst))))) {
+		if (!layRuns(program, List.of(new Run(start, n, stride, recordType(stride, bankFirst))), false)) {
 			return false;
 		}
 		ReferenceManager refs = program.getReferenceManager();
@@ -222,7 +230,7 @@ final class JumpTableArrays {
 			return false;
 		}
 		if (!layRuns(program, List.of(new Run(lo, n, 1, ByteDataType.dataType),
-			new Run(hi, n, 1, ByteDataType.dataType)))) {
+			new Run(hi, n, 1, ByteDataType.dataType)), false)) {
 			return false;
 		}
 		ReferenceManager refs = program.getReferenceManager();
@@ -266,6 +274,38 @@ final class JumpTableArrays {
 		return true;
 	}
 
+	/**
+	 * grm-mav1: whether {@code extent} holds no instruction, or only instructions lying wholly
+	 * inside it that nothing but fall-through flow reaches. The latter is the table's own bytes
+	 * decoded as junk code by a conditional branch that never falls through at run time (megaman
+	 * {@code c89e}: the last case ends {@code BMI}, whose fall-through is the table). Nothing
+	 * jumps, calls or branches into such code, so it is not a handler; the caller clears it when
+	 * it lays the array. An instruction straddling either edge, or any flow reference into one
+	 * (a handler overlapping its table, deadly_towers ddd0), declines.
+	 */
+	private static boolean onlyFallThroughCode(Program program, AddressSet extent) {
+		Listing listing = program.getListing();
+		Address start = extent.getMinAddress();
+		Instruction first = listing.getInstructionContaining(start);
+		if (first != null && !first.getMinAddress().equals(start)) {
+			return false;
+		}
+		Instruction last = listing.getInstructionContaining(extent.getMaxAddress());
+		if (last != null && last.getMaxAddress().compareTo(extent.getMaxAddress()) > 0) {
+			return false;
+		}
+		ReferenceManager refs = program.getReferenceManager();
+		for (Instruction instr : listing.getInstructions(extent, true)) {
+			for (Reference ref : refs.getReferencesTo(instr.getMinAddress())) {
+				RefType type = ref.getReferenceType();
+				if (type.isFlow() && !type.isFallthrough()) {
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
 	/** One array to lay: {@code count} elements of {@code type} spaced {@code elemLen} apart. */
 	private record Run(Address start, int count, int elemLen, DataType type) {}
 
@@ -274,7 +314,7 @@ final class JumpTableArrays {
 	 * later run seeing the earlier runs' extents as already cleared, so one stock byte array
 	 * spanning two runs is absorbed once.
 	 */
-	private static boolean layRuns(Program program, List<Run> runs) {
+	private static boolean layRuns(Program program, List<Run> runs, boolean overJunkCode) {
 		Listing listing = program.getListing();
 		AddressSet willClear = new AddressSet();
 		for (Run run : runs) {
@@ -287,8 +327,10 @@ final class JumpTableArrays {
 				return false;
 			}
 			AddressSet extent = new AddressSet(start, end);
-			if (listing.getInstructions(extent, true).hasNext() ||
-				listing.getInstructionContaining(start) != null) {
+			boolean blocked = overJunkCode ? !onlyFallThroughCode(program, extent)
+					: listing.getInstructions(extent, true).hasNext() ||
+						listing.getInstructionContaining(start) != null;
+			if (blocked) {
 				return false;
 			}
 			Address clearEnd = end;
