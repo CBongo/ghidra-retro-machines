@@ -161,12 +161,13 @@ re-applied to `Ghidra_12.2_build` and rebuilt, plus a fourth hunk (owner ruling,
 12.2's GP-6945 caps a decompile at 4 bad-data flows, and stock switch analysis then abandons
 functions that flow into unresolved bank windows -- real code lost on tmnt/ff1/cv3/contra. No
 program or tool option reaches that cap, so the local build sets `max_baddata` unlimited
-(`ff1834fc…`, patch on `grm-75ey`). **Since 2026-11-13 the installed build is candidate 7
-(`d1064ec1…`, `grm-hf5h.9`)**: those four hunks plus the switch-label work (`grm-gipk.25`,
-`grm-hf5h.1`/`.2`), wrap-aware heritage (`grm-hf5h.8`, which also fixes the rcransom crash
-`grm-gz42`) and a `RuleSLess2Zero` fold; the goldens are blessed on it. The owner keeps the
-earlier builds beside it (`decompile.exe.stock-12.2`, `.gp6936-nocap` = ff1834fc, `.gipk25` =
-candidate 1, `.hf5h9` = candidate 7); `build/decompiler-candidates/` has the source diffs. Every runner prints `== decompiler: … ==`
+(`ff1834fc…`, patch on `grm-75ey`). **Since 2026-11-15 the installed build is candidate 8
+(`56d40c9d…`, `grm-hf5h.4`)**: candidate 7 (`d1064ec1…`, `grm-hf5h.9`: those four hunks plus the
+switch-label work `grm-gipk.25`, `grm-hf5h.1`/`.2`, wrap-aware heritage `grm-hf5h.8`, which also
+fixes the rcransom crash `grm-gz42`, and a `RuleSLess2Zero` fold) plus `trialLoadNorm`, index
+labels for switches on a loaded value (`grm-hf5h.4`, ghidra#10223); the goldens are blessed on it.
+The owner keeps the earlier builds beside it (`decompile.exe.stock-12.2`, `.gp6936-nocap` =
+ff1834fc, `.gipk25` = candidate 1, `.hf5h9` = candidate 7); `build/decompiler-candidates/` has the source diffs. Every runner prints `== decompiler: … ==`
 naming the build by sha256 (`grm_decompiler_build_name` in `tools/banktest/lib/common.sh`), and the
 `REALROM STALENESS` stamp records it, so **a `megaman`/`wizwarr` failure whose banner says `12.1.x
 stock` is the missing patch, not a regression**. The candidate cache keys on the same hash, so a
