@@ -251,10 +251,29 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		return ConstantSemanticsMode.TABLE;
 	}
 
+	/**
+	 * Option: drop a live-bank candidate (a {@code banking.live_bank_sets} expansion, bead
+	 * grm-5tl.20.5) whose flow target does not decode as plausible code in that bank. Default on;
+	 * grm-8v6y's future "tricky" posture is expected to turn it off.
+	 */
+	static final String PRUNE_LIVE_BANK_OPTION = "Prune implausible live-bank candidates";
+
+	private boolean pruneLiveBankCandidates = true;
+
+	@Override
+	public void optionsChanged(Options options, Program program) {
+		super.optionsChanged(options, program);
+		pruneLiveBankCandidates = options.getBoolean(PRUNE_LIVE_BANK_OPTION, true);
+	}
+
 	/** Registers {@link #CONSTANT_SEMANTICS_OPTION}, defaulting to {@link ConstantSemanticsMode#TABLE}. */
 	@Override
 	public void registerOptions(Options options, Program program) {
 		super.registerOptions(options, program);
+		options.registerOption(PRUNE_LIVE_BANK_OPTION, true, null,
+			"When a game descriptor's banking.live_bank_sets expands a banked reference over its " +
+				"candidate banks, drop a candidate whose flow target is not plausible code in that " +
+				"bank (bead grm-5tl.20.5). Data references are never pruned.");
 		options.registerOption(CONSTANT_SEMANTICS_OPTION, ConstantSemanticsMode.TABLE, null,
 			"Which evaluator StoredValueScanner's backward constant-register walk uses: TABLE " +
 				"(a per-mnemonic table, the default) or PCODE (interprets the instruction's own " +
@@ -581,6 +600,13 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		for (String mode : shadowCommits.modeLines()) {
 			AnalyzerLog.info(this, mode);
 		}
+		// bead grm-5tl.20.5: banking.live_bank_sets -- validated once here (the hint WINS: only a
+		// shape-level impossibility refuses it; a contradicting writer warns, below). Emission
+		// over the set is a consumer of liveBankSets.candidates, not of this validation.
+		LiveBankSets.Plan liveBankSets = LiveBankSets.plan(program, parsedBoard, bankUniverse);
+		for (String line : liveBankSets.logLines()) {
+			AnalyzerLog.info(this, line);
+		}
 		if (!helpers.isEmpty() || !mirrors.isEmpty()) {
 			flow = runDataflow(program, monitor, listing,
 				BankDataflowEngine.DataflowInputs.of(mechanisms, parsedBoard)
@@ -622,6 +648,8 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// violation scan below dedupes against this set rather than stacking a second
 		// bookmark on a site the existing switch/call-switch warning already covers.
 		Set<Address> alreadyWarned = new LinkedHashSet<>();
+		// bead grm-5tl.20.5: sites where a live_bank_sets hint overrode dataflow, for report().
+		Map<Address, String> liveSiteWarnings = new java.util.LinkedHashMap<>();
 		// The loader's interrupt entries (bead grm-913), for the caller-side restore note's
 		// "unchanged from handler entry" clause -- the same list the engine seeds unknown.
 		Set<Address> asyncEntries = DescriptorHints.parseAsyncEntryPoints(program);
@@ -714,7 +742,8 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 						callSwitch.helperName(), provenance);
 					warnings += tally(marked, addr, alreadyWarned);
 					refs = refs.plus(retargetAll(program, refMgr, baseSpace, instr, board,
-						bankUniverse, flow, addr, placementOverride, monitor, log, provenance, refProvenance));
+						bankUniverse, flow, addr, placementOverride, monitor, log, provenance, refProvenance,
+						liveBankSets, liveSiteWarnings));
 					continue;
 				}
 				CallVerdict verdict = classifyCallSite(callSwitch, flow.hintNotes().get(addr),
@@ -732,7 +761,8 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			}
 
 			refs = refs.plus(retargetAll(program, refMgr, baseSpace, instr, board, bankUniverse,
-				flow, addr, placementOverride, monitor, log, provenance, refProvenance));
+				flow, addr, placementOverride, monitor, log, provenance, refProvenance,
+				liveBankSets, liveSiteWarnings));
 		}
 
 		// Retract bank comments an EARLIER round wrote at sites this round did not annotate
@@ -793,6 +823,10 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// Bead grm-hb6.26: banking.shadow_commits -- failed validation and overridden dataflow.
 		for (String hintWarning : ShadowCommits.report(program, shadowCommits, flow.hintNotes(),
 			SwitchSiteHints.valueHints(program).keySet())) {
+			AnalyzerLog.info(this, tag + ": " + hintWarning);
+		}
+		// Bead grm-5tl.20.5: banking.live_bank_sets -- contradicting writers and refused hints.
+		for (String hintWarning : LiveBankSets.report(program, liveBankSets, liveSiteWarnings)) {
 			AnalyzerLog.info(this, tag + ": " + hintWarning);
 		}
 
@@ -1416,12 +1450,29 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			AddressSpace baseSpace, Instruction instr, BoardModel board,
 			Map<String, Set<Integer>> bankUniverse, DataflowResult flow, Address addr,
 			Map<String, Integer> placementOverride, TaskMonitor monitor, MessageLog log,
-			BankCommentProvenance provenance, OverlayRefProvenance refProvenance) {
+			BankCommentProvenance provenance, OverlayRefProvenance refProvenance,
+			LiveBankSets.Plan liveBankSets, Map<Address, String> liveSiteWarnings) {
+		List<BankState> states = flow.statesAt(addr);
+		if (!liveBankSets.isEmpty()) {
+			// bead grm-5tl.20.5: under a live_bank_sets hint, place references for every candidate
+			// bank. A local substitute for reference placement only -- never fed back into dataflow.
+			LiveBankExpansion.Result expansion = LiveBankExpansion.expand(program, board,
+				bankUniverse, placementOverride, liveBankSets, instr, baseSpace, states,
+				pruneLiveBankCandidates);
+			if (expansion.comment() != null) {
+				BankAnnotationAdapter.writeLiveBankSetComment(program.getListing(), addr,
+					expansion.comment(), provenance);
+			}
+			if (expansion.warning() != null) {
+				liveSiteWarnings.put(addr, expansion.warning());
+			}
+			states = expansion.states();
+		}
 		BankAnnotationAdapter.Retargeted refs = BankAnnotationAdapter.retargetReferences(this, program,
-			refMgr, baseSpace, instr, board, bankUniverse, flow.statesAt(addr), placementOverride,
+			refMgr, baseSpace, instr, board, bankUniverse, states, placementOverride,
 			monitor, log, provenance, refProvenance);
 		return refs.plus(
-			retargetInlineJumpTableTable(program, refMgr, baseSpace, instr, board, bankUniverse, flow,
+			retargetInlineJumpTableTable(program, refMgr, baseSpace, instr, board, bankUniverse, states,
 				addr, placementOverride, monitor, log));
 	}
 
@@ -1438,7 +1489,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 */
 	private BankAnnotationAdapter.Retargeted retargetInlineJumpTableTable(Program program,
 			ReferenceManager refMgr, AddressSpace baseSpace, Instruction instr, BoardModel board,
-			Map<String, Set<Integer>> bankUniverse, DataflowResult flow, Address addr,
+			Map<String, Set<Integer>> bankUniverse, List<BankState> states, Address addr,
 			Map<String, Integer> placementOverride, TaskMonitor monitor, MessageLog log) {
 		if (!"JSR".equals(instr.getMnemonicString())) {
 			return BankAnnotationAdapter.Retargeted.NONE;
@@ -1453,7 +1504,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		}
 		Address tableStart = addr.add(instr.getLength());
 		return BankAnnotationAdapter.retargetInlineJumpTablePointers(this, program, refMgr, baseSpace,
-			tableStart, board, bankUniverse, flow.statesAt(addr), placementOverride, monitor, log);
+			tableStart, board, bankUniverse, states, placementOverride, monitor, log);
 	}
 
 	/**

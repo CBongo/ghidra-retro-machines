@@ -396,7 +396,10 @@ public class GameDescriptorExportRoundTripTest extends AbstractBundledLanguageTe
 				  "shadow_commits": [ { "helper": 49152, "cell": 18, "field": "r6",
 				    "provenance": "p-commit" } ],
 				  "paired_fields": [ { "high": "r6", "low": "r7", "offset": 1,
-				    "provenance": "p-pair" } ] } }
+				    "provenance": "p-pair" } ],
+				  "live_bank_sets": [ { "field": "r6", "valueset": [0, 1, 5],
+				    "request": { "cell": 36, "decode": "value - 1", "idle": [0] },
+				    "applied": 35, "provenance": "p-live" } ] } }
 				""").getAsJsonObject();
 		ProgramBuilder b = newBuilder();
 		ProgramDB src = b.getProgram();
@@ -417,11 +420,19 @@ public class GameDescriptorExportRoundTripTest extends AbstractBundledLanguageTe
 		assertEquals(1, DescriptorHints.parsePairedFields(src, problems).size());
 		assertEquals(1, SwitchSiteHints.parse(src, problems).size());
 		assertEquals("curated.gmap", ShadowCommits.source(src));
+		List<LiveBankSets.Hint> live = LiveBankSets.parse(src, problems);
+		assertEquals(1, live.size());
+		assertEquals(List.of(0, 1, 5), live.get(0).valueset());
+		assertEquals("value - 1", live.get(0).request().decode());
+		assertEquals(Long.valueOf(35), live.get(0).applied());
 		assertTrue(problems.toString(), problems.isEmpty());
 
 		GameDescriptorExporter.Result result =
 			GameDescriptorExporter.export(src, request(Map.of("prg_mode", 0)));
 		assertTrue(result.skipped().toString(), result.skipped().isEmpty());
+		assertTrue(result.yaml(), result.yaml().contains("cell: 0x0024"));
+		assertTrue(result.yaml(), result.yaml().contains("applied: 0x0023"));
+		assertTrue(result.yaml(), result.yaml().contains("valueset:"));
 		int last = -1;
 		for (BankingHintKind kind : BankingHintKind.values()) {
 			int at = result.yaml().indexOf("\n  " + kind.yamlKey + ":");

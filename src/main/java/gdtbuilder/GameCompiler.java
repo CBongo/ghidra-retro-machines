@@ -716,9 +716,123 @@ public class GameCompiler {
 		Set.of("high", "low", "offset", "provenance"),
 		GameCompiler::pairedFieldEntry);
 
+	private static final HintSpec LIVE_BANK_SETS = new HintSpec("live_bank_sets",
+		"field, valueset and provenance (optional request, applied)",
+		Set.of("field", "valueset", "request", "applied", "provenance"),
+		GameCompiler::liveBankSetEntry);
+
 	/** The list-shaped hints in output order (mirrors {@code retromachines.BankingHintKind}). */
 	private static final List<HintSpec> HINT_SPECS = List.of(BANK_IDENTIFYING_OFFSETS,
-		SWITCH_SITES, SAVE_CELLS, BANK_STACKS, SHADOW_COMMITS, PAIRED_FIELDS);
+		SWITCH_SITES, SAVE_CELLS, BANK_STACKS, SHADOW_COMMITS, PAIRED_FIELDS, LIVE_BANK_SETS);
+
+	/**
+	 * {@code banking.live_bank_sets:} (bead grm-5tl.20.5): a non-empty list of {@code { field,
+	 * valueset, [request: { cell, decode, [idle] }], [applied], provenance }} entries, each
+	 * stating the FIELD values the live board state field {@code field} can hold. {@code valueset}
+	 * is a non-empty list of distinct non-negative integers (field values, not cell contents);
+	 * {@code request.cell} and {@code applied} are 16-bit CPU addresses; {@code decode} is an
+	 * expression in the descriptor mini-language whose only free term is {@code value} (the
+	 * cell's contents); {@code idle} lists cell values meaning "no request pending". SHAPE only
+	 * here; whether the field exists and the writers agree is checked at analysis time
+	 * ({@code retromachines.LiveBankSets}).
+	 */
+	@SuppressWarnings("unchecked")
+	private static Map<String, Object> liveBankSetEntry(Map<String, Object> entry, String where,
+			Set<Object> seen) {
+		Object fieldObj = entry.get("field");
+		if (fieldObj == null) {
+			throw new IllegalArgumentException(where + " is missing required 'field:'");
+		}
+		if (!(fieldObj instanceof String) || ((String) fieldObj).isBlank()) {
+			throw new IllegalArgumentException(where + ": field must be a non-blank name");
+		}
+		String field = (String) fieldObj;
+		if (!seen.add(field)) {
+			throw new IllegalArgumentException(where + ": field '" + field + "' listed twice");
+		}
+		Object vsObj = entry.get("valueset");
+		if (!(vsObj instanceof List) || ((List<Object>) vsObj).isEmpty()) {
+			throw new IllegalArgumentException(
+				where + " '" + field + "': valueset must be a non-empty list of integers");
+		}
+		List<Integer> valueset = new ArrayList<>();
+		for (Object o : (List<Object>) vsObj) {
+			int v = intElement(o, where + " '" + field + "' valueset");
+			if (v < 0) {
+				throw new IllegalArgumentException(
+					where + " '" + field + "': valueset member " + v + " is negative");
+			}
+			if (valueset.contains(v)) {
+				throw new IllegalArgumentException(
+					where + " '" + field + "': valueset lists " + v + " twice");
+			}
+			valueset.add(v);
+		}
+		Map<String, Object> e = new LinkedHashMap<>();
+		e.put("field", field);
+		e.put("valueset", valueset);
+		Object reqObj = entry.get("request");
+		if (reqObj != null) {
+			String rwhere = where + " '" + field + "' request";
+			if (!(reqObj instanceof Map)) {
+				throw new IllegalArgumentException(rwhere + " must be a mapping");
+			}
+			Map<String, Object> req = (Map<String, Object>) reqObj;
+			for (String key : req.keySet()) {
+				if (!Set.of("cell", "decode", "idle").contains(key)) {
+					throw new IllegalArgumentException(rwhere + " has unknown key '" + key + "'");
+				}
+			}
+			int cell = MapCompiler.requireAddr(req, "cell", rwhere);
+			if (cell < 0 || cell > 0xFFFF) {
+				throw new IllegalArgumentException(rwhere + ": cell must be a 16-bit CPU address");
+			}
+			Object decodeObj = req.get("decode");
+			if (!(decodeObj instanceof String) || ((String) decodeObj).isBlank()) {
+				throw new IllegalArgumentException(
+					rwhere + ": decode must be an expression string (e.g. \"value - 1\")");
+			}
+			String decode = ((String) decodeObj).trim();
+			MapCompiler.validateValueExpression(decode, rwhere + " decode:");
+			Map<String, Object> r = new LinkedHashMap<>();
+			r.put("cell", cell);
+			r.put("decode", decode);
+			Object idleObj = req.get("idle");
+			if (idleObj != null) {
+				if (!(idleObj instanceof List)) {
+					throw new IllegalArgumentException(rwhere + ": idle must be a list of integers");
+				}
+				List<Integer> idle = new ArrayList<>();
+				for (Object o : (List<Object>) idleObj) {
+					idle.add(intElement(o, rwhere + " idle"));
+				}
+				r.put("idle", idle);
+			}
+			e.put("request", r);
+		}
+		if (entry.get("applied") != null) {
+			int applied = MapCompiler.requireAddr(entry, "applied", where + " '" + field + "'");
+			if (applied < 0 || applied > 0xFFFF) {
+				throw new IllegalArgumentException(
+					where + " '" + field + "': applied must be a 16-bit CPU address");
+			}
+			e.put("applied", applied);
+		}
+		e.put("provenance", MapCompiler.requireString(entry, "provenance", where));
+		return e;
+	}
+
+	private static int intElement(Object o, String context) {
+		if (!(o instanceof Number) && !(o instanceof String)) {
+			throw new IllegalArgumentException(context + " entries must be integers, got: " + o);
+		}
+		try {
+			return MapCompiler.toInt(o);
+		}
+		catch (NumberFormatException ex) {
+			throw new IllegalArgumentException(context + " entries must be integers, got: " + o);
+		}
+	}
 
 	/**
 	 * The shared skeleton of every list-of-mappings {@code banking.*} hint: absent -> null; else

@@ -60,7 +60,14 @@ enum BankingHintKind {
 		new String[] { "helper", "cell" }, new String[] { "field" }, new String[0]),
 
 	PAIRED_FIELDS("paired_fields", DescriptorHints.PAIRED_FIELDS_PROPERTY, "pairs",
-		new String[0], new String[] { "high", "low", "offset" }, new String[0]);
+		new String[0], new String[] { "high", "low", "offset" }, new String[0]),
+
+	/**
+	 * Entries are nested ({@code valueset} list, {@code request} map), so the exporter carries
+	 * them structurally rather than key by key ({@link #structured}).
+	 */
+	LIVE_BANK_SETS("live_bank_sets", DescriptorHints.LIVE_BANK_SETS_PROPERTY, "sets",
+		new String[0], new String[0], new String[0], true);
 
 	/** One entry of the array, plus the property's root object (for the {@code source}). */
 	@FunctionalInterface
@@ -80,9 +87,20 @@ enum BankingHintKind {
 	final List<String> plainKeys;
 	/** Keys carried only when present (a boolean only when true), in exporter order. */
 	final List<String> optionalKeys;
+	/**
+	 * True when entries nest lists or maps, so the exporter copies each verbatim (address-valued
+	 * keys {@code cell} and {@code applied} as hex) instead of through the flat key lists above.
+	 */
+	final boolean structured;
 
 	BankingHintKind(String yamlKey, String property, String arrayKey, String[] hexKeys,
 			String[] plainKeys, String[] optionalKeys) {
+		this(yamlKey, property, arrayKey, hexKeys, plainKeys, optionalKeys, false);
+	}
+
+	BankingHintKind(String yamlKey, String property, String arrayKey, String[] hexKeys,
+			String[] plainKeys, String[] optionalKeys, boolean structured) {
+		this.structured = structured;
 		this.yamlKey = yamlKey;
 		this.property = property;
 		this.arrayKey = arrayKey;

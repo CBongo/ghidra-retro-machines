@@ -264,6 +264,14 @@ final class DescriptorHints {
 	static final String PAIRED_FIELDS_PROPERTY = "Retro Machines.Paired Fields";
 
 	/**
+	 * Program-info property carrying the game descriptor's {@code banking.live_bank_sets} hint
+	 * (bead grm-5tl.20.5): JSON {@code {"source": ..., "sets": [{field, valueset, [request:
+	 * {cell, decode, [idle]}], [applied], provenance}]}}. Read at analysis time by
+	 * {@link BoardBankAnalyzer} and handed to {@link LiveBankSets}.
+	 */
+	static final String LIVE_BANK_SETS_PROPERTY = "Retro Machines.Live Bank Sets";
+
+	/**
 	 * Program-info property carrying the bit mask (decimal, in the board's packed state layout)
 	 * of the state fields a game descriptor's {@code banking.fixed_after_init} hint (bead
 	 * grm-mej.12) declares never change after initialization. Written by the loader, which
@@ -456,6 +464,11 @@ final class DescriptorHints {
 	/** The {@link #SHADOW_COMMITS_PROPERTY} value, or null when the descriptor states none. */
 	static String formatShadowCommits(JsonObject gameDescriptor, String source) {
 		return BankingHintKind.SHADOW_COMMITS.format(gameDescriptor, source);
+	}
+
+	/** The {@link #LIVE_BANK_SETS_PROPERTY} value, or null when the descriptor states none. */
+	static String formatLiveBankSets(JsonObject gameDescriptor, String source) {
+		return BankingHintKind.LIVE_BANK_SETS.format(gameDescriptor, source);
 	}
 
 	/** The recorded bank stacks, or empty; malformed input is reported and contributes nothing. */

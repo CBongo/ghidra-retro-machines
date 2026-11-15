@@ -268,4 +268,68 @@ public class DescriptorExpressionsTest {
 		assertThrows(IllegalArgumentException.class,
 			() -> DescriptorExpressions.evalConstantExpr("1 + ", IMAGE_SIZE, WINDOW_SIZE));
 	}
+
+	// --- evalValueExpr: the live_bank_sets decode (bead grm-5tl.20.5) ---
+
+	@Test
+	public void valueExpressionBindsValueAndUsesTheExistingOperators() {
+		assertEquals(4, DescriptorExpressions.evalValueExpr("value", 4));
+		assertEquals(3, DescriptorExpressions.evalValueExpr("value - 1", 4));
+		assertEquals(-1, DescriptorExpressions.evalValueExpr("value - 1", 0));
+		assertEquals(9, DescriptorExpressions.evalValueExpr("(value * 2) + 1", 4));
+		assertEquals(2, DescriptorExpressions.evalValueExpr("value >> 1", 5));
+		assertEquals(0x14, DescriptorExpressions.evalValueExpr("0x10 + value", 4));
+	}
+
+	@Test
+	public void valueIsLegalOnlyInTheDecodeEvaluator() {
+		for (String other : new String[] { "prg_bank", "last", "second_last", "image_size",
+			"value + prg_bank" }) {
+			try {
+				DescriptorExpressions.evalValueExpr(other, 1);
+				throw new AssertionError("expected '" + other + "' to be rejected");
+			}
+			catch (IllegalArgumentException expected) {
+				// only 'value' and integers may appear in a decode
+			}
+		}
+		// and it is not a free-standing keyword anywhere else: a window expression that names
+		// it is a bank-state dependency like any other unknown identifier
+		try {
+			DescriptorExpressions.evalConstantExpr("value", IMAGE_SIZE, WINDOW_SIZE);
+			throw new AssertionError("value must not be a constant-window term");
+		}
+		catch (IllegalArgumentException expected) {
+			// as for any state-field identifier
+		}
+	}
+
+	/**
+	 * Lockstep with the build-time check ({@code gdtbuilder.MapCompiler.validateValueExpression}):
+	 * both accept and reject the same battery.
+	 */
+	@Test
+	public void compilerAndRuntimeAgreeOnWhatADecodeMayBe() {
+		for (String expr : new String[] { "value", "value - 1", "(value * 2) + 1", "value >> 1",
+			"0x10 + value", "prg_bank", "last", "image_size", "value &", "(value", "value value",
+			"value / 2", "" }) {
+			boolean compiles;
+			try {
+				gdtbuilder.MapCompiler.validateValueExpression(expr, "test");
+				compiles = true;
+			}
+			catch (IllegalArgumentException e) {
+				compiles = false;
+			}
+			boolean evaluates;
+			try {
+				DescriptorExpressions.evalValueExpr(expr, 3);
+				evaluates = true;
+			}
+			catch (IllegalArgumentException | StringIndexOutOfBoundsException e) {
+				evaluates = false;
+			}
+			assertEquals("'" + expr + "'", compiles, evaluates);
+		}
+	}
 }

@@ -390,7 +390,10 @@ engine at analysis time: integers (decimal or `0x` hex), declared state-field na
 the keywords `last` / `second_last` (byte offsets of the last / second-to-last
 window-sized bank, relative to the image's end), operators `+ - * >>`, parentheses. The
 window-relative CPU offset is added implicitly by the contiguous block mapping, so it
-is not an expression term. `>>` (bead `grm-hsv.2`) is a logical right-shift, binding at
+is not an expression term. (One further term, `value`, exists in exactly one place: the
+`request.decode` of a game descriptor's `banking.live_bank_sets`, bead `grm-5tl.20.5`, where it is
+the request cell's contents and nothing else -- see that section; it is not legal in `maps:` or
+`initial_state`, and adds no operator.) `>>` (bead `grm-hsv.2`) is a logical right-shift, binding at
 the SAME precedence as `*` (left-associative) — needed for MMC1's 32K PRG mode, which
 ignores `prg_bank`'s LSB: `(prg_bank >> 1) * 0x8000`. **If a board needs more, that is a
 signal to add a strategy or a schema feature, not to grow a Turing tarpit** (vision doc
@@ -1041,6 +1044,91 @@ string, `provenance` present, no other keys) is `GameCompiler`'s; `ExportGameDes
 carries the key verbatim. With the key absent nothing changes. First users:
 `machines/games/dragonpower.yaml` (one entry; the relay case) and `machines/games/smb3.yaml` (four
 entries over three helpers; the several-hints, any-committing-helper, tail-jump and thin-wrapper cases).
+
+### `banking.live_bank_sets` (bead `grm-5tl.20.5`)
+
+```yaml
+banking:
+  live_bank_sets:
+    - field: prg_bank               # board banking.state field name (the game tier never packs)
+      valueset: [0, 1, 2, 3, 4, 5]  # FIELD values the live field can hold; not cell contents
+      request:                      # optional: the evidence cell; enables writer validation
+        cell: 0x24                  # 16-bit CPU address
+        decode: "value - 1"         # cell contents -> field value (expression mini-language)
+        idle: [0]                   # cell values meaning "no request pending"; never decoded
+      applied: 0x23                 # optional 16-bit address of the applied-value record (identity decode)
+      provenance: "what the writers do and who established it"                     # required
+```
+
+A hand-stated fact about a game that DECIDES its bank in one place and APPLIES it in another
+(Metroid: the area-change code stores a request in `$24`, and the helper at `c4de` later
+decrements it, records it in `$23` and commits it to the mapper). At a banked reference the live
+bank is then a SET no dataflow narrows. Statement: **wherever a banked reference reads `field`,
+its value is one of `valueset`**. `valueset` names FIELD values (the field need not be a bank
+number, and the name keeps it apart from the `value` term); `request.cell` is the evidence cell,
+`decode` maps its contents to a field value, `idle` lists contents that mean "no request" (not
+decoded), and `applied` records the field value itself. A scope (address ranges, or "after helper
+X") is deliberately not part of v1: the set applies wherever banked references read the field,
+and a `scope:` is additive later, for a title with a transient switch around a banked call.
+
+**`decode` and the one new term.** `decode` is an expression in the mini-language above with ONE
+extra term, `value` = the request cell's contents (width-neutral: a 65816 cell may be a word).
+No operator is added (`+ - * >>` and parentheses, same precedence); `&` joins only when a real
+title needs a masked shape. Non-injective decodes are fine (`(value * 2) + 1`). `value` is legal
+ONLY here -- never in a machine descriptor's `maps:` or `initial_state` expression -- and no state
+field, `last`, `second_last` or `image_size` may appear in a decode. Build-time:
+`MapCompiler.validateValueExpression`; runtime: `DescriptorExpressions.evalValueExpr`
+(`DescriptorExpressionsTest` pins both to one battery). A dual-use cell (Tecmo `$1d`: a bank only
+while `$1a` is positive) needs a guard, not a richer expression: out of v1.
+
+**The hint WINS (consistent with `per-game-descriptors-design.md` 6.3, and deliberately UNLIKE
+`shadow_commits`' refuse-on-failure):** a contradiction more likely means the dataflow went wrong
+than the descriptor. Priority:
+
+| situation | outcome |
+|---|---|
+| a direct writer of `request.cell` provably stores a value neither in `idle` nor decoding into `valueset`, or a writer of `applied` stores a value outside `valueset` | hint STILL APPLIES; WARNING bookmark AT THE WRITER, category `Game descriptor live bank set`, naming the stored value, the decoded value and the descriptor ("investigate the dataflow or the hint") |
+| a writer the analysis cannot resolve (`LDA $CA30,Y / STA $24`), a read-modify-write, an indexed store reaching the cell | not a warning: counted and listed in the hint's one analyzer log line as "stated, not checked"; the provenance carries it |
+| a banked reference where dataflow KNOWS a field value outside the set | hint wins (candidates = `valueset`) + WARNING naming both |
+| the tracked state's known bits partly agree | intersect: candidates = `valueset` members agreeing with the known bits, no warning; an empty intersection is the contradiction row above |
+| shape-level impossibility: `field` is not a `banking.state` field of the matched board; a `valueset` member the field cannot hold (wider than the field, or a bank no window the field maps realizes for this image); `decode` does not evaluate | the ONLY refusal: WARNING bookmark, hint NOT applied |
+
+**Writer check.** Once per analysis run `LiveBankSets` finds every DIRECT (absolute or zero-page,
+non-indexed, non-indirect) store to `request.cell` or `applied` anywhere in the program -- the fixed
+bank AND every overlay -- and recovers the stored value as `StoredValueScanner` does for
+`shadow_commits`. Indirect stores (`STA (zp),Y`) cannot be located and are invisible. The log carries
+one line per hint: field, valueset, writers checked / stated-not-checked / contradicting, and
+applied or refused. Warnings are in the hint's own bookmark category and participate in the same
+retraction sweep as the other hint categories (a finding an earlier round raised and this round does
+not is removed).
+
+**Candidate values, and emission (the intended behaviour; it lands with this key).** The set is a
+side channel, not a value-set lattice in `BankState`. At a reference into a window the field maps,
+the analyzer asks `LiveBankSets.Plan.candidates(field, knownMask, bits)` (known bits in the
+field's own coordinates): the members of `valueset` agreeing with the known bits, in descriptor
+order, or null when no applied hint names the field. EMISSION then follows the Stage A (`grm-5tl.20.1`)
+classes: a target whose code is byte-identical in every candidate bank gets one reference into a
+representative overlay plus a note naming the banks; differing targets get a reference into EACH
+candidate's overlay; a candidate where the target is not plausible code is pruned and recorded in
+the note. Mechanically (`LiveBankExpansion`): the states live at a reference site are replaced, for
+reference placement only, by one fully-known state per candidate, so `retargetReferences` places one
+overlay reference per bank (primacy to the lowest surviving bank; the base reference is kept iff the
+home bank is a candidate). It applies only to an instruction that is NOT itself resident in a window
+the field selects, and only to a reference that reaches such a window (a write to a mechanism window
+is a latch poke and reaches nothing). A flow reference whose target does not decode as plausible
+code in a candidate bank (`InlineJumpTableDispatch.decodesAsCode`, bytes only) is pruned, unless the
+BoardBankAnalyzer option "Prune implausible live-bank candidates" (default on) is off; data
+references are never pruned. One site comment (`live bank set (game descriptor ...)`, through the
+bank-comment provenance record, so it is retracted when it stops applying) names the set, the banks
+referenced and the banks pruned; it defers to a bank or gap comment already at the site.
+
+Shape validation (non-empty list; `field` a non-blank string, unique across entries; `valueset` a
+non-empty list of distinct non-negative integers; `request.cell` and `applied` 16-bit; `decode` a
+string that parses with `value` as its only free term; `idle` a list of integers; `provenance`
+present; no other keys at either level) is `GameCompiler`'s; `ExportGameDescriptor.java` carries
+the key verbatim. With the key absent nothing changes. First user: `machines/games/metroid.yaml`
+(`metroid_u`; request `$24` decoding `value - 1`, applied `$23`, valueset 0-5; bank 6 is transient
+only and deliberately not in the set).
 
 ### Annotation layer and export (bead `grm-hb6.5`)
 

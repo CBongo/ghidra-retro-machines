@@ -572,6 +572,97 @@ public class GameCompilerTest {
 			"      provenance: \"again\"\n", "listed twice");
 	}
 
+	// ---- banking.live_bank_sets (bead grm-5tl.20.5) ----
+
+	private static final String LIVE_BANK_SETS = """
+		  live_bank_sets:
+		    - field: prg_bank
+		      valueset: [0, 1, 2, 3, 4, 5]
+		      request:
+		        cell: 0x24
+		        decode: "value - 1"
+		        idle: [0]
+		      applied: 0x23
+		      provenance: "hand RE"
+		""";
+
+	@Test
+	public void compilesLiveBankSets() throws Exception {
+		JsonObject banking =
+			compile("lbs", validYaml() + LIVE_BANK_SETS).getAsJsonObject("banking");
+		JsonObject e = banking.getAsJsonArray("live_bank_sets").get(0).getAsJsonObject();
+		assertEquals("prg_bank", e.get("field").getAsString());
+		assertEquals(6, e.getAsJsonArray("valueset").size());
+		JsonObject r = e.getAsJsonObject("request");
+		assertEquals(0x24, r.get("cell").getAsInt());
+		assertEquals("value - 1", r.get("decode").getAsString());
+		assertEquals(0, r.getAsJsonArray("idle").get(0).getAsInt());
+		assertEquals(0x23, e.get("applied").getAsInt());
+		assertEquals("hand RE", e.get("provenance").getAsString());
+	}
+
+	@Test
+	public void liveBankSetsRequestAndAppliedAreOptional() throws Exception {
+		JsonObject e = compile("lbsmin", validYaml() + """
+			  live_bank_sets:
+			    - { field: prg_bank, valueset: [3, 1], provenance: "p" }
+			""").getAsJsonObject("banking").getAsJsonArray("live_bank_sets").get(0)
+			.getAsJsonObject();
+		assertFalse(e.has("request"));
+		assertFalse(e.has("applied"));
+		assertEquals(3, e.getAsJsonArray("valueset").get(0).getAsInt());
+	}
+
+	@Test
+	public void malformedLiveBankSetsAreRejected() throws Exception {
+		String prov = "      provenance: \"hand RE\"\n";
+		expectError("lbsnotlist", validYaml() + "  live_bank_sets: 5\n", "non-empty list");
+		expectError("lbsempty", validYaml() + "  live_bank_sets: []\n", "non-empty list");
+		expectError("lbsnoprov", validYaml() + LIVE_BANK_SETS.replace(prov, ""), "provenance");
+		expectError("lbsblank", validYaml() + LIVE_BANK_SETS.replace("field: prg_bank",
+			"field: \" \""), "non-blank");
+		expectError("lbsnofield", validYaml() + LIVE_BANK_SETS.replace("field: prg_bank\n      ",
+			""), "'field:'");
+		expectError("lbsnovs", validYaml() + LIVE_BANK_SETS.replace(
+			"valueset: [0, 1, 2, 3, 4, 5]", "valueset: []"), "non-empty list of integers");
+		expectError("lbsneg", validYaml() + LIVE_BANK_SETS.replace("[0, 1, 2, 3, 4, 5]",
+			"[0, -1]"), "negative");
+		expectError("lbsdupval", validYaml() + LIVE_BANK_SETS.replace("[0, 1, 2, 3, 4, 5]",
+			"[2, 2]"), "twice");
+		expectError("lbsstrval", validYaml() + LIVE_BANK_SETS.replace("[0, 1, 2, 3, 4, 5]",
+			"[a]"), "integers");
+		expectError("lbswidecell", validYaml() + LIVE_BANK_SETS.replace("0x24", "0x10000"),
+			"16-bit");
+		expectError("lbswideapplied", validYaml() + LIVE_BANK_SETS.replace("0x23", "0x10000"),
+			"16-bit");
+		expectError("lbsnodecode", validYaml() + LIVE_BANK_SETS.replace(
+			"        decode: \"value - 1\"\n", ""), "decode");
+		expectError("lbsnocell", validYaml() + LIVE_BANK_SETS.replace("        cell: 0x24\n", ""),
+			"'cell:'");
+		expectError("lbsreqkey", validYaml() + LIVE_BANK_SETS.replace("idle: [0]",
+			"idle: [0]\n        mask: 3"), "unknown key 'mask'");
+		expectError("lbskey", validYaml() + LIVE_BANK_SETS.replace("applied: 0x23",
+			"applied: 0x23\n      scope: 1"), "unknown key 'scope'");
+		expectError("lbsidle", validYaml() + LIVE_BANK_SETS.replace("idle: [0]", "idle: 0"),
+			"idle must be a list");
+		expectError("lbsdupfield", validYaml() + LIVE_BANK_SETS + LIVE_BANK_SETS.replace(
+			"  live_bank_sets:\n", ""), "listed twice");
+	}
+
+	/** {@code value} is the ONLY free term of a decode, and the grammar adds no operator. */
+	@Test
+	public void decodeAllowsOnlyValueAndTheExistingOperators() throws Exception {
+		for (String ok : new String[] { "value", "value - 1", "(value * 2) + 1", "value >> 1",
+			"0x10 + value" }) {
+			compile("lbsok", validYaml() + LIVE_BANK_SETS.replace("value - 1", ok));
+		}
+		for (String bad : new String[] { "prg_bank", "last", "image_size", "value & 3", "value /",
+			"(value", "value value" }) {
+			expectError("lbsbad", validYaml() + LIVE_BANK_SETS.replace("value - 1", bad),
+				"decode:");
+		}
+	}
+
 	private void expectError(String name, String yaml, String messagePart) throws Exception {
 		Path dir = tmp.getRoot().toPath();
 		Path yamlPath = dir.resolve(name + ".yaml");

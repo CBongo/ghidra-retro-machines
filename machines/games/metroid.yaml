@@ -1,0 +1,50 @@
+# Curated per-game descriptor (title tier). Compiled to data/games/metroid.gmap.
+# docs/per-game-descriptors-design.md; bead grm-5tl.20.5 (design settled on grm-5tl.20.3,
+# owner + agent, 2026-11-14; epic grm-5tl.20 "deferred bank requests").
+#
+# WHY THIS FILE EXISTS. Metroid (MMC1) decides which area bank it wants in one place and applies
+# it in another. The area-change code stores a REQUEST in $24 (long before the switch), and the
+# helper at c4de..c4ef later fulfils it: it decrements the request, writes the result to the
+# applied-bank record $23 and commits it to the mapper, then clears $24. A banked reference
+# therefore sees a bank the analysis cannot narrow by dataflow -- the live bank is a SET.
+#
+# WHAT THE HINT STATES. prg_bank is always one of 0..5 wherever a banked reference reads it. The
+# request cell $24 holds bank + 1 (decode "value - 1"; 0 means "no request pending", so it is
+# idle, never decoded); $23 holds the applied bank itself. The analyzer cross-checks every direct
+# store to $24 and $23 in the image against that statement and WARNS at a writer that stores
+# something else, but the hint still applies (the owner's ruling: a contradiction more likely
+# means the dataflow went wrong than the descriptor). Writers it cannot resolve, such as
+# LDA $CA30,Y / STA $24, are logged as "stated, not checked": the provenance carries them.
+
+schema: 2
+
+game:
+  id: metroid_u
+  title: "Metroid (U) [!]"
+  board: nes_mmc1
+  identity:
+    # PRG-slice SHA-256 (16-byte iNES header excluded), copied from the "REALROM prgsha256"
+    # line of tools/banktest/realrom/expected/metroid_u.dump (the same value
+    # NesRomLoader.gameIdentity computes: SHA-256 of the 8 x 16 KiB PRG slice).
+    prg_sha256: "649db8035018f2512ccea70aca6606c3b3a6988cd9ed43953b38dc5103dec7bb"
+    # Whole-file SHA-256, copied from the metroid_u row of tools/banktest/realrom/manifest-gme.tsv.
+    file_sha256: "88ad02b0b53012712f3c773a62073847551cec191aeda5d3ec19b22b594640eb"
+  provenance: "Owner's hand reverse-engineering (human TODO 1.16, 2026-11-08) and the agent's
+    byte check against the pinned metroid_u image with tools/banktest/dis6502.py; design settled
+    2026-11-14 on grm-5tl.20.3."
+
+banking:
+  live_bank_sets:
+    - field: prg_bank
+      valueset: [0, 1, 2, 3, 4, 5]
+      request:
+        cell: 0x24
+        decode: "value - 1"
+        idle: [0]
+      applied: 0x23
+      provenance: "$24 writers #1 at c9ac/c9ca and LDY #0/INY at c0b5/d8d3 (-> bank 0); ca18's
+        LDA $CA30,Y with index 0..4 (owner, human TODO 1.16: ca18 callers d8e7 elevator and
+        new-game init; $74 in {00,10..14} per nmikstas) -> $24 in {2..6} -> banks 1..5 after the
+        c4e8 DEY; cleared at c4ea; c4ed STY $23 is the only fixed-bank writer of $23 (bank 0
+        writes $24 at 9322/9356 and $23 at 9ee0). Bank 6 is transient only (c7c1..c7d2, no
+        banked call between)."

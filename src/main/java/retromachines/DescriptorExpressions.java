@@ -178,6 +178,30 @@ final class DescriptorExpressions {
 		return evalExpr(expr, imageSize, 0, Map.of());
 	}
 
+	/** The one identifier a {@code live_bank_sets} {@code request.decode} may name (grm-5tl.20.5). */
+	static final String VALUE = "value";
+
+	/**
+	 * Evaluates a {@code banking.live_bank_sets} {@code request.decode} expression: integer
+	 * literals, the single term {@link #VALUE} bound to {@code value} (the request cell's
+	 * contents), and the same {@code + - * >>}/parenthesis grammar as every other expression here
+	 * -- no new operator. State-field names, {@code last}/{@code second_last} and
+	 * {@code image_size} are rejected, so {@code value} is legal ONLY here and never in a machine
+	 * descriptor's window expression. {@code gdtbuilder.MapCompiler.validateValueExpression} is
+	 * the build-time twin; {@code DescriptorExpressionsTest} pins the two to the same battery.
+	 *
+	 * @throws IllegalArgumentException if the expression is malformed or names anything else
+	 */
+	static long evalValueExpr(String expr, long value) {
+		for (String ident : identifiers(expr)) {
+			if (!ident.equals(VALUE)) {
+				throw new IllegalArgumentException("decode expression '" + expr + "' references '" +
+					ident + "'; only '" + VALUE + "' and integer literals are allowed there");
+			}
+		}
+		return evalExpr(expr, 0, 0, Map.of(VALUE, value));
+	}
+
 	/**
 	 * The state-field identifiers a {@code maps:} expression references (everything that
 	 * is not a number, the {@code last}/{@code second_last} keywords, or {@link #IMAGE_SIZE}).

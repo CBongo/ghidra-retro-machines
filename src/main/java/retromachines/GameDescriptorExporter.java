@@ -395,6 +395,13 @@ public final class GameDescriptorExporter {
 			for (JsonElement el : root.getAsJsonArray(kind.arrayKey)) {
 				JsonObject o = el.getAsJsonObject();
 				Map<String, Object> e = new LinkedHashMap<>();
+				if (kind.structured) {
+					for (Map.Entry<String, JsonElement> member : o.entrySet()) {
+						e.put(member.getKey(), structuredValue(member.getKey(), member.getValue()));
+					}
+					out.add(e);
+					continue;
+				}
 				for (String k : kind.hexKeys) {
 					e.put(k, new HexInt(o.get(k).getAsLong()));
 				}
@@ -425,6 +432,33 @@ public final class GameDescriptorExporter {
 			return new ArrayList<>();
 		}
 		return out;
+	}
+
+	/**
+	 * A nested hint value copied as recorded: objects and arrays recursively, numbers as ints, and
+	 * the address-valued keys ({@code cell}, {@code applied}) as hex (bead grm-5tl.20.5).
+	 */
+	private static Object structuredValue(String key, JsonElement el) {
+		if (el.isJsonObject()) {
+			Map<String, Object> m = new LinkedHashMap<>();
+			for (Map.Entry<String, JsonElement> member : el.getAsJsonObject().entrySet()) {
+				m.put(member.getKey(), structuredValue(member.getKey(), member.getValue()));
+			}
+			return m;
+		}
+		if (el.isJsonArray()) {
+			List<Object> l = new ArrayList<>();
+			for (JsonElement item : el.getAsJsonArray()) {
+				l.add(structuredValue(key, item));
+			}
+			return l;
+		}
+		var v = el.getAsJsonPrimitive();
+		if (v.isNumber()) {
+			return key.equals("cell") || key.equals("applied") ? (Object) new HexInt(v.getAsLong())
+					: (Object) v.getAsInt();
+		}
+		return v.getAsString();
 	}
 
 	/** "" for the default space, the block name for an overlay space, null if unresolvable. */

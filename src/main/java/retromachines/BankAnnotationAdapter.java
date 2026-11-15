@@ -1939,8 +1939,8 @@ final class BankAnnotationAdapter {
 	 * from bank 2 to bank 1 between rounds). Seeding only from base-space references would
 	 * make the first round's retirement erase the second round's work.
 	 */
-	private record Seed(int opIndex, long offset, RefType refType) {
-		BaseRefKey key() {
+	record Seed(int opIndex, long offset, RefType refType) {
+		private BaseRefKey key() {
 			return new BaseRefKey(opIndex, offset);
 		}
 	}
@@ -1958,7 +1958,7 @@ final class BankAnnotationAdapter {
 	 * re-placing them here only churned which case was primary, which the A/B for grm-bfb
 	 * caught as the one consistent movement on that row.
 	 */
-	private static List<Seed> seeds(Instruction instr, AddressSpace baseSpace) {
+	static List<Seed> seeds(Instruction instr, AddressSpace baseSpace) {
 		Set<Seed> out = new LinkedHashSet<>();
 		List<Seed> fromOverlays = new ArrayList<>();
 		for (Reference ref : instr.getReferencesFrom()) {
@@ -2423,6 +2423,65 @@ final class BankAnnotationAdapter {
 				modeKnown && (mr.fullyKnown() || mr.overridden()), mr.home());
 		}
 		return null;
+	}
+
+	/**
+	 * The bank-selecting field of the banked window {@code offset} falls in under {@code state} --
+	 * a computed window's field, or the active mode's instance's bank field (the mode read the
+	 * way {@link #retargetForState} reads it) -- or null for an offset in no banked window, a
+	 * fixed instance or an enumerated window. A pure readout (bead grm-5tl.20.5: it answers both
+	 * "does this reference reach a window the field selects" and "does this instruction itself
+	 * reside in one").
+	 */
+	static FieldSpec bankFieldAt(BoardModel board, BankState state, long offset) {
+		return bankFieldAt(board, state, offset, null);
+	}
+
+	/**
+	 * {@link #bankFieldAt(BoardModel, BankState, long)} for an ACCESS of type {@code refType}: a
+	 * write into a window whose {@code on_write} is {@code mechanism} is a mapper-latch poke, not a
+	 * memory access ({@link #retargetForState} skips it too), so it reaches no bank and answers
+	 * null. A null {@code refType} asks the plain residence question.
+	 */
+	static FieldSpec bankFieldAt(BoardModel board, BankState state, long offset, RefType refType) {
+		boolean write = refType != null && refType.isWrite();
+		ComputedWindowModel computed = findWindow(board.computedWindows(), offset);
+		if (computed != null) {
+			return write && "mechanism".equals(computed.onWrite()) ? null : computed.field();
+		}
+		if (board.modeField() == null) {
+			return null;
+		}
+		int modeValue = board.modeField().valueIn(board.effective(state, board.mask()));
+		ModeWindowModel instance = findModeWindowAt(board.modeWindows(), modeValue, offset);
+		if (instance == null || (write && "mechanism".equals(instance.onWrite()))) {
+			return null;
+		}
+		return instance.bankField();
+	}
+
+	/** The idempotence key of a live-bank-set site comment (bead grm-5tl.20.5). */
+	static final String LIVE_SET_MARKER = "live bank set (";
+
+	/**
+	 * Writes the one-line site comment of an expanded live-bank-set reference through the same
+	 * provenance record bank comments use, so a later round that stops expanding the site retracts
+	 * it ({@link BankCommentProvenance#sweep}). Deliberately NOT a {@code bank ->} comment: every
+	 * dump and probe reads that vocabulary as "a switch was RESOLVED here".
+	 */
+	static void writeLiveBankSetComment(Listing listing, Address addr, String comment,
+			BankCommentProvenance provenance) {
+		// The provenance record holds ONE segment per address, so writing here would evict a bank
+		// or gap comment this round already recorded at the site: defer to it instead.
+		String existing = listing.getComment(CommentType.EOL, addr);
+		if (existing != null && BankCommentProvenance.containsAny(existing, BANK_MARKER, GAP_MARKER)) {
+			return;
+		}
+		if (provenance == null) {
+			AnnotationGuard.addComment(listing, addr, CommentType.EOL, comment, LIVE_SET_MARKER);
+			return;
+		}
+		provenance.apply(listing, addr, comment, LIVE_SET_MARKER);
 	}
 
 	/**

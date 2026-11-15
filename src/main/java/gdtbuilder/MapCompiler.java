@@ -105,6 +105,25 @@ public class MapCompiler {
 	private static final Set<String> INITIAL_STATE_KEYWORDS = Set.of("image_size");
 
 	/**
+	 * The one identifier a {@code banking.live_bank_sets} {@code request.decode} expression may
+	 * name (bead grm-5tl.20.5): {@code value}, the request cell's contents. Disjoint from both
+	 * other vocabularies and legal ONLY through {@link #validateValueExpression} -- never in a
+	 * {@code maps:} or {@code initial_state} expression. Kept in lockstep with
+	 * {@code DescriptorExpressions.evalValueExpr}.
+	 */
+	private static final Set<String> VALUE_EXPR_KEYWORDS = Set.of("value");
+
+	/**
+	 * Build-time check of a {@code live_bank_sets} {@code decode} expression: the shared syntax
+	 * check with {@code value} (and integer literals) as the only identifier. Throws
+	 * {@link IllegalArgumentException} naming {@code context}.
+	 */
+	public static void validateValueExpression(String expr, String context) {
+		validateExprTokens(expr, VALUE_EXPR_KEYWORDS, context,
+			"not 'value'; a decode expression may reference only value and integer literals");
+	}
+
+	/**
 	 * The KEYWORD half of the {@code banking.bank_wrap} vocabulary (bead {@code grm-p25h}); the
 	 * other half is a plain integer mask, which needs no vocabulary. See {@link #parseBankWrap}.
 	 * <p>
