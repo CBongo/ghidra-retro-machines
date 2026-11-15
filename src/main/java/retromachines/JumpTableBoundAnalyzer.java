@@ -1505,6 +1505,18 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		catch (AddressOutOfBoundsException e) {
 			// the per-table keeps stand
 		}
+		clearExtentsAndRelay(this, program, function, space, extents, keep, kept, monitor);
+	}
+
+	/**
+	 * Clears stock's load units in {@code extents} outside {@code keep}
+	 * ({@link JumpTableArrays#clearStaleLoadTableData}), then re-disassembles each kept target left
+	 * undefined and each fall-through the units had blocked. Shared by the bound path and the
+	 * override-relocation path ({@link #clearOverReadAfterRelocation}).
+	 */
+	private static void clearExtentsAndRelay(Analyzer analyzer, Program program,
+			Function function, AddressSpace space, List<long[]> extents, AddressSet keep,
+			List<Address> kept, TaskMonitor monitor) {
 		int cleared = JumpTableArrays.clearStaleLoadTableData(program, space, extents, keep);
 		if (cleared == 0) {
 			return;
@@ -1514,6 +1526,26 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		for (Address k : kept) {
 			if (listing.getUndefinedDataAt(k) != null) {
 				relay.add(k);
+			}
+		}
+		// A unit can sit mid-case, after the case's entry was already decoded: the code before it
+		// lost its fall-through when stock laid the unit (metroid_u c538 JSR -> c53b), and a kept
+		// entry that is still code never re-runs disassembly. Resume each such fall-through.
+		for (long[] e : extents) {
+			Address lo;
+			Address hi;
+			try {
+				lo = space.getAddress(Math.max(0, e[0] - 3));
+				hi = space.getAddress(e[0]).add(e[1] * e[2] - 1);
+			}
+			catch (AddressOutOfBoundsException ex) {
+				continue;
+			}
+			for (Instruction instr : listing.getInstructions(new AddressSet(lo, hi), true)) {
+				Address ft = instr.getFallThrough();
+				if (ft != null && listing.getUndefinedDataAt(ft) != null) {
+					relay.add(ft);
+				}
 			}
 		}
 		if (!relay.isEmpty()) {
@@ -1529,8 +1561,8 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 				}
 			}
 		}
-		AnalyzerLog.info(this, "cleared " + cleared + " byte(s) of stock's over-read load-table " +
-			"data; re-disassembled " + relay.getNumAddresses() + " kept target(s)");
+		AnalyzerLog.info(analyzer, "cleared " + cleared + " byte(s) of stock's over-read " +
+			"load-table data; re-disassembled " + relay.getNumAddresses() + " kept target(s)");
 	}
 
 	/** grm-deve: whether a target lies inside the array's own bytes -- code over the table (tables
@@ -1813,7 +1845,7 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 			cmd.applyTo(program);
 		}
 		if (!stale.isEmpty()) {
-			int cleared = retractCaseTargets(program, switchAddr, stale, monitor);
+			int cleared = retractCaseTargets(program, switchAddr, stale, keptTargets, monitor);
 			Function owner = program.getFunctionManager().getFunctionContaining(switchAddr);
 			if (owner != null) {
 				CreateFunctionCmd.fixupFunctionBody(program, owner, monitor);
@@ -1845,19 +1877,20 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 	 * override sat under FUN_82ac, the function that lost the switch to FUN_87a7); the pin path
 	 * retracts the references it replaces the same way ({@link #pinByReferences}, grm-vrkk.11).
 	 */
-	private static void retractStaleCases(Analyzer analyzer, Program program, Function function,
+	private static int retractStaleCases(Analyzer analyzer, Program program, Function function,
 			Address switchAddr, List<Address> keptTargets, TaskMonitor monitor)
 			throws CancelledException {
 		List<Address> stale = staleCaseTargets(program, switchAddr, keptTargets, true);
 		if (stale.isEmpty()) {
-			return;
+			return 0;
 		}
-		int cleared = retractCaseTargets(program, switchAddr, stale, monitor);
+		int cleared = retractCaseTargets(program, switchAddr, stale, keptTargets, monitor);
 		if (!function.isDeleted()) {
 			CreateFunctionCmd.fixupFunctionBody(program, function, monitor);
 		}
 		AnalyzerLog.info(analyzer, "retracted " + stale.size() + " over-read case(s) at " + switchAddr +
 			"; cleared flow from " + cleared + " of them");
+		return stale.size();
 	}
 
 	/** The targets of {@code switchAddr}'s {@code ANALYSIS} computed-jump references that are not
@@ -1895,7 +1928,7 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 	 * through an over-read is accidental reach (owner ruling on grm-vrkk.11).
 	 */
 	static int retractCaseTargets(Program program, Address switchAddr, List<Address> stale,
-			TaskMonitor monitor) throws CancelledException {
+			List<Address> keptTargets, TaskMonitor monitor) throws CancelledException {
 		SymbolTable symtab = program.getSymbolTable();
 		String switchNamespace = "switchD_" + switchAddr;
 		Listing listing = program.getListing();
@@ -1928,9 +1961,49 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		if (clearStarts.isEmpty()) {
 			return 0;
 		}
-		// Not clearing data: a defined table among the stale targets is someone's claim.
-		new ClearFlowAndRepairCmd(clearStarts, false, false, true).applyTo(program, monitor);
+		// Not clearing data: a defined table among the stale targets is someone's claim. The kept
+		// cases are protected, and any the clear still took are re-laid below (grm-gipk.26): when
+		// stock switch analysis over-reads AND clears the table in one pass, the kept cases have
+		// lost their references by the time this runs, so flow from a stale target into them
+		// (metroid_u c51c: 11 of 50 stale targets cleared) wiped real case code that nothing then
+		// re-disassembled.
+		AddressSet kept = new AddressSet();
+		for (Address a : keptTargets) {
+			kept.add(a);
+		}
+		new ClearFlowAndRepairCmd(clearStarts, kept, false, false, true).applyTo(program, monitor);
+		relayKeptCases(program, switchAddr, keptTargets);
 		return (int) clearStarts.getNumAddresses();
+	}
+
+	/** Disassembles each of {@code keptTargets} left undefined (a retraction's flow clear took it),
+	 *  flowing the switch's context onto it the way {@link #pinByReferences} does. */
+	private static void relayKeptCases(Program program, Address switchAddr,
+			List<Address> keptTargets) {
+		Listing listing = program.getListing();
+		ProgramContext programContext = program.getProgramContext();
+		Register baseContextRegister = programContext.getBaseContextRegister();
+		RegisterValue switchContext = null;
+		if (baseContextRegister != null) {
+			switchContext = programContext.getFlowValue(
+				programContext.getRegisterValue(baseContextRegister, switchAddr));
+		}
+		AddressSet relay = new AddressSet();
+		for (Address target : keptTargets) {
+			if (listing.getUndefinedDataAt(target) == null) {
+				continue;
+			}
+			try {
+				setSwitchTargetContext(program, programContext, target, switchContext);
+			}
+			catch (ContextChangeException e) {
+				continue;
+			}
+			relay.add(target);
+		}
+		if (!relay.isEmpty()) {
+			new DisassembleCommand(relay, null, true).applyTo(program);
+		}
 	}
 
 	/** Bound on {@link #fallsFromCleared}'s walk back. */
@@ -1956,7 +2029,7 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 	/** Verbatim port of {@code DecompilerSwitchAnalysisCmd.setSwitchTargetContext}: flows the
 	 *  switch site's context register value onto a kept target, combined with whatever non-default
 	 *  context the target already has. */
-	private void setSwitchTargetContext(Program program, ProgramContext programContext,
+	private static void setSwitchTargetContext(Program program, ProgramContext programContext,
 			Address targetStart, RegisterValue switchContext) throws ContextChangeException {
 		if (switchContext == null) {
 			return;
@@ -2033,11 +2106,90 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 			}
 			// grm-91jc: while the override sat under the wrong function, stock switch analysis
 			// may already have decompiled the new owner without it and laid its over-read.
-			retractStaleCases(analyzer, program, function, switchAddr, dests, monitor);
+			int stale = retractStaleCases(analyzer, program, function, switchAddr, dests, monitor);
+			if (stale > 0) {
+				clearOverReadAfterRelocation(analyzer, program, function, switchAddr, dests, stale,
+					monitor);
+			}
 			return true;
 		}
 		return false;
 	}
+
+	/**
+	 * grm-gipk.26: after {@link #relocateStaleOverride} moved an override and retracted
+	 * {@code stale} over-read cases, clears the load-unit data stock laid for that over-read and
+	 * re-lays the kept cases ({@link #clearStaleLoadTablesAndRelay}). The relocation exists because
+	 * stock decompiled the new owner WITHOUT the override, so it over-read the table AND laid one
+	 * unit per entry it read -- across code, when the cases sit after the table. metroid_u c51c:
+	 * bounded to 9 under FUN_c4de, then FUN_c510 was created, stock read 59 entries, and the byte
+	 * units over c531..c595 left its area-init cases undecodable.
+	 *
+	 * <p>The table's geometry comes from this analyzer's own EOL comment at the switch ("table at
+	 * T bounded N -> K entries (..., laid word[K])"), not from the listing or a decompile: with
+	 * the override in place the decompiler recovers no load tables, and stock's pass has usually
+	 * just cleared the word array too (it is re-laid later, {@link StockClobberRelay}). The extent
+	 * is {@code max(N, K + stale)} word entries from T: N is the decompiler's own read at bound
+	 * time, and stale targets are distinct addresses, so K + stale can only fall short. Only
+	 * stock-shaped units are cleared ({@link JumpTableArrays#clearStaleLoadTableData}). A table
+	 * laid as planar lo/hi arrays, or not laid, is left alone.
+	 */
+	private static void clearOverReadAfterRelocation(Analyzer analyzer, Program program,
+			Function function, Address switchAddr, List<Address> kept, int stale,
+			TaskMonitor monitor) {
+		long[] geometry =
+			wordTableBound(program.getListing().getComment(CommentType.EOL, switchAddr));
+		if (geometry == null) {
+			AnalyzerLog.info(analyzer, "relocated " + switchAddr +
+				": no word-table bound comment; stale load-table data left");
+			return;
+		}
+		long tableStart = geometry[0];
+		long readCount = geometry[1];
+		long keptCount = geometry[2];
+		Address start;
+		Address keepEnd;
+		try {
+			start = switchAddr.getAddressSpace().getAddress(tableStart);
+			keepEnd = start.add(2 * keptCount - 1);
+		}
+		catch (ghidra.program.model.address.AddressOutOfBoundsException e) {
+			return;
+		}
+		long entries = Math.max(readCount, keptCount + stale);
+		List<long[]> extents = new ArrayList<>();
+		// stock lays units of the LOAD size: a byte per byte load (6502 lo/hi), or a word
+		extents.add(new long[] { tableStart, 1, 2 * entries });
+		extents.add(new long[] { tableStart, 2, entries });
+		clearExtentsAndRelay(analyzer, program, function, start.getAddressSpace(), extents,
+			new AddressSet(start, keepEnd), kept, monitor);
+	}
+
+	/**
+	 * From this analyzer's EOL bound comment, {table start offset, cases read, cases kept} of the
+	 * LAST bound recorded (a switch is bounded once per pass), or null when there is none or that
+	 * bound did not lay a word array.
+	 */
+	static long[] wordTableBound(String eol) {
+		if (eol == null) {
+			return null;
+		}
+		java.util.regex.Matcher m = BOUND_COMMENT.matcher(eol);
+		long[] last = null;
+		while (m.find()) {
+			last = m.group(4).contains("laid word[")
+					? new long[] { Long.parseLong(m.group(1), 16), Long.parseLong(m.group(2)),
+						Long.parseLong(m.group(3)) }
+					: null;
+		}
+		return last;
+	}
+
+	/** This analyzer's bound comment: table start, cases read, cases kept, the "why" text. */
+	private static final java.util.regex.Pattern BOUND_COMMENT = java.util.regex.Pattern.compile(
+		"\\[JumpTableBound\\] table at ([0-9a-f]+) bounded (\\d+)(?: \\(\\d+ after [^)]*\\))? -> " +
+			"(\\d+) entries \\((.*?)\\)(?=$|\\R|\\[JumpTableBound\\])",
+		java.util.regex.Pattern.MULTILINE);
 
 	/** Whether this analyzer bounded {@code switchAddr} (its EOL comment says so) and no override
 	 *  for it exists under any function -- i.e. it was pinned by references only, because no real

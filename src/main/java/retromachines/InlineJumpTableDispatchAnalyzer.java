@@ -174,12 +174,16 @@ public class InlineJumpTableDispatchAnalyzer extends AbstractAnalyzer {
 		}
 
 		if (callSitesResolved > 0) {
+			List<Address> dispatchers = dispatcherCache.entrySet()
+					.stream()
+					.filter(Map.Entry::getValue)
+					.map(Map.Entry::getKey)
+					.sorted()
+					.toList();
 			AnalyzerLog.info(this, "resolved " + callSitesResolved +
-				" inline-jump-table call site(s) at " + dispatcherCache.values()
-						.stream()
-						.filter(Boolean::booleanValue)
-						.count() +
-				" distinct dispatcher(s), scheduling " + targetsScheduled + " target(s)");
+				" inline-jump-table call site(s) at " + dispatchers.size() +
+				" distinct dispatcher(s) " + dispatchers + ", scheduling " + targetsScheduled +
+				" target(s)");
 		}
 		return true;
 	}

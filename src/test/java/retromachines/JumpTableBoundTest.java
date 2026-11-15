@@ -943,4 +943,38 @@ public class JumpTableBoundTest {
 	public void codePrefixKeepsAllWhenEveryTargetDecodes() {
 		assertEquals(3, JumpTableBound.codePrefix(List.of(true, true, true)));
 	}
+
+	// grm-gipk.26: the relocation path reads the table geometry back from the bound comment.
+
+	@Test
+	public void wordTableBoundReadsMetroidComment() {
+		long[] g = JumpTableBoundAnalyzer.wordTableBound("[JumpTableBound] table at c51f bounded " +
+			"73 -> 9 entries (first target below table, laid word[9])");
+		assertTrue(Arrays.equals(new long[] { 0xc51f, 73, 9 }, g));
+	}
+
+	@Test
+	public void wordTableBoundReadsTrimmedCountAndNestedParens() {
+		long[] g = JumpTableBoundAnalyzer.wordTableBound("[JumpTableBound] table at 8023 bounded " +
+			"128 (120 after decompiler leading trim) -> 15 entries (kept all, laid word[15] " +
+			"(RTS-trick: entry = target - 1))");
+		assertTrue(Arrays.equals(new long[] { 0x8023, 128, 15 }, g));
+	}
+
+	@Test
+	public void wordTableBoundTakesTheLastCopy() {
+		long[] g = JumpTableBoundAnalyzer.wordTableBound(
+			"[JumpTableBound] table at c51f bounded 73 -> 9 entries (kept all, laid word[9])\n" +
+				"[JumpTableBound] table at c51f bounded 59 -> 9 entries (kept all, laid word[9])");
+		assertTrue(Arrays.equals(new long[] { 0xc51f, 59, 9 }, g));
+	}
+
+	@Test
+	public void wordTableBoundDeclinesPlanarAndUnlaidTables() {
+		assertEquals(null, JumpTableBoundAnalyzer.wordTableBound("[JumpTableBound] table at a000 " +
+			"bounded 64 -> 12 entries (kept all, laid byte[12] lo/hi)"));
+		assertEquals(null, JumpTableBoundAnalyzer.wordTableBound("[JumpTableBound] table at a000 " +
+			"bounded 64 -> 12 entries (kept all)"));
+		assertEquals(null, JumpTableBoundAnalyzer.wordTableBound(null));
+	}
 }

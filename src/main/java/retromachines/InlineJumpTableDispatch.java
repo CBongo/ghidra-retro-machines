@@ -72,6 +72,9 @@ final class InlineJumpTableDispatch {
 	/** "About 24 instructions" per the design: the dispatcher body's straight-line walk budget. */
 	private static final int MAX_DISPATCHER_STEPS = 24;
 
+	/** {@code JMP abs} trampolines followed before the dispatcher body (grm-gipk.26). */
+	private static final int MAX_TRAMPOLINE_HOPS = 2;
+
 	/** Hard cap on how many table entries a single call site may contribute (design: 128). */
 	static final int MAX_TABLE_ENTRIES = 128;
 
@@ -100,6 +103,9 @@ final class InlineJumpTableDispatch {
 		// instead of stored. 0 = not in use; 1 = lo byte pushed, awaiting the hi load; 2 = hi byte
 		// stored at hiVectorAddr, awaiting the balancing PLA; 3 = PLA'd and stored, vector complete.
 		int parkState = 0;
+		// The TAX/STX variant (grm-gipk.26, metroid_u c27c): the same parked-lo-byte states, with
+		// the lo byte waiting in X (TAX) and landing in the vector's low cell by STX, not PLA/STA.
+		boolean parkedInX = false;
 		Address hiVectorAddr = null;
 		// An ABSOLUTE register save (punchout aea3: STY $04c9 ... LDY $04c9, grm-4kgk): the RAM
 		// cell it wrote, which the restore must read back.
@@ -111,7 +117,23 @@ final class InlineJumpTableDispatch {
 		final int PENDING_LOAD_STORE = 2;
 		int pending = PENDING_NONE;
 
+		// A plain JMP abs trampoline (metroid_u's banked "$8024: JMP $C27C", grm-gipk.26) pushes
+		// nothing, so the dispatcher behind it still pops the JSR's own return address.
 		Address pc = entry;
+		for (int hop = 0; hop < MAX_TRAMPOLINE_HOPS; hop++) {
+			Instruction instr = listing.getInstructionAt(pc);
+			if (instr == null) {
+				return null;
+			}
+			if (opcodeByte(instr) != 0x4c) {
+				break;
+			}
+			Address[] flows = instr.getFlows();
+			if (flows.length != 1 || flows[0].equals(pc)) {
+				return Boolean.FALSE;
+			}
+			pc = flows[0];
+		}
 		for (int step = 0; step < MAX_DISPATCHER_STEPS; step++) {
 			Instruction instr = listing.getInstructionAt(pc);
 			if (instr == null) {
@@ -175,8 +197,9 @@ final class InlineJumpTableDispatch {
 					continue;
 				}
 				// The lo byte goes on the stack instead of into a cell (megaman3 JumpEngine).
-				if (loadCount == 0 && parkState == 0 && "PHA".equals(mn)) {
+				if (loadCount == 0 && parkState == 0 && ("PHA".equals(mn) || "TAX".equals(mn))) {
 					parkState = 1;
+					parkedInX = "TAX".equals(mn);
 					pending = PENDING_NONE;
 					pc = instr.getFallThrough();
 					continue;
@@ -237,6 +260,9 @@ final class InlineJumpTableDispatch {
 						return Boolean.FALSE; // PLA before the hi load, or a second one
 					}
 					if (parkState == 2) {
+						if (parkedInX) {
+							return Boolean.FALSE; // nothing was pushed to balance
+						}
 						pending = PENDING_PLA_STORE; // balances the parked PHA
 						break;
 					}
@@ -276,6 +302,17 @@ final class InlineJumpTableDispatch {
 				}
 				case "STY":
 				case "STX": {
+					if (parkedInX && parkState == 2) {
+						// the X-parked lo byte lands just below the stored hi byte
+						Address zp = "STX".equals(mn) ? directZeroPageStoreAddress(instr) : null;
+						if (zp == null || hiVectorAddr == null || !hiVectorAddr.equals(zp.add(1))) {
+							return Boolean.FALSE;
+						}
+						pAddr = zp;
+						parkState = 3;
+						loadCount = 2;
+						break;
+					}
 					// Harmless register-save noise, only before the index is captured: to zero page,
 					// or to an absolute RAM cell (never a mechanism register -- that is a bank switch).
 					if (ySet) {
@@ -293,6 +330,13 @@ final class InlineJumpTableDispatch {
 				case "LDY": {
 					// Harmless restore, only after both loads are done.
 					if (loadCount != 2 || !isYRestore(instr, absoluteSave)) {
+						return Boolean.FALSE;
+					}
+					break;
+				}
+				case "LDX": {
+					// Harmless X restore (metroid_u c27c: LDX $69), only after both loads are done.
+					if (loadCount != 2 || !isXRestore(instr, absoluteSave)) {
 						return Boolean.FALSE;
 					}
 					break;
@@ -721,6 +765,16 @@ final class InlineJumpTableDispatch {
 			return null;
 		}
 		return cell;
+	}
+
+	/** {@code LDX $nn} (zero page, {@code 0xa6}), or {@code LDX} of the absolute save cell. */
+	private static boolean isXRestore(Instruction instr, Address absoluteSave) {
+		if (!"LDX".equals(instr.getMnemonicString())) {
+			return false;
+		}
+		int op = opcodeByte(instr);
+		return op == 0xa6 ||
+			(op == 0xae && absoluteSave != null && absoluteSave.equals(absoluteOperand(instr)));
 	}
 
 	/** The Y restore: {@code LDY $nn}, or {@code LDY $nnnn} (opcode {@code 0xac}) reading back the

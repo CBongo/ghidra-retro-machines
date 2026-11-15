@@ -210,6 +210,52 @@ public class InlineJumpTableDispatchAnalyzerTest extends AbstractBundledLanguage
 		assertEquals(Boolean.TRUE, InlineJumpTableDispatch.recognizeDispatcher(program, addr(entry)));
 	}
 
+	/** The metroid_u c27c shape (grm-gipk.26): the lo byte is parked in X (TAX) and stored into
+	 *  the vector's low cell by STX after the hi byte; X and Y saved before, restored after. */
+	private static final String TAX_PARKED =
+		// ASL A; STY $6a; STX $69; TAY; INY; PLA; STA $0c; PLA; STA $0d; LDA ($0c),Y; TAX; INY;
+		// LDA ($0c),Y; STA $0d; STX $0c; LDX $69; LDY $6a; JMP ($000c)
+		"0a 84 6a 86 69 a8 c8 68 85 0c 68 85 0d b1 0c aa c8 b1 0c 85 0d 86 0c a6 69 a4 6a 6c 0c 00";
+
+	@Test
+	public void recognizesTaxParkedLoByteShape() throws Exception {
+		ProgramDB program = freshProgram();
+		builder.setBytes("0xc27c", TAX_PARKED, true);
+
+		assertEquals(Boolean.TRUE, InlineJumpTableDispatch.recognizeDispatcher(program, addr(0xc27c)));
+	}
+
+	/** A JMP abs trampoline in front of the dispatcher (metroid_u's banked $8024: JMP $C27C). */
+	@Test
+	public void recognizesDispatcherBehindJmpTrampoline() throws Exception {
+		ProgramDB program = freshProgram();
+		builder.setBytes("0xc27c", TAX_PARKED, true);
+		builder.setBytes("0x8024", "4c 7c c2", true);
+
+		assertEquals(Boolean.TRUE, InlineJumpTableDispatch.recognizeDispatcher(program, addr(0x8024)));
+	}
+
+	/** The X-parked variant pushed nothing, so a PLA where the megaman3 shape has one is wrong. */
+	@Test
+	public void declinesTaxParkedWithPla() throws Exception {
+		ProgramDB program = freshProgram();
+		// ... LDA ($0c),Y; TAX; INY; LDA ($0c),Y; STA $0d; PLA; STA $0c; JMP ($000c)
+		builder.setBytes("0x8200",
+			"0a a8 c8 68 85 0c 68 85 0d b1 0c aa c8 b1 0c 85 0d 68 85 0c 6c 0c 00", true);
+
+		assertEquals(Boolean.FALSE, InlineJumpTableDispatch.recognizeDispatcher(program, addr(0x8200)));
+	}
+
+	@Test
+	public void declinesTaxParkedStxIntoWrongZeroPageByte() throws Exception {
+		ProgramDB program = freshProgram();
+		// the STX stores to $0e, not $0c (= hi cell $0d minus one)
+		builder.setBytes("0x8240",
+			"0a a8 c8 68 85 0c 68 85 0d b1 0c aa c8 b1 0c 85 0d 86 0e 6c 0e 00", true);
+
+		assertEquals(Boolean.FALSE, InlineJumpTableDispatch.recognizeDispatcher(program, addr(0x8240)));
+	}
+
 	/** The punchout aea3 shape (grm-4kgk): the megaman3 PHA/PLA vector, with Y saved to and
 	 *  restored from an ABSOLUTE RAM cell rather than zero page. */
 	@Test

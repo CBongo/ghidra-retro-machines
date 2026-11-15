@@ -17,37 +17,108 @@ REALROM block W8000_B7 8000-bfff overlay=true
 REALROM block WC000 c000-ffff overlay=false
 REALROM count blocks.total 13
 REALROM count blocks.overlay 7
-REALROM count refs.intoOverlay.retargeted 1
-REALROM count refs.intoOverlay.intraOverlay 0
-REALROM count instrs.inOverlay 8
-REALROM count bankComments 5
+REALROM count refs.intoOverlay.retargeted 24
+REALROM count refs.intoOverlay.intraOverlay 873
+REALROM count instrs.inOverlay 4194
+REALROM count bankComments 42
 REALROM count warnings 4
-REALROM count notes 8
-REALROM count symbols 18
-REALROM count jumptable.wordArrays 0
+REALROM count notes 9
+REALROM count symbols 25
+REALROM count jumptable.wordArrays 1
 REALROM count jumptable.planarArrays 0
 REALROM sample.bankcomment c081 bank -> mirroring=0,prg_mode=3,prg_bank=0? via FUN_c183 [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
 REALROM sample.bankcomment c0ed bank -> mirroring=0,prg_mode=3,prg_bank=0 via FUN_c187 [switch-value flow]
 REALROM sample.bankcomment c10a bank -> mirroring=0,prg_mode=3,prg_bank=0? via FUN_c187 [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
+REALROM sample.bankcomment c123 bank -> mirroring=0,prg_mode=3,prg_bank=0 via FUN_c187 [switch-value flow]
+REALROM sample.bankcomment c1f9 bank -> mirroring=0,prg_mode=3,prg_bank=4 via FUN_c183 [switch-value flow]
+REALROM sample.bankcomment c201 bank -> mirroring=0,prg_mode=3,prg_bank=4 via FUN_c183 [switch-value flow]
+REALROM sample.bankcomment c220 bank -> mirroring=0,prg_mode=3,prg_bank=4 via FUN_c183 [switch-value flow]
+REALROM sample.bankcomment c346 bank -> mirroring=0,prg_mode=3,prg_bank=4 via FUN_c183 [switch-value flow]
+REALROM sample.bankcomment c3b8 bank -> mirroring=0,prg_mode=3,prg_bank=4 via FUN_c183 [switch-value flow]
+REALROM sample.bankcomment c3e5 bank -> mirroring=0,prg_mode=3,prg_bank=4 via FUN_c183 [switch-value flow]
+REALROM sample.bankcomment c40b bank -> mirroring=0,prg_mode=3,prg_bank=4 via FUN_c183 [switch-value flow]
+REALROM sample.bankcomment c413 bank -> mirroring=0,prg_mode=3,prg_bank=4 via FUN_c183 [switch-value flow]
 REALROM sample.bankcomment c4de bank -> mirroring=0,prg_mode=3,prg_bank=4? via FUN_c183 [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=0,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
+REALROM sample.bankcomment c7d1 bank -> mirroring=0,prg_mode=3,prg_bank=2 via FUN_c183 [switch-value flow]
+REALROM sample.bankcomment c813 bank -> mirroring=0,prg_mode=3,prg_bank=2 via FUN_c183 [switch-value flow]
+REALROM sample.bankcomment c81e bank -> mirroring=0,prg_mode=3,prg_bank=4 via FUN_c183 [switch-value flow]
+REALROM sample.bankcomment cd44 bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_c183 [switch-value flow]
+REALROM sample.bankcomment cdb7 bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_c183 [switch-value flow]
+REALROM sample.bankcomment ce05 bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_c183 [switch-value flow]
+REALROM sample.bankcomment ce14 bank -> mirroring=0,prg_mode=3,prg_bank=3 via FUN_c183 [switch-value flow]
+REALROM sample.bankcomment ce43 bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_c183 [switch-value flow]
+REALROM sample.bankcomment ce50 bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_c183 [switch-value flow]
+REALROM sample.bankcomment cea8 bank -> mirroring=0,prg_mode=3,prg_bank=3 via FUN_c183 [switch-value flow]
+REALROM sample.bankcomment d259 bank -> mirroring=0,prg_mode=3,prg_bank=2 via FUN_c183 [switch-value flow]
+REALROM sample.bankcomment d34e bank -> mirroring=0,prg_mode=3,prg_bank=3 via FUN_c183 [switch-value flow]
+REALROM sample.bankcomment d3f8 bank -> mirroring=0,prg_mode=3,prg_bank=3 via FUN_c183 [switch-value flow]
+REALROM sample.bankcomment d400 bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_c183 [switch-value flow]
+REALROM sample.bankcomment d405 bank -> mirroring=0,prg_mode=3,prg_bank=3 via FUN_c183 [switch-value flow]
+REALROM sample.bankcomment d40e bank -> mirroring=0,prg_mode=3,prg_bank=2 via FUN_c183 [switch-value flow]
+REALROM sample.bankcomment d41a bank -> mirroring=0,prg_mode=3,prg_bank=2 via FUN_c183 [switch-value flow]
+REALROM sample.bankcomment d425 bank -> mirroring=0,prg_mode=3,prg_bank=3 via FUN_c183 [switch-value flow]
+REALROM sample.bankcomment d433 bank -> mirroring=0,prg_mode=3,prg_bank=2 via FUN_c183 [switch-value flow]
+REALROM sample.bankcomment d442 bank -> mirroring=0,prg_mode=3,prg_bank=3 via FUN_c183 [switch-value flow]
+REALROM sample.bankcomment d4e8 bank -> mirroring=0,prg_mode=3,prg_bank=3 via FUN_c183 [switch-value flow]
+REALROM sample.bankcomment d66c bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_c183 [switch-value flow]
+REALROM sample.bankcomment e424 bank -> mirroring=0,prg_mode=3,prg_bank=4 via FUN_c183 [switch-value flow]
+REALROM sample.bankcomment e465 bank -> mirroring=0,prg_mode=3,prg_bank=4 via FUN_c183 [switch-value flow]
+REALROM sample.bankcomment e806 bank -> mirroring=0,prg_mode=3,prg_bank=2 via FUN_c183 [switch-value flow]
+REALROM sample.bankcomment ea4d bank -> mirroring=0,prg_mode=3,prg_bank=2 via FUN_c183 [switch-value flow]
+REALROM sample.bankcomment ea66 bank -> mirroring=0,prg_mode=3,prg_bank=4 via FUN_c183 [switch-value flow]
+REALROM sample.bankcomment ec70 bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_c183 [switch-value flow]
 REALROM sample.bankcomment ffd2 bank -> mirroring=0,prg_mode=3,prg_bank=0 [switch-value flow]
-REALROM sample.ref c4e1 -> W8000_B4::8326 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8004 -> W8000_B1::8192 DATA primary=true
+REALROM sample.ref 8009 -> W8000_B1::8193 DATA primary=true
+REALROM sample.ref 800b -> W8000_B3::8011 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 800f -> W8000_B3::8025 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8015 -> W8000_B3::8028 READ primary=true
+REALROM sample.ref 801a -> W8000_B3::8025 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8023 -> W8000_B3::8004 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8025 -> W8000_B3::84f3 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 802b -> W8000_B1::8036 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 802f -> W8000_B1::8036 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8033 -> W8000_B1::8036 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8034 -> W8000_B3::8030 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 803a -> W8000_B3::8030 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8043 -> W8000_B1::807a CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8045 -> W8000_B3::8030 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8047 -> W8000_B1::803a CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8049 -> W8000_B3::807d CONDITIONAL_JUMP primary=true
+REALROM sample.ref 804f -> W8000_B1::807a CONDITIONAL_JUMP primary=true
+REALROM sample.ref 804f -> W8000_B3::8056 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8053 -> W8000_B1::803a CONDITIONAL_JUMP primary=true
+REALROM sample.ref 805f -> W8000_B1::807a CONDITIONAL_JUMP primary=true
+REALROM sample.ref 805f -> W8000_B3::8072 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8067 -> W8000_B3::806f CONDITIONAL_JUMP primary=true
+REALROM sample.ref 806c -> W8000_B3::8072 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8076 -> W8000_B1::8082 CONDITIONAL_JUMP primary=true
+REALROM sample.ref.truncated 25 of 897
 REALROM sample.warn c143 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn c153 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn c159 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn c16f [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.note c0f3 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_c185 is a proven no-argument restore entry -- its own prologue reloads the bank directly from 001c, a writable RAM cell nothing between that load and the switch touches, and commits it unchanged. The bank after this call is therefore whatever was last saved at 001c, not a fresh value this analyzer failed to pin down -- a property of the game, not a gap in analysis.
 REALROM sample.note c110 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_c185 is a proven no-argument restore entry -- its own prologue reloads the bank directly from 001c, a writable RAM cell nothing between that load and the switch touches, and commits it unchanged. The bank after this call is therefore whatever was last saved at 001c, not a fresh value this analyzer failed to pin down -- a property of the game, not a gap in analysis.
+REALROM sample.note c132 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_c185 is a proven no-argument restore entry -- its own prologue reloads the bank directly from 001c, a writable RAM cell nothing between that load and the switch touches, and commits it unchanged. The bank after this call is therefore whatever was last saved at 001c, not a fresh value this analyzer failed to pin down -- a property of the game, not a gap in analysis.
 REALROM sample.note c143 [NesBankingAnalyzer mode lock] prg_mode assumed to stay 3 here: this write's prg_mode bits could not be resolved, and code reached from reset only ever sets prg_mode=3 (first at ffd2). Not verified at this site.
 REALROM sample.note c153 [NesBankingAnalyzer mode lock] prg_mode assumed to stay 3 here: this write's prg_mode bits could not be resolved, and code reached from reset only ever sets prg_mode=3 (first at ffd2). Not verified at this site.
 REALROM sample.note c159 [NesBankingAnalyzer mode lock] prg_mode assumed to stay 3 here: this write's prg_mode bits could not be resolved, and code reached from reset only ever sets prg_mode=3 (first at ffd2). Not verified at this site.
 REALROM sample.note c16f [NesBankingAnalyzer mode lock] prg_mode assumed to stay 3 here: this write's prg_mode bits could not be resolved, and code reached from reset only ever sets prg_mode=3 (first at ffd2). Not verified at this site.
 REALROM sample.note c18e [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
 REALROM sample.note c19e [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
+REALROM sample.symbol 8dfa switch USER_DEFINED primary=true
+REALROM sample.symbol 8e09 case_1 USER_DEFINED primary=true
+REALROM sample.symbol 8e0b case_2 USER_DEFINED primary=true
+REALROM sample.symbol 8e0d case_0 USER_DEFINED primary=true
+REALROM sample.symbol 8e0e case_3 USER_DEFINED primary=true
+REALROM sample.symbol 8e18 case_5 USER_DEFINED primary=true
+REALROM sample.symbol 8e1c case_4 USER_DEFINED primary=true
 REALROM sample.symbol c046 NMI IMPORTED primary=true
 REALROM sample.symbol c096 IRQ IMPORTED primary=true
 REALROM sample.symbol ffd0 RESET IMPORTED primary=true
 REALROM sample.symbol fffa NMI_VEC IMPORTED primary=true
 REALROM sample.symbol fffc RESET_VEC IMPORTED primary=true
 REALROM sample.symbol fffe IRQ_VEC IMPORTED primary=true
+REALROM sample.jumptable W8000_B1::8dfd word[6]
 === REALROM END ===

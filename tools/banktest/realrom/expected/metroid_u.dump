@@ -19,12 +19,12 @@ REALROM block W8000_B7 8000-bfff overlay=true
 REALROM block WC000 c000-ffff overlay=false
 REALROM count blocks.total 15
 REALROM count blocks.overlay 7
-REALROM count refs.intoOverlay.retargeted 37
+REALROM count refs.intoOverlay.retargeted 39
 REALROM count refs.intoOverlay.intraOverlay 440
-REALROM count instrs.inOverlay 1611
+REALROM count instrs.inOverlay 1613
 REALROM count bankComments 5
 REALROM count warnings 7
-REALROM count notes 4
+REALROM count notes 7
 REALROM count symbols 28
 REALROM count jumptable.wordArrays 2
 REALROM count jumptable.planarArrays 0
@@ -58,7 +58,7 @@ REALROM sample.ref 80ba -> W8000_B1::80fa CONDITIONAL_JUMP primary=true
 REALROM sample.ref 80bf -> W8000_B1::80c7 CONDITIONAL_JUMP primary=true
 REALROM sample.ref 80c1 -> W8000_B1::81fc UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 80c4 -> W8000_B1::80f6 UNCONDITIONAL_JUMP primary=true
-REALROM sample.ref.truncated 25 of 477
+REALROM sample.ref.truncated 25 of 479
 REALROM sample.warn c099 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c4b2, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
 REALROM sample.warn c4c5 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn c4d5 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
@@ -67,11 +67,14 @@ REALROM sample.warn c56f [NesBankingAnalyzer] Bank state becomes unknown here: c
 REALROM sample.warn c7c1 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c4ef, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
 REALROM sample.warn c7d2 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c4ef, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
 REALROM sample.note 77f0 [CopyLoopAnalyzer] run-from-elsewhere copy of RAM:c5a8; initialized in place as COPY_77f0
+REALROM sample.note 8cf5 [CopyLoopAnalyzer] copy-shaped loop RAM:687d -> RAM:6993 (4 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note 8d31 [CopyLoopAnalyzer] copy-shaped loop RAM:6993 -> RAM:687d (4 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note c4fa [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
 REALROM sample.note c50a [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
 REALROM sample.note c597 [CopyLoopAnalyzer] copy loop (no jump into the copy; its bytes decode as a subroutine) -> COPY_77f0: 14 bytes RAM:c5a8 -> RAM:77f0; disassembled as code
+REALROM sample.note c8b0 [CopyLoopAnalyzer] copy-shaped loop RAM:959a -> RAM:003b (14 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.symbol c0d9 NMI IMPORTED primary=true
-REALROM sample.symbol c45c case_6 USER_DEFINED primary=true
+REALROM sample.symbol c45c case_6 USER_DEFINED primary=false
 REALROM sample.symbol c45c case_7 USER_DEFINED primary=false
 REALROM sample.symbol c45c case_8 USER_DEFINED primary=false
 REALROM sample.symbol c51c switch USER_DEFINED primary=true

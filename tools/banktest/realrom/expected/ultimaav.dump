@@ -25,24 +25,34 @@ REALROM block W8000_B9 8000-bfff overlay=true
 REALROM block WC000 c000-ffff overlay=false
 REALROM count blocks.total 21
 REALROM count blocks.overlay 15
-REALROM count refs.intoOverlay.retargeted 13
-REALROM count refs.intoOverlay.intraOverlay 214
-REALROM count instrs.inOverlay 867
-REALROM count bankComments 10
-REALROM count warnings 3
-REALROM count notes 4
-REALROM count symbols 23
-REALROM count jumptable.wordArrays 1
+REALROM count refs.intoOverlay.retargeted 15
+REALROM count refs.intoOverlay.intraOverlay 299
+REALROM count instrs.inOverlay 1374
+REALROM count bankComments 20
+REALROM count warnings 5
+REALROM count notes 16
+REALROM count symbols 28
+REALROM count jumptable.wordArrays 3
 REALROM count jumptable.planarArrays 0
 REALROM sample.bankcomment c181 bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_f331 [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
 REALROM sample.bankcomment c1db bank -> mirroring=0,prg_mode=3,prg_bank=13? via FUN_f331 [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
 REALROM sample.bankcomment c1e4 bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_f331 [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
 REALROM sample.bankcomment d89c bank -> mirroring=0,prg_mode=3,prg_bank=5? via FUN_f331 [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
 REALROM sample.bankcomment d8de bank -> mirroring=0,prg_mode=3,prg_bank=1? via FUN_f331 [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
+REALROM sample.bankcomment d946 bank -> mirroring=0,prg_mode=3,prg_bank=0 via FUN_f313 [switch-value flow]
+REALROM sample.bankcomment de2f bank -> mirroring=0,prg_mode=3,prg_bank=0 via FUN_f313 [switch-value flow]
+REALROM sample.bankcomment df25 bank -> mirroring=0,prg_mode=3,prg_bank=12 | mirroring=0,prg_mode=3,prg_bank=13 via FUN_f331 [path fork: 2 arms] [switch-value flow]
+REALROM sample.bankcomment e960 bank -> mirroring=0,prg_mode=3,prg_bank=9 via FUN_f32f [switch-value flow]
+REALROM sample.bankcomment ecfe bank -> mirroring=0,prg_mode=3,prg_bank=14 via FUN_f331 [switch-value flow]
+REALROM sample.bankcomment ed04 bank -> mirroring=0,prg_mode=3,prg_bank=0 via FUN_f313 [switch-value flow]
 REALROM sample.bankcomment ef13 bank -> mirroring=0,prg_mode=3,prg_bank=10? [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=1,prg_bank.2=0,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] | mirroring=0,prg_mode=3,prg_bank=11? [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=1,prg_bank.2=0,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] | mirroring=0,prg_mode=3,prg_bank=12? [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] via FUN_f331 [path fork: 3 arms] [switch-value flow]
 REALROM sample.bankcomment f1e9 bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_f333 [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment f325 bank -> mirroring=0,prg_mode=3,prg_bank=0? [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
 REALROM sample.bankcomment f505 bank -> mirroring=0,prg_mode=3,prg_bank=0? via FUN_f313 [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
+REALROM sample.bankcomment f647 bank -> mirroring=0,prg_mode=3,prg_bank=0 via FUN_f313 [switch-value flow]
+REALROM sample.bankcomment f69f bank -> mirroring=0,prg_mode=3,prg_bank=14 via FUN_f331 [switch-value flow]
+REALROM sample.bankcomment fcc3 bank -> mirroring=0,prg_mode=3,prg_bank=13 via FUN_f331 [switch-value flow]
+REALROM sample.bankcomment fe79 bank -> mirroring=0,prg_mode=3,prg_bank=7 via FUN_f331 [switch-value flow]
 REALROM sample.bankcomment ffda bank -> mirroring=0,prg_mode=3,prg_bank=0? [known: prg_mode.0=1,prg_mode.1=1; assumed from initial: mirroring.0,mirroring.1,prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
 REALROM sample.ref 8009 -> W8000_B14::801d CONDITIONAL_JUMP primary=true
 REALROM sample.ref 800f -> W8000_B14::8036 CONDITIONAL_JUMP primary=true
@@ -69,24 +79,45 @@ REALROM sample.ref 8091 -> W8000_B14::80f0 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8097 -> W8000_B14::80ef CONDITIONAL_JUMP primary=true
 REALROM sample.ref 80af -> W8000_B14::80b9 CONDITIONAL_JUMP primary=true
 REALROM sample.ref 80b1 -> W8000_B14::81d1 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref.truncated 25 of 227
+REALROM sample.ref.truncated 25 of 314
+REALROM sample.warn e09f [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_f34b, which this analyzer models with no argument register, so no caller argument was sought at this call site; its effect is not resolved here
+REALROM sample.warn e332 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_f331 whose bank argument could not be recovered at this call site
 REALROM sample.warn e6e3 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_f331 whose bank argument could not be recovered at this call site
 REALROM sample.warn f35a [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn f35f [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_f34b, which this analyzer models with no argument register, so no caller argument was sought at this call site; its effect is not resolved here
+REALROM sample.note 9676 [CopyLoopAnalyzer] copy-shaped loop RAM:6ae4 -> RAM:6815 (4 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note c145 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_f32f is a proven no-argument restore entry -- its own prologue reloads the bank directly from 004c, a writable RAM cell nothing between that load and the switch touches, and commits it unchanged. The bank after this call is therefore whatever was last saved at 004c, not a fresh value this analyzer failed to pin down -- a property of the game, not a gap in analysis.
+REALROM sample.note df62 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_f32f is a proven no-argument restore entry -- its own prologue reloads the bank directly from 004c, a writable RAM cell nothing between that load and the switch touches, and commits it unchanged. The bank after this call is therefore whatever was last saved at 004c, not a fresh value this analyzer failed to pin down -- a property of the game, not a gap in analysis.
+REALROM sample.note e02c [CopyLoopAnalyzer] copy-shaped loop RAM:0004 -> RAM:0600 (64 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note e0fb [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_f32f is a proven no-argument restore entry -- its own prologue reloads the bank directly from 004c, a writable RAM cell nothing between that load and the switch touches, and commits it unchanged. The bank after this call is therefore whatever was last saved at 004c, not a fresh value this analyzer failed to pin down -- a property of the game, not a gap in analysis.
+REALROM sample.note e54b [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_f32f is a proven no-argument restore entry -- its own prologue reloads the bank directly from 004c, a writable RAM cell nothing between that load and the switch touches, and commits it unchanged. The bank after this call is therefore whatever was last saved at 004c, not a fresh value this analyzer failed to pin down -- a property of the game, not a gap in analysis.
+REALROM sample.note e7c2 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call re-commits the bank READ BACK at e7ab from write-through bank shadow 005e -- a RAM cell the switch code keeps in step with every bank it commits, so the byte read is the last bank committed through it, carried on the stack across the call at e7b0 -- the save/restore idiom. The bank after this call is whatever 005e held at that read, not a fresh value this analyzer failed to pin down. That read sits at the ENTRY of FUN_e7ab (nothing switches between its entry and the read), so it is the shadow as the caller left it: each of its call sites' own bank, which those sites already track -- the call passes it through unchanged. A property of the game, not a gap in analysis.
+REALROM sample.note e966 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_f32f is a proven no-argument restore entry -- its own prologue reloads the bank directly from 004c, a writable RAM cell nothing between that load and the switch touches, and commits it unchanged. The bank after this call is therefore whatever was last saved at 004c, not a fresh value this analyzer failed to pin down -- a property of the game, not a gap in analysis.
+REALROM sample.note ea05 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_f32f is a proven no-argument restore entry -- its own prologue reloads the bank directly from 004c, a writable RAM cell nothing between that load and the switch touches, and commits it unchanged. The bank after this call is therefore whatever was last saved at 004c, not a fresh value this analyzer failed to pin down -- a property of the game, not a gap in analysis.
+REALROM sample.note ec4a [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_f32f is a proven no-argument restore entry -- its own prologue reloads the bank directly from 004c, a writable RAM cell nothing between that load and the switch touches, and commits it unchanged. The bank after this call is therefore whatever was last saved at 004c, not a fresh value this analyzer failed to pin down -- a property of the game, not a gap in analysis.
 REALROM sample.note f1f1 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call re-commits the bank READ BACK at f1ef from write-through bank shadow 005e -- a RAM cell the switch code keeps in step with every bank it commits, so the byte read is the last bank committed through it -- the save/restore idiom. The bank after this call is whatever 005e held at that read, not a fresh value this analyzer failed to pin down. A property of the game, not a gap in analysis.
 REALROM sample.note f335 [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
 REALROM sample.note f345 [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
 REALROM sample.note f522 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call re-commits the bank READ BACK at f518 from write-through bank shadow 005e -- a RAM cell the switch code keeps in step with every bank it commits, so the byte read is the last bank committed through it, carried on the stack across the call at f51d -- the save/restore idiom. The bank after this call is whatever 005e held at that read, not a fresh value this analyzer failed to pin down. That read sits at the ENTRY of FUN_f516 (nothing switches between its entry and the read), so it is the shadow as the caller left it: each of its call sites' own bank, which those sites already track -- the call passes it through unchanged. A property of the game, not a gap in analysis.
+REALROM sample.note f669 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_f32f is a proven no-argument restore entry -- its own prologue reloads the bank directly from 004c, a writable RAM cell nothing between that load and the switch touches, and commits it unchanged. The bank after this call is therefore whatever was last saved at 004c, not a fresh value this analyzer failed to pin down -- a property of the game, not a gap in analysis.
+REALROM sample.note f6a5 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_f32f is a proven no-argument restore entry -- its own prologue reloads the bank directly from 004c, a writable RAM cell nothing between that load and the switch touches, and commits it unchanged. The bank after this call is therefore whatever was last saved at 004c, not a fresh value this analyzer failed to pin down -- a property of the game, not a gap in analysis.
 REALROM sample.symbol 97d4 switch USER_DEFINED primary=true
 REALROM sample.symbol 97df case_0 USER_DEFINED primary=true
 REALROM sample.symbol 97e7 case_1 USER_DEFINED primary=true
 REALROM sample.symbol 97f1 case_2 USER_DEFINED primary=true
 REALROM sample.symbol 986d case_3 USER_DEFINED primary=true
 REALROM sample.symbol f1a1 NMI IMPORTED primary=true
+REALROM sample.symbol fd17 switch USER_DEFINED primary=true
+REALROM sample.symbol fd22 case_2 USER_DEFINED primary=true
+REALROM sample.symbol fd27 case_3 USER_DEFINED primary=true
+REALROM sample.symbol fd2c case_1 USER_DEFINED primary=true
+REALROM sample.symbol fd34 case_0 USER_DEFINED primary=true
 REALROM sample.symbol ffda IRQ IMPORTED primary=false
 REALROM sample.symbol ffda RESET IMPORTED primary=true
 REALROM sample.symbol fffa NMI_VEC IMPORTED primary=true
 REALROM sample.symbol fffc RESET_VEC IMPORTED primary=true
 REALROM sample.symbol fffe IRQ_VEC IMPORTED primary=true
+REALROM sample.jumptable 820b word[8]
 REALROM sample.jumptable 97d7 word[4]
+REALROM sample.jumptable fd1a word[4]
 === REALROM END ===
