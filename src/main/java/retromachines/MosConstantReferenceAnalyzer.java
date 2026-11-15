@@ -24,6 +24,7 @@ import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressOutOfBoundsException;
 import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.address.AddressSetView;
+import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.data.DataType;
 import ghidra.program.model.lang.Register;
 import ghidra.program.model.listing.Function;
@@ -31,6 +32,7 @@ import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.InstructionIterator;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryAccessException;
+import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.pcode.PcodeOp;
 import ghidra.program.model.symbol.RefType;
 import ghidra.program.model.symbol.Reference;
@@ -240,6 +242,26 @@ public abstract class MosConstantReferenceAnalyzer extends ConstantPropagationAn
 	}
 
 	/**
+	 * The base-space addresses that some overlay block also maps (bead grm-zzby): a banked
+	 * window's base range, whose listing is just the home bank's view of an address every
+	 * overlay bank also occupies. Built from the program's blocks on each call -- a handful per
+	 * program, and blocks can change between analysis passes, so it is not cached.
+	 */
+	static AddressSetView bankedShadow(Program program) {
+		AddressSet shadow = new AddressSet();
+		for (MemoryBlock block : program.getMemory().getBlocks()) {
+			AddressSpace space = block.getStart().getAddressSpace();
+			if (!space.isOverlaySpace()) {
+				continue;
+			}
+			AddressSpace physical = space.getPhysicalSpace();
+			shadow.add(physical.getAddress(block.getStart().getOffset()),
+				physical.getAddress(block.getEnd().getOffset()));
+		}
+		return shadow;
+	}
+
+	/**
 	 * Adds a reference to {@code base} on operand 0, unless one is already there.
 	 *
 	 * <p>Operand 0 is always the memory operand for every 6502 indexed addressing mode. The
@@ -265,6 +287,13 @@ public abstract class MosConstantReferenceAnalyzer extends ConstantPropagationAn
 	private static void addBaseReferenceOnce(Instruction instr, Address base, RefType refType) {
 		for (Reference ref : instr.getOperandReferences(0)) {
 			if (ref.getToAddress().equals(base)) {
+				// A known-index path's READ/WRITE is more specific than the plain DATA an
+				// unknown-index path offers for the same base (grm-zzby): whichever arrives
+				// first, keep the specific one.
+				if (RefType.DATA.equals(ref.getReferenceType()) &&
+					(refType.isRead() || refType.isWrite())) {
+					instr.getProgram().getReferenceManager().updateRefType(ref, refType);
+				}
 				return;
 			}
 		}
@@ -388,6 +417,23 @@ public abstract class MosConstantReferenceAnalyzer extends ConstantPropagationAn
 					// wrap-safe by construction; this exact class of bug is upstream
 					// ghidra#201 (2019-04-04).
 					Address base = LoopIdioms.indexedBase(instr);
+					if (base != null && base.equals(address) && refType.isData() &&
+						!refType.isRead() && !refType.isWrite() &&
+						bankedShadow(program).contains(address)) {
+						// Index unknown, so the propagator offers the operand's own base as a
+						// pure DATA reference -- and after this callback stock vets it in
+						// SymbolicPropogator.evaluatePureDataRef, dropping it when the target
+						// sits mid-instruction (or mid-function) in the LISTING at that
+						// address. For a base-space address that overlay banks also cover, that
+						// listing is only the home bank's view, and says nothing about the bank
+						// this access reads: tmnt's fe21 LDA $8e11,Y reads bank 6, but the ref
+						// lived or died on whether bank 0's bytes at 8e11 had been disassembled
+						// (they were under decompiler candidate 7, not candidate 1; grm-zzby).
+						// Place the base reference here instead, as stock would have without
+						// that veto; BoardBankAnalyzer's phase 2 then retargets it by bank state.
+						addBaseReferenceOnce(instr, base, refType);
+						return false;
+					}
 					if (!retargetable(program, base, address)) {
 						// Not actually an indexed operand (e.g. plain LDA #imm, which also
 						// classifies as DIRECT -- see classify()'s javadoc), the computed

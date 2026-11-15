@@ -305,4 +305,48 @@ public class MosConstantReferenceAnalyzerTest extends AbstractBundledLanguageTes
 		assertEquals(Set.of(builder.addr("0x2000")), targets);
 		assertFalse("computed $2005 must not appear", targets.contains(builder.addr("0x2005")));
 	}
+
+	/**
+	 * Fixed-bank {@code LDA $8011,Y} with Y unknown into a banked window whose HOME bank has an
+	 * instruction straddling $8011 ($8010 {@code LDA $0000}). Base $8011 is then mid-instruction
+	 * in the listing, and stock {@code SymbolicPropogator.evaluatePureDataRef} drops the base
+	 * reference -- though the home bank's listing says nothing about the bank the access reads.
+	 * grm-zzby: tmnt's {@code fe21 LDA $8e11,Y} lost its bank-6 reference exactly this way once
+	 * a decompiler change got bank 0's bytes at $8e11 disassembled.
+	 */
+	private ProgramDB bankedWindowFixture(ProgramBuilder builder, boolean overlay)
+			throws Exception {
+		builder.createMemory("WIN", "0x8000", 0x100);
+		builder.createMemory("FIXED", "0xc000", 0x100);
+		if (overlay) {
+			builder.createOverlayMemory("WIN_B1", "0x8000", 0x100);
+		}
+		builder.setBytes("0x8010", "ad 00 00", true); // home bank: LDA $0000 covers $8011
+		builder.setBytes("0xc000", "b9 11 80 60", true); // LDA $8011,Y (Y unknown) ; RTS
+		return builder.getProgram();
+	}
+
+	@Test
+	public void unknownIndexIntoBankedWindowKeepsBaseDespiteHomeBankListing() throws Exception {
+		ProgramBuilder builder = newBuilder("Test", "6502:LE:16:default");
+		ProgramDB program = bankedWindowFixture(builder, true);
+
+		analyze(program, new Mos6502ConstantReferenceAnalyzer(), builder.addr("0xc000"));
+
+		Instruction lda = program.getListing().getInstructionAt(builder.addr("0xc000"));
+		assertEquals(Set.of(builder.addr("0x8011")), nonFlowTargets(lda));
+	}
+
+	@Test
+	public void unknownIndexIntoUnbankedCodeKeepsStockVeto() throws Exception {
+		// Control: the same bytes with no overlay. The listing at $8011 is then the only view of
+		// that address, so stock's mid-instruction veto is right and stays in force.
+		ProgramBuilder builder = newBuilder("Test", "6502:LE:16:default");
+		ProgramDB program = bankedWindowFixture(builder, false);
+
+		analyze(program, new Mos6502ConstantReferenceAnalyzer(), builder.addr("0xc000"));
+
+		Instruction lda = program.getListing().getInstructionAt(builder.addr("0xc000"));
+		assertEquals(Set.of(), nonFlowTargets(lda));
+	}
 }
