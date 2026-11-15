@@ -130,9 +130,6 @@ public class PopReturnHelperAnalyzer extends AbstractAnalyzer {
 			new CreateFunctionCmd(entry).applyTo(program, monitor);
 			function = program.getFunctionManager().getFunctionAt(entry);
 		}
-		if (function != null && !function.hasNoReturn()) {
-			function.setNoReturn(true);
-		}
 
 		AddressSet clear = new AddressSet();
 		Set<Function> callers = new LinkedHashSet<>();
@@ -150,6 +147,14 @@ public class PopReturnHelperAnalyzer extends AbstractAnalyzer {
 			Address fallthrough = call.getFallThrough();
 			if (fallthrough == null) {
 				continue; // already stopped (by us earlier, or by the disassembler)
+			}
+			if (isStubCall(program, call)) {
+				continue;
+			}
+			if (function != null && !function.hasNoReturn()) {
+				// not before the first real (non-stub) caller: a helper reached only through
+				// far-call stubs must stay returning for them (see isStubCall)
+				function.setNoReturn(true);
 			}
 			call.setFlowOverride(FlowOverride.CALL_RETURN);
 			sites++;
@@ -179,6 +184,30 @@ public class PopReturnHelperAnalyzer extends AbstractAnalyzer {
 					.applyTo(program, monitor);
 		}
 		return sites;
+	}
+
+	/**
+	 * A call that is the first instruction of a subroutine: a far-call STUB (JSR helper + inline
+	 * data, dbz_saiyan c2ad). The helper pops the stub's return address, so the stub still returns
+	 * to ITS caller. Overriding the stub's JSR to CALL_RETURN before its function exists makes
+	 * Ghidra create the stub as a thunk of the helper, and a thunk shares the helper's no-return
+	 * flag, which strands every caller of the stub: the code after c405 JSR c2ad became
+	 * unreachable and the decompiler died on the orphaned switch override at c434
+	 * (grm-hf5h.12). Stock no-return discovery already ends the stub's own flow without that
+	 * side effect, so a stub's JSR is left to it.
+	 */
+	private static boolean isStubCall(Program program, Instruction call) {
+		Address at = call.getAddress();
+		if (program.getFunctionManager().getFunctionAt(at) != null) {
+			return true;
+		}
+		ReferenceIterator refs = program.getReferenceManager().getReferencesTo(at);
+		while (refs.hasNext()) {
+			if (refs.next().getReferenceType().isCall()) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** A flow (not data) reference into {@code addr}: someone else reaches it as code. */

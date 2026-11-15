@@ -197,6 +197,39 @@ public class PopReturnHelperAnalyzerTest extends AbstractBundledLanguageTest {
 		assertNotNull(instrAt(program, 0xe003));
 	}
 
+	/**
+	 * grm-hf5h.12, dbz_saiyan c405 JSR c2ad: a far-call STUB (JSR helper + inline data) returns to
+	 * its own caller, because the helper pops only the stub's return address.
+	 * its fall-through is left to stock discovery, and the stub must not become a thunk of the helper.
+	 */
+	@Test
+	public void aStubAroundAHelperStillReturnsToItsCaller() throws Exception {
+		ProgramDB program = freshProgram();
+		builder.setBytes("0xc9c2", "68 68 60", true);
+		// stub: JSR c9c2 / .byte 0c 13 80
+		builder.setBytes("0xc2ad", "20 c2 c9 0c 13 80", true);
+		// caller: JSR c2ad / LDA #5 / RTS
+		builder.setBytes("0xc405", "20 ad c2 a9 05 60", true);
+
+		PopReturnHelperAnalyzer analyzer = new PopReturnHelperAnalyzer();
+		inTx(program, "functions", () -> {
+			new ghidra.app.cmd.function.CreateFunctionCmd(addr(0xc2ad)).applyTo(program);
+			new ghidra.app.cmd.function.CreateFunctionCmd(addr(0xc405)).applyTo(program);
+		});
+		inTx(program, "analyze", () -> analyzer.added(program,
+			new AddressSet(addr(0xc2ad), addr(0xc40a)), TaskMonitor.DUMMY, new MessageLog()));
+
+		assertNotNull("the stub is left to stock no-return discovery",
+			instrAt(program, 0xc2ad));
+		assertNotNull("the stub's caller keeps its fall-through",
+			instrAt(program, 0xc405).getFallThrough());
+		assertNotNull(instrAt(program, 0xc408));
+		Function stub = program.getFunctionManager().getFunctionAt(addr(0xc2ad));
+		assertNotNull(stub);
+		assertFalse("a stub must not become a thunk of the helper (it would inherit no-return)",
+			stub.isThunk());
+	}
+
 	private ghidra.program.model.listing.Instruction instrAt(ProgramDB program, long a) {
 		return program.getListing().getInstructionAt(addr(a));
 	}
