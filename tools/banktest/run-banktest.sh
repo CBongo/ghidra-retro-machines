@@ -396,6 +396,9 @@ if selected nes-text; then
 	generate mksnestbltest.py "$WORK/snes"
 fi
 if selected descriptors; then
+	# nesmmc1varytest (grm-ic5) runs in this chunk but its .nes and planted .yaml come from
+	# mknesbanktest.py; without this a descriptors-only run had no image to import (grm-q8mp).
+	if ! selected nes-banking; then generate mknesbanktest.py "$WORK/nes"; fi
 	generate mkdescoverlaytest.py "$WORK/nes"
 	generate mkdescbankhinttest.py "$WORK/nes"
 	generate mkc64descrtest.py "$WORK/prg"

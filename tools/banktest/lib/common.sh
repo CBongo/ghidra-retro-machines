@@ -145,6 +145,44 @@ grm_settings_base_fallback() {
 	fi
 }
 
+# Drop Ghidra's compiled script bundles under the isolated settings base whenever the harness
+# script SOURCES change (bead grm-q8mp). Ghidra compiles each -scriptPath dir into
+# <settings>/<user>/<ghidra ver>/osgi/compiled-bundles/<hash>/ and recompiles only the .java
+# files whose source changed -- but javac INLINES a `static final String` constant into every
+# class that uses it. So when grm-4x8f renamed VerifyBase.GAME_IDENTITY_PROPERTY and
+# VerifyDescriptorCriteria.GAME_DESCRIPTOR_PROPERTY, VerifyBase.class and
+# VerifyDescriptorCriteria.class were rebuilt while VerifyDumpCriteria.class and
+# VerifyNesCriteria.class (unchanged sources, compiled in October) kept reading the OLD dotted
+# names: every NES dump lost its IDENTITY line and two descriptor criteria read null, on this
+# machine only (a fresh settings dir compiled everything and passed). Keying on the content of
+# every harness .java and wiping the whole cache on any change trades one cold recompile
+# (seconds) for never trusting Ghidra's per-file staleness check.
+# Caveat: a run started in this same worktree with OLDER sources and still alive loses its
+# compiled classes mid-run -- the same "two gates, one tree, changed sources" race grm-r324
+# already refuses for the extension; use a second worktree for that.
+grm_invalidate_stale_script_bundles() {
+	local base="$1" stamp key
+	[ -n "$base" ] && [ -d "$base" ] || return 0
+	stamp="$base/.grm-script-sources.sha256"
+	key="$(find "$REPO_ROOT/tools/banktest" "$REPO_ROOT/ghidra_scripts" -name '*.java' -type f \
+		-print0 2>/dev/null | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum | cut -c1-64)"
+	[ -n "$key" ] || return 0
+	if [ -f "$stamp" ] && [ "$(cat "$stamp")" = "$key" ]; then
+		return 0
+	fi
+	local d wiped=0
+	for d in "$base"/*/*/osgi/compiled-bundles; do
+		[ -d "$d" ] || continue
+		rm -rf "$d"
+		wiped=1
+	done
+	if [ "$wiped" = 1 ]; then
+		echo "== harness script sources changed: cleared Ghidra's compiled script bundles under" \
+			"$base (grm-q8mp) ==" >&2
+	fi
+	printf '%s\n' "$key" >"$stamp"
+}
+
 # Isolation mechanism (Ghidra 12.1.2 source):
 #   ApplicationUtilities.getDefaultUserSettingsDir honors -Dapplication.settingsdir
 #   to relocate the user settings dir (and GhidraApplicationLayout.
@@ -196,6 +234,7 @@ grm_apply_settings_base() {
 		echo "== analysis thread pool PINNED to 1 (GRM_THREAD_PIN=1; diagnostic, grm-uioc) ==" >&2
 	fi
 	if [ -n "${BANKTEST_SETTINGS_BASE:-}" ]; then
+		grm_invalidate_stale_script_bundles "$BANKTEST_SETTINGS_BASE"
 		base_native="$(native "$BANKTEST_SETTINGS_BASE")"
 		export GHIDRA_HEADLESS_JAVA_OPTIONS="${GHIDRA_HEADLESS_JAVA_OPTIONS:-} -Dapplication.settingsdir=$base_native -Dapplication.cachedir=$base_native/cache"
 	fi
