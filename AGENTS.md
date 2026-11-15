@@ -207,6 +207,11 @@ but the hardware is not.
 
 ## Upstream drafts: the bead is the master copy, between `---8<---` markers
 
+**Any change to the Ghidra codebase itself MUST follow [docs/ghidra-conformance.md](docs/ghidra-conformance.md)**
+(Ghidra's CONTRIBUTING.md and coding standards, summarized): one squashed commit per independent
+change, smallest diff, no title `#` or issue number in the title, tests only into existing files,
+Eclipse-profile formatting. Read it before drafting any upstream PR or issue.
+
 Agents draft upstream issues and PRs; the owner posts them (see "Anything needing the user's
 identity" above). **Keep the draft on the owning bead** — its description, or a new comment when
 refreshing one (the last block wins) — so it syncs with `bd dolt push` and survives a fresh clone.
@@ -357,6 +362,10 @@ scratchpad.
 ## Java: keep javac lint at zero warnings
 
 `build.gradle` compiles with `-Xlint:all` minus two Ghidra-induced categories, plus the Error Prone plugin (`grm-tl0o`) minus the style checks its comment lists, and the build is kept at **zero** warnings from both. The owner decided against `-Werror` (`grm-uv3l`), and against letting Error Prone's ERROR-severity checks fail the build (`allErrorsAsWarnings`, `grm-tl0o`), for the same reason. So nothing enforces this but you. After changing Java, run `./gradlew compileJava --rerun compileTestJava --rerun compileGdtBuilderJava --rerun 2>&1 | grep -c "warning: \["`, which must print 0. Both tools print `warning: [Name]`, so the one count covers both. Use `--rerun` because an incremental or `UP-TO-DATE` compile skips unchanged files and hides their warnings. A new warning is fixed, or suppressed with a narrow `@SuppressWarnings("xxx")` on the smallest element plus a one-line reason, never left. Disable an Error Prone check project-wide only by adding it to the `build.gradle` list with its reason.
+
+**Style for new and edited Java here is RECOMMENDED, not required:** Ghidra's coding standards
+as summarized in Part 2 of [docs/ghidra-conformance.md](docs/ghidra-conformance.md). Apply them to
+code you write or touch; never reformat untouched code to match.
 
 ## Testing
 
