@@ -235,6 +235,41 @@ public class SplitDispatchTableAnalyzerTest extends AbstractBundledLanguageTest 
 		assertNull(program.getListing().getComment(CommentType.EOL, addr(CALLER + 12)));
 	}
 
+	/** grm-gipk.28: JumpTableBound pinned the inline jump by references alone (no function holds
+	 *  it, no override can be consumed), so its targets are COMPUTED_JUMP and made no function.
+	 *  The split dispatch still resolves it: every pin is retyped to a call and the walk adds the
+	 *  rest. */
+	@Test
+	public void upgradesAnOrphanBoundPinToCalls() throws Exception {
+		ProgramDB program = buildInline("9200");
+		long jmp = CALLER + 12;
+		inTx(program, "bound", () -> program.getListing().setComment(addr(jmp), CommentType.EOL,
+			"[JumpTableBound] table at 900f bounded 128 -> 1 entries (laid word[1])"));
+		run(program);
+		assertEquals(List.of(CALLER + 21, HANDLERS[0], HANDLERS[1]), computedTargets(program, jmp));
+		for (Reference r : program.getListing().getInstructionAt(addr(jmp)).getReferencesFrom()) {
+			if (r.getReferenceType().isComputed()) {
+				assertEquals(RefType.COMPUTED_CALL, r.getReferenceType());
+			}
+		}
+	}
+
+	/** A bound that a function owns is a switch for stock analysis to resolve: leave it alone. */
+	@Test
+	public void leavesAnOwnedBoundPinAlone() throws Exception {
+		ProgramDB program = buildInline("9200");
+		long jmp = CALLER + 12;
+		inTx(program, "bound", () -> {
+			program.getListing().setComment(addr(jmp), CommentType.EOL,
+				"[JumpTableBound] table at 900f bounded 128 -> 1 entries (laid word[1])");
+			program.getFunctionManager().createFunction("f", addr(CALLER),
+				new AddressSet(addr(CALLER), addr(jmp + 2)),
+				ghidra.program.model.symbol.SourceType.USER_DEFINED);
+		});
+		run(program);
+		assertEquals(List.of(HANDLERS[0]), computedTargets(program, jmp));
+	}
+
 	/** A jump-table override (its {@code switch} label) already owns the inline jump, though stock
 	 *  switch analysis has not laid its references down yet: leave it alone. */
 	@Test

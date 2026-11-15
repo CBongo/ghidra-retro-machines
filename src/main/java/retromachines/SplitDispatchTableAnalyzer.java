@@ -204,8 +204,10 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 			}
 			resolvedSites++;
 			Set<Address> distinct = new LinkedHashSet<>(targets);
+			// decided once: the first upgraded pin would otherwise make the rest look resolved
+			boolean orphanPin = site.inline() && isOrphanPin(site.stub());
 			for (Address target : distinct) {
-				if (applyTarget(program, listing, site.stub(), target)) {
+				if (applyTarget(program, listing, site.stub(), target, orphanPin)) {
 					resolvedTargets++;
 				}
 			}
@@ -233,7 +235,7 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 	static Site match(Listing listing, Instruction call) {
 		Instruction stub;
 		if (IndirectJumpConstantPointer.isIndirectJumpSite(call)) {
-			if (hasComputedReference(call) || isDeclaredSwitch(call)) {
+			if ((hasComputedReference(call) && !isOrphanPin(call)) || isDeclaredSwitch(call)) {
 				// Switch analysis (or an earlier round) already resolved it, or a jump-table
 				// override awaits stock switch analysis there (shenlong 8655, bounded by
 				// JumpTableBoundAnalyzer): that switch has an owner.
@@ -365,6 +367,31 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 		return false;
 	}
 
+	/**
+	 * Whether {@code call}'s only computed references are {@link JumpTableBoundAnalyzer}'s
+	 * reference pins and no function contains it (grm-gipk.28): the jump was bounded by
+	 * references alone because no function owned it, so there is no switch for a decompile to
+	 * recover and no override to await, and its pinned targets are COMPUTED_JUMP references that
+	 * create no function. deadly_towers B1 {@code e738}: once grm-gipk.26's retraction kept the
+	 * B1 cases and reached the dispatcher earlier, the bound pinned {@code e767} before this
+	 * analyzer saw the site, and {@code e767} (with the {@code e775} switch inside it) was never
+	 * made a function. Such a site is still ours to resolve as a call.
+	 */
+	static boolean isOrphanPin(Instruction call) {
+		Program program = call.getProgram();
+		if (program.getFunctionManager().getFunctionContaining(call.getMinAddress()) != null ||
+			!JumpTableBoundAnalyzer.boundWithoutOverride(program, call.getMinAddress())) {
+			return false;
+		}
+		for (Reference ref : call.getReferencesFrom()) {
+			if (ref.getReferenceType().isComputed() &&
+				!RefType.COMPUTED_JUMP.equals(ref.getReferenceType())) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	private static boolean hasComputedReference(Instruction instr) {
 		for (Reference ref : instr.getReferencesFrom()) {
 			if (ref.getReferenceType().isComputed()) {
@@ -427,9 +454,12 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 	 *  at {@code target}, as {@link IndirectJumpConstantPointerAnalyzer} does. Returns whether a
 	 *  new reference was added. */
 	private boolean applyTarget(Program program, Listing listing, Instruction stub,
-			Address target) {
+			Address target, boolean upgradeJumpPins) {
 		for (Reference ref : stub.getReferencesFrom()) {
 			if (ref.getToAddress().equals(target) && ref.getReferenceType().isComputed()) {
+				if (upgradeJumpPins && RefType.COMPUTED_JUMP.equals(ref.getReferenceType())) {
+					break; // a reference pin never made a function; retype it to a call below
+				}
 				return false;
 			}
 		}
