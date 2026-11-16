@@ -13,7 +13,8 @@
 # recovery depends on), so these files diverge permanently once that lands. See
 # docs/65816-language-survey.md for the evaluation that led here.
 #
-# Vendored verbatim at the commit above; the only modification is this header.
+# Vendored at the commit above; local modifications are marked with their bead id
+# (grm-9nxj.4 indirect-jump exports, grm-hf5h.10 program bank from inst_start).
 # ---------------------------------------------------------------------------------------
 
 # JMP 0x4c - Absolute local.
@@ -42,17 +43,25 @@ MemAbsLongJmp: !>$imm24 is imm24
 # branches, which is what gives analysis a static flow edge -- see the split tables in
 # 658xx.sinc.
 
+# grm-hf5h.10: THE PROGRAM BANK BELOW IS (inst_start & 0xff0000), NOT THE PBR REGISTER.
+# PBR always equals the bank of the executing instruction, and MemAbsJmp above already derives
+# the bank that way. Reading PBR made it a free input to every JMP (abs,X) / JMP (abs) /
+# JSR (abs,X): the decompiler counted it as a second switch-variable leaf beside the real index,
+# the path meld collapsed to the BRANCHIND input alone, and every 65816 jump-table override fell
+# to setupTrivial (case labels = target addresses) -- 66 of the 94 override sites in w_ct /
+# w_ff3 / w_fzero. A constant bank keeps the table loads in the meld so the index is recovered.
+
 # Absolute indexed by X, indirect.
 MemAbsIdxIndJmp: (!$imm16,"X")    is imm16 & IdxX  {
     # Accessing the indirect address must wrap to stay within the bank.
     # Indexing does NOT allow the indirect lookup to cross bank boundaries.
     local offset:2 = imm16 + IdxX;
-    local ind_lo_addr:3 = (zext(PBR) << 16) | zext(offset);
-    local ind_hi_addr:3 = (zext(PBR) << 16) | zext(offset + 1);
+    local ind_lo_addr:3 = (inst_start & 0xff0000) | zext(offset);
+    local ind_hi_addr:3 = (inst_start & 0xff0000) | zext(offset + 1);
 
     local addr_lo:1 = *:1 ind_lo_addr;
     local addr_hi:1 = *:1 ind_hi_addr;
-    local address:3 = (zext(PBR) << 16) | (zext(addr_hi) << 8) | zext(addr_lo);
+    local address:3 = (inst_start & 0xff0000) | (zext(addr_hi) << 8) | zext(addr_lo);
     export address;
 }
 
@@ -65,7 +74,7 @@ MemAbsIndJmp: (!$imm16)    is imm16  {
 
     local addr_lo:1 = *:1 ind_lo_addr;
     local addr_hi:1 = *:1 ind_hi_addr;
-    local address:3 = (zext(PBR) << 16) | (zext(addr_hi) << 8) | zext(addr_lo);
+    local address:3 = (inst_start & 0xff0000) | (zext(addr_hi) << 8) | zext(addr_lo);
     export address;
 }
 
