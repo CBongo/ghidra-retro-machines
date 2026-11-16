@@ -774,6 +774,39 @@ final class BankDataflowEngine {
 		}
 
 		/**
+		 * A call to a CHAIN wrapper (grm-a0nx): each part is applied in order at this same call
+		 * site, the next part seeing the state the previous one left, and the parts' effects are
+		 * layered onto one {@link CallTally} entry (each part overwrites only the bits it owns,
+		 * where a plain {@code add} would merge, and so forget what only one part knew). A part
+		 * that forks yields several states; the remaining parts run on each.
+		 */
+		private List<OutElement> applyChain(Instruction instr, HelperModel chain, int index,
+				PathId pathId, BankState outState, CallTally call, ModeLock lock, int modeMask,
+				HintTally hintTally) {
+			HelperModel part = chain.chain().get(index);
+			if (index > 0) {
+				call.beginLayer();
+			}
+			List<OutElement> outs = applyHelperCall(instr, part, pathId, outState, call, lock,
+				modeMask, hintTally);
+			if (index > 0) {
+				call.endLayer(part.effectMask());
+			}
+			call.label(helperLabel(program, chain));
+			if (index == chain.chain().size() - 1) {
+				return outs;
+			}
+			List<OutElement> result = new ArrayList<>();
+			for (OutElement o : outs) {
+				for (OutElement next : applyChain(instr, chain, index + 1, o.pathId(), o.fall(),
+					call, lock, modeMask, hintTally)) {
+					result.add(new OutElement(next.pathId(), outState, next.fall()));
+				}
+			}
+			return result;
+		}
+
+		/**
 		 * Recovers the argument a helper call site supplies, with this run's call-site memo, trampoline
 		 * map and cross-block proof memo -- the context all three call sites that recover one share.
 		 */
@@ -794,6 +827,10 @@ final class BankDataflowEngine {
 		private List<OutElement> applyHelperCall(Instruction instr, HelperModel helper,
 				PathId pathId, BankState outState, CallTally call, ModeLock lock, int modeMask,
 				HintTally hintTally) {
+			if (helper.chain() != null) {
+				return applyChain(instr, helper, 0, pathId, outState, call, lock, modeMask,
+					hintTally);
+			}
 			Address addr = instr.getMinAddress();
 			// The recording StateOracle for THIS call (grm-mej.3 increment 3): answers the merged
 			// state at any instruction and records the ask as a dependency edge P -> addr, so a later
@@ -2092,6 +2129,33 @@ final class BankDataflowEngine {
 			}
 			if (readBack == null) {
 				readBack = read;
+			}
+		}
+
+		private BankState layerEffect;
+		private BankState layerAfter;
+
+		/** Chain wrapper (grm-a0nx): the next {@link #add} is a later part's; keep what is known. */
+		void beginLayer() {
+			layerEffect = effect;
+			layerAfter = stateAfter;
+			effect = null;
+			stateAfter = null;
+		}
+
+		/** Lays the part just added over the earlier parts, on the bits {@code mask} it owns. */
+		void endLayer(int mask) {
+			if (layerEffect != null && effect != null) {
+				effect = overwrite(layerEffect, effect, mask);
+			}
+			if (layerAfter != null && stateAfter != null) {
+				stateAfter = overwrite(layerAfter, stateAfter, mask);
+			}
+		}
+
+		void label(String name) {
+			if (helperName != null) {
+				helperName = name;
 			}
 		}
 

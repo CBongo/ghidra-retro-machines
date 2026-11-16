@@ -753,6 +753,88 @@ final class HelperDiscovery {
 	}
 
 	/**
+	 * {@code helpers}, plus every CHAIN wrapper (bead grm-a0nx): a function whose body is exactly
+	 * one {@code JSR} into a known helper A and which then falls through into the entry of a
+	 * known helper B. Calling it runs A and then B, so a call site resolves each part the way a
+	 * direct call to it would (smb3's {@code $FFBF}: {@code JSR $FFD1} -- MMC3 R6 from the shadow
+	 * {@code $071F} -- falling into {@code $FFC2} -- R7 from {@code $0720}).
+	 * <p>
+	 * This is neither of the other two wrapper passes. {@link #findPassThroughWrappers} demands a
+	 * body with no call at all; {@link #findCallEdgeWrappers} demands the relay come AFTER an inert
+	 * prefix and models only that one callee, ignoring the fall-through into B (here the relay is
+	 * the body's first instruction, which {@link #isPassThroughInto} cannot express). The
+	 * fall-through is not a tail call either (no JMP/CALL_TERMINATOR), so
+	 * {@link #composeTailCalls} never sees it.
+	 * <p>
+	 * Admission is deliberately narrow: single-range body of exactly one {@code JSR} that resolves
+	 * to a helper (no mechanism write of its own), whose fall-through address is the entry of a
+	 * function that is a helper. Declined when B reads its argument from a register that A's body
+	 * writes, unless B's entry first loads that register itself (a caller-register argument A
+	 * clobbered would be recovered wrong; B's own LDA makes the caller's register irrelevant).
+	 * Not checked: that A leaves RAM cells B reads untouched. One pass over the immutable input,
+	 * so a chain of chains is not formed, and the result is order-independent.
+	 */
+	// Package-private (not private): BoardBankAnalyzer.added() reaches this via import static.
+	static Map<Function, HelperModel> findChainWrappers(Program program,
+			Map<Function, HelperModel> helpers, Map<Address, SwitchResult> switchResults) {
+		Map<Function, HelperModel> result = new LinkedHashMap<>(helpers);
+		Listing listing = program.getListing();
+		FunctionManager fm = program.getFunctionManager();
+		List<Function> candidates = new ArrayList<>();
+		fm.getFunctions(true).forEach(candidates::add);
+		for (Function wrapper : candidates) {
+			if (helpers.containsKey(wrapper) || wrapper.getBody().getNumAddressRanges() != 1) {
+				continue;
+			}
+			Instruction only = listing.getInstructionAt(wrapper.getEntryPoint());
+			if (only == null || !only.getMaxAddress().equals(wrapper.getBody().getMaxAddress()) ||
+				!only.getFlowType().isCall() || !only.getFlowType().isUnConditional() ||
+				switchResults.containsKey(only.getMinAddress())) {
+				continue;
+			}
+			Address next = only.getMaxAddress().next();
+			if (next == null || !next.equals(only.getFallThrough())) {
+				continue;
+			}
+			Function second = fm.getFunctionAt(next);
+			HelperModel secondModel = second == null ? null : helpers.get(second);
+			HelperModel firstModel = calledHelper(program, only, helpers);
+			if (firstModel == null || secondModel == null || secondModel.relay() != null ||
+				firstModel.function().equals(wrapper) ||
+				!argumentSurvivesFirst(program, firstModel, secondModel)) {
+				continue;
+			}
+			result.put(wrapper, HelperModel.chainWrapper(wrapper, firstModel, secondModel));
+		}
+		return result;
+	}
+
+	/**
+	 * Whether running {@code first} before {@code second} cannot clobber the caller register
+	 * {@code second} takes its argument in: true when {@code second} has no argument register,
+	 * when its entry instruction loads that register itself, or when {@code first}'s body never
+	 * writes it.
+	 */
+	private static boolean argumentSurvivesFirst(Program program, HelperModel first,
+			HelperModel second) {
+		Character reg = second.argReg();
+		if (reg == null) {
+			return true;
+		}
+		Instruction entry = program.getListing().getInstructionAt(second.entry());
+		if (entry != null && entry.getMnemonicString().equalsIgnoreCase("LD" + reg)) {
+			return true;
+		}
+		for (Instruction i : program.getListing().getInstructions(first.function().getBody(),
+			true)) {
+			if (FarCallTrampoline.writesRegister(program, i, reg)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
 	 * Whether {@code instr} is {@code wrapper}'s closing plain {@code JMP} (bead grm-dos9.14): an
 	 * unconditional, non-computed jump with one target, and the last instruction of the body.
 	 * {@link #findCallEdgeWrappers} accepts it as a relay alongside a call. Bionic's
@@ -1852,7 +1934,7 @@ final class HelperDiscovery {
 	record HelperModel(Function function, Address entry, BankState constState,
 			Character argReg, int effectMask, int lsb, BankSwitchStrategy strategy,
 			Address switchSite, Address firstSite, Relay relay, List<Address> sites,
-			Address restoreCell, boolean restoreSkippable) {
+			Address restoreCell, boolean restoreSkippable, List<HelperModel> chain) {
 
 		/**
 		 * Normalizes {@code sites} to an immutable ascending list, defaulting a null or empty
@@ -1927,6 +2009,34 @@ final class HelperDiscovery {
 		boolean recoversPerSiteWithoutArgReg() {
 			return argReg == null && strategy != null && strategy.depositsPerSite()
 					&& switchSite != null;
+		}
+
+		/**
+		 * This record as it was before bead grm-a0nx added {@code chain}: not a chain wrapper.
+		 */
+		HelperModel(Function function, Address entry, BankState constState, Character argReg,
+				int effectMask, int lsb, BankSwitchStrategy strategy, Address switchSite,
+				Address firstSite, Relay relay, List<Address> sites, Address restoreCell,
+				boolean restoreSkippable) {
+			this(function, entry, constState, argReg, effectMask, lsb, strategy, switchSite,
+				firstSite, relay, sites, restoreCell, restoreSkippable, null);
+		}
+
+		/**
+		 * A CHAIN WRAPPER (bead grm-a0nx): a function whose whole body is one {@code JSR} into
+		 * helper {@code first} and which then FALLS THROUGH into the entry of helper
+		 * {@code second} (smb3's {@code $FFBF}: {@code JSR $FFD1}, then into {@code $FFC2}, so one
+		 * call sets MMC3 R6 and then R7). The model is composite-shaped (no constant, no
+		 * argument register, no strategy) because only {@link BankDataflowEngine} reads
+		 * {@code chain}: it applies each part in order at the same call site, so every part
+		 * recovers its own argument exactly as a direct call to it would.
+		 */
+		static HelperModel chainWrapper(Function wrapper, HelperModel first, HelperModel second) {
+			List<Address> sites = new ArrayList<>(first.sites());
+			sites.addAll(second.sites());
+			return new HelperModel(wrapper, wrapper.getEntryPoint(), null, null,
+				first.effectMask() | second.effectMask(), 0, null, null, null, null, sites, null,
+				false, List.of(first, second));
 		}
 
 		/**

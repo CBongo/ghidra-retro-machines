@@ -1184,7 +1184,10 @@ public final class JumpTableBound {
 		EXTENT_OVERLAP,
 		/** {@link #boundBySlotCode}: grm-c9d.8.8 -- cut at the first slot whose own bytes decode
 		 *  as a coherent code run (the table runs into the routine that follows it). */
-		SLOT_CODE
+		SLOT_CODE,
+		/** {@link #boundByCalledEntry}: grm-7ow3 -- cut at the first slot whose own bytes cover
+		 *  the target of a call, which cannot be table bytes. */
+		CALLED_ENTRY
 	}
 
 	/**
@@ -1316,6 +1319,37 @@ public final class JumpTableBound {
 	 */
 	public static Result boundBySearchLoop(int count, long lowestTarget) {
 		return Result.bounded(count, lowestTarget, Rule.SEARCH_LOOP);
+	}
+
+	/**
+	 * grm-7ow3: the number of leading entries of a table that precede the first entry whose own
+	 * bytes cover an address {@code called} says is the target of a call (the caller decides which
+	 * calls count). Table bytes and a called entry cannot coexist, so the table ends
+	 * before such an entry however the other rules measured it: smb3's {@code a2a9} word table is
+	 * followed directly by the routine {@code a2b9} that dispatches through it, and every other
+	 * rule declined it (the entries after the cut point back into the table's own block).
+	 *
+	 * @param tableStart address of entry 0
+	 * @param entryBytes bytes per entry (2 for a word table)
+	 * @param count entries the table is currently thought to have
+	 * @return the entry count to keep, {@code count} when no entry is cut, or {@code -1} when the
+	 *         cut would leave fewer than 2 entries (a single entry can't be told from a lookup)
+	 */
+	public static int calledEntryCut(long tableStart, int entryBytes, int count,
+			LongPredicate called) {
+		for (int i = 0; i < count; i++) {
+			for (int b = 0; b < entryBytes; b++) {
+				if (called.test(tableStart + (long) i * entryBytes + b)) {
+					return i < 2 ? -1 : i;
+				}
+			}
+		}
+		return count;
+	}
+
+	/** grm-7ow3: the bound {@link #calledEntryCut} found, {@code count} entries. */
+	public static Result boundByCalledEntry(int count, long lowestTarget) {
+		return Result.bounded(count, lowestTarget, Rule.CALLED_ENTRY);
 	}
 
 	/**

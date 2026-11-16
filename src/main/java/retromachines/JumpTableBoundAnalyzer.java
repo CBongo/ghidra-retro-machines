@@ -793,6 +793,27 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		if (!result.isBounded() && deduped != null) {
 			result = deduped; // grm-uzep: nothing else could read this case list
 		}
+		if (!isCrossBank && !mixed && !guarded && searched == null && trim == null &&
+			lowestMovingTableAddr != null && result.stride() == 1 && result.planarGap() == 0) {
+			// grm-7ow3: a table never covers the target of a call; see JumpTableBound.calledEntryCut.
+			int have = result.isBounded() ? result.count() : realCases.size();
+			int cut = calledEntryCut(program, lowestMovingTableAddr, loadTables, realCases, have);
+			// An unbounded table is cut only where the first dropped entry is itself implausible
+			// (its target lies below the table, as smb3 a2cd's 45ad does): the called entry is an
+			// UPPER bound, not the table's end, and tmnt B5 9474 (23 real entries, a call 80
+			// entries in) was worse off with the loose cut than with the decline.
+			boolean tight = cut >= 2 && (result.isBounded() ||
+				(cut < realCases.size() &&
+					realCases.get(cut).getOffset() < lowestMovingTableAddr.getOffset()));
+			if (tight && cut >= 2 && cut < have) {
+				long lowest = Long.MAX_VALUE;
+				for (Address a : realCases.subList(0, cut)) {
+					lowest = Math.min(lowest, a.getOffset());
+				}
+				result = JumpTableBound.boundByCalledEntry(cut, lowest);
+				AnalyzerLog.info(this, "called-entry cut at " + switchAddr + ": " + have + " -> " + cut);
+			}
+		}
 		boolean shrinks = result.isBounded() && result.count() < realCases.size();
 		// A leading trim is itself a result (grm-c9d.8.1): when it applied and no tail rule shortens
 		// the trimmed table further, the trimmed table is still applied below. Before, this
@@ -1027,6 +1048,9 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		}
 		else if (result.rule() == JumpTableBound.Rule.SLOT_CODE) {
 			why = "table bytes decode as code"; // grm-c9d.8.8
+		}
+		else if (result.rule() == JumpTableBound.Rule.CALLED_ENTRY) {
+			why = "table ran into a called entry"; // grm-7ow3
 		}
 		else if (result.rule() == JumpTableBound.Rule.SEARCH_LOOP) {
 			why = "index from a keyed search loop"; // grm-jt7s
@@ -2227,5 +2251,54 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 			return false;
 		}
 		return JumpTable.readOverride(jmpSpace, symtab) != null;
+	}
+
+	/**
+	 * grm-7ow3: the entry count {@link JumpTableBound#calledEntryCut} keeps for a plain word table
+	 * ({@code table} the lowest moving load table's start, one moving load table, 2-byte entries
+	 * covering the cases), or {@code -1} when the shape is not that. An address counts as called
+	 * when a primary call reference lands on it.
+	 */
+	private static int calledEntryCut(Program program, Address table,
+			List<JumpTableBound.LoadTableEntry> loadTables, List<Address> cases, int have) {
+		if (!table.getAddressSpace().isOverlaySpace()) {
+			return -1;
+		}
+		int moving = 0;
+		for (JumpTableBound.LoadTableEntry lt : loadTables) {
+			if (lt.num() > 1) {
+				moving++;
+				if (lt.start() != table.getOffset() ||
+					(long) lt.entrySize() * lt.num() != 2L * cases.size()) {
+					return -1;
+				}
+			}
+		}
+		if (moving != 1) {
+			return -1;
+		}
+		AddressSpace space = table.getAddressSpace();
+		return JumpTableBound.calledEntryCut(table.getOffset(), 2, have, o -> {
+			Address a;
+			try {
+				a = space.getAddress(o);
+			}
+			catch (AddressOutOfBoundsException e) {
+				return false;
+			}
+			for (Reference r : program.getReferenceManager().getReferencesTo(a)) {
+				// Only a call made FROM the table's own overlay space counts: it lands in the same
+				// bank, so the called address is certainly in this table's bytes. A call from
+				// elsewhere into a banked window keeps a base-space reference whose bank is
+				// unknown (smb3 d51d's base-space table at a048 has calls to a070 that land in
+				// other banks), and an orphaned base-space function entry says nothing either
+				// (grm-z0d7.1). A base-space table is not judged at all (see the caller).
+				if (r.getReferenceType().isCall() &&
+					r.getFromAddress().getAddressSpace().equals(space)) {
+					return true;
+				}
+			}
+			return false;
+		});
 	}
 }

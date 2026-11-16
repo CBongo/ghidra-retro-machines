@@ -422,7 +422,7 @@ final class FarCallTrampoline {
 	}
 
 	/** Whether {@code instr}'s p-code writes register {@code reg} ('A', 'X' or 'Y'). */
-	private static boolean writesRegister(Program program, Instruction instr, char reg) {
+	static boolean writesRegister(Program program, Instruction instr, char reg) {
 		PcodeOp[] ops;
 		try {
 			ops = instr.getPcode();

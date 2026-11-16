@@ -52,6 +52,7 @@ import ghidra.util.task.TaskMonitor;
 import static retromachines.BankDataflowEngine.runDataflow;
 import static retromachines.HelperDiscovery.composeTailCalls;
 import static retromachines.HelperDiscovery.findCallEdgeWrappers;
+import static retromachines.HelperDiscovery.findChainWrappers;
 import static retromachines.HelperDiscovery.findConstantEntryStubs;
 import static retromachines.HelperDiscovery.findHelpers;
 import static retromachines.HelperDiscovery.findPassThroughWrappers;
@@ -488,10 +489,14 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// model. See findCallEdgeWrappers' javadoc for the one gap this order leaves open.
 		// bead grm-bbe7: constant-entry stubs (LDA #imm / BNE into a helper's shared write) are
 		// admitted last of all, once every helper they could land in is final.
-		Map<Function, HelperModel> callEdgeHelpers = findConstantEntryStubs(program,
-			findCallEdgeWrappers(program,
-				findPassThroughWrappers(program,
-					composeTailCalls(program, findHelpers(program, flow.switchResults())),
+		// bead grm-a0nx: chain wrappers (JSR helper A, then fall into helper B's entry) go after
+		// the constant-entry stubs, once both parts are final.
+		Map<Function, HelperModel> callEdgeHelpers = findChainWrappers(program,
+			findConstantEntryStubs(program,
+				findCallEdgeWrappers(program,
+					findPassThroughWrappers(program,
+						composeTailCalls(program, findHelpers(program, flow.switchResults())),
+						flow.switchResults()),
 					flow.switchResults()),
 				flow.switchResults()),
 			flow.switchResults());
