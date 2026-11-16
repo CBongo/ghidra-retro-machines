@@ -60,8 +60,15 @@ import ghidra.program.model.symbol.FlowType;
  * {@code d-1} (high): if they hold {@code LO(f)+k} and {@code HI(f)}, that exit is level f,
  * skip k. Other exits:
  * <ul>
- * <li>an indirect {@code JMP} at a negative depth: a tail call into code that returns normally,
- * so the same as {@code RTS} there (at depth 0 it is declined: nothing says the code returns);</li>
+ * <li>an indirect {@code JMP} through a cell holding a return address the routine popped (and
+ * stepped with {@code INC}): a return to that address. If it also popped its caller's return
+ * address first (Seven Cities of Gold ea2 {@code c4e8}: {@code PLA/STA $22/PLA/STA $23}, two
+ * more {@code PLA}s, {@code INC $22}, {@code JMP ($0022)}), it is level 0 with
+ * {@link Unwind#delta} -2: its {@code JSR} falls through, and the CALLER, now short of its own
+ * return address, measures one level up;</li>
+ * <li>any other indirect {@code JMP} at a negative depth: a tail call into code that returns
+ * normally, so the same as {@code RTS} there (at depth 0 it is declined: nothing says the code
+ * returns);</li>
  * <li>a {@code JSR} to a callee of level {@code k >= 1}: the callee returns through OUR slots,
  * the same as {@code RTS} at {@code d - 2(k-1)}. A {@code JSR} to a level-0 callee continues at
  * {@code JSR+3+skip} after applying the callee's callerSkip to our return slot, so a far-call stub
@@ -109,12 +116,15 @@ final class PopReturnHelper {
 	 * @param level caller frames discarded (0 = returns to its caller), or -1 for a decline
 	 * @param skip inline bytes skipped past {@code JSR+3} (level 0 only)
 	 * @param callerSkip bytes its caller's return address is advanced in place (level 0 only)
+	 * @param delta stack bytes the continuation has LOST compared with a plain return (level 0
+	 *     only; 0 or negative): ea2 {@code c4e8} pops its caller's return address too, then jumps
+	 *     back to its own {@code JSR+3}, so it is level 0 with delta -2
 	 * @param assumed true if the measurement rests on an assumed stack-neutral tail jump
 	 */
-	record Unwind(int level, int skip, int callerSkip, boolean assumed) {
+	record Unwind(int level, int skip, int callerSkip, int delta, boolean assumed) {
 
-		static final Unwind DECLINE = new Unwind(-1, 0, 0, false);
-		static final Unwind NORMAL = new Unwind(0, 0, 0, false);
+		static final Unwind DECLINE = new Unwind(-1, 0, 0, 0, false);
+		static final Unwind NORMAL = new Unwind(0, 0, 0, 0, false);
 
 		boolean declined() {
 			return level < 0;
@@ -131,7 +141,8 @@ final class PopReturnHelper {
 		}
 
 		boolean sameShape(Unwind o) {
-			return level == o.level && skip == o.skip && callerSkip == o.callerSkip;
+			return level == o.level && skip == o.skip && callerSkip == o.callerSkip &&
+				delta == o.delta;
 		}
 	}
 
@@ -359,15 +370,29 @@ final class PopReturnHelper {
 	/** The exit an RTS at {@code depth} takes, plus {@code extraSkip}; DECLINE if not a return. */
 	private static Unwind exitAt(Regs r, int depth, int extraSkip, boolean assumed) {
 		Val lo = r.slot(depth);
-		Val hi = r.slot(depth - 1);
+		return lo.kind() != LO ? Unwind.DECLINE
+				: exitThrough(r, lo, r.slot(depth - 1), depth - RETURN_BYTES, lo.k() + extraSkip,
+					assumed);
+	}
+
+	/**
+	 * The exit through return address {@code lo}/{@code hi} landing {@code skip} bytes past
+	 * {@code JSR+3}, with the stack at {@code after} (relative to entry) when the continuation
+	 * runs; DECLINE if they are not one frame's return address or the stack is off.
+	 */
+	private static Unwind exitThrough(Regs r, Val lo, Val hi, int after, int skip,
+			boolean assumed) {
 		if (lo.kind() != LO || hi.kind() != HI || lo.frame() != hi.frame()) {
 			return Unwind.DECLINE;
 		}
 		int level = lo.frame();
-		int skip = lo.k() + extraSkip;
-		// returning through frame f leaves the stack balanced only from depth -2f; an RTS through
-		// a COPY of the return address pushed higher would leave stray bytes for the caller
-		if (depth != -RETURN_BYTES * level || level > MAX_LEVEL || skip < 0 || skip > MAX_SKIP || (level > 0 && skip != 0)) {
+		// a plain return through frame f leaves the stack at -2f-2; the continuation may have
+		// LOST bytes (ea2 c4e8 popped its caller's frame first), but never gains stray ones (an
+		// RTS through a COPY of the return address pushed higher)
+		int delta = after + RETURN_BYTES * (level + 1);
+		if (delta > 0 || delta % RETURN_BYTES != 0 || delta < -RETURN_BYTES * MAX_LEVEL ||
+			level > MAX_LEVEL || skip < 0 || skip > MAX_SKIP ||
+			(level > 0 && (skip != 0 || delta != 0))) {
 			return Unwind.DECLINE;
 		}
 		int callerSkip = 0;
@@ -382,7 +407,18 @@ final class PopReturnHelper {
 				return Unwind.DECLINE;
 			}
 		}
-		return new Unwind(level, skip, callerSkip, assumed);
+		return new Unwind(level, skip, callerSkip, delta, assumed);
+	}
+
+	/** {@code INC}/{@code DEC} of a tracked byte: a return address's low byte moves by one. */
+	private static Val step(Val v, int by) {
+		return switch (v.kind()) {
+			case LO -> Val.lo(v.frame(), v.k() + by);
+			// the high byte only absorbs the low byte's carry (INC lo / BNE / INC hi)
+			case HI -> v;
+			case CONST -> Val.constant(v.k() + by);
+			default -> Val.UNKNOWN;
+		};
 	}
 
 	/** Advances the return address in our slots {@code d}/{@code d-1} by {@code n}. */
@@ -496,12 +532,13 @@ final class PopReturnHelper {
 					r.carry = Val.UNKNOWN;
 				}
 				case "CMP", "CPX", "CPY" -> r.carry = Val.UNKNOWN;
-				case "ASL", "LSR", "ROL", "ROR", "INC", "DEC" -> {
+				case "INC", "DEC" -> {
 					Operand o = operand(instr, r.xRel);
-					write(r, o, Val.UNKNOWN);
-					if (!mn.equals("INC") && !mn.equals("DEC")) {
-						r.carry = Val.UNKNOWN;
-					}
+					write(r, o, step(read(r, o), mn.equals("INC") ? 1 : -1));
+				}
+				case "ASL", "LSR", "ROL", "ROR" -> {
+					write(r, operand(instr, r.xRel), Val.UNKNOWN);
+					r.carry = Val.UNKNOWN;
 				}
 				case "RTS" -> exit = exitAt(r, r.depth, 0, false);
 				case "RTI", "BRK" -> {
@@ -523,10 +560,13 @@ final class PopReturnHelper {
 					exit = exitAt(r, r.depth - RETURN_BYTES * (u.level() - 1), 0,
 						u.assumed());
 				}
-				else if (u != null && u.returns() && (u.skip() > 0 || u.callerSkip() > 0)) {
+				else if (u != null && u.returns() &&
+					(u.skip() > 0 || u.callerSkip() > 0 || u.delta() != 0)) {
 					if (!advance(r, r.depth, u.callerSkip()) || next == null) {
 						return Unwind.DECLINE;
 					}
+					// a negative delta consumed OUR bytes too (ea2 c4e8 drops our return address)
+					r.depth += u.delta();
 					r.clobber();
 					work.add(r.at(next.add(u.skip())));
 					continue;
@@ -541,10 +581,21 @@ final class PopReturnHelper {
 				}
 			}
 			if (exit == null && flow.isComputed() && flow.isJump()) {
-				if (r.depth >= 0) {
+				Long cell = indirectCell(instr);
+				Val lo = cell == null ? Val.UNKNOWN : r.cells.getOrDefault(cell, Val.UNKNOWN);
+				if (lo.kind() == LO) {
+					// JMP (ptr) through a return address the routine popped and fixed up itself
+					// (ea2 c4e8: pop, INC, JMP ($0022)): a return to that address, which is one
+					// short of where RTS would land
+					exit = exitThrough(r, lo, r.cells.getOrDefault(cell + 1, Val.UNKNOWN),
+						r.depth, lo.k() - 1, false);
+				}
+				else if (r.depth >= 0) {
 					return Unwind.DECLINE;
 				}
-				exit = exitAt(r, r.depth, 0, false);
+				else {
+					exit = exitAt(r, r.depth, 0, false);
+				}
 			}
 			if (exit == null && flow.isJump() && !flow.isConditional() && !flow.isComputed() &&
 				rewritten(r)) {
@@ -558,6 +609,9 @@ final class PopReturnHelper {
 				}
 				if (u.declined()) {
 					exit = exitAt(r, r.depth, 0, true);
+				}
+				else if (u.delta() != 0) {
+					return Unwind.DECLINE;
 				}
 				else if (u.discards()) {
 					exit = exitAt(r, r.depth - RETURN_BYTES * u.level(), 0, u.assumed());
@@ -594,6 +648,22 @@ final class PopReturnHelper {
 			}
 		}
 		return result == null ? Unwind.DECLINE : result;
+	}
+
+	/** The pointer cell of {@code JMP (abs)}, or null for any other computed jump. */
+	private static Long indirectCell(Instruction instr) {
+		String text = instr.toString();
+		int open = text.indexOf('(');
+		int close = text.indexOf(')');
+		if (open < 0 || close < open || close != text.length() - 1) {
+			return null;
+		}
+		try {
+			return Long.decode(text.substring(open + 1, close).trim());
+		}
+		catch (NumberFormatException e) {
+			return null;
+		}
 	}
 
 	/** The routine has advanced its own return address (slot 0 holds {@code LO(0)+k}, k != 0). */

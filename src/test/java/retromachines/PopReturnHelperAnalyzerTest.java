@@ -123,7 +123,7 @@ public class PopReturnHelperAnalyzerTest extends AbstractBundledLanguageTest {
 	public void measuresAPopAdvancePushHelperAsSkipTwo() throws Exception {
 		ProgramDB program = freshProgram();
 		builder.setBytes("0xc000", SKIP2, true);
-		assertEquals(new PopReturnHelper.Unwind(0, 2, 0, false),
+		assertEquals(new PopReturnHelper.Unwind(0, 2, 0, 0, false),
 			new PopReturnHelper.Levels(program).of(addr(0xc000)));
 	}
 
@@ -146,9 +146,9 @@ public class PopReturnHelperAnalyzerTest extends AbstractBundledLanguageTest {
 		// b6c2: JSR $c000 / JMP $c200
 		builder.setBytes("0xc100", "20 00 c0 4c 00 c2", true);
 		PopReturnHelper.Levels levels = new PopReturnHelper.Levels(program);
-		assertEquals(new PopReturnHelper.Unwind(0, 0, 2, false), levels.of(addr(0xc000)));
+		assertEquals(new PopReturnHelper.Unwind(0, 0, 2, 0, false), levels.of(addr(0xc000)));
 		assertTrue(levels.of(addr(0xc200)).declined());
-		assertEquals(new PopReturnHelper.Unwind(0, 2, 0, true), levels.of(addr(0xc100)));
+		assertEquals(new PopReturnHelper.Unwind(0, 2, 0, 0, true), levels.of(addr(0xc100)));
 	}
 
 	/** Without a rewritten return address, a tail jump into unmeasurable code stays a decline. */
@@ -166,6 +166,26 @@ public class PopReturnHelperAnalyzerTest extends AbstractBundledLanguageTest {
 		// PLA / STA $31 / PLA / PHA / LDA $31 / PHA / ... push copy again: PHA hi / PHA lo / RTS
 		// simplified: PLA / TAY / PLA / PHA / TYA / PHA / PHA(junk) ... RTS at depth 1 via copy
 		assertEquals(Boolean.FALSE, recognize("68 a8 68 48 98 48 48 48 68 68 a9 00 48 60"));
+	}
+
+	/**
+	 * Seven Cities of Gold ea2 c4e8 (the grm-0fzb regression on c64_7cg_ea2): pop the own return
+	 * address into $22/$23, pop and drop the CALLER'S, INC $22, JMP ($0022). It returns to its own
+	 * JSR+3 two bytes short, so its JSR falls through and its caller measures one level up.
+	 */
+	@Test
+	public void aPopOneFrameHelperFallsThroughAndLiftsItsCaller() throws Exception {
+		ProgramDB program = freshProgram();
+		// PLA / STA $22 / PLA / STA $23 / PLA / STA $26 / PLA / STA $26 / INC $22 / BNE +2 /
+		// INC $23 / JMP ($0022)
+		builder.setBytes("0xc4e8",
+			"68 85 22 68 85 23 68 85 26 68 85 26 e6 22 d0 02 e6 23 6c 22 00", true);
+		// caller: JSR $c4e8 / LDA #1 / RTS -- that RTS now returns to the caller's caller
+		builder.setBytes("0xc100", "20 e8 c4 a9 01 60", true);
+		PopReturnHelper.Levels levels = new PopReturnHelper.Levels(program);
+		assertEquals(new PopReturnHelper.Unwind(0, 0, 0, -2, false), levels.of(addr(0xc4e8)));
+		assertEquals(1, levels.of(addr(0xc100)).level());
+		assertEquals(Boolean.FALSE, PopReturnHelper.recognize(program, addr(0xc4e8)));
 	}
 
 	/** The analyzer re-points the JSR past the inline word, lays it as data, decodes the rest. */
