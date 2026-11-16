@@ -86,7 +86,7 @@ public class W65816JumpTableOverrideTest extends AbstractProgramTest {
 		Function[] out = new Function[1];
 		inTx(program, "function", () -> {
 			try {
-				out[0] = program.getFunctionManager().createFunction("disp", addr(entry),
+				out[0] = program.getFunctionManager().createFunction("disp" + entry, addr(entry),
 					new AddressSet(addr(entry), addr(lastByte)), SourceType.USER_DEFINED);
 			}
 			catch (Exception e) {
@@ -183,6 +183,34 @@ public class W65816JumpTableOverrideTest extends AbstractProgramTest {
 		assertEquals(true, f.getBody().contains(addr(0x8230)));
 		assertEquals(false, f.getBody().contains(addr(0x8210)));
 		assertEquals(other, program.getFunctionManager().getFunctionAt(addr(0x8210)));
+	}
+
+	/**
+	 * grm-hf5h.16: a function whose flow jumps into another function's entry and on to that
+	 * function's switch gets a copy of the override too, at the end of analysis; calls do not
+	 * carry the flow, and a function that never reaches the switch gets nothing.
+	 */
+	@Test
+	public void aFunctionWhoseFlowReachesTheSwitchGetsTheOverrideToo() throws Exception {
+		builder.setBytes("0x8040", "ea 7c 00 81", false);   // NOP / JMP ($8100,X)
+		builder.disassemble("0x8040", 4, false);
+		builder.setBytes("0x8000", "4c 40 80", false);   // JMP $8040
+		builder.disassemble("0x8000", 3, false);
+		builder.setBytes("0x8010", "20 40 80 60", false);   // JSR $8040 / RTS
+		builder.disassemble("0x8010", 4, false);
+		Function owner = createFunction("0x8040", "0x8043");
+		Function jumper = createFunction("0x8000", "0x8002");
+		Function caller = createFunction("0x8010", "0x8013");
+		analyze("0x8041");
+		assertEquals(handlers(4), overrideDests(owner, "0x8041"));
+		assertNull(overrideDests(jumper, "0x8041"));
+		new W65816JumpTableAnalyzer().analysisEnded(program);
+		assertEquals(handlers(4), overrideDests(jumper, "0x8041"));
+		assertNull(overrideDests(caller, "0x8041"));
+		// idempotent
+		new W65816JumpTableAnalyzer().analysisEnded(program);
+		assertEquals(handlers(4), overrideDests(jumper, "0x8041"));
+		assertEquals(handlers(4), overrideDests(owner, "0x8041"));
 	}
 
 	/** A later dispatch cuts the table; the override is rewritten from the surviving references. */

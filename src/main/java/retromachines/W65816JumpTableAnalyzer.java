@@ -16,6 +16,7 @@
 package retromachines;
 
 import java.math.BigInteger;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
@@ -50,6 +51,7 @@ import ghidra.program.model.listing.CommentType;
 import ghidra.program.model.listing.ContextChangeException;
 import ghidra.program.model.listing.Data;
 import ghidra.program.model.listing.Function;
+import ghidra.program.model.listing.FunctionManager;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
@@ -354,6 +356,22 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 			!jmp.getFlowType().isJump()) {
 			return false;
 		}
+		boolean wrote = writeOverrideOn(analyzer, program, function, jmp, log);
+		if (wrote) {
+			OVERRIDES.computeIfAbsent(program,
+				p -> Collections.synchronizedMap(new LinkedHashMap<>())).put(jmp.getMinAddress(),
+					function.getEntryPoint());
+			growBodyToHandlers(program, function);
+		}
+		return wrote;
+	}
+
+	/**
+	 * The override write proper, with no ownership bookkeeping: {@link #writeOverrideFor} (the
+	 * function containing the jump) and {@link #shareOverrides} (functions whose flow reaches it).
+	 */
+	private static boolean writeOverrideOn(Analyzer analyzer, Program program, Function function,
+			Instruction jmp, MessageLog log) {
 		Address at = jmp.getMinAddress();
 		if (JumpTableBoundAnalyzer.alreadyOverridden(program, function, at)) {
 			return false;
@@ -369,15 +387,136 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 				return false;
 			}
 		}
-		boolean wrote = TwoLevelPointerDispatchAnalyzer.writeOverride(analyzer, program, function,
-			at, dests, log);
-		if (wrote) {
-			OVERRIDES.computeIfAbsent(program,
-				p -> Collections.synchronizedMap(new LinkedHashMap<>())).put(at,
-					function.getEntryPoint());
-			growBodyToHandlers(program, function);
+		if (function.getBody().contains(at)) {
+			return TwoLevelPointerDispatchAnalyzer.writeOverride(analyzer, program, function, at,
+				dests, log);
 		}
-		return wrote;
+		return writeSharedOverride(analyzer, program, function, at, dests, log);
+	}
+
+	/**
+	 * {@link ghidra.program.model.pcode.JumpTable#writeOverride} for a switch outside {@code
+	 * function}'s body, which that method refuses ("Switch is not in function body"): the same
+	 * symbols (a {@code switch} label at the jump, a {@code case_i} label per destination) in the
+	 * function's override namespace. The decompiler reads them with no body check.
+	 */
+	private static boolean writeSharedOverride(Analyzer analyzer, Program program,
+			Function function, Address at, List<Address> dests, MessageLog log) {
+		if (dests.isEmpty()) {
+			return false;
+		}
+		SymbolTable symtab = program.getSymbolTable();
+		try {
+			Namespace space = HighFunction.findCreateNamespace(symtab,
+				HighFunction.findCreateOverrideSpace(function), "jmp_" + at);
+			if (!HighFunction.clearNamespace(symtab, space)) {
+				return false;
+			}
+			HighFunction.createLabelSymbol(symtab, at, "switch", space, SourceType.USER_DEFINED,
+				false);
+			for (int i = 0; i < dests.size(); i++) {
+				HighFunction.createLabelSymbol(symtab, dests.get(i), "case_" + i, space,
+					SourceType.USER_DEFINED, false);
+			}
+		}
+		catch (InvalidInputException | RuntimeException e) {
+			AnalyzerLog.warn(analyzer, log, "could not share the jump table override at " + at +
+				" with " + function.getName() + ": " + e.getMessage());
+			return false;
+		}
+		AnalyzerLog.debug(analyzer, "shared switch override at " + at + " with " +
+			function.getName() + " (" + dests.size() + " handler(s))");
+		return true;
+	}
+
+	/** grm-hf5h.16: per program, the jump site of each shared override copy, to the functions holding one. */
+	private static final Map<Program, Map<Address, Set<Address>>> SHARED =
+		Collections.synchronizedMap(new WeakHashMap<>());
+
+	/** Most instructions one function's decompiler flow is walked over (grm-hf5h.16). */
+	static final int SHARE_FLOW_LIMIT = 20000;
+
+	/**
+	 * grm-hf5h.16: an override is read by the decompiler only from the function being decompiled,
+	 * but that function's flow runs through a switch case that lands on another function's entry
+	 * and on into its body (w_ff3 FUN_c21554 flows through FUN_c21610 and FUN_c21e5e), meeting
+	 * those functions' switches with no override. Stock switch analysis then recovers each with
+	 * every slot of its table, decodes the garbage, and cascades to the decompile timeout (the
+	 * 65816 {@code JMP (abs,X)} bank is constant since grm-hf5h.10).
+	 *
+	 * <p>So every function gets a copy of each override this analyzer wrote that its flow reaches
+	 * outside its own body. The flow is the decompiler's: fall-through, jumps and the references
+	 * of computed jumps, never calls; at most {@link #SHARE_FLOW_LIMIT} instructions per function.
+	 * Copies made earlier are removed first, so a rewritten owner override never leaves a stale
+	 * copy behind.
+	 *
+	 * @return the number of copies written
+	 */
+	static int shareOverrides(Analyzer analyzer, Program program, MessageLog log) {
+		Map<Address, Address> written = OVERRIDES.get(program);
+		Map<Address, Set<Address>> shared =
+			SHARED.computeIfAbsent(program, p -> Collections.synchronizedMap(new LinkedHashMap<>()));
+		FunctionManager fm = program.getFunctionManager();
+		for (Map.Entry<Address, Set<Address>> e : shared.entrySet()) {
+			for (Address entry : e.getValue()) {
+				Function f = fm.getFunctionAt(entry);
+				if (f != null) {
+					clearOverride(program, f, e.getKey());
+				}
+			}
+		}
+		shared.clear();
+		if (written == null || written.isEmpty()) {
+			return 0;
+		}
+		Listing listing = program.getListing();
+		int copies = 0;
+		for (Function f : fm.getFunctions(true)) {
+			Set<Address> reached = new LinkedHashSet<>();
+			Set<Address> seen = new LinkedHashSet<>();
+			ArrayDeque<Address> work = new ArrayDeque<>();
+			work.add(f.getEntryPoint());
+			while (!work.isEmpty() && seen.size() < SHARE_FLOW_LIMIT) {
+				Address a = work.poll();
+				if (!seen.add(a)) {
+					continue;
+				}
+				Instruction in = listing.getInstructionAt(a);
+				if (in == null) {
+					continue;
+				}
+				// A switch some function holds an override for, or one this analyzer resolved whose
+				// owner's override a later body change moved (c2155d: written under FUN_c2151f,
+				// held by FUN_c21554 now).
+				if (!f.getBody().contains(a) && (written.containsKey(a) || (in.getFlowType().isJump() &&
+					in.getFlowType().isComputed() && !overrideDests(in).isEmpty() &&
+					dispatchOf(listing, in) != null))) {
+					reached.add(a);
+				}
+				if (in.getFlowType().isCall()) {
+					if (in.getFallThrough() != null) {
+						work.add(in.getFallThrough());
+					}
+					continue;
+				}
+				if (in.getFallThrough() != null) {
+					work.add(in.getFallThrough());
+				}
+				for (Reference r : in.getReferencesFrom()) {
+					if (r.getReferenceType().isFlow() && !r.getReferenceType().isCall()) {
+						work.add(r.getToAddress());
+					}
+				}
+			}
+			for (Address site : reached) {
+				Instruction jmp = listing.getInstructionAt(site);
+				if (jmp != null && writeOverrideOn(analyzer, program, f, jmp, log)) {
+					shared.computeIfAbsent(site, k -> new LinkedHashSet<>()).add(f.getEntryPoint());
+					copies++;
+				}
+			}
+		}
+		return copies;
 	}
 
 	/**
@@ -477,6 +616,7 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 			return;
 		}
 		int dropped = 0;
+		int shareCount = 0;
 		int tx = program.startTransaction("Drop stranded 65816 jump table overrides");
 		try {
 			for (Map.Entry<Address, Address> e : new ArrayList<>(written.entrySet())) {
@@ -504,6 +644,7 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 					growBodyToHandlers(program, owner);
 				}
 			}
+			shareCount = shareOverrides(this, program, new MessageLog());
 		}
 		finally {
 			program.endTransaction(tx, true);
@@ -511,6 +652,10 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 		if (dropped > 0) {
 			AnalyzerLog.info(this, "dropped " + dropped +
 				" stranded switch override(s): owner no longer contains the jump");
+		}
+		if (shareCount > 0) {
+			AnalyzerLog.info(this, "shared " + shareCount +
+				" switch override(s) with functions whose flow reaches them");
 		}
 	}
 
