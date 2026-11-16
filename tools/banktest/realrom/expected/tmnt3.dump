@@ -77,7 +77,7 @@ REALROM count blocks.overlay 62
 REALROM count refs.intoOverlay.retargeted 55
 REALROM count refs.intoOverlay.intraOverlay 1109
 REALROM count instrs.inOverlay 4760
-REALROM count bankComments 123
+REALROM count bankComments 122
 REALROM count warnings 4
 REALROM count notes 1
 REALROM count symbols 17
@@ -183,7 +183,6 @@ REALROM sample.bankcomment b952 bank -> select=7,prg_mode=1,r6=0,r7=8 via FUN_91
 REALROM sample.bankcomment b957 bank -> select=7,prg_mode=1,r6=0,r7=8 via FUN_919e [switch-value flow]
 REALROM sample.bankcomment bf08 bank -> select=7,prg_mode=1,r6=0,r7=8 via FUN_91d1 [switch-value flow]
 REALROM sample.bankcomment bf0d bank -> select=7,prg_mode=1,r6=0,r7=8 via FUN_919e [switch-value flow]
-REALROM sample.bankcomment d92e bank -> select=7,prg_mode=1,r6=0,r7=1 via FUN_919e [switch-value flow]
 REALROM sample.bankcomment f5a8 bank -> select=0,prg_mode=1,r6=0,r7=1? [known: select.0=0,select.1=0,select.2=0,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment f5b2 bank -> select=1,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=0,select.2=0,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment f5bc bank -> select=2,prg_mode=1,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=0,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
