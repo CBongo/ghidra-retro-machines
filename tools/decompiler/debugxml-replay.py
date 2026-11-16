@@ -24,6 +24,10 @@ REALROM_EXTRA_POSTSCRIPT through realrom-test.sh). Three things stop it replayin
      The 65816 language is this extension's, so also point SLEIGHHOME at a tree holding its .sla
      (<home>/Ghidra/Processors/65816/data/languages/w65816.{ldefs,sla,pspec,cspec}).
 
+  5. (grm-hf5h.17's follow-up) A switch override's scope (jmp_<addr>) can name a parent id the
+     XML never defines; restore aborts AND skips <context_points>, so the replay quietly runs
+     without M/X width context. Such orphan scopes are always dropped (noted on stdout).
+
 Usage:
   python -I tools/decompiler/debugxml-replay.py <in.xml> <out.xml> [--overlay NAME[=BASE]]...
       [--drop-branch-overrides] [--rom <file.nes> --chunk OFF:ADDR:LEN ...]
@@ -32,6 +36,29 @@ Then, in WSL with decomp_dbg built from the candidate tree and SLEIGHHOME=<Ghidr
 """
 import argparse
 import re
+
+
+SCOPE_RE = re.compile(r'<scope name="([^"]*)" id="(0x[0-9a-fA-F]+)">\s*<parent id="(0x[0-9a-fA-F]+)"/>'
+                      r'.*?</scope>\n?', re.S)
+
+
+def drop_orphan_scopes(s):
+    """Remove top-level <scope> blocks whose parent id is not defined in the XML (always on).
+
+    A switch override's namespace (jmp_<addr>) can name a parent scope the probe never wrote.
+    restore then aborts with "Could not find scope matching id", and the abort also skips
+    <context_points>, so the replay runs without context (65816 M/X widths) and silently
+    decompiles something else (grm-hf5h.17). Repeats until stable, since a drop can orphan a child.
+    """
+    while True:
+        defined = {int(m.group(1), 16) for m in re.finditer(r'<scope name="[^"]*" id="(0x[0-9a-fA-F]+)">', s)}
+        defined.add(0)
+        orphans = [m for m in SCOPE_RE.finditer(s) if int(m.group(3), 16) not in defined]
+        if not orphans:
+            return s
+        for m in reversed(orphans):
+            print('dropped scope %s (id %s): parent %s not in XML' % m.groups())
+            s = s[:m.start()] + s[m.end():]
 
 
 def splice_image(s, splices):
@@ -88,6 +115,7 @@ def main():
         name, _, base = spec.partition('=')
         base = base or 'RAM'
         s = s.replace('space="%s"' % name, 'space="%s"' % base)
+    s = drop_orphan_scopes(s)
     if a.drop_branch_overrides:
         s, n = re.subn(r'<flow type="branch">\s*<addr[^>]*/>\s*<addr[^>]*/>\s*</flow>\s*', '', s)
         print('dropped %d branch override(s)' % n)
