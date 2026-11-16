@@ -16,6 +16,7 @@
 package retromachines;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -727,7 +728,8 @@ public class InlineJumpTableDispatchAnalyzerTest extends AbstractBundledLanguage
 
 		Function dispatcher = program.getFunctionManager().getFunctionAt(addr(dispatch));
 		assertNotNull("dispatcher function must exist after analysis", dispatcher);
-		assertTrue("dispatcher must be marked non-returning", dispatcher.hasNoReturn());
+		assertFalse("dispatcher stays returning: its target returns to the caller's caller " +
+			"(grm-0fzb)", dispatcher.hasNoReturn());
 
 		jsr = program.getListing().getInstructionAt(addr(caller));
 		assertNull("JSR must no longer fall through into the table", jsr.getFallThrough());

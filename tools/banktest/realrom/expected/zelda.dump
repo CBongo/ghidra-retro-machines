@@ -21,11 +21,11 @@ REALROM block WC000 c000-ffff overlay=false
 REALROM count blocks.total 15
 REALROM count blocks.overlay 7
 REALROM count refs.intoOverlay.retargeted 77
-REALROM count refs.intoOverlay.intraOverlay 2812
-REALROM count instrs.inOverlay 12957
+REALROM count refs.intoOverlay.intraOverlay 2816
+REALROM count instrs.inOverlay 12970
 REALROM count bankComments 92
 REALROM count warnings 1
-REALROM count notes 40
+REALROM count notes 41
 REALROM count symbols 18
 REALROM count jumptable.wordArrays 0
 REALROM count jumptable.planarArrays 0
@@ -146,8 +146,9 @@ REALROM sample.ref 8048 -> W8000_B4::804e CONDITIONAL_JUMP primary=true
 REALROM sample.ref 8049 -> W8000_B5::8130 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 804a -> W8000_B3::805e UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 804f -> W8000_B3::8064 CONDITIONAL_JUMP primary=true
-REALROM sample.ref.truncated 25 of 2889
+REALROM sample.ref.truncated 25 of 2893
 REALROM sample.warn 8124 [CopyLoopAnalyzer] copy-shaped loop RAM:0000 -> RAM:6ba7 could not be bounded; not applied
+REALROM sample.note 6c90 [RunFromElsewhere] run-from-elsewhere copy of W8000_B1:a500; initialized in place as COPY_6c90
 REALROM sample.note 6d00 [CopyLoopAnalyzer] copy-shaped loop RAM:6c97 -> RAM:0302 (41 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note 83b6 [CopyLoopAnalyzer] copy-shaped loop W8000_B5:83ae -> RAM:0200 (4 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note 8801 [CopyLoopAnalyzer] copy-shaped loop W8000_B1:86ca -> RAM:0302 (17 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.

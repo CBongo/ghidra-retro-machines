@@ -76,7 +76,7 @@ REALROM count blocks.total 70
 REALROM count blocks.overlay 62
 REALROM count refs.intoOverlay.retargeted 21
 REALROM count refs.intoOverlay.intraOverlay 1327
-REALROM count instrs.inOverlay 6277
+REALROM count instrs.inOverlay 6278
 REALROM count bankComments 97
 REALROM count warnings 40
 REALROM count notes 42

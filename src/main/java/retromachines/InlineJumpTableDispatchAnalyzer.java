@@ -39,7 +39,6 @@ import ghidra.program.model.lang.Register;
 import ghidra.program.model.lang.RegisterValue;
 import ghidra.program.model.listing.ContextChangeException;
 import ghidra.program.model.listing.FlowOverride;
-import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.InstructionIterator;
 import ghidra.program.model.listing.Listing;
@@ -65,10 +64,11 @@ import ghidra.util.task.TaskMonitor;
  * conclusive; a target not yet disassembled is left unresolved for a later round rather than
  * cached as a decline). For each one that is:
  * <ol>
- * <li>marks the dispatcher {@link Function} non-returning ({@link Function#setNoReturn});</li>
  * <li>overrides the {@code JSR}'s flow to {@link FlowOverride#CALL_RETURN} (a call that
- * terminates, matching what stock {@code FindNoReturnFunctionsAnalyzer} does for a call to a
- * known non-returning function) and repairs whatever Ghidra's initial linear disassembly already
+ * terminates) WITHOUT marking the dispatcher non-returning: its dispatched target returns to the
+ * caller's caller, so a routine that starts or ends with {@code JSR dispatcher} still returns
+ * (grm-0fzb; {@link PopReturnHelperAnalyzer} measures the dispatcher as unwind level 1, stops
+ * these sites first and clears any stale flag), and repairs whatever Ghidra's initial linear disassembly already
  * laid down over the table bytes with {@link ClearFlowAndRepairCmd}, the same mechanism stock
  * uses for exactly this kind of damage;</li>
  * <li>reads and bounds the table right after the {@code JSR} ({@link
@@ -208,19 +208,13 @@ public class InlineJumpTableDispatchAnalyzer extends AbstractAnalyzer {
 	}
 
 	/**
-	 * Marks the dispatcher non-returning, stops the JSR's fallthrough, repairs whatever garbage
+	 * Stops the JSR's fallthrough (the dispatcher itself stays returning, grm-0fzb), repairs whatever garbage
 	 * Ghidra's initial disassembly left over the table, and lays down the table plus its targets.
 	 */
 	private void applyCallSite(Program program, Listing listing, Instruction jsr, Address dispatcher,
 			List<Address> entries, TaskMonitor monitor, MessageLog log) throws CancelledException {
-		Function function = program.getFunctionManager().getFunctionAt(dispatcher);
-		if (function == null) {
-			CreateFunctionCmd cmd = new CreateFunctionCmd(dispatcher);
-			cmd.applyTo(program, monitor);
-			function = program.getFunctionManager().getFunctionAt(dispatcher);
-		}
-		if (function != null && !function.hasNoReturn()) {
-			function.setNoReturn(true);
+		if (program.getFunctionManager().getFunctionAt(dispatcher) == null) {
+			new CreateFunctionCmd(dispatcher).applyTo(program, monitor);
 		}
 
 		FlowType flowType = jsr.getFlowType();
