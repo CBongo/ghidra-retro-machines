@@ -114,6 +114,77 @@ public class PopReturnHelperAnalyzerTest extends AbstractBundledLanguageTest {
 		assertEquals(Boolean.TRUE, recognize("68 85 04 68 85 05 6c 06 00"));
 	}
 
+	/** db3 db4c shape: PLA/STA lo, PLA/STA hi, then push the address back plus 2. */
+	private static final String SKIP2 =
+		"68 85 31 68 85 32 a5 31 18 69 02 a8 a5 32 69 00 48 98 48 60";
+
+	/** grm-tysk: pop, advance by the two inline bytes, push back, RTS: returns to JSR+5. */
+	@Test
+	public void measuresAPopAdvancePushHelperAsSkipTwo() throws Exception {
+		ProgramDB program = freshProgram();
+		builder.setBytes("0xc000", SKIP2, true);
+		assertEquals(new PopReturnHelper.Unwind(0, 2, 0, false),
+			new PopReturnHelper.Levels(program).of(addr(0xc000)));
+	}
+
+	/**
+	 * grm-tysk, drmario b74b/b6c2: b74b advances its CALLER'S return address in place (TSX /
+	 * LDA $0103,X / ... / STA $0103,X), so b6c2 = JSR b74b / JMP interpreter returns past its
+	 * inline word -- with the interpreter, whose exits a static walk cannot reconcile, ASSUMED
+	 * stack-neutral (owner ruling).
+	 */
+	@Test
+	public void measuresAnInPlaceCallerRewriteAndAnAssumedTail() throws Exception {
+		ProgramDB program = freshProgram();
+		// TSX / LDA $0103,X / STA $05 / LDA $0104,X / STA $06 / CLC / LDA #2 / ADC $05 /
+		// STA $0103,X / LDA #0 / ADC $06 / STA $0104,X / RTS
+		builder.setBytes("0xc000",
+			"ba bd 03 01 85 05 bd 04 01 85 06 18 a9 02 65 05 9d 03 01 a9 00 65 06 9d 04 01 60",
+			true);
+		// interpreter stand-in whose exits disagree: BEQ +3 / PLA / PLA / RTS / RTS
+		builder.setBytes("0xc200", "f0 03 68 68 60 60", true);
+		// b6c2: JSR $c000 / JMP $c200
+		builder.setBytes("0xc100", "20 00 c0 4c 00 c2", true);
+		PopReturnHelper.Levels levels = new PopReturnHelper.Levels(program);
+		assertEquals(new PopReturnHelper.Unwind(0, 0, 2, false), levels.of(addr(0xc000)));
+		assertTrue(levels.of(addr(0xc200)).declined());
+		assertEquals(new PopReturnHelper.Unwind(0, 2, 0, true), levels.of(addr(0xc100)));
+	}
+
+	/** Without a rewritten return address, a tail jump into unmeasurable code stays a decline. */
+	@Test
+	public void noAssumptionWithoutARewrite() throws Exception {
+		ProgramDB program = freshProgram();
+		builder.setBytes("0xc200", "f0 03 68 68 60 60", true);
+		builder.setBytes("0xc100", "a9 00 4c 00 c2", true);
+		assertTrue(new PopReturnHelper.Levels(program).of(addr(0xc100)).declined());
+	}
+
+	/** An RTS through a COPY of the return address pushed higher leaves the stack unbalanced. */
+	@Test
+	public void declinesAnUnbalancedCopyReturn() throws Exception {
+		// PLA / STA $31 / PLA / PHA / LDA $31 / PHA / ... push copy again: PHA hi / PHA lo / RTS
+		// simplified: PLA / TAY / PLA / PHA / TYA / PHA / PHA(junk) ... RTS at depth 1 via copy
+		assertEquals(Boolean.FALSE, recognize("68 a8 68 48 98 48 48 48 68 68 a9 00 48 60"));
+	}
+
+	/** The analyzer re-points the JSR past the inline word, lays it as data, decodes the rest. */
+	@Test
+	public void analyzerResumesPastInlineBytes() throws Exception {
+		ProgramDB program = freshProgram();
+		builder.setBytes("0xc000", SKIP2, true);
+		// e000: JSR $c000 / .word $1234 / e005: LDA #5 / RTS
+		builder.setBytes("0xe000", "20 00 c0 34 12 a9 05 60", false);
+		builder.disassemble("0xe000", 3, false);
+		PopReturnHelperAnalyzer analyzer = new PopReturnHelperAnalyzer();
+		inTx(program, "analyze", () -> analyzer.added(program,
+			new AddressSet(addr(0xe000), addr(0xe002)), TaskMonitor.DUMMY, new MessageLog()));
+		assertEquals(addr(0xe005), instrAt(program, 0xe000).getFallThrough());
+		assertNotNull("the inline word is data", program.getListing().getDefinedDataAt(addr(0xe003)));
+		assertNotNull("the resume code is decoded", instrAt(program, 0xe005));
+		assertNotNull(instrAt(program, 0xe007));
+	}
+
 	/** grm-0fzb, dbz_saiyan c9c2: pop, read the inline bytes, jump on; the trailing RTS is dead. */
 	@Test
 	public void recognizesTheFarCallTrampoline() throws Exception {
@@ -134,7 +205,7 @@ public class PopReturnHelperAnalyzerTest extends AbstractBundledLanguageTest {
 	public void measuresADoublePopAsLevelTwo() throws Exception {
 		ProgramDB program = freshProgram();
 		builder.setBytes("0xc000", "68 68 68 68 60", true);
-		assertEquals(Integer.valueOf(2), new PopReturnHelper.Levels(program).of(addr(0xc000)));
+		assertEquals(2, new PopReturnHelper.Levels(program).of(addr(0xc000)).level());
 	}
 
 	@Test
@@ -156,8 +227,8 @@ public class PopReturnHelperAnalyzerTest extends AbstractBundledLanguageTest {
 		builder.setBytes("0xc300", "20 00 c2 0c 13 80", false);
 		builder.disassemble("0xc300", 3, false);
 		PopReturnHelper.Levels levels = new PopReturnHelper.Levels(program);
-		assertEquals(Integer.valueOf(1), levels.of(addr(0xc100)));
-		assertEquals(Integer.valueOf(PopReturnHelper.NORMAL), levels.of(addr(0xc300)));
+		assertEquals(1, levels.of(addr(0xc100)).level());
+		assertEquals(PopReturnHelper.Unwind.NORMAL, levels.of(addr(0xc300)));
 	}
 
 	@Test

@@ -18,7 +18,9 @@ package retromachines;
 import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Set;
 
 import ghidra.app.cmd.disassemble.DisassembleCommand;
@@ -32,55 +34,72 @@ import ghidra.app.util.importer.MessageLog;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.address.AddressSetView;
+import ghidra.program.model.data.ArrayDataType;
+import ghidra.program.model.data.ByteDataType;
+import ghidra.program.model.data.DataType;
+import ghidra.program.model.data.DataUtilities;
+import ghidra.program.model.data.DataUtilities.ClearDataMode;
+import ghidra.program.model.data.WordDataType;
 import ghidra.program.model.listing.FlowOverride;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.symbol.Reference;
 import ghidra.program.model.symbol.ReferenceIterator;
+import ghidra.program.model.util.CodeUnitInsertionException;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.task.TaskMonitor;
 
 /**
- * Stops the false fall-through after a {@code JSR} to a 6502 subroutine that discards its
- * caller's return address -- a pop-return helper, an inline-table JumpEngine or an inline-argument
- * far-call trampoline, all measured by {@link PopReturnHelper} as unwind level 1 or more
- * (grm-ed6h, grm-0fzb) -- WITHOUT marking that subroutine no-return.
+ * Fixes the fall-through after each {@code JSR} to a 6502 subroutine that does not return to
+ * {@code JSR+3}, as measured by {@link PopReturnHelper} (grm-ed6h, grm-0fzb, grm-tysk), WITHOUT
+ * ever marking the subroutine no-return:
+ * <ul>
+ * <li>a subroutine that discards its caller's return address (unwind level 1+: pop-return
+ * helper, inline-table JumpEngine, far-call trampoline) -- each {@code JSR} gets a
+ * {@link FlowOverride#CALL_RETURN} override and the code decoded at its old fall-through is
+ * cleared (unless something else flows into it);</li>
+ * <li>a subroutine that reads n INLINE argument bytes and returns past them (level 0, skip n:
+ * db3 {@code db4c}, drmario {@code b6c2}) -- each {@code JSR}'s fall-through is overridden to
+ * {@code JSR+3+n} ({@link Instruction#setFallThrough}), the false decode over the inline bytes is
+ * cleared, the bytes become data, and the code at the resume address is disassembled.</li>
+ * </ul>
  *
  * <p><b>Why not no-return.</b> Ghidra's function-level no-return flag says "never comes back to
- * anyone", but these helpers come back to the caller's caller. The flag propagates: a far-call
- * stub or a dispatch routine that starts with {@code JSR helper} becomes a THUNK of the helper,
- * a thunk shares the helper's flag, and every caller of the stub loses its fall-through (zelda,
- * smb2, tmnt, dbz2; dbz2 {@code ca9a} then crashed the decompiler, grm-hf5h.13). Stock "calls
- * only non-returning functions" does the same to a routine that ends in such a call (Metroid
- * {@code d4cb}). The accurate model is per call site: each direct {@code JSR} gets a
- * {@link FlowOverride#CALL_RETURN} override and the code decoded at its old fall-through is
- * cleared (unless something else flows into it); the helper itself stays returning.
+ * anyone", but these helpers come back to the caller's caller, or to the caller past its inline
+ * bytes. The flag propagates: a far-call stub or a dispatch routine that starts with
+ * {@code JSR helper} becomes a THUNK of the helper, a thunk shares the helper's flag, and every
+ * caller of the stub loses its fall-through (zelda, smb2, tmnt, dbz2; dbz2 {@code ca9a} then
+ * crashed the decompiler, grm-hf5h.13). Stock "calls only non-returning functions" does the same
+ * to a routine that ends in such a call (Metroid {@code d4cb}).
  *
  * <p><b>Priority: before stock.</b> {@link AnalysisPriority#DISASSEMBLY}{@code .after()}, one
  * step ahead of stock {@code FindNoReturnFunctionsAnalyzer}. Stock counts evidence only at calls
- * that still fall through, so once every {@code JSR} to a helper is overridden it has nothing to
- * count and never flags the helper. Clearing stock's flag AFTER it ran instead fed it the same
- * evidence on the next pass, and an earlier attempt oscillated 583 times (grm-hf5h.12).
+ * that still fall through into something odd, so once every {@code JSR} to a helper is fixed it
+ * has nothing to count and never flags the helper. Clearing stock's flag AFTER it ran instead fed
+ * it the same evidence on the next pass, and an earlier attempt oscillated 583 times
+ * (grm-hf5h.12).
  *
  * <p><b>Undoing a flag already set</b> (stock got there first, or an older analysis): a
  * recognized helper with the flag has it cleared, and so does every flagged function the
- * recognizer measures as level 0 that is a caller or a stub of a helper; each such function's
- * callers whose {@code JSR} was overridden to {@code CALL_RETURN} get their fall-through back
- * (override removed, fall-through disassembled). That repeats up the call graph for callers that
- * were flagged in turn.
+ * recognizer measures as returning to its caller that is a caller or a stub of a helper; each
+ * such function's callers whose {@code JSR} was overridden to {@code CALL_RETURN} get their
+ * fall-through back (to {@code JSR+3+skip}, disassembled). That repeats up the call graph for
+ * callers that were flagged in turn.
  *
  * @see <a href="urn:bead:grm-ed6h">grm-ed6h</a>
  * @see <a href="urn:bead:grm-0fzb">grm-0fzb</a>
+ * @see <a href="urn:bead:grm-tysk">grm-tysk</a>
  * @see PopReturnHelper
  */
 public class PopReturnHelperAnalyzer extends AbstractAnalyzer {
 
 	private static final String NAME = "Retro 6502 Pop-Return Helpers";
 	private static final String DESCRIPTION =
-		"Stops the false fall-through after each JSR to a 6502 subroutine that discards its " +
-			"caller's return address (PLA/PLA/RTS, JumpEngine, far-call trampoline), without " +
-			"marking the subroutine non-returning (grm-ed6h, grm-0fzb).";
+		"Fixes the fall-through after each JSR to a 6502 subroutine that discards its caller's " +
+			"return address (PLA/PLA/RTS, JumpEngine, far-call trampoline) or returns past " +
+			"inline argument bytes, without marking the subroutine non-returning (grm-ed6h, " +
+			"grm-0fzb, grm-tysk).";
 
 	private PopReturnHelper.Levels levels;
 
@@ -103,6 +122,7 @@ public class PopReturnHelperAnalyzer extends AbstractAnalyzer {
 			levels = new PopReturnHelper.Levels(program);
 		}
 		Set<Address> helpers = new LinkedHashSet<>();
+		Map<Address, PopReturnHelper.Unwind> skippers = new LinkedHashMap<>();
 		for (Instruction instr : program.getListing().getInstructions(set, true)) {
 			monitor.checkCancelled();
 			if (!"JSR".equals(instr.getMnemonicString()) || !instr.getFlowType().isCall()) {
@@ -112,24 +132,38 @@ public class PopReturnHelperAnalyzer extends AbstractAnalyzer {
 			if (flows.length != 1) {
 				continue;
 			}
-			Integer level = levels.of(flows[0]);
-			if (level != null && level >= 1) {
+			PopReturnHelper.Unwind u = levels.of(flows[0]);
+			if (u == null) {
+				continue;
+			}
+			if (u.discards()) {
 				helpers.add(flows[0]);
+			}
+			else if (u.returns() && u.skip() > 0) {
+				skippers.put(flows[0], u);
 			}
 		}
 		int sites = 0;
+		int skipSites = 0;
 		Set<Function> unflagged = new LinkedHashSet<>();
-		int restored = 0;
 		for (Address helper : helpers) {
 			monitor.checkCancelled();
 			sites += applyHelper(program, helper, unflagged, monitor);
 		}
-		if (!unflagged.isEmpty()) {
-			restored = restoreCallers(program, unflagged, monitor);
+		for (Map.Entry<Address, PopReturnHelper.Unwind> e : skippers.entrySet()) {
+			monitor.checkCancelled();
+			skipSites += applySkipper(program, e.getKey(), e.getValue(), unflagged, monitor);
+			if (e.getValue().assumed()) {
+				AnalyzerLog.info(this, "ASSUMED a stack-neutral tail jump in " + e.getKey() +
+					" (returns past " + e.getValue().skip() + " inline byte(s)); add a " +
+					"per-game hint if its callers' resume code is wrong (grm-tysk)");
+			}
 		}
-		if (sites > 0 || !unflagged.isEmpty()) {
+		int restored = unflagged.isEmpty() ? 0 : restoreCallers(program, unflagged, monitor);
+		if (sites > 0 || skipSites > 0 || !unflagged.isEmpty()) {
 			AnalyzerLog.info(this, "stopped fall-through at " + sites + " JSR site(s) to " +
-				helpers.size() + " return-discarding helper(s) " + helpers +
+				helpers.size() + " return-discarding helper(s) " + helpers + "; resumed " +
+				skipSites + " JSR site(s) past inline bytes of " + skippers.keySet() +
 				(unflagged.isEmpty() ? ""
 						: "; cleared no-return on " + unflagged.size() + " function(s), " +
 							"restored fall-through at " + restored + " call site(s)"));
@@ -137,9 +171,8 @@ public class PopReturnHelperAnalyzer extends AbstractAnalyzer {
 		return true;
 	}
 
-	/** @return the number of call sites whose fall-through was newly stopped */
-	private int applyHelper(Program program, Address entry, Set<Function> unflagged,
-			TaskMonitor monitor) throws CancelledException {
+	private Function functionAt(Program program, Address entry, Set<Function> unflagged,
+			TaskMonitor monitor) {
 		Function function = program.getFunctionManager().getFunctionAt(entry);
 		if (function == null) {
 			new CreateFunctionCmd(entry).applyTo(program, monitor);
@@ -149,10 +182,114 @@ public class PopReturnHelperAnalyzer extends AbstractAnalyzer {
 			function.setNoReturn(false);
 			unflagged.add(function);
 		}
+		return function;
+	}
+
+	/** @return the number of call sites whose fall-through was newly stopped */
+	private int applyHelper(Program program, Address entry, Set<Function> unflagged,
+			TaskMonitor monitor) throws CancelledException {
+		functionAt(program, entry, unflagged, monitor);
 
 		AddressSet clear = new AddressSet();
 		Set<Function> callers = new LinkedHashSet<>();
 		int sites = 0;
+		for (Instruction call : callsTo(program, entry)) {
+			noteCaller(program, call, callers, unflagged);
+			Address fallthrough = call.getFallThrough();
+			if (fallthrough == null) {
+				continue; // already stopped (by us earlier, by stock, or by the disassembler)
+			}
+			call.setFlowOverride(FlowOverride.CALL_RETURN);
+			sites++;
+			if (!fallthrough.equals(entry) && clearable(program, fallthrough)) {
+				clear.add(fallthrough);
+			}
+		}
+
+		fixBodies(program, callers, monitor);
+		clearFlows(program, clear, monitor);
+		return sites;
+	}
+
+	/** @return the number of call sites newly resumed past their inline bytes */
+	private int applySkipper(Program program, Address entry, PopReturnHelper.Unwind u,
+			Set<Function> unflagged, TaskMonitor monitor) throws CancelledException {
+		functionAt(program, entry, unflagged, monitor);
+		Set<Function> callers = new LinkedHashSet<>();
+		Resume resume = new Resume();
+		for (Instruction call : callsTo(program, entry)) {
+			noteCaller(program, call, callers, unflagged);
+			resume.plan(program, call, u.skip());
+		}
+		int sites = resume.apply(program, monitor);
+		fixBodies(program, callers, monitor);
+		return sites;
+	}
+
+	/**
+	 * Re-points JSRs to {@code JSR+3+skip}: override the fall-through, clear the false decode
+	 * over the inline bytes, lay the bytes as data, and disassemble the resume address.
+	 */
+	private static final class Resume {
+		private final AddressSet clear = new AddressSet();
+		private final AddressSet disassemble = new AddressSet();
+		private final Map<Address, Integer> inline = new LinkedHashMap<>();
+		private int sites;
+
+		void plan(Program program, Instruction call, int skip) {
+			Address after = call.getMaxAddress().next();
+			if (after == null) {
+				return;
+			}
+			Address target = after.add(skip);
+			if (call.getFlowOverride() == FlowOverride.CALL_RETURN) {
+				call.setFlowOverride(FlowOverride.NONE);
+				disassemble.add(target);
+			}
+			if (target.equals(call.getFallThrough())) {
+				return;
+			}
+			if (skip > 0 && clearable(program, after)) {
+				clear.add(after);
+			}
+			call.setFallThrough(target);
+			sites++;
+			if (skip > 0) {
+				inline.put(after, skip);
+			}
+			disassemble.add(target);
+		}
+
+		int apply(Program program, TaskMonitor monitor) throws CancelledException {
+			clearFlows(program, clear, monitor);
+			for (Map.Entry<Address, Integer> e : inline.entrySet()) {
+				int n = e.getValue();
+				DataType type = n == 2 ? WordDataType.dataType
+						: new ArrayDataType(ByteDataType.dataType, n, 1);
+				try {
+					DataUtilities.createData(program, e.getKey(), type, n,
+						ClearDataMode.CLEAR_ALL_UNDEFINED_CONFLICT_DATA);
+				}
+				catch (CodeUnitInsertionException ex) {
+					// an instruction something else flows into still covers the bytes: leave it
+				}
+			}
+			AddressSet todo = new AddressSet();
+			for (Address a : disassemble.getAddresses(true)) {
+				if (program.getListing().getInstructionAt(a) == null &&
+					program.getListing().getDefinedDataAt(a) == null) {
+					todo.add(a);
+				}
+			}
+			if (!todo.isEmpty()) {
+				new DisassembleCommand(todo, null, true).applyTo(program, monitor);
+			}
+			return sites;
+		}
+	}
+
+	private static Iterable<Instruction> callsTo(Program program, Address entry) {
+		Set<Instruction> calls = new LinkedHashSet<>();
 		ReferenceIterator refs = program.getReferenceManager().getReferencesTo(entry);
 		while (refs.hasNext()) {
 			Reference ref = refs.next();
@@ -160,53 +297,52 @@ public class PopReturnHelperAnalyzer extends AbstractAnalyzer {
 				continue;
 			}
 			Instruction call = program.getListing().getInstructionAt(ref.getFromAddress());
-			if (call == null) {
-				continue;
-			}
-			Function caller =
-				program.getFunctionManager().getFunctionContaining(call.getAddress());
-			if (caller != null) {
-				callers.add(caller);
-				unflagIfNormal(caller, unflagged);
-			}
-			Function stub = program.getFunctionManager().getFunctionAt(call.getAddress());
-			if (stub != null) {
-				unflagIfNormal(stub, unflagged);
-			}
-			Address fallthrough = call.getFallThrough();
-			if (fallthrough == null) {
-				continue; // already stopped (by us earlier, by stock, or by the disassembler)
-			}
-			call.setFlowOverride(FlowOverride.CALL_RETURN);
-			sites++;
-			if (!fallthrough.equals(entry) && !hasFlowRefInto(program, fallthrough) &&
-				!program.getSymbolTable().isExternalEntryPoint(fallthrough) &&
-				program.getListing().getInstructionAt(fallthrough) != null) {
-				clear.add(fallthrough);
+			if (call != null) {
+				calls.add(call);
 			}
 		}
+		return calls;
+	}
 
-		fixBodies(program, callers, monitor);
+	private void noteCaller(Program program, Instruction call, Set<Function> callers,
+			Set<Function> unflagged) {
+		Function caller = program.getFunctionManager().getFunctionContaining(call.getAddress());
+		if (caller != null) {
+			callers.add(caller);
+			unflagIfReturning(caller, unflagged);
+		}
+		Function stub = program.getFunctionManager().getFunctionAt(call.getAddress());
+		if (stub != null) {
+			unflagIfReturning(stub, unflagged);
+		}
+	}
 
+	/** Code there that nothing else reaches: the false decode after a call. */
+	private static boolean clearable(Program program, Address addr) {
+		return !hasFlowRefInto(program, addr) &&
+			!program.getSymbolTable().isExternalEntryPoint(addr) &&
+			program.getListing().getInstructionAt(addr) != null;
+	}
+
+	private static void clearFlows(Program program, AddressSet clear, TaskMonitor monitor) {
 		if (!clear.isEmpty()) {
 			AddressSetView protectedSet =
 				AutoAnalysisManager.getAnalysisManager(program).getProtectedLocations();
 			new ClearFlowAndRepairCmd(clear, protectedSet, true, false, true)
 					.applyTo(program, monitor);
 		}
-		return sites;
 	}
 
 	/**
 	 * Clears a no-return flag the recognizer contradicts: {@code fn} provably returns to its
-	 * caller (level 0). A thunk is skipped -- it shares its target's flag, cleared with the target.
+	 * caller. A thunk is skipped -- it shares its target's flag, cleared with the target.
 	 */
-	private void unflagIfNormal(Function fn, Set<Function> unflagged) {
+	private void unflagIfReturning(Function fn, Set<Function> unflagged) {
 		if (fn.isThunk() || !fn.hasNoReturn()) {
 			return;
 		}
-		Integer level = levels.of(fn.getEntryPoint());
-		if (level != null && level == PopReturnHelper.NORMAL) {
+		PopReturnHelper.Unwind u = levels.of(fn.getEntryPoint());
+		if (u != null && u.returns()) {
 			fn.setNoReturn(false);
 			unflagged.add(fn);
 		}
@@ -214,9 +350,9 @@ public class PopReturnHelperAnalyzer extends AbstractAnalyzer {
 
 	/**
 	 * Gives back the fall-through at every {@code JSR} into a function whose no-return flag was
-	 * just cleared, or into one of its thunks, when that callee measures as level 0 (a helper's
-	 * own call sites stay stopped), then repeats for callers that were themselves
-	 * flagged only because of it.
+	 * just cleared, or into one of its thunks, when that callee measures as returning to its
+	 * caller (a helper's own call sites stay stopped): to {@code JSR+3+skip}, disassembled. Then
+	 * repeats for callers that were flagged only because of it.
 	 *
 	 * @return the number of call sites restored
 	 */
@@ -225,7 +361,7 @@ public class PopReturnHelperAnalyzer extends AbstractAnalyzer {
 		ArrayDeque<Function> work = new ArrayDeque<>(start);
 		Set<Function> done = new HashSet<>();
 		Set<Function> bodies = new LinkedHashSet<>();
-		AddressSet disassemble = new AddressSet();
+		Resume resume = new Resume();
 		int restored = 0;
 		while (!work.isEmpty()) {
 			monitor.checkCancelled();
@@ -240,33 +376,24 @@ public class PopReturnHelperAnalyzer extends AbstractAnalyzer {
 				entries.addAll(Arrays.asList(thunks));
 			}
 			for (Address entry : entries) {
-				Integer entryLevel = levels.of(entry);
-				if (entryLevel == null || entryLevel != PopReturnHelper.NORMAL) {
-					continue; // a helper's own JSRs stay stopped; only level-0 callees return
+				PopReturnHelper.Unwind u = levels.of(entry);
+				if (u == null || !u.returns()) {
+					continue; // a helper's own JSRs stay stopped; only returning callees resume
 				}
-				for (Reference ref : program.getReferenceManager().getReferencesTo(entry)) {
-					if (!ref.getReferenceType().isCall()) {
-						continue;
-					}
-					Instruction call =
-						program.getListing().getInstructionAt(ref.getFromAddress());
-					if (call == null || !"JSR".equals(call.getMnemonicString()) ||
+				for (Instruction call : callsTo(program, entry)) {
+					if (!"JSR".equals(call.getMnemonicString()) ||
 						call.getFlowOverride() != FlowOverride.CALL_RETURN) {
 						continue;
 					}
-					call.setFlowOverride(FlowOverride.NONE);
+					resume.plan(program, call, u.skip());
 					restored++;
-					Address ft = call.getFallThrough();
-					if (ft != null && program.getListing().getInstructionAt(ft) == null) {
-						disassemble.add(ft);
-					}
 					Function caller =
 						program.getFunctionManager().getFunctionContaining(call.getAddress());
 					if (caller != null) {
 						bodies.add(caller);
 						if (!caller.isThunk() && caller.hasNoReturn()) {
-							Integer level = levels.of(caller.getEntryPoint());
-							if (level != null && level == PopReturnHelper.NORMAL) {
+							PopReturnHelper.Unwind cu = levels.of(caller.getEntryPoint());
+							if (cu != null && cu.returns()) {
 								caller.setNoReturn(false);
 								work.add(caller);
 							}
@@ -275,9 +402,7 @@ public class PopReturnHelperAnalyzer extends AbstractAnalyzer {
 				}
 			}
 		}
-		if (!disassemble.isEmpty()) {
-			new DisassembleCommand(disassemble, null, true).applyTo(program, monitor);
-		}
+		resume.apply(program, monitor);
 		fixBodies(program, bodies, monitor);
 		return restored;
 	}
