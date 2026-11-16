@@ -24,7 +24,7 @@
 //       REALROM_WORK_DIR=<dir outside the repo> \
 //       bash tools/banktest/realrom-test.sh check snes --only w_fzero
 //
-// A snapshot is "FUNC <name> body=<n>" when a function has that entry, "in <name>" when a function
+// A snapshot is "FUNC <name> body=<n> [noreturn]" when a function has that entry, "in <name>" when a function
 // contains the address, else "none". Each change is logged as
 //   FNWATCH <addr> by <analyzer>.<added|removed>: <before> -> <after>
 // or "between <prev> and <next>" when a non-analyzer task (a scheduled BackgroundCommand) did it.
@@ -195,7 +195,9 @@ public class FunctionWatchProbe extends GhidraScript {
 		private String snapshot0(Address a) {
 			Function at = program.getFunctionManager().getFunctionAt(a);
 			if (at != null) {
-				return "FUNC " + at.getName() + " body=" + at.getBody().getNumAddresses();
+				// noreturn: shows which pass flags it (grm-z0d7)
+				return "FUNC " + at.getName() + " body=" + at.getBody().getNumAddresses() +
+					(at.hasNoReturn() ? " noreturn" : "");
 			}
 			Function in = program.getFunctionManager().getFunctionContaining(a);
 			return in == null ? "none" : "in " + in.getName() + " body=" +

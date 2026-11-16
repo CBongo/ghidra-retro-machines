@@ -161,8 +161,14 @@ re-applied to `Ghidra_12.2_build` and rebuilt, plus a fourth hunk (owner ruling,
 12.2's GP-6945 caps a decompile at 4 bad-data flows, and stock switch analysis then abandons
 functions that flow into unresolved bank windows -- real code lost on tmnt/ff1/cv3/contra. No
 program or tool option reaches that cap, so the local build sets `max_baddata` unlimited
-(`ff1834fc…`, patch on `grm-75ey`). **Since 2026-11-16 the installed build is candidate 9
-(`a6191f9e…`, `grm-hf5h.13`)**: candidate 8 (`56d40c9d…`, `grm-hf5h.4`) plus one hunk that drops
+(`ff1834fc…`, patch on `grm-75ey`). **Since 2026-11-16 (later that day) the installed build is
+candidate 10 (`fcbe9555…`, `grm-hf5h.15`/`.17`)**: candidate 9 plus three `jumptable.cc` hunks --
+a `trialNorm` repeat cap of `max(adset+100, nz/step+1)` so 256-entry tables with long runs of one
+destination are not cut short (`.15`), and in `recoverModel`/`trialLoadNorm` keeping the earlier
+address table when a re-derivation fails and trying `INT_AND`-with-constant candidates (`.17`).
+It moves no golden (`build-and-test.sh check` SUITE OK, `check all` 78/78) and turns 5 w_ff3
+switch-label census sites from address/composite labels into index labels. Candidate 9
+(`a6191f9e…`, `grm-hf5h.13`) is candidate 8 (`56d40c9d…`, `grm-hf5h.4`) plus one hunk that drops
 a jump-table override whose BRANCHIND flow never reaches instead of null-dereferencing it in
 `switchOver` (ghidra#10225). Candidate 8 is candidate 7 (`d1064ec1…`, `grm-hf5h.9`: those four
 hunks plus the switch-label work `grm-gipk.25`, `grm-hf5h.1`/`.2`, wrap-aware heritage
@@ -170,7 +176,7 @@ hunks plus the switch-label work `grm-gipk.25`, `grm-hf5h.1`/`.2`, wrap-aware he
 `trialLoadNorm`, index labels for switches on a loaded value (`grm-hf5h.4`, ghidra#10223). The
 goldens were blessed on candidate 8 and candidate 9 moves none of them (`check all` 78/78).
 The owner keeps the earlier builds beside it (`decompile.exe.stock-12.2`, `.gp6936-nocap` =
-ff1834fc, `.gipk25` = candidate 1, `.hf5h9` = candidate 7, `.hf5h4` = candidate 8); `build/decompiler-candidates/` has the source diffs. Every runner prints `== decompiler: … ==`
+ff1834fc, `.gipk25` = candidate 1, `.hf5h9` = candidate 7, `.hf5h4` = candidate 8, `.hf5h13` = candidate 9, `.hf5h15` = candidate 10); `build/decompiler-candidates/` has the source diffs. Every runner prints `== decompiler: … ==`
 naming the build by sha256 (`grm_decompiler_build_name` in `tools/banktest/lib/common.sh`), and the
 `REALROM STALENESS` stamp records it, so **a `megaman`/`wizwarr` failure whose banner says `12.1.x
 stock` is the missing patch, not a regression**. The candidate cache keys on the same hash, so a
