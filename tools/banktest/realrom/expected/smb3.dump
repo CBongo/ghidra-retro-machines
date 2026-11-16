@@ -75,74 +75,87 @@ REALROM block WE000 e000-ffff overlay=false
 REALROM count blocks.total 70
 REALROM count blocks.overlay 62
 REALROM count refs.intoOverlay.retargeted 106
-REALROM count refs.intoOverlay.intraOverlay 2546
-REALROM count instrs.inOverlay 11978
-REALROM count bankComments 159
-REALROM count warnings 16
-REALROM count notes 13
-REALROM count symbols 68
-REALROM count jumptable.wordArrays 1
+REALROM count refs.intoOverlay.intraOverlay 3156
+REALROM count instrs.inOverlay 14967
+REALROM count bankComments 173
+REALROM count warnings 19
+REALROM count notes 19
+REALROM count symbols 77
+REALROM count jumptable.wordArrays 3
 REALROM count jumptable.planarArrays 0
-REALROM sample.bankcomment 85b8 bank -> select=7,prg_mode=1,r6=0,r7=12 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 85f7 bank -> select=7,prg_mode=1,r6=0,r7=12 [switch-value flow]
-REALROM sample.bankcomment 85fc bank -> select=7,prg_mode=1,r6=0,r7=26 [switch-value flow]
-REALROM sample.bankcomment 8631 bank -> select=7,prg_mode=1,r6=0,r7=1? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0; assumed from initial: r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
-REALROM sample.bankcomment 8662 bank -> select=7,prg_mode=1,r6=0,r7=11 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 86b5 bank -> select=7,prg_mode=1,r6=0,r7=11 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 86c5 bank -> select=7,prg_mode=1,r6=0,r7=27 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 86d0 bank -> select=7,prg_mode=1,r6=0,r7=26 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 86db bank -> select=7,prg_mode=1,r6=0,r7=11 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 86e9 bank -> select=7,prg_mode=1,r6=0,r7=11 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 86fe bank -> select=7,prg_mode=1,r6=0,r7=26 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 8709 bank -> select=7,prg_mode=1,r6=0,r7=11 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 871a bank -> select=7,prg_mode=1,r6=0,r7=11 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 872c bank -> select=7,prg_mode=1,r6=0,r7=26 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 8754 bank -> select=7,prg_mode=1,r6=0,r7=26 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 89f9 bank -> select=7,prg_mode=1,r6=0,r7=11? [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0,r7.1=1,r7.2=0,r7.3=1,r7.5=0; assumed from initial: r7.0,r7.4] [switch-value flow]
-REALROM sample.bankcomment 89fe bank -> select=7,prg_mode=1,r6=0,r7=26 [switch-value flow]
-REALROM sample.bankcomment 8a23 bank -> select=7,prg_mode=1,r6=0,r7=27 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 8a2e bank -> select=7,prg_mode=1,r6=0,r7=26 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 8aaf bank -> select=7,prg_mode=1,r6=0,r7=27 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 8aba bank -> select=7,prg_mode=1,r6=0,r7=26 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 8ad7 bank -> select=7,prg_mode=1,r6=0,r7=26 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 8b0e bank -> select=7,prg_mode=1,r6=0,r7=26 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 8b85 bank -> select=7,prg_mode=1,r6=0,r7=27 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 8b9f bank -> select=7,prg_mode=1,r6=0,r7=26 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 8bae bank -> select=7,prg_mode=1,r6=0,r7=1? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0; assumed from initial: r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
-REALROM sample.bankcomment 8cc1 bank -> select=7,prg_mode=1,r6=0,r7=1? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0; assumed from initial: r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
-REALROM sample.bankcomment 8d57 bank -> select=7,prg_mode=1,r6=0,r7=26 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 8ed6 bank -> select=7,prg_mode=1,r6=0,r7=27 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 8ee1 bank -> select=7,prg_mode=1,r6=0,r7=26 via FUN_ffc2 [switch-value flow]
+REALROM sample.bankcomment 848b bank -> select=7,prg_mode=1,r6=25,r7=24 via FUN_ffbf [switch-value flow]
+REALROM sample.bankcomment 84aa bank -> select=7,prg_mode=1,r6=10,r7=11 via FUN_ffbf [switch-value flow]
+REALROM sample.bankcomment 85b8 bank -> select=7,prg_mode=1,r6=0,r7=12? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=0,r7.2=1,r7.3=1,r7.4=0,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 85f7 bank -> select=7,prg_mode=1,r6=0,r7=12? [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=0,r7.2=1,r7.3=1,r7.4=0,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 85fc bank -> select=7,prg_mode=1,r6=0,r7=26? [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 8631 bank -> select=7,prg_mode=1,r6=0,r7=1? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 8662 bank -> select=7,prg_mode=1,r6=0,r7=11? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=1,r7.1=1,r7.2=0,r7.3=1,r7.4=0,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 86b5 bank -> select=7,prg_mode=1,r6=0,r7=11? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=1,r7.1=1,r7.2=0,r7.3=1,r7.4=0,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 86c5 bank -> select=7,prg_mode=1,r6=0,r7=27? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=1,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 86d0 bank -> select=7,prg_mode=1,r6=0,r7=26? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 86db bank -> select=7,prg_mode=1,r6=0,r7=11? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=1,r7.1=1,r7.2=0,r7.3=1,r7.4=0,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 86e9 bank -> select=7,prg_mode=1,r6=0,r7=11? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=1,r7.1=1,r7.2=0,r7.3=1,r7.4=0,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 86fe bank -> select=7,prg_mode=1,r6=0,r7=26? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 8709 bank -> select=7,prg_mode=1,r6=0,r7=11? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=1,r7.1=1,r7.2=0,r7.3=1,r7.4=0,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 871a bank -> select=7,prg_mode=1,r6=0,r7=11? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=1,r7.1=1,r7.2=0,r7.3=1,r7.4=0,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 872c bank -> select=7,prg_mode=1,r6=0,r7=26? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 8754 bank -> select=7,prg_mode=1,r6=0,r7=26? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 8924 bank -> select=7,prg_mode=1,r6=22,r7=12 via FUN_ffbf [switch-value flow]
+REALROM sample.bankcomment 899a bank -> select=7,prg_mode=1,r6=0,r7=1? via FUN_ffbf [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 89f9 bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 89fe bank -> select=7,prg_mode=1,r6=0,r7=26? [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 8a23 bank -> select=7,prg_mode=1,r6=0,r7=27? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=1,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 8a2e bank -> select=7,prg_mode=1,r6=0,r7=26? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 8aaf bank -> select=7,prg_mode=1,r6=0,r7=27? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=1,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 8aba bank -> select=7,prg_mode=1,r6=0,r7=26? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 8ad7 bank -> select=7,prg_mode=1,r6=0,r7=26? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 8b0e bank -> select=7,prg_mode=1,r6=0,r7=26? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 8b36 bank -> select=7,prg_mode=1,r6=6,r7=26 via FUN_ffbf [switch-value flow]
+REALROM sample.bankcomment 8b85 bank -> select=7,prg_mode=1,r6=0,r7=27? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=1,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 8b97 bank -> select=7,prg_mode=1,r6=22,r7=27 via FUN_ffbf [switch-value flow]
+REALROM sample.bankcomment 8b9f bank -> select=7,prg_mode=1,r6=0,r7=26? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 8bae bank -> select=7,prg_mode=1,r6=0,r7=1? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 8cc1 bank -> select=7,prg_mode=1,r6=0,r7=1? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 8d57 bank -> select=7,prg_mode=1,r6=0,r7=26? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 8ed6 bank -> select=7,prg_mode=1,r6=0,r7=27? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=1,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 8ee1 bank -> select=7,prg_mode=1,r6=0,r7=26? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 8efc bank -> select=7,prg_mode=1,r6=0,r7=8 via FUN_ffbf [switch-value flow]
+REALROM sample.bankcomment 8f0d bank -> select=7,prg_mode=1,r6=0,r7=1? via FUN_ffbf [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0; assumed from initial: r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment 8f18 bank -> select=7,prg_mode=1,r6=0,r7=7 via FUN_ffc2 [switch-value flow]
 REALROM sample.bankcomment 8f2b bank -> select=7,prg_mode=1,r6=0,r7=9 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 8f47 bank -> select=6,prg_mode=1,r6=29,r7=1? via FUN_ffd1 [known: select.0=0,select.1=1,select.2=1,prg_mode=1,r6.0=1,r6.1=0,r6.2=1,r6.3=1,r6.4=1,r6.5=0; assumed from initial: r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
-REALROM sample.bankcomment 8f52 bank -> select=6,prg_mode=1,r6=0,r7=1? via FUN_ffd1 [known: select.0=0,select.1=1,select.2=1,prg_mode=1,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0; assumed from initial: r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 8f47 bank -> select=6,prg_mode=1,r6=29,r7=1? via FUN_ffd1 [known: select.0=0,select.1=1,select.2=1,prg_mode=1,r6.0=1,r6.1=0,r6.2=1,r6.3=1,r6.4=1,r6.5=0,r7.4=0,r7.5=0; assumed from initial: r7.0,r7.1,r7.2,r7.3] [switch-value flow]
+REALROM sample.bankcomment 8f52 bank -> select=6,prg_mode=1,r6=0,r7=1? via FUN_ffd1 [known: select.0=0,select.1=1,select.2=1,prg_mode=1,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0,r7.4=0,r7.5=0; assumed from initial: r7.0,r7.1,r7.2,r7.3] [switch-value flow]
 REALROM sample.bankcomment 8f6d bank -> select=7,prg_mode=1,r6=0,r7=26 via FUN_ffc2 [switch-value flow]
 REALROM sample.bankcomment 8f9b bank -> select=7,prg_mode=1,r6=0,r7=26 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 901f bank -> select=7,prg_mode=1,r6=0,r7=27 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 902f bank -> select=7,prg_mode=1,r6=0,r7=27 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 903a bank -> select=7,prg_mode=1,r6=0,r7=26 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 904a bank -> select=7,prg_mode=1,r6=0,r7=27 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 91a9 bank -> select=7,prg_mode=1,r6=0,r7=12 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 91f5 bank -> select=7,prg_mode=1,r6=0,r7=26 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 923d bank -> select=7,prg_mode=1,r6=0,r7=11 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 9265 bank -> select=7,prg_mode=1,r6=0,r7=27 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 9270 bank -> select=7,prg_mode=1,r6=0,r7=26 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 927b bank -> select=7,prg_mode=1,r6=0,r7=11 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 92a6 bank -> select=7,prg_mode=1,r6=0,r7=26 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 933b bank -> select=7,prg_mode=1,r6=0,r7=26 via FUN_841d [switch-value flow]
-REALROM sample.bankcomment 937c bank -> select=7,prg_mode=1,r6=0,r7=27 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 938c bank -> select=7,prg_mode=1,r6=0,r7=26 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 9397 bank -> select=7,prg_mode=1,r6=0,r7=9 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 93c1 bank -> select=7,prg_mode=1,r6=0,r7=26 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 94df bank -> select=7,prg_mode=1,r6=0,r7=26 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 9ace bank -> select=7,prg_mode=1,r6=0,r7=1? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0; assumed from initial: r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
-REALROM sample.bankcomment 9ad9 bank -> select=7,prg_mode=1,r6=0,r7=26 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 9b2f bank -> select=7,prg_mode=1,r6=0,r7=1? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0; assumed from initial: r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
-REALROM sample.bankcomment 9b3a bank -> select=7,prg_mode=1,r6=0,r7=26 via FUN_ffc2 [switch-value flow]
-REALROM sample.bankcomment 9bc9 bank -> select=7,prg_mode=1,r6=0,r7=1? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0; assumed from initial: r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
-REALROM sample.bankcomment 9bde bank -> select=7,prg_mode=1,r6=0,r7=1? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0; assumed from initial: r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 8fed bank -> select=7,prg_mode=1,r6=25,r7=24 via FUN_ffbf [switch-value flow]
+REALROM sample.bankcomment 901f bank -> select=7,prg_mode=1,r6=0,r7=27? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=1,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 902f bank -> select=7,prg_mode=1,r6=0,r7=27? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=1,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 903a bank -> select=7,prg_mode=1,r6=0,r7=26? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 904a bank -> select=7,prg_mode=1,r6=0,r7=27? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=1,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 91a9 bank -> select=7,prg_mode=1,r6=0,r7=12? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=0,r7.2=1,r7.3=1,r7.4=0,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 91f5 bank -> select=7,prg_mode=1,r6=0,r7=26? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 923d bank -> select=7,prg_mode=1,r6=0,r7=11? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=1,r7.1=1,r7.2=0,r7.3=1,r7.4=0,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 9265 bank -> select=7,prg_mode=1,r6=0,r7=27? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=1,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 9270 bank -> select=7,prg_mode=1,r6=0,r7=26? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 927b bank -> select=7,prg_mode=1,r6=0,r7=11? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=1,r7.1=1,r7.2=0,r7.3=1,r7.4=0,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 92a6 bank -> select=7,prg_mode=1,r6=0,r7=26? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 933b bank -> select=7,prg_mode=1,r6=0,r7=26? via FUN_841d [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 9351 bank -> select=7,prg_mode=1,r6=14,r7=1? via FUN_ffbf [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r6.0=0,r6.1=1,r6.2=1,r6.3=1,r6.4=0,r6.5=0; assumed from initial: r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 937c bank -> select=7,prg_mode=1,r6=14,r7=27 via FUN_ffc2 [switch-value flow]
+REALROM sample.bankcomment 938c bank -> select=7,prg_mode=1,r6=14,r7=26 via FUN_ffc2 [switch-value flow]
+REALROM sample.bankcomment 9397 bank -> select=7,prg_mode=1,r6=14,r7=9 via FUN_ffc2 [switch-value flow]
+REALROM sample.bankcomment 93c1 bank -> select=7,prg_mode=1,r6=14,r7=26 via FUN_ffc2 [switch-value flow]
+REALROM sample.bankcomment 94ca bank -> select=7,prg_mode=1,r6=0,r7=1? via FUN_ffbf [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 94df bank -> select=7,prg_mode=1,r6=0,r7=26? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 9ace bank -> select=7,prg_mode=1,r6=0,r7=1? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 9ad9 bank -> select=7,prg_mode=1,r6=0,r7=26? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 9b2f bank -> select=7,prg_mode=1,r6=0,r7=1? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 9b3a bank -> select=7,prg_mode=1,r6=0,r7=26? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 9bc9 bank -> select=7,prg_mode=1,r6=0,r7=1? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 9bde bank -> select=7,prg_mode=1,r6=0,r7=1? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment 9fa7 bank -> select=5,prg_mode=1,r6=0,r7=1? via FUN_f9e3 [known: select.0=1,select.1=0,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment a22e bank -> select=6,prg_mode=1,r6=29,r7=8 via FUN_ffd1 [switch-value flow]
+REALROM sample.bankcomment a236 bank -> select=6,prg_mode=1,r6=0,r7=8 via FUN_ffd1 [switch-value flow]
 REALROM sample.bankcomment a765 bank -> select=6,prg_mode=1,r6=29,r7=27 via FUN_ffd1 [switch-value flow]
 REALROM sample.bankcomment a770 bank -> select=6,prg_mode=1,r6=0,r7=27 via FUN_ffd1 [switch-value flow]
 REALROM sample.bankcomment c960 bank -> select=7,prg_mode=1,r6=0,r7=5 via FUN_ffc2 [switch-value flow]
@@ -234,14 +247,17 @@ REALROM sample.bankcomment fc77 bank -> select=6,prg_mode=1,r6=0,r7=24? [known: 
 REALROM sample.bankcomment fc7c bank -> select=7,prg_mode=1,r6=0,r7=24? [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.1,r7.2] [switch-value flow]
 REALROM sample.bankcomment fc82 bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment ff5a bank -> select=0,prg_mode=1,r6=0,r7=1 [switch-value flow]
-REALROM sample.bankcomment ffaa bank -> select=0,prg_mode=1,r6=0,r7=26 via FUN_841d [switch-value flow]
+REALROM sample.bankcomment ffa4 bank -> select=7,prg_mode=1,r6=25,r7=24 via FUN_ffbf [switch-value flow]
+REALROM sample.bankcomment ffaa bank -> select=7,prg_mode=1,r6=25,r7=26 via FUN_841d [switch-value flow]
 REALROM sample.bankcomment ffb2 bank -> select=0,prg_mode=1,r6=0,r7=1? [known: prg_mode=1; assumed from initial: select.0,select.1,select.2,r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment ffb8 bank -> select=0,prg_mode=1,r6=0,r7=1? [known: prg_mode=1; assumed from initial: select.0,select.1,select.2,r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment ffbf bank -> select=6,prg_mode=1,r6=0,r7=1? via FUN_ffd1 [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment ffc7 bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment ffcd bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
-REALROM sample.bankcomment ffd6 bank -> select=6,prg_mode=1,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=1,prg_mode=1,r6.1=0,r6.5=0; assumed from initial: r6.0,r6.2,r6.3,r6.4,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment ffd6 bank -> select=6,prg_mode=1,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment ffdc bank -> select=6,prg_mode=1,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.ref 849d -> WA000_B24::a8af UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 84ad -> WA000_B11::a1d8 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 85bb -> WA000_B12::a45d UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8602 -> WA000_B26::b44a UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8605 -> WA000_B26::b108 UNCONDITIONAL_CALL primary=true
@@ -253,28 +269,29 @@ REALROM sample.ref 86ec -> WA000_B11::bc29 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8701 -> WA000_B26::a070 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 872f -> WA000_B26::b44a UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8757 -> WA000_B26::acaa UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 8927 -> WA000_B11::b0ff UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8927 -> WA000_B12::b0ff UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8a04 -> WA000_B26::b44a UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8a07 -> WA000_B26::b108 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8a0a -> WA000_B26::b0c4 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8a26 -> WA000_B27::b83f UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8a31 -> WA000_B26::ac69 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 8a90 -> WA000_B11::b44a UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 8a93 -> WA000_B11::b108 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 8a96 -> WA000_B11::b0c4 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8ab2 -> WA000_B27::b83f UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8abd -> WA000_B26::ac69 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8ac6 -> WA000_B26::b44a UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8ada -> WA000_B26::acaa UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8b14 -> WA000_B26::b44a UNCONDITIONAL_CALL primary=true
-REALROM sample.ref.truncated 25 of 2652
+REALROM sample.ref 8b17 -> WA000_B26::b108 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref.truncated 25 of 3262
+REALROM sample.warn 899a [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffbf, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
 REALROM sample.warn 8bae [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
 REALROM sample.warn 8cc1 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
+REALROM sample.warn 94ca [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffbf, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
 REALROM sample.warn 9ace [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
 REALROM sample.warn 9b2f [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
 REALROM sample.warn 9bc9 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
 REALROM sample.warn 9bde [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
 REALROM sample.warn 9f48 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_f499 whose bank argument could not be recovered at this call site
+REALROM sample.warn bebe [CopyLoopAnalyzer] copy-shaped loop RAM:0000 -> RAM:0200 could not be bounded; not applied
 REALROM sample.warn ca68 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
 REALROM sample.warn ccdf [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
 REALROM sample.warn f4f0 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffad, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
@@ -285,20 +302,35 @@ REALROM sample.warn f68f [NesBankingAnalyzer] Bank state becomes unknown here: c
 REALROM sample.warn f706 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffad, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
 REALROM sample.warn f8cd [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.note 8631 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_ffc2 restores r7 from $0720 (the shadow cell(s) the game committed through earlier). The field is also written directly elsewhere in the game (not through the cell), so the cell tracks the last value committed through it, not the live bank; the bank after this call is that saved value, not a fresh one this analyzer failed to pin down -- a property of the game, not a gap in analysis.
+REALROM sample.note 8f0d [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_ffc2 restores r7 from $0720 (the shadow cell(s) the game committed through earlier). The field is also written directly elsewhere in the game (not through the cell), so the cell tracks the last value committed through it, not the live bank; the bank after this call is that saved value, not a fresh one this analyzer failed to pin down -- a property of the game, not a gap in analysis.
+REALROM sample.note 9351 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_ffc2 restores r7 from $0720 (the shadow cell(s) the game committed through earlier). The field is also written directly elsewhere in the game (not through the cell), so the cell tracks the last value committed through it, not the live bank; the bank after this call is that saved value, not a fresh one this analyzer failed to pin down -- a property of the game, not a gap in analysis.
 REALROM sample.note 952a [CopyLoopAnalyzer] copy-shaped loop RAM:0000 -> RAM:7e94 (8 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note 9f48 [NesBankingAnalyzer mode lock] prg_mode assumed to stay 1 here: this write's prg_mode bits could not be resolved, and code reached from reset only ever sets prg_mode=1 (first at 848b). Not verified at this site.
 REALROM sample.note a0b0 [CopyLoopAnalyzer] copy-shaped loop WA000_B27:a07d -> RAM:7dde (32 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note a1bf [CopyLoopAnalyzer] copy-shaped loop RAM:698d -> RAM:68cd (15 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note a1d1 [CopyLoopAnalyzer] copy-shaped loop RAM:68cd -> RAM:698d (15 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note a3a2 [CopyLoopAnalyzer] copy-shaped loop WA000_B24:a370 -> RAM:0240 (24 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note b1e7 [CopyLoopAnalyzer] copy-shaped loop WA000_B26:b172 -> RAM:0715 (3 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note b85c [CopyLoopAnalyzer] copy-shaped loop RAM:0000 -> RAM:7dde (32 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note bc6a [CopyLoopAnalyzer] copy-shaped loop WA000_B24:bd18 -> RAM:0200 (32 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note f50a [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_fc6f restores r6 from $071F and r7 from $0720 (the shadow cell(s) the game committed through earlier). The field is also written directly elsewhere in the game (not through the cell), so the cell tracks the last value committed through it, not the live bank; the bank after this call is that saved value, not a fresh one this analyzer failed to pin down -- a property of the game, not a gap in analysis.
 REALROM sample.note f57e [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_fc6f restores r6 from $071F and r7 from $0720 (the shadow cell(s) the game committed through earlier). The field is also written directly elsewhere in the game (not through the cell), so the cell tracks the last value committed through it, not the live bank; the bank after this call is that saved value, not a fresh one this analyzer failed to pin down -- a property of the game, not a gap in analysis.
+REALROM sample.note f586 [NesBankingAnalyzer mode lock] prg_mode assumed to stay 1 here: this write's prg_mode bits could not be resolved, and code reached from reset only ever sets prg_mode=1 (first at 848b). Not verified at this site.
 REALROM sample.note f5c0 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_fc6f restores r6 from $071F and r7 from $0720 (the shadow cell(s) the game committed through earlier). The field is also written directly elsewhere in the game (not through the cell), so the cell tracks the last value committed through it, not the live bank; the bank after this call is that saved value, not a fresh one this analyzer failed to pin down -- a property of the game, not a gap in analysis.
 REALROM sample.note f6a9 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_fc6f restores r6 from $071F and r7 from $0720 (the shadow cell(s) the game committed through earlier). The field is also written directly elsewhere in the game (not through the cell), so the cell tracks the last value committed through it, not the live bank; the bank after this call is that saved value, not a fresh one this analyzer failed to pin down -- a property of the game, not a gap in analysis.
+REALROM sample.note f8cd [NesBankingAnalyzer mode lock] prg_mode assumed to stay 1 here: this write's prg_mode bits could not be resolved, and code reached from reset only ever sets prg_mode=1 (first at 848b). Not verified at this site.
 REALROM sample.note ffbf [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_ffd1 restores r6 from $071F (the shadow cell(s) the game committed through earlier). The field is also written directly elsewhere in the game (not through the cell), so the cell tracks the last value committed through it, not the live bank; the bank after this call is that saved value, not a fresh one this analyzer failed to pin down -- a property of the game, not a gap in analysis.
 REALROM sample.symbol a21f case_23 USER_DEFINED primary=true
 REALROM sample.symbol a284 case_1 USER_DEFINED primary=true
+REALROM sample.symbol a2cd switch USER_DEFINED primary=true
+REALROM sample.symbol a2d0 case_1 USER_DEFINED primary=true
+REALROM sample.symbol a2dc case_0 USER_DEFINED primary=true
+REALROM sample.symbol a2dd case_2 USER_DEFINED primary=true
+REALROM sample.symbol a2e4 case_3 USER_DEFINED primary=true
+REALROM sample.symbol a2eb case_4 USER_DEFINED primary=true
+REALROM sample.symbol a2f2 case_5 USER_DEFINED primary=true
+REALROM sample.symbol a2f9 case_6 USER_DEFINED primary=false
+REALROM sample.symbol a305 case_7 USER_DEFINED primary=false
 REALROM sample.symbol a36c case_2 USER_DEFINED primary=true
 REALROM sample.symbol a3b9 case_4 USER_DEFINED primary=true
 REALROM sample.symbol a3f1 case_5 USER_DEFINED primary=true
@@ -313,15 +345,8 @@ REALROM sample.symbol aa21 case_26 USER_DEFINED primary=true
 REALROM sample.symbol aa76 case_27 USER_DEFINED primary=true
 REALROM sample.symbol ab7b case_28 USER_DEFINED primary=true
 REALROM sample.symbol abd4 case_30 USER_DEFINED primary=true
-REALROM sample.symbol ac62 case_31 USER_DEFINED primary=true
-REALROM sample.symbol ad38 case_7 USER_DEFINED primary=true
-REALROM sample.symbol ad7f case_8 USER_DEFINED primary=true
-REALROM sample.symbol adbe case_33 USER_DEFINED primary=true
-REALROM sample.symbol adbe case_34 USER_DEFINED primary=false
-REALROM sample.symbol adbe case_35 USER_DEFINED primary=false
-REALROM sample.symbol aec4 case_14 USER_DEFINED primary=true
-REALROM sample.symbol b7ce switch USER_DEFINED primary=true
-REALROM sample.symbol b7e9 case_0 USER_DEFINED primary=false
-REALROM sample.symbol.truncated 25 of 56
+REALROM sample.symbol.truncated 25 of 65
+REALROM sample.jumptable WA000_B8::a2a9 word[8]
+REALROM sample.jumptable WA000_B8::a965 word[15]
 REALROM sample.jumptable WA000_B8::b7d1 word[12]
 === REALROM END ===
