@@ -182,6 +182,7 @@ public class SwitchLabelCensus extends GhidraScript {
 		boolean def = false;
 		int nCases = 0;
 		boolean allAddr = true;
+		String firstMismatch = null;
 		TreeSet<Long> distinct = new TreeSet<>();
 		List<Long> ordered = new ArrayList<>();
 		for (int i = 0; i < cases.length; i++) {
@@ -194,6 +195,9 @@ public class SwitchLabelCensus extends GhidraScript {
 			distinct.add(l);
 			ordered.add(l);
 			if (l != (cases[i].getOffset() & 0xffffffffL)) {
+				if (allAddr) {
+					firstMismatch = Long.toHexString(l) + "@" + cases[i];
+				}
 				allAddr = false;
 			}
 		}
@@ -228,6 +232,11 @@ public class SwitchLabelCensus extends GhidraScript {
 		StringBuilder ex = new StringBuilder(" ex=");
 		for (int i = 0; i < Math.min(8, ordered.size()); i++) {
 			ex.append(i == 0 ? "" : ",").append(Long.toHexString(ordered.get(i)));
+		}
+		// A composite whose labels look like addresses: name the first label that is not its own
+		// case address, so the near-miss is diagnosable from the log (grm-hf5h.17).
+		if (kind.equals("composite") && firstMismatch != null) {
+			ex.append(" mism=").append(firstMismatch);
 		}
 		emit(site, f.getName(), f, override, guess(f, site, override), nCases, distinct.size(), kind,
 			min, max, def, ex.toString());
