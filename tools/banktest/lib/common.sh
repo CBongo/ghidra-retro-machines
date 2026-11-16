@@ -659,6 +659,8 @@ grm_decompiler_build_name() {
 			echo "12.2 patched + grm-gipk.25 + grm-hf5h.1/.2 + grm-hf5h.8 wrap-aware heritage + grm-hf5h.9 RuleSLess2Zero shifted-zext fold (candidate 7)" ;;
 		56d40c9daef8b44b7418b735fbb81a018f1b43f12a705bc9919c5ead8bebaf60)
 			echo "candidate 7 + grm-hf5h.4 LOADed normalized switch variable (script-opcode labels) (candidate 8)" ;;
+		a6191f9ee8c069cdcaca15819895203d3a470eb272563cb70670a004cae055b3)
+			echo "candidate 8 + grm-hf5h.13 drop jump-table overrides the flow never reached (switchOver null-deref guard) (candidate 9)" ;;
 		588ec6c9c2a3fbebd7e1eaef6e8161b06b38fb815635ecb97c67b6de49f99496)
 			echo "12.2 patched, MinGW rebuild of ff1834fc's source (grm-gipk.25 control arm)" ;;
 		72a0ff7ed2032d3bc69703bf79db8d617197e00ea53519f4c3815d54c10662f0)
