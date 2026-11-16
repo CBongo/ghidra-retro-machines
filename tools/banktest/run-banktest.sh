@@ -853,12 +853,19 @@ run_census() {
 		"$log_off" >"$stripped_off"
 
 	local analyzer_on analyzer_off instrs_on instrs_off functions_on functions_off
+	local removed_instrs removed_functions
 	analyzer_on="$(grep -m1 '^CENSUS analyzer ' "$stripped_on" | sed 's/^CENSUS analyzer //')"
 	analyzer_off="$(grep -m1 '^CENSUS analyzer ' "$stripped_off" | sed 's/^CENSUS analyzer //')"
 	instrs_on="$(grep -m1 '^CENSUS instrs.baseSpace ' "$stripped_on" | awk '{print $3}')"
 	instrs_off="$(grep -m1 '^CENSUS instrs.baseSpace ' "$stripped_off" | awk '{print $3}')"
 	functions_on="$(grep -m1 '^CENSUS functions.baseSpace ' "$stripped_on" | awk '{print $3}')"
 	functions_off="$(grep -m1 '^CENSUS functions.baseSpace ' "$stripped_off" | awk '{print $3}')"
+	# grm-z0d7.1: base-space artifacts our analyzer removed on purpose (wrong-bank functions and
+	# decode rooted only by a retargeted call), counted from its own bookmarks on the ON leg.
+	removed_instrs="$(grep -m1 '^CENSUS removed.instrs ' "$stripped_on" | awk '{print $3}')"
+	removed_functions="$(grep -m1 '^CENSUS removed.functions ' "$stripped_on" | awk '{print $3}')"
+	removed_instrs="${removed_instrs:-0}"
+	removed_functions="${removed_functions:-0}"
 
 	# ANTI-VACUITY GUARD, and the reason it is essential rather than a nicety: if the two runs'
 	# CENSUS analyzer lines do not actually differ (on-run "true", off-run "false"), then
@@ -882,11 +889,12 @@ run_census() {
 		echo "      off-run: CENSUS analyzer $analyzer_off" >&2
 		fail=1
 		verdict="VACUOUS"
-	elif [ "$instrs_on" -lt "$instrs_off" ] || [ "$functions_on" -lt "$functions_off" ]; then
+	elif [ $((instrs_on + removed_instrs)) -lt "$instrs_off" ] || [ $((functions_on + removed_functions)) -lt "$functions_off" ]; then
 		echo "FAIL: $name violates the analyzer-off census property (bead grm-8uaz) --" >&2
 		echo "      enabling \"NES Bank State\" REDUCED how much base-space code Ghidra's own" >&2
 		echo "      pipeline disassembled, which means the analyzer is perturbing Ghidra's" >&2
 		echo "      disassembly pipeline rather than only annotating what it already found." >&2
+		echo "      (accounted removals: $removed_instrs instrs, $removed_functions functions)" >&2
 		echo "      See bead grm-nems for the real-ROM incident this guards against." >&2
 		fail=1
 		verdict="VIOLATION"
@@ -894,6 +902,7 @@ run_census() {
 
 	echo "CENSUS $name: instrs on=$instrs_on off=$instrs_off delta=$((instrs_on - instrs_off)); " \
 		"functions on=$functions_on off=$functions_off delta=$((functions_on - functions_off)); " \
+		"removed instrs=$removed_instrs functions=$removed_functions; " \
 		"verdict=$verdict"
 }
 

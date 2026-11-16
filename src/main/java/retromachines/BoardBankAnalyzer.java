@@ -327,6 +327,17 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	protected abstract String getMapPath(Program program);
 
 	/**
+	 * Base-space CALL targets whose stock reference this round retired (grm-z0d7.1), mapped to
+	 * the call site: the only candidates {@link WrongBankArtifacts} may remove. Filled by
+	 * {@link BankAnnotationAdapter#retargetReferences}, drained once per round.
+	 */
+	private final Map<Address, Address> retiredCallTargets = new TreeMap<>();
+
+	void noteRetiredCall(Address from, Address target) {
+		retiredCallTargets.putIfAbsent(target, from);
+	}
+
+	/**
 	 * Returns the bookmark category used for diagnostics emitted by this analyzer.
 	 *
 	 * @return bookmark category, defaulting to the concrete analyzer class name
@@ -646,6 +657,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// longer holds is retracted rather than left beside the right one. Null degrades to the
 		// old additive behaviour, as above.
 		OverlayRefProvenance refProvenance = OverlayRefProvenance.open(program);
+		retiredCallTargets.clear();
 		ReferenceManager refMgr = program.getReferenceManager();
 		BankAnnotationAdapter.Retargeted refs = BankAnnotationAdapter.Retargeted.NONE;
 		int warnings = 0;
@@ -810,6 +822,14 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 					" instruction(s) no longer tracked, placed by an earlier analysis round, at " +
 					where + more);
 			}
+		}
+
+		// grm-z0d7.1: the base-space functions the retired call references orphaned. After the
+		// whole retarget loop, so every retirement of the round is in; write-free when the
+		// round retired nothing (a settled program).
+		if (!retiredCallTargets.isEmpty()) {
+			WrongBankArtifacts.remove(this, program, retiredCallTargets, monitor);
+			retiredCallTargets.clear();
 		}
 
 		// --- Phase 3: function-level bank-state summaries + call-site requirement

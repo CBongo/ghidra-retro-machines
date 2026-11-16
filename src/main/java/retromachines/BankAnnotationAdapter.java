@@ -2071,6 +2071,9 @@ final class BankAnnotationAdapter {
 			BaseRefKey key = BaseRefKey.of(ref);
 			if (replaced.contains(key) && !keepBase.contains(key) &&
 				AnnotationGuard.mayDisplace(ref)) {
+				if (ref.getReferenceType().isCall() && analyzer != null) {
+					analyzer.noteRetiredCall(ref.getFromAddress(), ref.getToAddress());
+				}
 				refMgr.delete(ref);
 				retired++;
 			}

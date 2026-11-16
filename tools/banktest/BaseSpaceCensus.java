@@ -36,6 +36,13 @@
 //   CENSUS analyzer <resolved-name>=<true|false>
 //   CENSUS instrs.baseSpace <n>
 //   CENSUS functions.baseSpace <n>
+//   CENSUS removed.instrs <n>
+//   CENSUS removed.functions <n>
+//
+// removed.* sum the "Wrong-bank artifact removed" ANALYSIS bookmarks our analyzer leaves when it
+// removes a base-space function (and decode) that a retargeted-and-retired call reference alone
+// rooted (bead grm-z0d7.1; WrongBankArtifacts.CATEGORY). run_census accounts for them:
+// instrs_on + removed.instrs >= instrs_off (amended grm-8uaz rule).
 //
 // or, if the "NES Bank State" option is not registered on this program at all (wrong
 // language/board -- the option never exists outside a 6502 NES import), "CENSUS analyzer
@@ -101,8 +108,32 @@ public class BaseSpaceCensus extends GhidraScript {
 			}
 		}
 
+		int removedInstrs = 0;
+		int removedFuncs = 0;
+		java.util.Iterator<ghidra.program.model.listing.Bookmark> marks =
+			currentProgram.getBookmarkManager().getBookmarksIterator(
+				ghidra.program.model.listing.BookmarkType.ANALYSIS);
+		while (marks.hasNext()) {
+			ghidra.program.model.listing.Bookmark b = marks.next();
+			if (!"Wrong-bank artifact removed".equals(b.getCategory())) {
+				continue;
+			}
+			java.util.regex.Matcher mi =
+				java.util.regex.Pattern.compile("instrs=(\\d+)").matcher(b.getComment());
+			java.util.regex.Matcher mf =
+				java.util.regex.Pattern.compile("funcs=(\\d+)").matcher(b.getComment());
+			if (mi.find()) {
+				removedInstrs += Integer.parseInt(mi.group(1));
+			}
+			if (mf.find()) {
+				removedFuncs += Integer.parseInt(mf.group(1));
+			}
+		}
+
 		println("CENSUS instrs.baseSpace " + instrCount);
 		println("CENSUS functions.baseSpace " + funcCount);
+		println("CENSUS removed.instrs " + removedInstrs);
+		println("CENSUS removed.functions " + removedFuncs);
 	}
 
 	private static boolean isBaseSpace(Address at) {
