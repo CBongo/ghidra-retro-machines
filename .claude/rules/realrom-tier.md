@@ -161,8 +161,18 @@ re-applied to `Ghidra_12.2_build` and rebuilt, plus a fourth hunk (owner ruling,
 12.2's GP-6945 caps a decompile at 4 bad-data flows, and stock switch analysis then abandons
 functions that flow into unresolved bank windows -- real code lost on tmnt/ff1/cv3/contra. No
 program or tool option reaches that cap, so the local build sets `max_baddata` unlimited
-(`ff1834fc…`, patch on `grm-75ey`). **Since 2026-11-16 (later that day) the installed build is
-candidate 10 (`fcbe9555…`, `grm-hf5h.15`/`.17`)**: candidate 9 plus three `jumptable.cc` hunks --
+(`ff1834fc…`, patch on `grm-75ey`). **Since 2026-11-17 the installed build is candidate 14
+(`4eec41b5…`, `grm-hf5h.20`)**, verified by `realrom-test.sh check all` 78/78 on the installed
+binary. It stacks three `jumptable.cc` patches on candidate 10, one script each in
+`tools/decompiler/`. Candidate 12 (`apply-hf5h11.py`, `grm-hf5h.11`) labels a switch on a shifted
+index `i<<c` by `i`, or by `i & mask` when the top bits may be set, and declines when the
+shifted-out bits pick the path (`grm-hf5h.19`). Candidate 13 (`apply-hf5h11-c13.py`) does the same
+for the 65816 `CONCAT11(B, A<<1)` shape, on the in-bounds assumption. Candidate 14
+(`apply-hf5h20.py`) takes labels from the current model's value range when the original's is in
+another Varnode's units and emulation reproduces the address table. None of them moves a golden;
+they turn switch-label census sites from offset to index labels (offset 80 -> 43 over 10 -> 14)
+and fix wrongly scaled labels (ff1 `9076`, cv3 `bd3e`/`bd4c`/`e137`). Before that the installed
+build was candidate 10 (`fcbe9555…`, `grm-hf5h.15`/`.17`): candidate 9 plus three `jumptable.cc` hunks --
 a `trialNorm` repeat cap of `max(adset+100, nz/step+1)` so 256-entry tables with long runs of one
 destination are not cut short (`.15`), and in `recoverModel`/`trialLoadNorm` keeping the earlier
 address table when a re-derivation fails and trying `INT_AND`-with-constant candidates (`.17`).
@@ -176,7 +186,7 @@ hunks plus the switch-label work `grm-gipk.25`, `grm-hf5h.1`/`.2`, wrap-aware he
 `trialLoadNorm`, index labels for switches on a loaded value (`grm-hf5h.4`, ghidra#10223). The
 goldens were blessed on candidate 8 and candidate 9 moves none of them (`check all` 78/78).
 The owner keeps the earlier builds beside it (`decompile.exe.stock-12.2`, `.gp6936-nocap` =
-ff1834fc, `.gipk25` = candidate 1, `.hf5h9` = candidate 7, `.hf5h4` = candidate 8, `.hf5h13` = candidate 9, `.hf5h15` = candidate 10); `build/decompiler-candidates/` has the source diffs. Every runner prints `== decompiler: … ==`
+ff1834fc, `.gipk25` = candidate 1, `.hf5h9` = candidate 7, `.hf5h4` = candidate 8, `.hf5h13` = candidate 9, `.hf5h15` = candidate 10; candidates 12-13 were never installed); `build/decompiler-candidates/` has the source diffs. Every runner prints `== decompiler: … ==`
 naming the build by sha256 (`grm_decompiler_build_name` in `tools/banktest/lib/common.sh`), and the
 `REALROM STALENESS` stamp records it, so **a `megaman`/`wizwarr` failure whose banner says `12.1.x
 stock` is the missing patch, not a regression**. The candidate cache keys on the same hash, so a
