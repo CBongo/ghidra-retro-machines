@@ -315,6 +315,37 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 		return n;
 	}
 
+	/**
+	 * Read-only census hook (grm-hf5h.23): the analyzer's own call-summary verdict for a call
+	 * target, exactly as {@code afterCall} judges it, for probes that ask which callees really
+	 * change the caller's DP. One instance caches across targets, like one analysis run.
+	 */
+	public static final class CallSummaries {
+		private final Walker w;
+
+		public CallSummaries(Program program) {
+			w = new Walker(program);
+		}
+
+		/**
+		 * Returns {@code "preserves"} (no visible DP change), {@code "restores"} (changes DP but
+		 * returns the DP it was entered with), {@code "$XXXX"} (returns that constant), or
+		 * {@code "UNKNOWN"}.
+		 */
+		public String verdict(Address target) {
+			if (w.preserves(target)) {
+				return "preserves";
+			}
+			int e = w.exitDp(target);
+			return e == ENTRY_DP ? "restores" : Walker.dpName(e);
+		}
+
+		/** Why the last exit-DP judgement of {@code target} failed, or null. */
+		public String why(Address target) {
+			return w.exitWhy.get(target);
+		}
+	}
+
 	/** The walk, with per-program register handles. */
 	private static final class Walker {
 		private final Program program;
@@ -331,6 +362,8 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 		private Set<Address> exitLeaned = new HashSet<>();
 		/** Results awaiting confirmation of the assumptions they leaned on. */
 		private final List<Provisional> exitProvisional = new ArrayList<>();
+		/** Why each failed exit-DP judgement failed (CallSummaries only; never read by analysis). */
+		private final Map<Address, String> exitWhy = new HashMap<>();
 		/** Trace only (GRM_DP_SUMMARY_TRACE): where DP turned UNKNOWN in the walk in progress. */
 		private Set<String> notes;
 		private Set<String> lastNotes;
@@ -961,6 +994,12 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				}
 			}
 			int result = ok ? d : UNKNOWN;
+			if (!ok) {
+				exitWhy.put(target, why + " at " + whyAt);
+			}
+			else if (result == UNKNOWN) {
+				exitWhy.put(target, "no RTS/RTL reached");
+			}
 			if (tr) {
 				StringBuilder sb =
 					new StringBuilder("DPS exitDp " + target + " = " + dpName(result));

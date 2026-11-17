@@ -3,7 +3,9 @@
 // buckets dp-operand references by target page and type, and (grm-9nxj.26) counts functions whose
 // every entry carries one known DP. With GRM_DP_SITES=<addr>,... it also lists, per site, the
 // containing function's entry refs with the DP at each source, then the next 24 instructions with
-// the DP context value and every outgoing reference.
+// the DP context value and every outgoing reference (GRM_DP_SITE_WINDOW instructions, default 24).
+// grm-hf5h.23: a callee census ("DPC callee") of which call targets really change the caller's DP,
+// judged by the analyzer's own call summary.
 // Read-only; every line is prefixed "DPC ". The deterministic counts live in W65816WidthDump's
 // "REALROM dp" section; this adds the per-site detail the golden deliberately leaves out.
 //@category RetroMachines.Test
@@ -18,6 +20,7 @@ import ghidra.program.model.lang.RegisterValue;
 import ghidra.program.model.pcode.*;
 import ghidra.program.model.scalar.Scalar;
 import ghidra.program.model.symbol.*;
+import retromachines.W65816DirectPageAnalyzer;
 
 public class DpCensusProbe extends GhidraScript {
 	private static final Set<String> SKIP = new HashSet<>(Arrays.asList("STA", "STX", "STY", "STZ", "TAX",
@@ -83,6 +86,7 @@ public class DpCensusProbe extends GhidraScript {
 		println("DPC dpOperandInstrs=" + dpOps + " withMemRef=" + dpOpsWithRef + " noMemRef=" + dpOpsNoRef);
 		println("DPC dpOperandRefTargets=" + refKinds);
 		entryCensus(dp);
+		calleeCensus(dp);
 		String sites = System.getenv("GRM_DP_SITES");
 		if (sites == null || sites.isBlank()) return;
 		for (String s : sites.split(",")) {
@@ -118,7 +122,7 @@ public class DpCensusProbe extends GhidraScript {
 		}
 	}
 
-	private static final int SITE_WINDOW = 24;
+	private static final int SITE_WINDOW = Integer.parseInt(System.getenv().getOrDefault("GRM_DP_SITE_WINDOW", "24"));
 
 	/**
 	 * grm-9nxj.26 measurement: classifies each function by the DP its entries see, read from the
@@ -154,6 +158,135 @@ public class DpCensusProbe extends GhidraScript {
 		}
 		println("DPC entry strict=" + strict + " unlockOperands=" + unlockStrict);
 		println("DPC entry lenient=" + lenient + " unlockOperands=" + unlockLenient);
+	}
+
+	/**
+	 * grm-hf5h.23 measurement, for the owner's ruling on listing DP as unaffected in
+	 * w65816.cspec: which callees really change their caller's DP? Each function is judged by the
+	 * analyzer's own call summary (W65816DirectPageAnalyzer.CallSummaries), then split by whether
+	 * its own body writes DP. Call sites (CALL refs to the entry) are counted per class, and for
+	 * a callee that returns a constant, against the caller's stamped DP at the call: same (the
+	 * call leaves DP as it was), diff (DP really changes), or unknown.
+	 */
+	private void calleeCensus(Register dp) throws Exception {
+		W65816DirectPageAnalyzer.CallSummaries cs = new W65816DirectPageAnalyzer.CallSummaries(currentProgram);
+		ReferenceManager rm = currentProgram.getReferenceManager();
+		Map<String, Integer> fns = new TreeMap<>(), calls = new TreeMap<>(), constCalls = new TreeMap<>();
+		Map<String, Integer> whyHist = new TreeMap<>();
+		Map<String, Integer> hubs = new HashMap<>();
+		Map<String, List<String>> ex = new TreeMap<>();
+		FunctionManager fm = currentProgram.getFunctionManager();
+		Map<Function, String> verdict = new HashMap<>(), writers = new HashMap<>();
+		for (Function f : fm.getFunctions(true)) {
+			monitor.checkCancelled();
+			verdict.put(f, cs.verdict(f.getEntryPoint()));
+			String w = directWriter(f, dp);
+			if (w != null) writers.put(f, w);
+		}
+		for (Function f : fm.getFunctions(true)) {
+			monitor.checkCancelled();
+			Address e = f.getEntryPoint();
+			String v = verdict.get(f);
+			String writer = writers.get(f);
+			String cls = v.equals("preserves") || v.equals("restores") ? v :
+				v.equals("UNKNOWN") ? (writer != null ? "unknown-writes" : "unknown-nowrite") : "const";
+			if (cls.equals("unknown-nowrite")) {
+				String rr = reach(f, verdict, writers);
+				if (rr.startsWith("reachesWriter ")) {
+					int calls0 = 0;
+					for (Reference r : rm.getReferencesTo(e)) if (r.getReferenceType().isCall()) calls0++;
+					hubs.merge(rr.substring(14), calls0, Integer::sum);
+					rr = "reachesWriter";
+				}
+				cls += "/" + rr;
+			}
+			bump(fns, cls);
+			int n = 0, diff = 0;
+			Set<String> callerDps = new TreeSet<>();
+			for (Reference r : rm.getReferencesTo(e)) {
+				if (!r.getReferenceType().isCall()) continue;
+				n++;
+				bump(calls, cls);
+				if (!cls.equals("const")) continue;
+				RegisterValue rv = currentProgram.getProgramContext().getRegisterValue(dp, r.getFromAddress());
+				String c = rv == null || !rv.hasValue() ? "?" : String.format("$%04X", rv.getUnsignedValue());
+				callerDps.add(c);
+				String k = c.equals("?") ? "callerUnknown" : c.equals(v) ? "same" : "diff";
+				if (k.equals("diff")) diff++;
+				bump(constCalls, k);
+			}
+			String why = cs.why(e);
+			if (cls.startsWith("unknown"))
+				bump(whyHist, cls + ": " + (why == null ? "?" : why.replaceAll(" at .*", "")
+					.replaceAll("\\[.*\\]", "[..]").replaceAll("\\$[0-9A-F]{4}", "\\$x")));
+			String line = f.getName() + "@" + e + " calls=" + n + (writer == null ? "" : " writer=" + writer) +
+				(cls.equals("const") ? " returns=" + v + " callerDPs=" + callerDps + " diff=" + diff : "") +
+				(cls.startsWith("unknown") ? " why=" + why : "");
+			if (cls.equals("restores") || n > 0 || writer != null)
+				ex.computeIfAbsent(cls, k -> new ArrayList<>()).add(line);
+		}
+		println("DPC callee functions=" + fns);
+		println("DPC callee callSites=" + calls);
+		println("DPC callee constCallSites=" + constCalls);
+		println("DPC callee unknownWhy=" + whyHist);
+		List<Map.Entry<String, Integer>> hl = new ArrayList<>(hubs.entrySet());
+		hl.sort((a, b) -> b.getValue() - a.getValue());
+		println("DPC callee reachesWriter first-writer hubs (call sites behind each): " +
+			hl.subList(0, Math.min(15, hl.size())));
+		for (Map.Entry<String, List<String>> en : ex.entrySet()) {
+			if (en.getKey().equals("preserves")) continue;
+			List<String> l = en.getValue();
+			l.sort(Comparator.comparingInt(s -> -Integer.parseInt(s.replaceAll(".* calls=(\\d+).*", "$1"))));
+			int cap = en.getKey().startsWith("unknown-nowrite") ? 8 : 25;
+			for (int i = 0; i < Math.min(cap, l.size()); i++)
+				println("DPC callee " + en.getKey() + " " + l.get(i));
+			if (l.size() > cap) println("DPC callee " + en.getKey() + " ... " + (l.size() - cap) + " more");
+		}
+	}
+
+	/**
+	 * For a function with no DP writer of its own and an UNKNOWN summary: what its flow out of
+	 * the body (calls, jumps, branches into other functions, followed transitively) can reach.
+	 * "reachesWriter" = some reachable function writes DP and is not judged preserves/restores;
+	 * else "unresolved" = a computed flow without targets, or a target in no function; else
+	 * "noWriter" = nothing reachable can change DP, so the UNKNOWN is a summary limitation.
+	 */
+	private String reach(Function start, Map<Function, String> verdict, Map<Function, String> writers) {
+		FunctionManager fm = currentProgram.getFunctionManager();
+		Set<Function> seen = new HashSet<>(List.of(start));
+		ArrayDeque<Function> work = new ArrayDeque<>(seen);
+		boolean unresolved = false;
+		while (!work.isEmpty()) {
+			Function f = work.poll();
+			if (f != start && writers.containsKey(f)) {
+				String v = verdict.get(f);
+				if (!v.equals("preserves") && !v.equals("restores"))
+					return "reachesWriter " + f.getName() + "@" + f.getEntryPoint() + "=" + v;
+			}
+			for (Instruction in : currentProgram.getListing().getInstructions(f.getBody(), true)) {
+				var ft = in.getFlowType();
+				if (!ft.isCall() && !ft.isJump() && !ft.isComputed()) continue;
+				Address[] fl = in.getFlows();
+				if (ft.isComputed() && fl.length == 0) unresolved = true;
+				for (Address t : fl) {
+					if (f.getBody().contains(t) && !ft.isCall()) continue;
+					Function g = fm.getFunctionAt(t);
+					if (g == null) g = fm.getFunctionContaining(t);
+					if (g == null) { unresolved = true; continue; }
+					if (seen.add(g)) work.add(g);
+				}
+			}
+		}
+		return unresolved ? "unresolved" : "noWriter";
+	}
+
+	/** The first instruction in {@code f}'s body whose p-code writes DP, or null. */
+	private String directWriter(Function f, Register dp) {
+		for (Instruction in : currentProgram.getListing().getInstructions(f.getBody(), true))
+			for (PcodeOp op : in.getPcode())
+				if (op.getOutput() != null && isDp(op.getOutput(), dp))
+					return in.getMnemonicString() + "@" + in.getAddress();
+		return null;
 	}
 
 	private int unknownDpOperands(Function f, Register dp) {
