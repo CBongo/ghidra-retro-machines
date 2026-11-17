@@ -159,7 +159,8 @@ public class PopReturnHelperAnalyzer extends AbstractAnalyzer {
 					"per-game hint if its callers' resume code is wrong (grm-tysk)");
 			}
 		}
-		int restored = unflagged.isEmpty() ? 0 : restoreCallers(program, unflagged, monitor);
+		int restored =
+			unflagged.isEmpty() ? 0 : restoreCallers(program, levels, unflagged, monitor);
 		if (sites > 0 || skipSites > 0 || !unflagged.isEmpty()) {
 			AnalyzerLog.info(this, "stopped fall-through at " + sites + " JSR site(s) to " +
 				helpers.size() + " return-discarding helper(s) " + helpers + "; resumed " +
@@ -230,7 +231,7 @@ public class PopReturnHelperAnalyzer extends AbstractAnalyzer {
 	 * Re-points JSRs to {@code JSR+3+skip}: override the fall-through, clear the false decode
 	 * over the inline bytes, lay the bytes as data, and disassemble the resume address.
 	 */
-	private static final class Resume {
+	static final class Resume {
 		private final AddressSet clear = new AddressSet();
 		private final AddressSet disassemble = new AddressSet();
 		private final Map<Address, Integer> inline = new LinkedHashMap<>();
@@ -288,7 +289,7 @@ public class PopReturnHelperAnalyzer extends AbstractAnalyzer {
 		}
 	}
 
-	private static Iterable<Instruction> callsTo(Program program, Address entry) {
+	static Iterable<Instruction> callsTo(Program program, Address entry) {
 		Set<Instruction> calls = new LinkedHashSet<>();
 		ReferenceIterator refs = program.getReferenceManager().getReferencesTo(entry);
 		while (refs.hasNext()) {
@@ -356,7 +357,18 @@ public class PopReturnHelperAnalyzer extends AbstractAnalyzer {
 	 *
 	 * @return the number of call sites restored
 	 */
-	private int restoreCallers(Program program, Set<Function> start, TaskMonitor monitor)
+	static int restoreCallers(Program program, PopReturnHelper.Levels levels,
+			Set<Function> start, TaskMonitor monitor) throws CancelledException {
+		return restoreCallers(program, levels, start, Set.of(), monitor);
+	}
+
+	/**
+	 * As above, with {@code plain}: entries already proven to be plain returns by the caller (a
+	 * local proof {@link PopReturnHelper.Levels} cannot make, e.g. in a banked block), taken as
+	 * level 0, skip 0 without consulting {@code levels}.
+	 */
+	static int restoreCallers(Program program, PopReturnHelper.Levels levels,
+			Set<Function> start, Set<Address> plain, TaskMonitor monitor)
 			throws CancelledException {
 		ArrayDeque<Function> work = new ArrayDeque<>(start);
 		Set<Function> done = new HashSet<>();
@@ -376,7 +388,8 @@ public class PopReturnHelperAnalyzer extends AbstractAnalyzer {
 				entries.addAll(Arrays.asList(thunks));
 			}
 			for (Address entry : entries) {
-				PopReturnHelper.Unwind u = levels.of(entry);
+				PopReturnHelper.Unwind u =
+					plain.contains(entry) ? PopReturnHelper.Unwind.NORMAL : levels.of(entry);
 				if (u == null || !u.returns()) {
 					continue; // a helper's own JSRs stay stopped; only returning callees resume
 				}
@@ -407,7 +420,7 @@ public class PopReturnHelperAnalyzer extends AbstractAnalyzer {
 		return restored;
 	}
 
-	private static void fixBodies(Program program, Set<Function> functions, TaskMonitor monitor)
+	static void fixBodies(Program program, Set<Function> functions, TaskMonitor monitor)
 			throws CancelledException {
 		for (Function fn : functions) {
 			monitor.checkCancelled();
