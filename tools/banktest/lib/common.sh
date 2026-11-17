@@ -663,6 +663,8 @@ grm_decompiler_build_name() {
 			echo "candidate 8 + grm-hf5h.13 drop jump-table overrides the flow never reached (switchOver null-deref guard) (candidate 9)" ;;
 		fcbe95556e7fc9517cd2f62e09935e5f202cdb31a2c33b70e0456781866898b5)
 			echo "candidate 9 + grm-hf5h.15 trialNorm repeat cap + grm-hf5h.17 keep addresstable order on re-derive failure, INT_AND trialLoadNorm candidates (candidate 10)" ;;
+		72a9a0fe65fc2ace2ca4518d1e18500159454c13381c7996d8a79b4047dc5111)
+			echo "candidate 10 + grm-hf5h.11 shifted-index labels: switch on (i & mask), declined when the shifted-out bits pick the path (candidate 12)" ;;
 		588ec6c9c2a3fbebd7e1eaef6e8161b06b38fb815635ecb97c67b6de49f99496)
 			echo "12.2 patched, MinGW rebuild of ff1834fc's source (grm-gipk.25 control arm)" ;;
 		72a0ff7ed2032d3bc69703bf79db8d617197e00ea53519f4c3815d54c10662f0)
