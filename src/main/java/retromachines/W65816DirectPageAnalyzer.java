@@ -364,6 +364,12 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 		private final List<Provisional> exitProvisional = new ArrayList<>();
 		/** Why each failed exit-DP judgement failed (CallSummaries only; never read by analysis). */
 		private final Map<Address, String> exitWhy = new HashMap<>();
+		/**
+		 * How each judged target returns to its caller: the RTS/RTL mnemonics of its accepted
+		 * exits, through tail calls; "?" for an exit whose kind is not known (a dispatch JMP, a
+		 * tail target still in progress). Recorded only for a walk that judged every exit.
+		 */
+		private final Map<Address, Set<String>> exitKinds = new HashMap<>();
 		/** Trace only (GRM_DP_SUMMARY_TRACE): where DP turned UNKNOWN in the walk in progress. */
 		private Set<String> notes;
 		private Set<String> lastNotes;
@@ -787,7 +793,29 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				notes.add("call at " + ins.getAddress() + " to " + flows[0] +
 					" lost DP (callee summary UNKNOWN)");
 			}
-			return new State(dp, UNKNOWN, UNKNOWN, UNKNOWN, s.stack);
+			return new State(dp, UNKNOWN, UNKNOWN, UNKNOWN, rtlConsumesPushedBank(ins, s));
+		}
+
+		/**
+		 * The caller's stack after a call returns (grm-hf5h.26). A {@code JSR} into a routine that
+		 * leaves only by {@code RTL} -- FZero's {@code PHK / JSR thunk} with the thunk a
+		 * {@code JML} to a far routine, a hand-rolled {@code JSL} -- returns having pulled one
+		 * byte more than the JSR pushed: the bank the caller pushed before it. Drop that 1-byte
+		 * item. Otherwise the stack is as it was. Asked only when the top is a 1-byte item, so
+		 * other calls cost no exit-kind walk.
+		 */
+		private List<Pushed> rtlConsumesPushedBank(Instruction ins, State s) {
+			Address[] flows = ins.getFlows();
+			if (s.stack == null || s.stack.isEmpty() || flows.length != 1 ||
+				!ins.getMnemonicString().equalsIgnoreCase("JSR") ||
+				s.stack.get(s.stack.size() - 1).width != 1) {
+				return s.stack;
+			}
+			exitDp(flows[0]);
+			if (!Set.of("RTL").equals(exitKinds.get(flows[0]))) {
+				return s.stack;
+			}
+			return ((State) pop(s, 1)[1]).stack;
 		}
 
 		/**
@@ -871,6 +899,38 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				exitLeaned.addAll(leaned);
 			}
 			return result;
+		}
+
+		/**
+		 * How a summary walk's paths leave for the caller, whatever their DP or stack judgement:
+		 * each RTS/RTL reached (not unwound), and for a tail exit its target's recorded kinds, "?"
+		 * when the target has none yet or the exit is a dispatch JMP. Reads only cached kinds, so it
+		 * starts no walk of its own.
+		 */
+		private Set<String> exitKindsOf(Address target, Function callee, Map<Address, State> states) {
+			Set<String> kinds = new HashSet<>();
+			for (Map.Entry<Address, State> e : states.entrySet()) {
+				Instruction i = program.getListing().getInstructionAt(e.getKey());
+				if (i == null || UNWOUND.equals(e.getValue().stack)) {
+					continue;
+				}
+				String mn = i.getMnemonicString().toUpperCase(Locale.ROOT);
+				var ft = i.getFlowType();
+				Address[] fl = i.getFlows();
+				if (mn.equals("RTS") || mn.equals("RTL")) {
+					kinds.add(mn);
+				}
+				else if (isDispatchJmp(i)) {
+					kinds.add("?");
+				}
+				else if (!ft.isComputed() && fl.length == 1 &&
+					((!ft.isCall() && ft.isJump() && !inline(target, callee, fl[0])) ||
+						(ft.isCall() && ft.isTerminal() && !ft.isConditional()))) {
+					Set<String> t = exitKinds.get(fl[0]);
+					kinds.addAll(t == null ? Set.of("?") : t);
+				}
+			}
+			return Set.copyOf(kinds);
 		}
 
 		/** A summary computed while leaning on assumptions about in-progress targets. */
@@ -994,6 +1054,9 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				}
 			}
 			int result = ok ? d : UNKNOWN;
+			if (!states.isEmpty()) {
+				exitKinds.put(target, exitKindsOf(target, callee, states));
+			}
 			if (!ok) {
 				exitWhy.put(target, why + " at " + whyAt);
 			}
@@ -1009,6 +1072,7 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 						sb.append("; DP lost: ").append(wnotes);
 					}
 				}
+				sb.append("; exits=").append(exitKinds.get(target));
 				sb.append("; recHits=").append(recHits - hits0);
 				if (recHits > hits0) {
 					sb.append(" ").append(recLog.subList(log0, recLog.size()));
