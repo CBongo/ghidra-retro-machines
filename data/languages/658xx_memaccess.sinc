@@ -464,9 +464,27 @@ RefAbsLongIdxX: !>$imm24,"X"    is imm24 & IdxX  {
 
 # Accumulator addressing must be handled in another way.
 
+# --- LOCAL DIVERGENCE FROM UPSTREAM (bead grm-hf5h.14) --------------------------------
+# Each direct-page mode that may wrap in emulation mode is split on ctx_EF at DECODE time.
+# ctx_EF=0 (native) uses the *_noemu macros, which are exactly ref_direct's native arm; ctx_EF=1
+# keeps ref_direct and its runtime test, unchanged. Upstream emitted that test (E flag read
+# from contextreg, and DPLow == 0) in every instruction, so even native code carried a CBRANCH
+# inside each STA dp. That split the block, and the decompiler's jump-table path meld cannot
+# cross it: STA $00 / LDA long,X / STA $01 / JMP ($0000) recovered the dispatch as address
+# labels only. ctx_EF is the same context bit that already selects M/X operand widths
+# here, so this trusts nothing new: if ctx_EF were wrong, the decode would already be wrong.
+# ---------------------------------------------------------------------------------------
+
 # Direct page.
 # DP access may wrap in emulation mode.
-RefDP: <$imm8    is imm8  {
+RefDP: <$imm8    is ctx_EF=0 & imm8  {
+    local offset8:1 = imm8;
+    local offset:4 = zext(offset8);
+    local ref_lo:3; ref_direct_noemu(ref_lo, offset);
+    local ref_hi:3; ref_direct_noemu(ref_hi, offset + 1);
+    $(REF_EXPORT);
+}
+RefDP: <$imm8    is ctx_EF=1 & imm8  {
     local offset8:1 = imm8;
     local offset:4 = zext(offset8);
     local ref_lo:3; ref_direct(ref_lo, offset);
@@ -476,7 +494,14 @@ RefDP: <$imm8    is imm8  {
 
 # Direct page indexed by X.
 # DP access may wrap in emulation mode.
-RefDPIdxX: <$imm8,"X"    is imm8 & IdxX  {
+RefDPIdxX: <$imm8,"X"    is ctx_EF=0 & imm8 & IdxX  {
+    local offset8:1 = imm8;
+    local offset:4 = zext(offset8) + zext(IdxX);
+    local ref_lo:3; ref_direct_noemu(ref_lo, offset);
+    local ref_hi:3; ref_direct_noemu(ref_hi, offset + 1);
+    $(REF_EXPORT);
+}
+RefDPIdxX: <$imm8,"X"    is ctx_EF=1 & imm8 & IdxX  {
     local offset8:1 = imm8;
     local offset:4 = zext(offset8) + zext(IdxX);
     local ref_lo:3; ref_direct(ref_lo, offset);
@@ -486,7 +511,14 @@ RefDPIdxX: <$imm8,"X"    is imm8 & IdxX  {
 
 # Direct page indexed by Y.
 # DP access may wrap in emulation mode.
-RefDPIdxY: <$imm8,"Y"    is imm8 & IdxY  {
+RefDPIdxY: <$imm8,"Y"    is ctx_EF=0 & imm8 & IdxY  {
+    local offset8:1 = imm8;
+    local offset:4 = zext(offset8) + zext(IdxY);
+    local ref_lo:3; ref_direct_noemu(ref_lo, offset);
+    local ref_hi:3; ref_direct_noemu(ref_hi, offset + 1);
+    $(REF_EXPORT);
+}
+RefDPIdxY: <$imm8,"Y"    is ctx_EF=1 & imm8 & IdxY  {
     local offset8:1 = imm8;
     local offset:4 = zext(offset8) + zext(IdxY);
     local ref_lo:3; ref_direct(ref_lo, offset);
@@ -504,7 +536,20 @@ RefDPIdxY: <$imm8,"Y"    is imm8 & IdxY  {
 # disagree in exactly one case (e1 e 8669: D=$F400, LL+X=$FF, read hi from $F500), a generator
 # bug (TomHarte/CLK) that upstream corrected in PR #11 (2026-10); the case now agrees with this
 # implementation. Do NOT change this to match the old behaviour.
-RefDPIdxInd: (<$imm8,"X")    is imm8 & IdxX  {
+RefDPIdxInd: (<$imm8,"X")    is ctx_EF=0 & imm8 & IdxX  {
+    local offset8:1 = imm8;
+    local offset:4 = zext(offset8) + zext(IdxX);
+
+    local ind_lo:1; read_direct_noemu(ind_lo, offset);
+    local ind_hi:1; read_direct_noemu(ind_hi, offset + 1);
+    local ind:2; pack_lo_hi(ind, ind_lo, ind_hi);
+
+    offset = zext(ind);
+    local ref_lo:3; ref_data_bank(ref_lo, offset);
+    local ref_hi:3; ref_data_bank(ref_hi, offset + 1);
+    $(REF_EXPORT);
+}
+RefDPIdxInd: (<$imm8,"X")    is ctx_EF=1 & imm8 & IdxX  {
     local offset8:1 = imm8;
     local offset:4 = zext(offset8) + zext(IdxX);
 
@@ -520,7 +565,20 @@ RefDPIdxInd: (<$imm8,"X")    is imm8 & IdxX  {
 
 # Direct page indirect.
 # DP access may wrap in emulation mode.
-RefDPInd: (<$imm8)    is imm8  {
+RefDPInd: (<$imm8)    is ctx_EF=0 & imm8  {
+    local offset8:1 = imm8;
+    local offset:4 = zext(offset8);
+
+    local ind_lo:1; read_direct_noemu(ind_lo, offset);
+    local ind_hi:1; read_direct_noemu(ind_hi, offset + 1);
+    local ind:2; pack_lo_hi(ind, ind_lo, ind_hi);
+
+    offset = zext(ind);
+    local ref_lo:3; ref_data_bank(ref_lo, offset);
+    local ref_hi:3; ref_data_bank(ref_hi, offset + 1);
+    $(REF_EXPORT);
+}
+RefDPInd: (<$imm8)    is ctx_EF=1 & imm8  {
     local offset8:1 = imm8;
     local offset:4 = zext(offset8);
 
@@ -551,7 +609,20 @@ RefDPIndLong: [<$imm8]    is imm8  {
 
 # Direct page indirect, indexed by Y.
 # DP access may wrap in emulation mode.
-RefDPIndIdx: (<$imm8),"Y"    is imm8 & IdxY  {
+RefDPIndIdx: (<$imm8),"Y"    is ctx_EF=0 & imm8 & IdxY  {
+    local offset8:1 = imm8;
+    local offset:4 = zext(offset8);
+
+    local ind_lo:1; read_direct_noemu(ind_lo, offset);
+    local ind_hi:1; read_direct_noemu(ind_hi, offset + 1);
+    local ind:2; pack_lo_hi(ind, ind_lo, ind_hi);
+
+    offset = zext(ind) + zext(IdxY);
+    local ref_lo:3; ref_data_bank(ref_lo, offset);
+    local ref_hi:3; ref_data_bank(ref_hi, offset + 1);
+    $(REF_EXPORT);
+}
+RefDPIndIdx: (<$imm8),"Y"    is ctx_EF=1 & imm8 & IdxY  {
     local offset8:1 = imm8;
     local offset:4 = zext(offset8);
 
