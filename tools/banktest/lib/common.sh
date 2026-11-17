@@ -667,6 +667,8 @@ grm_decompiler_build_name() {
 			echo "candidate 10 + grm-hf5h.11 shifted-index labels: switch on (i & mask), declined when the shifted-out bits pick the path (candidate 12)" ;;
 		494b16bb17636601f6edeadd7ccacb2e866734f547d8a6358193a889ebd74540)
 			echo "candidate 12 + grm-hf5h.11 65816 CONCAT(B, A<<1) index labels on the table-bound (in-bounds) assumption (candidate 13)" ;;
+		4eec41b578f96bb0b472dcf272d524692d23174a77b609eb55ef4e5849028e57)
+			echo "candidate 13 + grm-hf5h.20 label from the current model's value range when the original's is in another Varnode's units (candidate 14)" ;;
 		588ec6c9c2a3fbebd7e1eaef6e8161b06b38fb815635ecb97c67b6de49f99496)
 			echo "12.2 patched, MinGW rebuild of ff1834fc's source (grm-gipk.25 control arm)" ;;
 		72a0ff7ed2032d3bc69703bf79db8d617197e00ea53519f4c3815d54c10662f0)
