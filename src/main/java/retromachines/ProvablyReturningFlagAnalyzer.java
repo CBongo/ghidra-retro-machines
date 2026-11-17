@@ -15,6 +15,7 @@
  */
 package retromachines;
 
+import java.util.ArrayDeque;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Map;
@@ -55,8 +56,10 @@ import ghidra.util.task.TaskMonitor;
  * <ul>
  * <li>it carries stock's "Non-Returning Function" ANALYSIS bookmark, is not a thunk, and has not
  * already been unflagged once here (so a flag stock sets again is left alone);</li>
- * <li>its body provably returns: either {@link #selfContainedReturn} (a local proof that needs
- * no bank knowledge, which is how smb3's {@code dd4e} in the banked base block qualifies), or
+ * <li>its body provably returns: either {@link #selfContainedReturn} (a local forward-only flow
+ * walk from the entry in which every leaf is an RTS, targets may leave the body but not the
+ * memory block, and no backward branch is admitted; it needs no bank knowledge, which is how
+ * smb3's {@code dd4e} in the banked base block qualifies), or
  * {@link PopReturnHelper} measures it as returning to its caller with skip 0, no caller skip, no
  * stack-delta and no assumption, and its body holds no {@code RTI}, {@code BRK}, {@code TXS},
  * indirect jump, or call that does not fall through;</li>
@@ -238,51 +241,75 @@ public class ProvablyReturningFlagAnalyzer extends AbstractAnalyzer {
 		return rts;
 	}
 
+	/** Cap on instructions visited by {@link #selfContainedReturn}'s walk. */
+	private static final int MAX_WALK = 4096;
+
 	/**
 	 * A LOCAL proof that the bytes of {@code fn} return, independent of which bank a caller
-	 * reaches (owner ruling on grm-z0d7.2): the body is one memory block; it holds no stack,
-	 * call or interrupt instruction at all (PHA PHP PLA PLP TXS JSR JSL RTI RTL BRK), so it is
-	 * stack-neutral and calls nothing; every instruction is decoded; every flow target and every
-	 * fall-through stays inside the body (no indirect jump, no fall off the end); and at least
-	 * one RTS ends a path. This is how a body in a banked window's base block can be judged,
-	 * where {@link PopReturnHelper} declines because it cannot know the live bank.
+	 * reaches (owner ruling on grm-z0d7.2, widened in grm-z0d7.3). It walks the flow graph from
+	 * the entry, not the body. Every branch or jump target must be strictly greater than the
+	 * branching instruction's address, so the walk is a DAG: it terminates and every path is
+	 * examined. Targets may lie outside {@code fn.getBody()} (a shared RTS tail) but must stay in
+	 * the entry's memory block and already be decoded instructions (a target that is not yet code
+	 * declines; nothing is disassembled here). Every leaf must be an RTS; a fall-through into
+	 * non-instruction bytes or off the block, any backward flow, indirect flow, call, or any of
+	 * PHA PHP PLA PLP TXS JSR JSL RTI RTL BRK declines, as does exceeding a step cap. This is how a
+	 * body in a banked window's base block can be judged, where {@link PopReturnHelper} declines
+	 * because it cannot know the live bank.
 	 */
 	static boolean selfContainedReturn(Program program, Function fn) {
-		AddressSetView body = fn.getBody();
-		MemoryBlock block = program.getMemory().getBlock(fn.getEntryPoint());
+		Address entry = fn.getEntryPoint();
+		MemoryBlock block = program.getMemory().getBlock(entry);
 		if (block == null) {
 			return false;
 		}
-		boolean rts = false;
-		for (Instruction i : program.getListing().getInstructions(body, true)) {
-			if (!block.contains(i.getMinAddress()) || !block.contains(i.getMaxAddress())) {
+		Listing listing = program.getListing();
+		Set<Address> seen = new HashSet<>();
+		ArrayDeque<Address> work = new ArrayDeque<>();
+		work.add(entry);
+		while (!work.isEmpty()) {
+			Address at = work.poll();
+			if (!seen.add(at)) {
+				continue;
+			}
+			if (seen.size() > MAX_WALK || !block.contains(at)) {
+				return false;
+			}
+			Instruction i = listing.getInstructionAt(at);
+			if (i == null || !block.contains(i.getMaxAddress())) {
 				return false;
 			}
 			switch (i.getMnemonicString()) {
 				case "PHA", "PHP", "PLA", "PLP", "TXS", "JSR", "JSL", "RTI", "RTL", "BRK" -> {
 					return false;
 				}
-				case "RTS" -> rts = true;
 				default -> {
 				}
 			}
 			if (i.getFlowType().isIndirect() || i.getFlowType().isCall()) {
 				return false;
 			}
+			if (i.getMnemonicString().equals("RTS")) {
+				continue; // a leaf
+			}
 			for (Address flow : i.getFlows()) {
-				if (!body.contains(flow)) {
+				if (flow.compareTo(at) <= 0) {
 					return false;
 				}
+				work.add(flow);
 			}
 			if (i.hasFallthrough()) {
 				Address ft = i.getFallThrough();
-				if (ft == null || !body.contains(ft) ||
-					program.getListing().getInstructionAt(ft) == null) {
+				if (ft == null) {
 					return false;
 				}
+				work.add(ft);
+			}
+			else if (i.getFlows().length == 0) {
+				return false; // terminates without RTS (e.g. a halt)
 			}
 		}
-		return rts;
+		return true;
 	}
 
 	/**

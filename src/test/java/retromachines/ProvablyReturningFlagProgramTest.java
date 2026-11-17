@@ -203,4 +203,42 @@ public class ProvablyReturningFlagProgramTest extends AbstractBundledLanguageTes
 		assertTrue(run().isEmpty());
 		assertTrue(flagged());
 	}
+
+	/** grm-z0d7.3: a forward BCC to a shared RTS tail outside the body is admitted. */
+	@Test
+	public void forwardBranchToASharedTailOutsideTheBodyIsUnflagged() throws Exception {
+		bankTheWindow();
+		builder.setBytes("0x8180", "60", true); // shared tail, not in the body
+		// BCC $8180 (rel +0x7e from 0x8102) / RTS
+		stockState("90 7e 60", false);
+
+		assertEquals(1, run().size());
+		assertFalse(flagged());
+		for (int c : CALLERS) {
+			assertNotNull(program.getListing().getInstructionAt(addr(c + 3)));
+		}
+	}
+
+	/** grm-z0d7.3: a backward-branch loop with an RTS on another path is not a proof. */
+	@Test
+	public void backwardBranchLoopWithAnRtsElsewhereStaysFlagged() throws Exception {
+		bankTheWindow();
+		// LDX #0 / BNE +3 / DEX / BNE -3 (back to DEX) / RTS... path via backward branch
+		stockState("a2 00 d0 03 ca d0 fd 60", false);
+
+		assertTrue(run().isEmpty());
+		assertTrue(flagged());
+	}
+
+	/** grm-z0d7.3: a path that falls off into non-instruction bytes is not a proof. */
+	@Test
+	public void pathFallingIntoDataStaysFlagged() throws Exception {
+		bankTheWindow();
+		// BCC +1 / NOP (falls into 0x8103: undecoded) / RTS at 0x8104 reached by the branch
+		builder.setBytes("0x8103", "60", false);
+		stockState("90 01 ea", false);
+
+		assertTrue(run().isEmpty());
+		assertTrue(flagged());
+	}
 }
