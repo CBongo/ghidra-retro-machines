@@ -702,8 +702,13 @@ public class W65816WidthDump extends GhidraScript {
 				int[] w = writers.computeIfAbsent(m, k -> new int[2]);
 				w[0]++;
 				Instruction next = in.getNext();
-				if (next != null && in.hasFallthrough() && next.getValue(dp, false) != null) {
+				boolean kn = next != null && in.hasFallthrough() && next.getValue(dp, false) != null;
+				if (kn) {
 					w[1]++;
+				}
+				if (System.getenv("GRM_DP_WRITER_SITES") != null) {   // grm-hf5h.24: per-site, log only
+					println("DPW " + m + " " + in.getAddress() + " knownAfter=" + kn + " dpBefore=" +
+						in.getValue(dp, false) + " dpAfter=" + (next == null ? null : next.getValue(dp, false)));
 				}
 				continue;
 			}

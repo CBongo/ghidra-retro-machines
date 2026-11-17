@@ -982,7 +982,7 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 		/**
 		 * Rule A (owner ruling 2026-11-06, grm-9nxj.27; human TODO 1.13 answer: "safe to assume
 		 * DP won't be changed en route since it's part of the main loop"). Inside a call summary,
-		 * an indirect {@code JMP (abs)} / {@code JMP (abs,X)} is ALWAYS a tail exit whose handler
+		 * an indirect {@code JMP (abs)} / {@code JMP (abs,X)} / {@code JML [abs]} is ALWAYS a tail exit whose handler
 		 * returns to our caller with the DP it was given at the jump, whatever its targets: none
 		 * resolved, out of the body, or in the body (Ghidra pulls the handlers of FF2
 		 * {@code $00:E0D0} into {@code FUN_00e01a}'s body). Its flows are NOT walked by the summary
@@ -990,12 +990,15 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 		 * count against the summary. For {@link #exitDp} the path exits with the DP live at the
 		 * jump (a constant, or {@link #ENTRY_DP}), subject to the usual empty-stack rule; for
 		 * {@link #preserves} the jump is neutral. Optimistic: unsound if a handler changes DP and
-		 * does not restore it. Scope is {@code JMP} only (not JML [abs], JSR/JSL (abs,X)).
+		 * does not restore it. Scope is {@code JMP} and {@code JML} (indirect {@code JML [abs]}, the
+		 * long pointer FF2 {@code $03:xxxx} dispatchers use; owner ruling 2026-11-17, grm-hf5h.24,
+		 * extending this rule), not JSR/JSL (abs,X).
 		 */
 		private static boolean isDispatchJmp(Instruction i) {
 			var ft = i.getFlowType();
 			return ft.isComputed() && ft.isJump() && !ft.isCall() && !ft.isConditional() &&
-				i.getMnemonicString().equalsIgnoreCase("JMP");
+				(i.getMnemonicString().equalsIgnoreCase("JMP") ||
+					i.getMnemonicString().equalsIgnoreCase("JML"));
 		}
 
 		/**
