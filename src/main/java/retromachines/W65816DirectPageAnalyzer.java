@@ -45,6 +45,7 @@ import ghidra.program.model.listing.Program;
 import ghidra.program.model.pcode.PcodeOp;
 import ghidra.program.model.pcode.Varnode;
 import ghidra.program.model.scalar.Scalar;
+import ghidra.program.model.symbol.FlowType;
 import ghidra.program.model.symbol.RefType;
 import ghidra.program.model.symbol.Reference;
 import ghidra.program.model.symbol.SourceType;
@@ -370,6 +371,8 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 		 * tail target still in progress). Recorded only for a walk that judged every exit.
 		 */
 		private final Map<Address, Set<String>> exitKinds = new HashMap<>();
+		/** {@link #isEpilogue} decisions: a shared epilogue pulls what its jumper pushed. */
+		private final Map<Address, Boolean> epilogues = new HashMap<>();
 		/** Trace only (GRM_DP_SUMMARY_TRACE): where DP turned UNKNOWN in the walk in progress. */
 		private Set<String> notes;
 		private Set<String> lastNotes;
@@ -612,6 +615,10 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				return out;
 			}
 			if (ft.isCall()) {
+				Address[] fl = ins.getFlows();
+				if (summary && isTailCall(ft) && fl.length == 1) {
+					add(start, f, true, out, fl[0]);   // walked on when inline (see inline)
+				}
 				add(start, f, summary, out, ins.getFallThrough());
 				return out;
 			}
@@ -642,10 +649,107 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 		 * ({@code $01:8D2F}: {@code LDX #imm / BRA common}) and tail calls into code that is no
 		 * function ({@code $00:B288}, {@code $15:B4B7}) leave every body without entering another.
 		 * The empty-stack rule at each return still decides which RTS/RTL is the call's.
+		 *
+		 * <p>Also yes into another function's entry that is a shared epilogue (grm-hf5h.26):
+		 * judged alone, from an empty stack, a shared epilogue ({@code PLY / PLX / PLA / PLP / PLD /
+		 * PLB / RTL}, FF3's {@code $C5:0171}, entered by {@code BRA} from both sound-driver entries
+		 * after their {@code PHB / PHD / PHP} prologues) pulls nothing it knows; walked on with the
+		 * jumper's stack, its {@code PLD} pulls the jumper's {@code PHD}. A target that judges to
+		 * a value, or fails for any other reason, stays a tail exit, as before. Only the epilogue
+		 * case is followed: inlining every failing target timed out on FF2, FF3 and CT.
 		 */
 		private boolean inline(Address start, Function f, Address a) {
 			return a.equals(start) || (f != null && f.getBody().contains(a)) ||
-				program.getFunctionManager().getFunctionAt(a) == null;
+				program.getFunctionManager().getFunctionAt(a) == null || isEpilogue(a);
+		}
+
+		/**
+		 * Whether {@code a} is a shared epilogue: code that pulls what its jumper pushed and never
+		 * returns on its own frame (see {@link #scanEpilogue}). Structural and cached, deliberately
+		 * NOT derived from {@link #exitDp}: asking the
+		 * summary machinery from {@link #inline}, at every successor of a summary walk, multiplied
+		 * the recursion retries on FF2's ring of mutually tail-jumping routines ($00:B2DC-B3FE,
+		 * ~150,000 judgements each) and the row timed out.
+		 */
+		private boolean isEpilogue(Address a) {
+			return epilogues.computeIfAbsent(a, this::scanEpilogue);
+		}
+
+		private static final int EPILOGUE_SCAN = 256;
+
+		/**
+		 * Every path from {@code a} (calls stepped over, flows of a computed jump not followed),
+		 * counting its own pushes and pulls: an epilogue when some path pulls with nothing of its
+		 * own pushed, and no path reaches an RTS/RTL or RTI with its own pushes balanced (a
+		 * routine that can also return normally is not one). FF3's sound handlers ($C5:05A6)
+		 * do their work and then tail-jump into the shared epilogue. Gives up (false) past
+		 * {@link #EPILOGUE_SCAN} instructions or on a depth that differs between two paths.
+		 */
+		private boolean scanEpilogue(Address a) {
+			Map<Address, Integer> seen = new HashMap<>();
+			ArrayDeque<Address> work = new ArrayDeque<>();
+			seen.put(a, 0);
+			work.add(a);
+			boolean pullsBelow = false;
+			while (!work.isEmpty()) {
+				if (seen.size() > EPILOGUE_SCAN) {
+					return false;
+				}
+				Address at = work.poll();
+				int depth = seen.get(at);
+				Instruction i = program.getListing().getInstructionAt(at);
+				if (i == null) {
+					return false;
+				}
+				String mn = i.getMnemonicString().toUpperCase(Locale.ROOT);
+				if (mn.startsWith("PH") || mn.equals("PEA") || mn.equals("PEI") || mn.equals("PER")) {
+					depth++;
+				}
+				else if (mn.startsWith("PL")) {
+					if (depth == 0) {
+						pullsBelow = true;
+						continue;   // this path now belongs to the jumper's frame
+					}
+					depth--;
+				}
+				else if (mn.equals("RTS") || mn.equals("RTL") || mn.equals("RTI")) {
+					return false;   // returns with its own pushes balanced: a routine
+				}
+				var ft = i.getFlowType();
+				List<Address> next = new ArrayList<>();
+				if (ft.isCall() || ft.isComputed()) {
+					if (!ft.isTerminal() && i.getFallThrough() != null) {
+						next.add(i.getFallThrough());
+					}
+					if (ft.isCall() && ft.isTerminal() && i.getFlows().length == 1) {
+						next.add(i.getFlows()[0]);   // a tail call (CALL_RETURN override)
+					}
+				}
+				else {
+					next.addAll(List.of(i.getFlows()));
+					if (i.getFallThrough() != null) {
+						next.add(i.getFallThrough());
+					}
+				}
+				for (Address n : next) {
+					Integer d = seen.putIfAbsent(n, depth);
+					if (d == null) {
+						work.add(n);
+					}
+					else if (d != depth) {
+						return false;
+					}
+				}
+			}
+			return pullsBelow;
+		}
+
+		/**
+		 * A call-flow instruction that never returns here: a JMP or branch carrying Ghidra's
+		 * CALL_RETURN override (FF2 {@code $00:e660}, FF3 {@code $C5:012F} {@code BRA}), a tail call.
+		 */
+		private static boolean isTailCall(FlowType ft) {
+			return ft.isCall() && ft.isTerminal() && !ft.isConditional();
 		}
 
 		private int width(Instruction ins, Register flag) {
@@ -680,6 +784,13 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				return new Object[] { UNKNOWN, new State(s.dp, s.a, s.x, s.y, UNWOUND) };
 			}
 			Pushed top = s.stack.get(s.stack.size() - 1);
+			int n = s.stack.size();
+			if (width == 2 && top.width == 1 && n >= 2 && s.stack.get(n - 2).width == 1) {
+				// Two byte pushes pulled as one word (FF3 $C5:015C: PHA / XBA / PHA / PLX with A
+				// 8-bit and X 16-bit; grm-hf5h.26): the stack is bytes, so consume both; value unknown.
+				return new Object[] { UNKNOWN,
+					new State(s.dp, s.a, s.x, s.y, List.copyOf(s.stack.subList(0, n - 2))) };
+			}
 			if (top.width != width) {
 				return new Object[] { UNKNOWN, new State(s.dp, s.a, s.x, s.y, null) };
 			}
@@ -925,7 +1036,7 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				}
 				else if (!ft.isComputed() && fl.length == 1 &&
 					((!ft.isCall() && ft.isJump() && !inline(target, callee, fl[0])) ||
-						(ft.isCall() && ft.isTerminal() && !ft.isConditional()))) {
+						(isTailCall(ft) && !inline(target, callee, fl[0])))) {
 					Set<String> t = exitKinds.get(fl[0]);
 					kinds.addAll(t == null ? Set.of("?") : t);
 				}
@@ -973,7 +1084,7 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				}
 				else if (!ft.isComputed() && fl.length == 1 &&
 					((!ft.isCall() && ft.isJump() && !inline(target, callee, fl[0])) ||
-						(ft.isCall() && ft.isTerminal() && !ft.isConditional()))) {
+						(isTailCall(ft) && !inline(target, callee, fl[0])))) {
 					// A tail call (FF2's bank-$14 JMP thunks; or a JMP carrying Ghidra's CALL_RETURN
 					// flow override, which reads as a terminal call, FF2 $00:e660): it returns what
 					// its target returns, with the DP at the jump standing in for its entry DP. A
