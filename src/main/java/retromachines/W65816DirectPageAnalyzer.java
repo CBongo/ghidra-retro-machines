@@ -175,7 +175,11 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 	private static final int STEP_LIMIT = 50_000;
 
 	/** One pushed item: its width in bytes and its value, or {@link #UNKNOWN}. */
-	private record Pushed(int width, int value) {}
+	private record Pushed(int width, int value, boolean phd) {
+		Pushed(int width, int value) {
+			this(width, value, false);
+		}
+	}
 
 	/**
 	 * The bottom of a stack restarted after poisoning: what lies beneath is unknown and is not
@@ -675,7 +679,7 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 			return epilogues.computeIfAbsent(a, this::scanEpilogue);
 		}
 
-		private static final int EPILOGUE_SCAN = 256;
+		private static final int EPILOGUE_SCAN = 4096;   // FF3 $C5:0180 handler is several hundred
 
 		/**
 		 * Every path from {@code a} (calls stepped over, flows of a computed jump not followed),
@@ -838,7 +842,7 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				case "PHY":
 					return pushReg(s, width(ins, ctxX), s.y);
 				case "PHD":
-					return push(s, new Pushed(2, s.dp));
+					return push(s, new Pushed(2, s.dp, true));   // tagged: see unwoundFrameDp
 				case "PEA":
 					return push(s, new Pushed(2, scalar(ins)));
 				case "PEI", "PER":
@@ -899,6 +903,13 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 					int e = exitDp(flows[0]);
 					dp = e == ENTRY_DP ? s.dp : e;
 				}
+			}
+			else if (flows.length > 1 && ins.getFlowType().isComputed()) {
+				// Rule A for computed calls (owner ruling 2026-11-17, grm-hf5h.26): a JSR/JSL
+				// (abs,X) dispatcher with several resolved targets -- FZero RESET's main loop,
+				// JSR ($8050,X) at $00:8046 -- returns with the DP it was given. Optimistic, like
+				// Rule A for JMP (see isDispatchJmp): unsound if a dispatched routine changes DP.
+				dp = s.dp;
 			}
 			if (notes != null && s.dp != UNKNOWN && dp == UNKNOWN && flows.length == 1) {
 				notes.add("call at " + ins.getAddress() + " to " + flows[0] +
@@ -1044,6 +1055,43 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 			return Set.copyOf(kinds);
 		}
 
+		/**
+		 * Rule A extended to a dispatcher's own frame (owner ruling 2026-11-17, grm-hf5h.26): a
+		 * dispatch JMP reached with the dispatcher's prologue still pushed, whose resolved handlers
+		 * are all shared epilogues (see {@link #scanEpilogue}) -- they leave through the code that
+		 * pulls that frame, as FF3's sound driver {@code $C5:0160 JMP ($06FE,X)} does after
+		 * {@code PHB / PHD / PHP / PHA / PHX / PHY} -- exits with the DP its {@code PHD} saved.
+		 * Applies only when the frame holds exactly one PHD item and nothing beneath the entry
+		 * stack; returns that DP, or null when the rule does not apply.
+		 */
+		private Integer unwoundFrameDp(Instruction jmp, State st) {
+			if (st.stack == null || st.stack.isEmpty()) {
+				return null;
+			}
+			Integer saved = null;
+			for (Pushed p : st.stack) {
+				if (p.width() <= 0) {
+					return null;   // FLOOR / UNDER: not the dispatcher's own frame
+				}
+				if (p.phd()) {
+					if (saved != null) {
+						return null;
+					}
+					saved = p.value();
+				}
+			}
+			Address[] fl = jmp.getFlows();
+			if (saved == null || saved == UNKNOWN || fl.length == 0) {
+				return null;
+			}
+			for (Address t : fl) {
+				if (!isEpilogue(t)) {
+					return null;
+				}
+			}
+			return saved;
+		}
+
 		/** A summary computed while leaning on assumptions about in-progress targets. */
 		private record Provisional(Address target, int dp, Set<Address> leaned) {}
 
@@ -1102,6 +1150,11 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 					// Rule A (owner ruling 2026-11-06, grm-9nxj.27): see isDispatchJmp.
 					exit = true;
 					out = st.dp;
+					Integer saved = unwoundFrameDp(i, st);
+					if (saved != null) {
+						out = saved;
+						st = new State(st.dp, st.a, st.x, st.y, List.of());
+					}
 				}
 				// An unwound exit has pulled its return address: it leaves for an outer frame, never
 				// the call's fall-through, so its DP is beside the point (see UNDER).
@@ -1300,6 +1353,9 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				}
 				else if (ft.isCall()) {
 					Address[] fl = i.getFlows();
+					if (fl.length > 1 && ft.isComputed()) {
+						continue;   // Rule A for computed calls (grm-hf5h.26): see afterCall
+					}
 					if (fl.length != 1) {
 						ok = false;
 					}
