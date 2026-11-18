@@ -1163,31 +1163,45 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 		 * structural scan of every path from {@code a} -- calls stepped over, jumps, branches, tail
 		 * calls and resolved computed jumps followed -- reaches no return. A computed jump with no
 		 * resolved target, a missing instruction, or more than {@link #EPILOGUE_SCAN} instructions
-		 * proves nothing (false). Writes no flag: setting Ghidra's no-return flag is a separate bead.
+		 * proves nothing either way.
+		 *
+		 * <p>The scan goes first and Ghidra's flag only breaks a tie (grm-hf5h.30): a scan that
+		 * reaches an RTS/RTL/RTI refutes the flag. Ghidra's "Non-Returning Functions - Discovered"
+		 * is a heuristic and is wrong on FF3 {@code FUN_c3072d}, which returns by RTS with its
+		 * caller's DP; the flag turns every {@code JSR} to it into a CALL_TERMINATOR, and the
+		 * one-JSR "thunks" Ghidra then makes of them ({@code thunk_FUN_c3072d@c315aa}) were judged
+		 * UNKNOWN while the decompiler gave them the target's {@code __dp_preserved}. Writes no
+		 * flag: setting Ghidra's no-return flag is a separate bead (grm-hf5h.27).
 		 */
 		private boolean neverReturns(Address a) {
-			return noReturn.computeIfAbsent(a, this::scanNoReturn);
+			return noReturn.computeIfAbsent(a, t -> {
+				Boolean scanned = scanNoReturn(t);
+				if (scanned != null) {
+					return scanned;
+				}
+				Function fn = program.getFunctionManager().getFunctionAt(t);
+				if (fn != null && fn.isThunk()) {
+					fn = fn.getThunkedFunction(true);
+				}
+				return fn != null && fn.hasNoReturn();
+			});
 		}
 
-		private boolean scanNoReturn(Address a) {
-			Function fn = program.getFunctionManager().getFunctionAt(a);
-			if (fn != null && fn.isThunk()) {
-				fn = fn.getThunkedFunction(true);
-			}
-			if (fn != null && fn.hasNoReturn()) {
-				return true;
-			}
+		/** True: no path returns; false: some path reaches a return; null: proves nothing. */
+		private Boolean scanNoReturn(Address a) {
 			Set<Address> seen = new HashSet<>();
 			ArrayDeque<Address> work = new ArrayDeque<>();
 			seen.add(a);
 			work.add(a);
+			boolean unproven = false;
 			while (!work.isEmpty()) {
 				if (seen.size() > EPILOGUE_SCAN) {
-					return false;
+					return null;
 				}
 				Instruction i = program.getListing().getInstructionAt(work.poll());
 				if (i == null) {
-					return false;
+					unproven = true;   // keep looking: a return elsewhere still refutes the flag
+					continue;
 				}
 				String mn = i.getMnemonicString().toUpperCase(Locale.ROOT);
 				if (mn.equals("RTS") || mn.equals("RTL") || mn.equals("RTI")) {
@@ -1202,7 +1216,7 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				}
 				else {
 					if (ft.isComputed() && i.getFlows().length == 0) {
-						return false;
+						unproven = true;
 					}
 					next.addAll(List.of(i.getFlows()));
 				}
@@ -1215,7 +1229,7 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 					}
 				}
 			}
-			return true;
+			return unproven ? null : Boolean.TRUE;
 		}
 
 		/** A summary computed while leaning on assumptions about in-progress targets. */
@@ -1265,6 +1279,10 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 					// conditional branch to another function's entry is one too (grm-9nxj.31, FF2
 					// $00:e66b BNE); its fall-through is walked as usual.
 					if (neverReturns(fl[0])) {
+						if (tr) {
+							System.out.println("DPS   tail at " + i.getAddress() + " to " + fl[0] +
+								" skipped: never returns");
+						}
 						continue;   // no-return tail (owner ruling 2026-11-17): never reaches the caller
 					}
 					exit = true;
@@ -1366,6 +1384,14 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 					}
 				}
 				sb.append("; exits=").append(exitKinds.get(target));
+				if (ok && result == UNKNOWN) {
+					// No exit found: say what the walk did visit, with each instruction's flow type.
+					sb.append("; visited=");
+					states.keySet().stream().limit(12).forEach(a -> {
+						Instruction vi = program.getListing().getInstructionAt(a);
+						sb.append(' ').append(a).append(vi == null ? ":none" : ":" + vi + "/" + vi.getFlowType());
+					});
+				}
 				sb.append("; recHits=").append(recHits - hits0);
 				if (recHits > hits0) {
 					sb.append(" ").append(recLog.subList(log0, recLog.size()));
