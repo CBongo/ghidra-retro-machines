@@ -1048,6 +1048,9 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				else if (!ft.isComputed() && fl.length == 1 &&
 					((!ft.isCall() && ft.isJump() && !inline(target, callee, fl[0])) ||
 						(isTailCall(ft) && !inline(target, callee, fl[0])))) {
+					if (neverReturns(fl[0])) {
+						continue;
+					}
 					Set<String> t = exitKinds.get(fl[0]);
 					kinds.addAll(t == null ? Set.of("?") : t);
 				}
@@ -1090,6 +1093,73 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				}
 			}
 			return saved;
+		}
+
+		/** {@link #neverReturns} decisions. */
+		private final Map<Address, Boolean> noReturn = new HashMap<>();
+
+		/**
+		 * Whether control entering {@code a} can never come back by RTS/RTL/RTI (owner ruling
+		 * 2026-11-17, grm-hf5h.26): a tail jump into such code is not an exit of a call summary,
+		 * as an unwound exit is not (FF3 {@code FUN_c0c4b3}'s soft reset {@code JMP $C0FF00}, a thunk
+		 * to the boot routine {@code FUN_c00019} and its endless main loop). True when Ghidra has
+		 * already flagged the function (or the function a thunk reaches) no-return, or when a
+		 * structural scan of every path from {@code a} -- calls stepped over, jumps, branches, tail
+		 * calls and resolved computed jumps followed -- reaches no return. A computed jump with no
+		 * resolved target, a missing instruction, or more than {@link #EPILOGUE_SCAN} instructions
+		 * proves nothing (false). Writes no flag: setting Ghidra's no-return flag is a separate bead.
+		 */
+		private boolean neverReturns(Address a) {
+			return noReturn.computeIfAbsent(a, this::scanNoReturn);
+		}
+
+		private boolean scanNoReturn(Address a) {
+			Function fn = program.getFunctionManager().getFunctionAt(a);
+			if (fn != null && fn.isThunk()) {
+				fn = fn.getThunkedFunction(true);
+			}
+			if (fn != null && fn.hasNoReturn()) {
+				return true;
+			}
+			Set<Address> seen = new HashSet<>();
+			ArrayDeque<Address> work = new ArrayDeque<>();
+			seen.add(a);
+			work.add(a);
+			while (!work.isEmpty()) {
+				if (seen.size() > EPILOGUE_SCAN) {
+					return false;
+				}
+				Instruction i = program.getListing().getInstructionAt(work.poll());
+				if (i == null) {
+					return false;
+				}
+				String mn = i.getMnemonicString().toUpperCase(Locale.ROOT);
+				if (mn.equals("RTS") || mn.equals("RTL") || mn.equals("RTI")) {
+					return false;
+				}
+				var ft = i.getFlowType();
+				List<Address> next = new ArrayList<>();
+				if (ft.isCall()) {
+					if (ft.isTerminal()) {
+						next.addAll(List.of(i.getFlows()));   // a tail call (CALL_RETURN override)
+					}
+				}
+				else {
+					if (ft.isComputed() && i.getFlows().length == 0) {
+						return false;
+					}
+					next.addAll(List.of(i.getFlows()));
+				}
+				if (!ft.isTerminal() && i.getFallThrough() != null) {
+					next.add(i.getFallThrough());
+				}
+				for (Address n : next) {
+					if (seen.add(n)) {
+						work.add(n);
+					}
+				}
+			}
+			return true;
 		}
 
 		/** A summary computed while leaning on assumptions about in-progress targets. */
@@ -1138,6 +1208,9 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 					// its target returns, with the DP at the jump standing in for its entry DP. A
 					// conditional branch to another function's entry is one too (grm-9nxj.31, FF2
 					// $00:e66b BNE); its fall-through is walked as usual.
+					if (neverReturns(fl[0])) {
+						continue;   // no-return tail (owner ruling 2026-11-17): never reaches the caller
+					}
 					exit = true;
 					int te = exitDp(fl[0]);
 					out = te == ENTRY_DP ? st.dp : te;
