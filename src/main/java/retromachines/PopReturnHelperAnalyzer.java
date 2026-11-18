@@ -15,6 +15,7 @@
  */
 package retromachines;
 
+import java.math.BigInteger;
 import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -40,6 +41,8 @@ import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.DataUtilities;
 import ghidra.program.model.data.DataUtilities.ClearDataMode;
 import ghidra.program.model.data.WordDataType;
+import ghidra.program.model.lang.Register;
+import ghidra.program.model.listing.ContextChangeException;
 import ghidra.program.model.listing.FlowOverride;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Instruction;
@@ -235,6 +238,8 @@ public class PopReturnHelperAnalyzer extends AbstractAnalyzer {
 		private final AddressSet clear = new AddressSet();
 		private final AddressSet disassemble = new AddressSet();
 		private final Map<Address, Integer> inline = new LinkedHashMap<>();
+		/** 65816: the E/M/X each continuation inherits from its call, stamped before decode. */
+		private final Map<Address, Map<Register, BigInteger>> context = new LinkedHashMap<>();
 		private int sites;
 
 		void plan(Program program, Instruction call, int skip) {
@@ -243,6 +248,17 @@ public class PopReturnHelperAnalyzer extends AbstractAnalyzer {
 				return;
 			}
 			Address target = after.add(skip);
+			if (W65816WidthEffects.applies(program)) {
+				Map<Register, BigInteger> flags = new LinkedHashMap<>();
+				for (String name : new String[] { "ctx_EF", "ctx_MF", "ctx_XF" }) {
+					Register reg = program.getRegister(name);
+					BigInteger v = call.getValue(reg, false);
+					if (v != null) {
+						flags.put(reg, v);
+					}
+				}
+				context.put(target, flags);
+			}
 			if (call.getFlowOverride() == FlowOverride.CALL_RETURN) {
 				call.setFlowOverride(FlowOverride.NONE);
 				disassemble.add(target);
@@ -280,12 +296,33 @@ public class PopReturnHelperAnalyzer extends AbstractAnalyzer {
 				if (program.getListing().getInstructionAt(a) == null &&
 					program.getListing().getDefinedDataAt(a) == null) {
 					todo.add(a);
+					stamp(program, a);
 				}
 			}
 			if (!todo.isEmpty()) {
 				new DisassembleCommand(todo, null, true).applyTo(program, monitor);
 			}
 			return sites;
+		}
+
+		/**
+		 * Writes the call's E/M/X at a 65816 continuation: the cleared bytes otherwise decode at
+		 * the pspec default (emulation mode, 8-bit), as W65816WidthAnalyzer's reDecode found. A
+		 * callee that leaves other widths is that analyzer's to repair afterwards.
+		 */
+		private void stamp(Program program, Address a) {
+			Map<Register, BigInteger> flags = context.get(a);
+			if (flags == null) {
+				return;
+			}
+			for (Map.Entry<Register, BigInteger> f : flags.entrySet()) {
+				try {
+					program.getProgramContext().setValue(f.getKey(), a, a, f.getValue());
+				}
+				catch (ContextChangeException e) {
+					return; // an instruction already covers it: nothing to decode there
+				}
+			}
 		}
 	}
 
@@ -370,6 +407,18 @@ public class PopReturnHelperAnalyzer extends AbstractAnalyzer {
 	static int restoreCallers(Program program, PopReturnHelper.Levels levels,
 			Set<Function> start, Set<Address> plain, TaskMonitor monitor)
 			throws CancelledException {
+		return restoreCallers(program,
+			e -> plain.contains(e) ? PopReturnHelper.Unwind.NORMAL : levels.of(e), start, monitor);
+	}
+
+	/**
+	 * As above, with {@code measure} judging how each entry returns (null: inconclusive). The
+	 * 65816 passes {@link W65816ReturnProof}, since {@link PopReturnHelper} models the 6502
+	 * stack. A {@code JSL} caller is restored like a {@code JSR}.
+	 */
+	static int restoreCallers(Program program,
+			java.util.function.Function<Address, PopReturnHelper.Unwind> measure,
+			Set<Function> start, TaskMonitor monitor) throws CancelledException {
 		ArrayDeque<Function> work = new ArrayDeque<>(start);
 		Set<Function> done = new HashSet<>();
 		Set<Function> bodies = new LinkedHashSet<>();
@@ -388,13 +437,13 @@ public class PopReturnHelperAnalyzer extends AbstractAnalyzer {
 				entries.addAll(Arrays.asList(thunks));
 			}
 			for (Address entry : entries) {
-				PopReturnHelper.Unwind u =
-					plain.contains(entry) ? PopReturnHelper.Unwind.NORMAL : levels.of(entry);
+				PopReturnHelper.Unwind u = measure.apply(entry);
 				if (u == null || !u.returns()) {
 					continue; // a helper's own JSRs stay stopped; only returning callees resume
 				}
 				for (Instruction call : callsTo(program, entry)) {
-					if (!"JSR".equals(call.getMnemonicString()) ||
+					String mn = call.getMnemonicString();
+					if (!("JSR".equals(mn) || "JSL".equals(mn)) ||
 						call.getFlowOverride() != FlowOverride.CALL_RETURN) {
 						continue;
 					}
@@ -405,7 +454,7 @@ public class PopReturnHelperAnalyzer extends AbstractAnalyzer {
 					if (caller != null) {
 						bodies.add(caller);
 						if (!caller.isThunk() && caller.hasNoReturn()) {
-							PopReturnHelper.Unwind cu = levels.of(caller.getEntryPoint());
+							PopReturnHelper.Unwind cu = measure.apply(caller.getEntryPoint());
 							if (cu != null && cu.returns()) {
 								caller.setNoReturn(false);
 								work.add(caller);

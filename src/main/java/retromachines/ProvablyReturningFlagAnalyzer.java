@@ -78,9 +78,9 @@ public class ProvablyReturningFlagAnalyzer extends AbstractAnalyzer {
 
 	private static final String NAME = "Retro 6502 Provably-Returning Functions";
 	private static final String DESCRIPTION =
-		"Clears the stock no-return flag on a 6502 function whose body provably returns when " +
-			"the evidence stock counted would no longer reach its threshold once the callers' " +
-			"fall-through is restored (grm-z0d7.2).";
+		"Clears the stock no-return flag on a 6502 or 65816 function whose body provably " +
+			"returns when the evidence stock counted would no longer reach its threshold once " +
+			"the callers' fall-through is restored (grm-z0d7.2, grm-9nxj.39).";
 
 	static final String STOCK_BOOKMARK_CATEGORY = "Non-Returning Function";
 	static final String BOOKMARK_CATEGORY = "No-return flag cleared: provably returns";
@@ -101,7 +101,9 @@ public class ProvablyReturningFlagAnalyzer extends AbstractAnalyzer {
 
 	@Override
 	public boolean canAnalyze(Program program) {
-		return AnalyzerGates.is8BitPcode(program);
+		// The 65816 is judged by W65816ReturnProof (grm-9nxj.39); the name keeps "6502" so the
+		// analyzer's option key, which project files and preScripts persist, is unchanged.
+		return AnalyzerGates.is8BitPcode(program) || W65816WidthEffects.applies(program);
 	}
 
 	@Override
@@ -132,7 +134,8 @@ public class ProvablyReturningFlagAnalyzer extends AbstractAnalyzer {
 					if (noted(program).add(fn.getEntryPoint())) {
 						AnalyzerLog.info(analyzer, "no-return flag on " + fn.getEntryPoint() +
 							" kept: not provably a plain return (measured " +
-							levels.of(fn.getEntryPoint()) + ")");
+							(W65816WidthEffects.applies(program) ? "by W65816ReturnProof"
+									: levels.of(fn.getEntryPoint())) + ")");
 					}
 					continue;
 				}
@@ -171,11 +174,22 @@ public class ProvablyReturningFlagAnalyzer extends AbstractAnalyzer {
 			"evidence=" + evidence + " callers=" + callers);
 		Set<Function> start = new LinkedHashSet<>();
 		start.add(fn);
-		int restored = PopReturnHelperAnalyzer.restoreCallers(program,
-			new PopReturnHelper.Levels(program), start, Set.of(entry), monitor);
+		int restored;
+		if (W65816WidthEffects.applies(program)) {
+			restored = PopReturnHelperAnalyzer.restoreCallers(program,
+				e -> e.equals(entry) || w65816Returns(program, e) ? PopReturnHelper.Unwind.NORMAL
+						: null,
+				start, monitor);
+		}
+		else {
+			restored = PopReturnHelperAnalyzer.restoreCallers(program,
+				new PopReturnHelper.Levels(program), start, Set.of(entry), monitor);
+		}
+		int unthunked = unthunkCallSites(program, fn, monitor);
 		AnalyzerLog.info(analyzer, "cleared no-return on " + entry + ": the body provably " +
 			"returns, replayed evidence " + evidence + ", restored fall-through at " + restored +
-			" of " + callers + " call site(s) (grm-z0d7.2)");
+			" of " + callers + " call site(s), un-thunked " + unthunked +
+			" call-site thunk(s) (grm-z0d7.2, grm-9nxj.39)");
 	}
 
 	private static final Map<Program, Set<Address>> NOTED = new WeakHashMap<>();
@@ -204,8 +218,15 @@ public class ProvablyReturningFlagAnalyzer extends AbstractAnalyzer {
 		}
 	}
 
-	/** Measured level 0, skip 0, nothing else, over a plain body (see the class comment). */
+	/**
+	 * Measured level 0, skip 0, nothing else, over a plain body (see the class comment). On the
+	 * 65816, {@link W65816ReturnProof} instead, and every caller must use the matching call
+	 * ({@code JSR} for an {@code RTS}, {@code JSL} for an {@code RTL}).
+	 */
 	static boolean provablyReturns(Program program, Function fn, PopReturnHelper.Levels levels) {
+		if (W65816WidthEffects.applies(program)) {
+			return w65816Returns(program, fn.getEntryPoint());
+		}
 		if (selfContainedReturn(program, fn)) {
 			return true;
 		}
@@ -239,6 +260,48 @@ public class ProvablyReturningFlagAnalyzer extends AbstractAnalyzer {
 			}
 		}
 		return rts;
+	}
+
+	/** {@link W65816ReturnProof} holds and every call into {@code entry} matches its return. */
+	static boolean w65816Returns(Program program, Address entry) {
+		String kind = W65816ReturnProof.provenReturn(program, entry);
+		if (kind == null) {
+			return false;
+		}
+		String call = kind.equals("RTL") ? "JSL" : "JSR";
+		for (Instruction i : PopReturnHelperAnalyzer.callsTo(program, entry)) {
+			if (!call.equalsIgnoreCase(i.getMnemonicString())) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * Un-thunks every one-call "thunk" of {@code fn} whose call falls through again: stock's
+	 * flag made Ghidra take a lone {@code JSR fn} at a called address for a thunk
+	 * ({@code thunk_FUN_c3072d@c315aa}, grm-9nxj.39), and with the fall-through restored it is
+	 * an ordinary function that calls {@code fn} and goes on. A jump thunk is left alone.
+	 */
+	private static int unthunkCallSites(Program program, Function fn, TaskMonitor monitor)
+			throws CancelledException {
+		Address[] thunks = fn.getFunctionThunkAddresses(false);
+		if (thunks == null) {
+			return 0;
+		}
+		Set<Function> fixed = new LinkedHashSet<>();
+		for (Address t : thunks) {
+			Function thunk = program.getFunctionManager().getFunctionAt(t);
+			Instruction i = program.getListing().getInstructionAt(t);
+			if (thunk == null || i == null || !i.getFlowType().isCall() ||
+				!i.getFlowType().hasFallthrough()) {
+				continue;
+			}
+			thunk.setThunkedFunction(null);
+			fixed.add(thunk);
+		}
+		PopReturnHelperAnalyzer.fixBodies(program, fixed, monitor);
+		return fixed.size();
 	}
 
 	/** Cap on instructions visited by {@link #selfContainedReturn}'s walk. */

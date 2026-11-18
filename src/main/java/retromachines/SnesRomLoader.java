@@ -288,6 +288,7 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 		applyDescriptor(program, space, log);
 		createVectors(program, space, header, map, log);
 		disablePointerCodeCreation(program, log);
+		disableStockNoReturnDiscovery(program, log);
 		RetroAnalysisDefaults.apply(program, log, NAME);
 
 		// Optional per-game .tbl text table (bead grm-s3wo, shared with NES via
@@ -319,6 +320,29 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 		}
 		log.appendMsg(NAME + ": " + String.join(" and ", POINTER_CODE_OPTIONS) + " off for this " +
 			"program (pointer-named code decodes in emulation mode; see grm-9nxj.5.9)");
+	}
+
+	/** Ghidra's heuristic no-return analyzer, by its enable-option name. */
+	static final String STOCK_NO_RETURN_DISCOVERY = "Non-Returning Functions - Discovered";
+
+	/**
+	 * Turns off Ghidra's "Non-Returning Functions - Discovered" for this program only (bead
+	 * grm-9nxj.39, owner ruling 2026-11-18). It flags a callee no-return once three of its call
+	 * sites run into a function entry right after the call, and 65816 game code is full of
+	 * routines that call a helper and then fall into a second, separately-called entry. On the
+	 * snes-analysis rows all three of its flags were wrong (w_ff2 01818a, w_ff3 c3072d and
+	 * c381c7: each provably returns, by {@link W65816ReturnProof}), and each cut the code after
+	 * every call and made a one-JSR thunk of each call site. They cannot be cleared after the
+	 * fact: the indicator is real on the undamaged listing (6/15, 20/28, 6/6 sites), so stock
+	 * flags again whenever it re-runs. The bodies' own RTS/RTL still ends flow; a routine that
+	 * truly never returns is grm-hf5h.27's to flag. Set as a program option so a user can turn
+	 * it back on, in which case {@link ProvablyReturningFlagAnalyzer} still unflags what it can.
+	 */
+	private static void disableStockNoReturnDiscovery(Program program, MessageLog log) {
+		program.getOptions(Program.ANALYSIS_PROPERTIES).setBoolean(STOCK_NO_RETURN_DISCOVERY,
+			false);
+		log.appendMsg(NAME + ": " + STOCK_NO_RETURN_DISCOVERY + " off for this program (its " +
+			"call-then-fall-into-an-entry evidence misfires on 65816 game code; see grm-9nxj.39)");
 	}
 
 	/**
