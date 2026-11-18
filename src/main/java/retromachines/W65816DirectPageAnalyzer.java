@@ -50,6 +50,7 @@ import ghidra.program.model.symbol.RefType;
 import ghidra.program.model.symbol.Reference;
 import ghidra.program.model.symbol.SourceType;
 import ghidra.util.exception.CancelledException;
+import ghidra.util.exception.InvalidInputException;
 import ghidra.util.task.TaskMonitor;
 
 /**
@@ -277,12 +278,67 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 			}
 		}
 		int[] warned = bookmarkSeeds(program, w.seeds, monitor);
-		if (stamped > 0 || refs > 0) {
+		int[] cc = assignDpPreserved(program, w, monitor);
+		if (stamped > 0 || refs > 0 || cc[0] > 0 || cc[1] > 0) {
 			AnalyzerLog.info(this, "DP stamped over " + stamped + " instructions, " + refs +
 				" dp operand references added; " + warned[0] + " entries seeded past unknown " +
-				"ways in, " + warned[1] + " with disagreeing ways in");
+				"ways in, " + warned[1] + " with disagreeing ways in; " + cc[0] + " functions " +
+				"given " + DP_PRESERVED + ", " + cc[1] + " taken off it");
 		}
 		return true;
+	}
+
+	/** The w65816.cspec prototype that declares DP unaffected by a call (grm-hf5h.28). */
+	static final String DP_PRESERVED = "__dp_preserved";
+
+	/**
+	 * Gives {@link #DP_PRESERVED} to every function whose call summary proves the caller's DP
+	 * survives the call (verdict "preserves" or "restores", exactly as {@code afterCall} judges
+	 * it), so the decompiler stops treating DP as clobbered after the call (grm-hf5h.28). Only a
+	 * function with no convention of its own (unknown/default/the default prototype's name) is
+	 * changed; one carrying {@link #DP_PRESERVED} that no longer qualifies goes back to unknown.
+	 * Program-wide, like the solve. Thunks are skipped (setting one would set its target).
+	 *
+	 * @return {given, removed} counts
+	 */
+	private static int[] assignDpPreserved(Program program, Walker w, TaskMonitor monitor)
+			throws CancelledException {
+		int[] n = new int[2];
+		var fm = program.getFunctionManager();
+		if (fm.getCallingConvention(DP_PRESERVED) == null) {
+			return n;   // a cspec without the prototype (should not happen for w65816)
+		}
+		var dfltModel = fm.getDefaultCallingConvention();
+		String dflt = dfltModel == null ? null : dfltModel.getName();
+		for (Function f : fm.getFunctions(true)) {
+			monitor.checkCancelled();
+			if (f.isThunk() || f.isExternal()) {
+				continue;
+			}
+			String cur = f.getCallingConventionName();
+			boolean ours = DP_PRESERVED.equals(cur);
+			boolean unset = cur == null || cur.equals(Function.UNKNOWN_CALLING_CONVENTION_STRING) ||
+				cur.equals(Function.DEFAULT_CALLING_CONVENTION_STRING) || cur.equals(dflt);
+			if (!ours && !unset) {
+				continue;   // a convention someone chose: never override it
+			}
+			Address at = f.getEntryPoint();
+			boolean keeps = w.preserves(at) || w.exitDp(at) == ENTRY_DP;
+			try {
+				if (keeps && !ours) {
+					f.setCallingConvention(DP_PRESERVED);
+					n[0]++;
+				}
+				else if (!keeps && ours) {
+					f.setCallingConvention(Function.UNKNOWN_CALLING_CONVENTION_STRING);
+					n[1]++;
+				}
+			}
+			catch (InvalidInputException e) {
+				return n;   // the prototype is not registered after all
+			}
+		}
+		return n;
 	}
 
 	/**

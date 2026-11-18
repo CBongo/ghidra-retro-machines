@@ -8,7 +8,8 @@
     Path:     data/languages/65816.cspec
     License:  MIT
 
-  Vendored verbatim at the commit above; the only modification is this header.
+  Vendored verbatim at the commit above, with two local modifications: this header, and the
+  __dp_preserved prototype after <default_proto> (a deliberate fork, grm-hf5h.28).
 -->
 
 <compiler_spec>
@@ -25,4 +26,17 @@
       <output/>
     </prototype>
   </default_proto>
+  <!--
+    grm-hf5h.28 (local addition): the default prototype plus "DP survives the call". Never a
+    default: W65816DirectPageAnalyzer assigns it only to functions whose call summary proves DP
+    preserved or restored. The decompiler honours a callee's model only when it is locked, which
+    Java does for any named convention (FunctionPrototype.grabFromFunction).
+  -->
+  <prototype name="__dp_preserved" extrapop="0" stackshift="0" strategy="register">
+    <input/>
+    <output/>
+    <unaffected>
+      <register name="DP"/>
+    </unaffected>
+  </prototype>
 </compiler_spec>

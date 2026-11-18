@@ -225,6 +225,26 @@ public class DpCensusProbe extends GhidraScript {
 			if (cls.equals("restores") || n > 0 || writer != null)
 				ex.computeIfAbsent(cls, k -> new ArrayList<>()).add(line);
 		}
+		// grm-hf5h.28: which calling convention each verdict class ended up with. A proven class
+		// (preserves/restores) without __dp_preserved means the analyzer did not reach it or
+		// something reset it; any other class WITH it is a wrong promise to the decompiler.
+		Map<String, Integer> cc = new TreeMap<>();
+		List<String> ccBad = new ArrayList<>();
+		for (Function f : fm.getFunctions(true)) {
+			// A thunk reports its target's convention (FunctionDB), so judge it by the target.
+			Function judged = f.isThunk() ? f.getThunkedFunction(true) : f;
+			String v = verdict.getOrDefault(judged, "UNKNOWN");
+			boolean proven = v.equals("preserves") || v.equals("restores");
+			String conv = f.getCallingConventionName();
+			bump(cc, (proven ? v : v.equals("UNKNOWN") ? "unknown" : "const") + " -> " + conv);
+			boolean has = "__dp_preserved".equals(conv);
+			if (has != proven && (has || conv == null || conv.equals("unknown") || conv.equals("default") ||
+				conv.equals("__unknowncall")))
+				ccBad.add(f.getName() + "@" + f.getEntryPoint() + " verdict=" + v + " cc=" + conv);
+		}
+		println("DPC cc verdict -> convention: " + cc);
+		println("DPC cc mismatches=" + ccBad.size());
+		for (int i = 0; i < Math.min(25, ccBad.size()); i++) println("DPC cc mismatch " + ccBad.get(i));
 		println("DPC callee functions=" + fns);
 		println("DPC callee callSites=" + calls);
 		println("DPC callee constCallSites=" + constCalls);
