@@ -236,13 +236,22 @@ public class W65816NoReturnFlagTest extends AbstractProgramTest {
 	 * Ghidra's Disassembler leaves it: CALL_RETURN on the whole call, fall-through undecoded.
 	 */
 	private void stoppedDispatch(int... targets) throws Exception {
+		stoppedDispatch("00 81 00 82", BOOT, targets); // table: BOOT, HELPER
+	}
+
+	/**
+	 * As above with any table; {@code firstSlot} gets the table word's data reference. With
+	 * HELPER first this is the state stock {@code CallFixupChangeAnalyzer.setNoFallThru} leaves
+	 * (grm-hf5h.33, w_ct): the call is stopped because of a LATER entry.
+	 */
+	private void stoppedDispatch(String table, int firstSlot, int... targets) throws Exception {
 		bootState();
 		run();
-		builder.setBytes("0x9000", "00 81 00 82", false); // table: BOOT, HELPER
+		builder.setBytes("0x9000", table, false);
 		builder.setBytes(String.format("0x%x", DISPATCH), "fc 00 90 ea 60", true); // JSR (,X) / NOP / RTS
 		inTx(program, "stopped dispatch", () -> {
 			program.getListing().createData(addr(0x9000), new ghidra.program.model.data.WordDataType());
-			program.getReferenceManager().addMemoryReference(addr(0x9000), addr(BOOT),
+			program.getReferenceManager().addMemoryReference(addr(0x9000), addr(firstSlot),
 				ghidra.program.model.symbol.RefType.DATA, ghidra.program.model.symbol.SourceType.ANALYSIS, 0);
 			for (int t : targets) {
 				program.getReferenceManager().addMemoryReference(addr(DISPATCH), addr(t),
@@ -284,6 +293,43 @@ public class W65816NoReturnFlagTest extends AbstractProgramTest {
 
 		assertEquals(0, repair());
 		assertEquals(FlowOverride.CALL_RETURN, instructionAt(addr(DISPATCH)).getFlowOverride());
+	}
+
+	/** w_ct's shape (grm-hf5h.33): the flagged routine is a later table entry, not the first. */
+	@Test
+	public void dispatchStoppedByALaterEntryGetsItsFallThroughBack() throws Exception {
+		stoppedDispatch("00 82 00 81", HELPER, HELPER, BOOT);
+
+		assertEquals(1, repair());
+		assertEquals(FlowOverride.NONE, instructionAt(addr(DISPATCH)).getFlowOverride());
+		assertNotNull(program.getListing().getInstructionAt(addr(DISPATCH + 3)));
+	}
+
+	/** An override with none of this analyzer's flagged functions among its targets is not ours. */
+	@Test
+	public void dispatchWithNoFlaggedTargetIsLeftAlone() throws Exception {
+		stoppedDispatch("00 82 00 82", HELPER, HELPER);
+
+		assertEquals(0, repair());
+		assertEquals(FlowOverride.CALL_RETURN, instructionAt(addr(DISPATCH)).getFlowOverride());
+	}
+
+	/** The function-modifier analyzer finds the dispatch from the flagged function's entry. */
+	@Test
+	public void repairAnalyzerFindsTheDispatchFromTheFlaggedEntry() throws Exception {
+		stoppedDispatch("00 82 00 81", HELPER, HELPER, BOOT);
+
+		int tx = program.startTransaction("modifiers");
+		try {
+			assertTrue(new W65816NoReturnDispatchRepairAnalyzer().added(program,
+				new ghidra.program.model.address.AddressSet(addr(BOOT)), TaskMonitor.DUMMY,
+				new ghidra.app.util.importer.MessageLog()));
+		}
+		finally {
+			program.endTransaction(tx, true);
+		}
+		assertEquals(FlowOverride.NONE, instructionAt(addr(DISPATCH)).getFlowOverride());
+		assertNotNull(program.getListing().getInstructionAt(addr(DISPATCH + 3)));
 	}
 
 	@Test

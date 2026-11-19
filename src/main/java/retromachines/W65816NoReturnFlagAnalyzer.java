@@ -84,8 +84,10 @@ public class W65816NoReturnFlagAnalyzer extends AbstractAnalyzer {
 		setPriority(AnalysisPriority.CODE_ANALYSIS.after().after());
 		// OFF until the scan's soundness is settled (grm-hf5h.27): on w_ff3 it flags ee0eab,
 		// whose callers expect it to return (PHP/PHB/JSR/PLB/PLP), and how it gets back is open
-		// (docs/human-research-todo.md 1.1). Enabled, the snes-analysis rows move w_ff3 (-4
-		// instrs, the ee7576 cut) and w_ct (-14 instrs, Disassembler dispatch cuts).
+		// (docs/human-research-todo.md 1.1). Enabled, the snes-analysis rows move only w_ff3 (-4
+		// instrs, the ee7576 cut); w_ct's -14 (six dispatches stopped by stock
+		// CallFixupChangeAnalyzer) is given back by W65816NoReturnDispatchRepairAnalyzer
+		// (grm-hf5h.33).
 		setDefaultEnablement(false);
 		setSupportsOneTimeAnalysis();
 	}
@@ -104,26 +106,29 @@ public class W65816NoReturnFlagAnalyzer extends AbstractAnalyzer {
 		int repaired = repairDispatchCalls(program, set, monitor);
 		if (repaired > 0) {
 			AnalyzerLog.info(this, "gave back the fall-through of " + repaired + " dispatch " +
-				"call(s) Ghidra stopped because their table's first slot is a flagged function " +
-				"(grm-hf5h.27)");
+				"call(s) Ghidra stopped because a table entry is a flagged function " +
+				"(grm-hf5h.27, grm-hf5h.33)");
 		}
 		return true;
 	}
 
 	/**
-	 * Undoes Ghidra's Disassembler stopping a dispatch call because of this analyzer's flag
-	 * (grm-hf5h.27). When it decodes a call through an indirect operand, the Disassembler
-	 * ({@code Disassembler.java:1331} at 12.2) asks {@code getReferencedFunction} of the
-	 * operand's address -- which reads only the table's FIRST slot -- and sets
-	 * {@code CALL_RETURN} on the whole call if that one function is no-return. On w_ct that cut
-	 * real code after six {@code JSR ($xxxx,X)} dispatches ({@code c05ab1}: a loop and an
-	 * {@code RTS}). A computed call carrying {@code CALL_RETURN} whose referenced function is
-	 * one this analyzer flagged, and one of whose resolved targets is not flagged, gets its
-	 * fall-through back, decoded at the call's E/M/X. Another analyzer's override (no flagged
-	 * first slot) is left alone.
-	 * <p>
-	 * UNPROVEN ON A REAL ROM: unit-tested, but on w_ct it repaired none of the six sites
-	 * (grm-hf5h.33 has the open question of why).
+	 * Gives back the fall-through of a dispatch call Ghidra stopped because ONE of its targets is
+	 * a function this analyzer flagged (grm-hf5h.27, grm-hf5h.33). Two stock paths do it:
+	 * <ul>
+	 * <li>{@code CallFixupChangeAnalyzer.setNoFallThru}, on the flag change itself, puts
+	 * {@code CALL_RETURN} on every instruction holding a CALL reference to the flagged function
+	 * -- including a computed call for which it is one table entry among many. This is what cut
+	 * w_ct's six {@code JSR ($xxxx,X)} dispatches ({@code c05ab1}: a loop and an {@code RTS});
+	 * {@link W65816NoReturnDispatchRepairAnalyzer} runs this right after it.</li>
+	 * <li>The Disassembler ({@code Disassembler.java:1331} at 12.2), decoding a call through an
+	 * indirect operand, asks {@code getReferencedFunction} of the table address -- its FIRST
+	 * slot only -- and stops the call if that function is no-return.</li>
+	 * </ul>
+	 * A computed call carrying {@code CALL_RETURN} gets its fall-through back, decoded at the
+	 * call's E/M/X, when this analyzer's flag is the evidence (a flow target or the table's first
+	 * slot carries its bookmark) and one of its resolved targets is not no-return. Another
+	 * analyzer's override (no target of ours) is left alone.
 	 */
 	static int repairDispatchCalls(Program program, AddressSetView set, TaskMonitor monitor)
 			throws CancelledException {
@@ -137,22 +142,16 @@ public class W65816NoReturnFlagAnalyzer extends AbstractAnalyzer {
 				call.getFlowOverride() != FlowOverride.CALL_RETURN) {
 				continue;
 			}
-			Function first = firstSlotFunction(program, call);
-			if (first != null && first.isThunk()) {
-				first = first.getThunkedFunction(true);   // a thunk reports its target's flag
-			}
-			if (first == null || !hasOwnBookmark(program, first.getEntryPoint())) {
-				continue;
-			}
+			boolean ours = flaggedHere(program, firstSlotFunction(program, call));
 			boolean returning = false;
 			for (Address t : call.getFlows()) {
 				Function callee = fm.getFunctionAt(t);
+				ours |= flaggedHere(program, callee);
 				if (callee == null || !callee.hasNoReturn()) {
 					returning = true;
-					break;
 				}
 			}
-			if (returning) {
+			if (ours && returning) {
 				resume.plan(program, call, 0);
 				sites++;
 			}
@@ -221,6 +220,14 @@ public class W65816NoReturnFlagAnalyzer extends AbstractAnalyzer {
 			candidates = new ArrayList<>(callers);
 		}
 		return flagged;
+	}
+
+	/** Whether {@code fn} (or the function a thunk reaches) carries this analyzer's flag. */
+	static boolean flaggedHere(Program program, Function fn) {
+		if (fn != null && fn.isThunk()) {
+			fn = fn.getThunkedFunction(true);   // a thunk reports its target's flag
+		}
+		return fn != null && fn.hasNoReturn() && hasOwnBookmark(program, fn.getEntryPoint());
 	}
 
 	private static boolean hasOwnBookmark(Program program, Address entry) {
