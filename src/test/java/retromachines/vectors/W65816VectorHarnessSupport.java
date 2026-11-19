@@ -335,9 +335,10 @@ final class W65816VectorHarnessSupport {
 		Register ctxMf = language.getRegister("ctx_MF");
 		Register ctxXf = language.getRegister("ctx_XF");
 		Register ctxEf = language.getRegister("ctx_EF");
-		if (ctxMf == null || ctxXf == null || ctxEf == null) {
+		if (ctxMf == null || ctxXf == null || ctxEf == null ||
+			language.getRegister("ctx_DF") == null) {
 			throw new IllegalStateException("language " + language.getLanguageID() +
-				" is missing one of ctx_MF/ctx_XF/ctx_EF");
+				" is missing one of ctx_MF/ctx_XF/ctx_EF/ctx_DF");
 		}
 		AddressSpace space = language.getAddressFactory().getDefaultAddressSpace();
 
@@ -370,13 +371,14 @@ final class W65816VectorHarnessSupport {
 		Register ctxMf = language.getRegister("ctx_MF");
 		Register ctxXf = language.getRegister("ctx_XF");
 		Register ctxEf = language.getRegister("ctx_EF");
-		runner.withContextProvider(c -> contextFor(ctxMf, ctxXf, ctxEf, p, e));
+		Register ctxDf = language.getRegister("ctx_DF");
+		runner.withContextProvider(c -> contextFor(ctxMf, ctxXf, ctxEf, ctxDf, p, e));
 	}
 
 	/** Derives the per-case decode context from {@code currentCaseP}/{@code currentCaseE} --
 	 *  see the class doc's CONTEXT section for the emulation-mode forcing decision. */
 	private static RegisterValue contextFor(Register ctxMf, Register ctxXf, Register ctxEf,
-			int p, int e) {
+			Register ctxDf, int p, int e) {
 		int mf;
 		int xf;
 		if (e != 0) {
@@ -390,6 +392,9 @@ final class W65816VectorHarnessSupport {
 		RegisterValue rv = new RegisterValue(ctxMf, BigInteger.valueOf(mf));
 		rv = rv.combineValues(new RegisterValue(ctxXf, BigInteger.valueOf(xf)));
 		rv = rv.combineValues(new RegisterValue(ctxEf, BigInteger.valueOf(e)));
+		// grm-hf5h.31: ADC/SBC decode their decimal arm only under ctx_DF=1, so the case's D bit
+		// (P bit 3, live in emulation mode too) selects the body the oracle's decimal cases need.
+		rv = rv.combineValues(new RegisterValue(ctxDf, BigInteger.valueOf((p >> 3) & 1)));
 		return rv;
 	}
 
@@ -710,6 +715,7 @@ final class W65816VectorHarnessSupport {
 		Register ctxMf = mnemonicLanguage.getRegister("ctx_MF");
 		Register ctxXf = mnemonicLanguage.getRegister("ctx_XF");
 		Register ctxEf = mnemonicLanguage.getRegister("ctx_EF");
+		Register ctxDf = mnemonicLanguage.getRegister("ctx_DF");
 		Address end = addr.add(Math.max(lengthBytes, 1) - 1);
 		ProgramContext ctx = mnemonicProgram.getProgramContext();
 		int tx = mnemonicProgram.startTransaction("set 65816 mnemonic context");
@@ -718,6 +724,7 @@ final class W65816VectorHarnessSupport {
 			ctx.setValue(ctxMf, addr, end, BigInteger.valueOf(mf));
 			ctx.setValue(ctxXf, addr, end, BigInteger.valueOf(xf));
 			ctx.setValue(ctxEf, addr, end, BigInteger.valueOf(e));
+			ctx.setValue(ctxDf, addr, end, BigInteger.valueOf((p >> 3) & 1));
 			commit = true;
 		}
 		catch (Exception ex) {

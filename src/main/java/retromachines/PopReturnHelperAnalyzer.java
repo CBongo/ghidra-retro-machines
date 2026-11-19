@@ -250,7 +250,7 @@ public class PopReturnHelperAnalyzer extends AbstractAnalyzer {
 			Address target = after.add(skip);
 			if (W65816WidthEffects.applies(program)) {
 				Map<Register, BigInteger> flags = new LinkedHashMap<>();
-				for (String name : new String[] { "ctx_EF", "ctx_MF", "ctx_XF" }) {
+				for (String name : new String[] { "ctx_EF", "ctx_MF", "ctx_XF", "ctx_DF" }) {
 					Register reg = program.getRegister(name);
 					BigInteger v = call.getValue(reg, false);
 					if (v != null) {

@@ -98,6 +98,7 @@ final class W65816WidthEffects {
 	private final Register ctxE;
 	private final Register ctxM;
 	private final Register ctxX;
+	private final Register ctxD;
 	private final Map<Address, Effect> cache = new HashMap<>();
 	/** Entries whose walk is on the stack, so a recursive call is not walked again. */
 	private final Set<Address> inProgress = new HashSet<>();
@@ -107,6 +108,7 @@ final class W65816WidthEffects {
 		this.ctxE = program.getRegister("ctx_EF");
 		this.ctxM = program.getRegister("ctx_MF");
 		this.ctxX = program.getRegister("ctx_XF");
+		this.ctxD = program.getRegister("ctx_DF");
 	}
 
 	/** Whether the program's language carries the 65816 width context this class reads. */
@@ -125,6 +127,11 @@ final class W65816WidthEffects {
 
 	Register xRegister() {
 		return ctxX;
+	}
+
+	/** The decimal-mode decode flag (grm-hf5h.31), or null in a language without it. */
+	Register dRegister() {
+		return ctxD;
 	}
 
 	/** The value of a context flag at an instruction, or -1 when it has none. */

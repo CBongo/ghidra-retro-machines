@@ -567,7 +567,7 @@ public class SpcUploadRecovery {
 		Integer pendingE;
 		Integer pendingM;
 		Integer pendingX;
-		Register rS, rCF, rNF, rVF, rDF, rIF, rZF, rMF, rXF, rEF;
+		Register rS, rCF, rNF, rVF, rDF, rIF, rZF, rMF, rXF, rEF, rCtxDF;
 
 		Session(ProvenanceLog log) {
 			this.log = log;
@@ -581,6 +581,7 @@ public class SpcUploadRecovery {
 			rMF = lang.getRegister("ctx_MF");
 			rXF = lang.getRegister("ctx_XF");
 			rEF = lang.getRegister("ctx_EF");
+			rCtxDF = lang.getRegister("ctx_DF");
 		}
 
 		Stop run(Strategy strategy, Address uploaderEntry, long fuel, long wallMillis,
@@ -837,6 +838,12 @@ public class SpcUploadRecovery {
 		@Override
 		public void afterExecuteInstruction(PcodeThread<byte[]> t, Instruction ins) {
 			ipl.instructionBoundary(lastPc, steps + 1);
+			// grm-hf5h.31: ADC/SBC decode their decimal arm only under ctx_DF=1, and the emulator
+			// has no flow to carry it, so keep the decode flag equal to the live D register.
+			int d = reg(t, rDF) & 1;
+			if (ctx(t, rCtxDF) != d) {
+				t.overrideContext(t.getContext().assign(rCtxDF, BigInteger.valueOf(d)));
+			}
 			if (pendingE != null) {
 				RegisterValue c = t.getContext();
 				c = c.assign(rEF, BigInteger.valueOf(pendingE));

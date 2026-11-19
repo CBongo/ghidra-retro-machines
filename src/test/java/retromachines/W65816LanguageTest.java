@@ -211,6 +211,58 @@ public class W65816LanguageTest extends AbstractBundledLanguageTest {
 			pcodeText(cpy), readsRegister(cpy, "Y"));
 	}
 
+	/** grm-hf5h.31: with D provably 0 (the default), ADC/SBC carry no runtime decimal branch. */
+	@Test
+	public void adcSbcHaveNoDecimalBranchByDefault() throws Exception {
+		builder.setBytes("0x8000", "69 01 e9 01", true); // ADC #1 ; SBC #1
+		assertFalse("ADC branches at runtime with D=0", hasBranch(at("0x8000")));
+		assertFalse("SBC branches at runtime with D=0", hasBranch(at("0x8002")));
+	}
+
+	/** SED sets ctx_DF for what follows; CLD clears it again. */
+	@Test
+	public void sedCldFlowTheDecimalDecodeFlag() throws Exception {
+		builder.setBytes("0x8000", "f8 69 01 e9 01 d8 69 01 e9 01", true);
+		assertEquals("ADC", at("0x8001").getMnemonicString());
+		assertTrue("ADC after SED must keep the decimal branch", hasBranch(at("0x8001")));
+		assertTrue("SBC after SED must keep the decimal branch", hasBranch(at("0x8003")));
+		assertFalse("ADC after CLD is binary only", hasBranch(at("0x8006")));
+		assertFalse("SBC after CLD is binary only", hasBranch(at("0x8008")));
+	}
+
+	/** REP/SEP bit 3 is D, in native and in emulation mode. */
+	@Test
+	public void repSepBitThreeFlowTheDecimalDecodeFlag() throws Exception {
+		for (int ef = 0; ef <= 1; ef++) {
+			setContext("0x8000", "0x8020", "ctx_EF", ef);
+			builder.setBytes("0x8000", "e2 08 69 01 c2 08 69 01 e2 18 69 01 c2 20 69 01", true);
+			assertTrue("ADC after SEP #$08 (E=" + ef + ")", hasBranch(at("0x8002")));
+			assertFalse("ADC after REP #$08 (E=" + ef + ")", hasBranch(at("0x8006")));
+			assertTrue("ADC after SEP #$18 (E=" + ef + ")", hasBranch(at("0x800a")));
+			// REP #$20 leaves D alone (and, in native mode, widens ADC #imm to 16 bits).
+			Instruction adc = at("0x800e");
+			assertNotNull(adc);
+			assertTrue("REP #$20 must not touch D (E=" + ef + ")", hasBranch(adc));
+			inTx(program, "clear", () -> program.getListing()
+					.clearCodeUnits(builder.addr("0x8000"), builder.addr("0x8020"), false));
+		}
+	}
+
+	private Instruction at(String addr) {
+		Instruction instruction = program.getListing().getInstructionAt(builder.addr(addr));
+		assertNotNull("no instruction at " + addr, instruction);
+		return instruction;
+	}
+
+	private static boolean hasBranch(Instruction instruction) {
+		for (PcodeOp op : instruction.getPcode()) {
+			if (op.getOpcode() == PcodeOp.CBRANCH) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	private void setContext(String start, String end, String field, int value) throws Exception {
 		Register register = program.getLanguage().getRegister(field);
 		assertNotNull("no context field named " + field, register);

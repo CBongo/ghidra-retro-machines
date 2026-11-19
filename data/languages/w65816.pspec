@@ -33,6 +33,7 @@
       <set name="ctx_EF" val="1" description="1 = emulation mode, the state a 65816 resets into"/>
       <set name="ctx_MF" val="1" description="1 = 8-bit accumulator (forced in emulation mode)"/>
       <set name="ctx_XF" val="1" description="1 = 8-bit index registers (forced in emulation mode)"/>
+      <set name="ctx_DF" val="0" description="0 = decimal mode off; reset and interrupt entry clear D (grm-hf5h.31)"/>
     </context_set>
   </context_data>
 

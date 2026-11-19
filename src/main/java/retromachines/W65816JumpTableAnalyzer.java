@@ -1509,7 +1509,7 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 	/** E/M/X at the dispatch. */
 	static Map<Register, Integer> context(Program program, Instruction site) {
 		Map<Register, Integer> ctx = new LinkedHashMap<>();
-		for (String name : new String[] { "ctx_EF", "ctx_MF", "ctx_XF" }) {
+		for (String name : new String[] { "ctx_EF", "ctx_MF", "ctx_XF", "ctx_DF" }) {
 			Register reg = program.getRegister(name);
 			BigInteger v = site.getValue(reg, false);
 			if (v != null) {
@@ -1570,6 +1570,9 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 		StringBuilder sb = new StringBuilder();
 		for (Map.Entry<Register, Integer> c : ctx.entrySet()) {
 			String n = c.getKey().getName();
+			if (n.equals("ctx_DF")) {
+				continue;   // grm-hf5h.31: carried to targets, but not part of the width text
+			}
 			sb.append(sb.length() == 0 ? "" : " ")
 					.append(n.equals("ctx_EF") ? "E" : n.equals("ctx_MF") ? "M" : "X")
 					.append('=').append(c.getValue());

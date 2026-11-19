@@ -702,6 +702,8 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 				nativeMode ? BigInteger.ZERO : BigInteger.ONE);
 			context.setValue(program.getRegister("ctx_MF"), entry, entry, BigInteger.ONE);
 			context.setValue(program.getRegister("ctx_XF"), entry, entry, BigInteger.ONE);
+			// Interrupt entry clears D (grm-hf5h.31); written explicitly like the others.
+			context.setValue(program.getRegister("ctx_DF"), entry, entry, BigInteger.ZERO);
 		}
 		catch (ContextChangeException e) {
 			log.appendMsg(NAME + ": could not stamp the mode context at " + entry + ": " +

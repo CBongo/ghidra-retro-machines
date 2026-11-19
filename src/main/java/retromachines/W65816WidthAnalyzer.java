@@ -332,8 +332,16 @@ public class W65816WidthAnalyzer extends AbstractAnalyzer {
 			}
 			W65816WidthEffects.Effect k = effects.effect(cont);
 			Map<Register, Integer> stamp = new LinkedHashMap<>();
-			for (Register reg : new Register[] { effects.mRegister(), effects.xRegister() }) {
-				boolean needs = reg.equals(effects.mRegister()) ? k.m().needs() : k.x().needs();
+			Register dReg = effects.dRegister();
+			List<Register> regs = new ArrayList<>(List.of(effects.mRegister(), effects.xRegister()));
+			if (dReg != null) {
+				regs.add(dReg);
+			}
+			for (Register reg : regs) {
+				// D (grm-hf5h.31) changes only how ADC/SBC decode, never an instruction's length, so
+				// it is restored whenever the saved value is known, not only when "needed".
+				boolean needs = reg.equals(dReg) || (reg.equals(effects.mRegister())
+					? k.m().needs() : k.x().needs());
 				Set<Integer> savedValues = new LinkedHashSet<>();
 				for (Instruction php : phps) {
 					savedValues.add(effects.flag(php, reg));
@@ -702,7 +710,7 @@ public class W65816WidthAnalyzer extends AbstractAnalyzer {
 			String which = "";
 			for (Map.Entry<Register, Integer> s : stamp.entrySet()) {
 				if (src == null || effects.flag(src, s.getKey()) != s.getValue()) {
-					which += s.getKey().equals(effects.mRegister()) ? "M" : "X";
+					which += s.getKey().equals(effects.mRegister()) ? "M" : s.getKey().equals(effects.xRegister()) ? "X" : "D";
 				}
 			}
 			if (!which.isEmpty()) {
@@ -761,8 +769,11 @@ public class W65816WidthAnalyzer extends AbstractAnalyzer {
 		// cleared, then override only the flags being repaired.
 		Instruction callInstr = program.getListing().getInstructionAt(caller);
 		Map<Register, Integer> full = new LinkedHashMap<>();
-		for (String name : new String[] { "ctx_EF", "ctx_MF", "ctx_XF" }) {
+		for (String name : new String[] { "ctx_EF", "ctx_MF", "ctx_XF", "ctx_DF" }) {
 			Register reg = program.getRegister(name);
+			if (reg == null) {
+				continue;
+			}
 			BigInteger v = callInstr == null ? null : callInstr.getValue(reg, false);
 			if (v != null) {
 				full.put(reg, v.intValue());
@@ -772,7 +783,8 @@ public class W65816WidthAnalyzer extends AbstractAnalyzer {
 		// Clear first: ClearCmd clears register (context) values in the range too, so a stamp
 		// written before it would be wiped -- and so would every flag NOT stamped, which then
 		// reads as the pspec default (emulation mode, 8-bit index) and mis-decodes the index
-		// immediates instead (measured on CT $C1:03B2). Hence all three flags are written. No
+		// immediates instead (measured on CT $C1:03B2). Hence every flag is written (ctx_DF too,
+		// grm-hf5h.31: a wiped D would silently drop the decimal arm of ADC/SBC). No
 		// repair pass: it would re-parse the call and flow its stale context straight back in.
 		new ClearFlowAndRepairCmd(cont, false, false, false).applyTo(program, monitor);
 		for (Map.Entry<Register, Integer> s : full.entrySet()) {
