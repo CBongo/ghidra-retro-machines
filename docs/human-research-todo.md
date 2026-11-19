@@ -43,7 +43,24 @@ bash tools/banktest/realrom-test.sh nominate <romdir>   # board-gap survey
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
-_No open items._
+### 1.1 FF3 `$EE:0EAB`: how does it return? (`grm-hf5h.27`)
+
+`W65816NoReturnFlagAnalyzer` (committed default-OFF) flags a 65816 function no-return when a
+structural scan finds no path to `RTS`/`RTL`/`RTI`, stepping over every call as if it returns.
+On w_ff3 it flags `ee0eab` (force blank, NMI off, clear `$7E:620E`, then a loop through
+`JMP $EE0F4B` / `JMP $EE10A4`, 251 instructions, no reachable return). But its caller
+`ee7574` does `PHP / PHB / JSR $0EAB / PLB / PLP / SEP #$20 / JMP $EE7093`, the same shape as
+its sibling `ee7568`'s `JSR $1186`, which returns, so the game expects it back. Its five direct
+callees (`ee165f`, `ee3a80`, `ee40f0`, `eeac18`, `eeaca1`) contain no `TXS` and no stray pull.
+
+- **Ask:** does execution ever reach `$EE:7579` (the `PLB` after the call)? If so, what is the
+  path out of `ee0eab`: a deeper callee that pops past its own frame or reloads `S`, an
+  interrupt that rewrites the stacked return, or code the listing does not show?
+- **Why it matters:** the answer picks the scan's hardening rule. A callee that unwinds its
+  caller's frame means only W65816ReturnProof-proven callees may be stepped over (likely losing
+  the FF3 boot routine `c00019` as a flag). An interrupt-driven exit means no static scan can be
+  trusted on such loops. If `$7579` is never reached, the flag is right and the analyzer can be
+  turned on as is.
 
 ---
 

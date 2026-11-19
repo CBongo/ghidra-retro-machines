@@ -1162,7 +1162,7 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 		 * already flagged the function (or the function a thunk reaches) no-return, or when a
 		 * structural scan of every path from {@code a} -- calls stepped over, jumps, branches, tail
 		 * calls and resolved computed jumps followed -- reaches no return. A computed jump with no
-		 * resolved target, a missing instruction, or more than {@link #EPILOGUE_SCAN} instructions
+		 * resolved target, a missing instruction, or more than {@link W65816NoReturnProof#MAX_SCAN} instructions
 		 * proves nothing either way.
 		 *
 		 * <p>The scan goes first and Ghidra's flag only breaks a tie (grm-hf5h.30): a scan that
@@ -1171,11 +1171,11 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 		 * caller's DP; the flag turns every {@code JSR} to it into a CALL_TERMINATOR, and the
 		 * one-JSR "thunks" Ghidra then makes of them ({@code thunk_FUN_c3072d@c315aa}) were judged
 		 * UNKNOWN while the decompiler gave them the target's {@code __dp_preserved}. Writes no
-		 * flag: setting Ghidra's no-return flag is a separate bead (grm-hf5h.27).
+		 * flag: {@link W65816NoReturnFlagAnalyzer} does (grm-hf5h.27).
 		 */
 		private boolean neverReturns(Address a) {
 			return noReturn.computeIfAbsent(a, t -> {
-				Boolean scanned = scanNoReturn(t);
+				Boolean scanned = W65816NoReturnProof.neverReturns(program, t);
 				if (scanned != null) {
 					return scanned;
 				}
@@ -1185,51 +1185,6 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				}
 				return fn != null && fn.hasNoReturn();
 			});
-		}
-
-		/** True: no path returns; false: some path reaches a return; null: proves nothing. */
-		private Boolean scanNoReturn(Address a) {
-			Set<Address> seen = new HashSet<>();
-			ArrayDeque<Address> work = new ArrayDeque<>();
-			seen.add(a);
-			work.add(a);
-			boolean unproven = false;
-			while (!work.isEmpty()) {
-				if (seen.size() > EPILOGUE_SCAN) {
-					return null;
-				}
-				Instruction i = program.getListing().getInstructionAt(work.poll());
-				if (i == null) {
-					unproven = true;   // keep looking: a return elsewhere still refutes the flag
-					continue;
-				}
-				String mn = i.getMnemonicString().toUpperCase(Locale.ROOT);
-				if (mn.equals("RTS") || mn.equals("RTL") || mn.equals("RTI")) {
-					return false;
-				}
-				var ft = i.getFlowType();
-				List<Address> next = new ArrayList<>();
-				if (ft.isCall()) {
-					if (ft.isTerminal()) {
-						next.addAll(List.of(i.getFlows()));   // a tail call (CALL_RETURN override)
-					}
-				}
-				else {
-					if (ft.isComputed() && i.getFlows().length == 0) {
-						unproven = true;
-					}
-					next.addAll(List.of(i.getFlows()));
-				}
-				if (!ft.isTerminal() && i.getFallThrough() != null) {
-					next.add(i.getFallThrough());
-				}
-				for (Address n : next) {
-					if (seen.add(n)) {
-						work.add(n);
-					}
-				}
-			}
-			return unproven ? null : Boolean.TRUE;
 		}
 
 		/** A summary computed while leaning on assumptions about in-progress targets. */

@@ -356,13 +356,13 @@ public class PopReturnHelperAnalyzer extends AbstractAnalyzer {
 	}
 
 	/** Code there that nothing else reaches: the false decode after a call. */
-	private static boolean clearable(Program program, Address addr) {
+	static boolean clearable(Program program, Address addr) {
 		return !hasFlowRefInto(program, addr) &&
 			!program.getSymbolTable().isExternalEntryPoint(addr) &&
 			program.getListing().getInstructionAt(addr) != null;
 	}
 
-	private static void clearFlows(Program program, AddressSet clear, TaskMonitor monitor) {
+	static void clearFlows(Program program, AddressSet clear, TaskMonitor monitor) {
 		if (!clear.isEmpty()) {
 			AddressSetView protectedSet =
 				AutoAnalysisManager.getAnalysisManager(program).getProtectedLocations();

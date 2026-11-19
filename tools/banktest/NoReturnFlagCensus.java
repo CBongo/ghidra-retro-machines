@@ -24,7 +24,10 @@
 //
 // Output: `NRFC fn <entry> stock=<y|n> thunk=<y|n> calls=<n> returns=<kinds> features=<...>`,
 // then `NRFC   <addr> <instr> <flowtype>` for the first GRM_NRFC_LINES (default 16)
-// instructions, and `NRFC total flagged=<n> stock=<n> reachesReturn=<n>`.
+// instructions, and `NRFC total flagged=<n> stock=<n> reachesReturn=<n>`. Then every call that
+// does not fall through (`NRFC stopped`), and every call into a flagged function whose
+// fall-through Ghidra never decoded (`NRFC undecodedAfter`, grm-hf5h.27; the Disassembler skips
+// it without an override), with a pseudo-disassembly of the bytes that follow.
 
 import java.util.ArrayDeque;
 import java.util.HashSet;
@@ -105,6 +108,54 @@ public class NoReturnFlagCensus extends GhidraScript {
 			println("NRFC stopped " + e.getKey() + " sites=" + e.getValue());
 		}
 		println("NRFC total stoppedCalls=" + stoppedTotal);
+		undecodedAfterFlaggedCalls();
+	}
+
+	/**
+	 * Calls into a flagged function that still fall through but whose fall-through was never
+	 * decoded (grm-hf5h.27): Ghidra's Disassembler does not follow the fall-through of a call to
+	 * a no-return function it meets later, without setting any override, so the stopped-call
+	 * list above cannot see these. Each is shown with a pseudo-disassembly of what follows, to
+	 * judge whether the bytes skipped look like code.
+	 */
+	private void undecodedAfterFlaggedCalls() {
+		int sites = 0;
+		ghidra.app.util.PseudoDisassembler pseudo =
+			new ghidra.app.util.PseudoDisassembler(currentProgram);
+		for (Function fn : currentProgram.getFunctionManager().getFunctions(true)) {
+			if (!fn.hasNoReturn() || fn.isExternal()) {
+				continue;
+			}
+			for (Reference r : getReferencesTo(fn.getEntryPoint())) {
+				Instruction call = getInstructionAt(r.getFromAddress());
+				if (!r.getReferenceType().isCall() || call == null ||
+					!call.getFlowType().hasFallthrough() || call.getFallThrough() == null ||
+					getInstructionAt(call.getFallThrough()) != null) {
+					continue;
+				}
+				sites++;
+				StringBuilder next = new StringBuilder();
+				Address at = call.getFallThrough();
+				for (int n = 0; at != null && n < 6; n++) {
+					try {
+						ghidra.app.util.PseudoInstruction pi = pseudo.disassemble(at);
+						if (pi == null) {
+							next.append(" | ?");
+							break;
+						}
+						next.append(" | ").append(pi);
+						at = pi.getFallThrough();
+					}
+					catch (Exception e) {
+						next.append(" | ?");
+						break;
+					}
+				}
+				println("NRFC undecodedAfter " + call.getAddress() + " " + call + " -> " +
+					fn.getEntryPoint() + " next" + next);
+			}
+		}
+		println("NRFC total undecodedAfter=" + sites);
 	}
 
 	private void scan(Address entry, Set<String> returns, Set<String> features) {
