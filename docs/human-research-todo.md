@@ -43,24 +43,7 @@ bash tools/banktest/realrom-test.sh nominate <romdir>   # board-gap survey
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
-### 1.1 FF3 `$EE:0EAB`: how does it return? (`grm-hf5h.27`)
-
-`W65816NoReturnFlagAnalyzer` (committed default-OFF) flags a 65816 function no-return when a
-structural scan finds no path to `RTS`/`RTL`/`RTI`, stepping over every call as if it returns.
-On w_ff3 it flags `ee0eab` (force blank, NMI off, clear `$7E:620E`, then a loop through
-`JMP $EE0F4B` / `JMP $EE10A4`, 251 instructions, no reachable return). But its caller
-`ee7574` does `PHP / PHB / JSR $0EAB / PLB / PLP / SEP #$20 / JMP $EE7093`, the same shape as
-its sibling `ee7568`'s `JSR $1186`, which returns, so the game expects it back. Its five direct
-callees (`ee165f`, `ee3a80`, `ee40f0`, `eeac18`, `eeaca1`) contain no `TXS` and no stray pull.
-
-- **Ask:** does execution ever reach `$EE:7579` (the `PLB` after the call)? If so, what is the
-  path out of `ee0eab`: a deeper callee that pops past its own frame or reloads `S`, an
-  interrupt that rewrites the stacked return, or code the listing does not show?
-- **Why it matters:** the answer picks the scan's hardening rule. A callee that unwinds its
-  caller's frame means only W65816ReturnProof-proven callees may be stepped over (likely losing
-  the FF3 boot routine `c00019` as a flag). An interrupt-driven exit means no static scan can be
-  trusted on such loops. If `$7579` is never reached, the flag is right and the analyzer can be
-  turned on as is.
+_(None open.)_
 
 ---
 
@@ -252,6 +235,7 @@ Agents don't write into your ROM library or other personal directories.
 
 | question | answer | bead |
 |---|---|---|
+| FF3 `$EE:0EAB` (1.1): how does it return? The no-return flagger flags it, but caller `ee7574` (`PHP / PHB / JSR $0EAB / PLB / PLP / ...`) looks like it expects it back. | **It does not appear to exit, and it does not matter: it is a cutscene handler cut from the game, so it never runs (owner, 2026-11-19).** By the item's own rule the flag is right in effect and `W65816NoReturnFlagAnalyzer` can be turned on as is; losing the dead fall-through after `ee7574`'s call (w_ff3 -4 at `ee7576`) is acceptable. **Do not harden `W65816NoReturnProof` to step over only `W65816ReturnProof`-proven callees on this evidence, and do not hunt for `ee0eab`'s exit.** | `grm-hf5h.27` |
 | metroid_u fixed bank `ffd8` `JMP $B3E4` (asked in session, 2026-11-15): code or dead bytes? And is "known bank 0" enough for the unexpanded `c118`/`c1b8`/`c1d1` live-bank sites? | **Both fine as is (owner, 2026-11-15).** `ffd8` sits in `$ff` padding between the reset handler (ends `JMP $c01a` at `ffd2`) and the "METROID" tag; nothing in the 128K PRG reaches it, and `$B3E4` is a routine tail, not an entry. **Leave it as raw bytes, like `e5e0`; do not disassemble it or hunt for a reference.** The `c118`/`c1b8`/`c1d1` sites carry no live-bank-set comment because their state is the known in-set bank 0; **do not re-probe their dataflow state.** The bank-3 decode at `9f54` is real mid-routine code and stays. | `grm-gipk.27` |
 | WeaponLord `$E9:51C6`/`$51C8` (1.17): is the overlap-merged 3-entry table `37ce 51b7 5198` right? | **Right in effect; keep the overlap rule as is (owner, 2026-11-14).** Index 0 is never dispatched through `$51C6`: the branch at `$E9:6EAC` skips the `JMP ($51C6,X)` at `$E9:6EAF` when the index (loaded from `$5465`) is zero. So entry 0 is dead for that site, but `$E9:37CE` happens to be the start of a real function, so laying it as a target does no harm. **Do not add a stricter overlap test for this pair.** A zero-index guard that excludes entry 0 is a possible refinement, but only worth building if another title shows a dead entry 0 that is not code. | `grm-gipk.16.11` |
 | cv3 bank 20 `$8527` (1.18): how many entity types does the two-level dispatch's outer table really have? | **83, exactly what the recognizer lays (owner, 2026-11-14, from cyneprepou4uk/NES-Games-Disassembly `Castlevania 3/bank_94.asm`).** The type stored to `$07c2,X` is loaded from tables at `B2_a207`, whose values are at most `$52` = 82, so indices 0–82 fill `$8527`–`$85cc`. The bound that ends the table (the RAM word `$1960` at `$85cd`) coincides with the real type range. **Do not add a tighter outer bound for this table.** | `grm-gipk.23` |
