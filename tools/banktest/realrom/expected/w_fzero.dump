@@ -2,19 +2,19 @@
 REALROM program w_fzero.sfc
 REALROM sha256 bf16c3c867c58e2ab061c70de9295b6930d63f29f81cc986f5ecae03e0ad18d2
 REALROM language 65816:LE:24:retro
-REALROM instrs 16628
+REALROM instrs 16671
 REALROM functions 477
 REALROM ctx E0M0X0 1345
 REALROM ctx E0M0X1 3717
 REALROM ctx E0M1X0 1221
-REALROM ctx E0M1X1 10342
+REALROM ctx E0M1X1 10385
 REALROM ctx E1M1X1 3
 REALROM desync BRK 0
 REALROM desync COP 0
 REALROM desync STP 0
 REALROM desync WDM 0
 REALROM ops PHP 146
-REALROM ops PLP 173
+REALROM ops PLP 174
 REALROM ops REP 331
 REALROM ops RTI 1
 REALROM ops SEP 393
@@ -124,8 +124,8 @@ REALROM computed JMP (!$0xn) sites=3 withTargets=1
 REALROM computed JMP (!$0xn,X) sites=14 withTargets=14
 REALROM computed JSR (!$0xn,X) sites=3 withTargets=3
 REALROM computed RTI <UNSUPPORTn> sites=1 withTargets=0
-REALROM plp sites=173 paired=166 ambiguous=0 unpaired=7 stale=0
-REALROM dp operands=2561 known=1856 withRef=1856 knownWithRef=1856
+REALROM plp sites=174 paired=166 ambiguous=0 unpaired=8 stale=0
+REALROM dp operands=2568 known=1856 withRef=1856 knownWithRef=1856
 REALROM dp writer PLD sites=1 knownAfter=0
 REALROM dp writer TCD sites=2 knownAfter=2
 REALROM dp value 0000=1856

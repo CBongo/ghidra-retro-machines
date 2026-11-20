@@ -434,6 +434,66 @@ public class W65816DataBankTest extends AbstractProgramTest {
 			dbrAt(0x8208));
 	}
 
+	private void farCalls() throws Exception {
+		W65816FarCallContinuationAnalyzer a = new W65816FarCallContinuationAnalyzer();
+		assertTrue(a.canAnalyze(program));
+		inTx(program, "far calls", () -> a.added(program,
+			new AddressSet(addr(0x8000), addr(0x8fff)), TaskMonitor.DUMMY, new MessageLog()));
+	}
+
+	private int mAt(long at) {
+		return program.getListing().getInstructionAt(addr(at))
+				.getValue(program.getRegister("ctx_MF"), false).intValue();
+	}
+
+	@Test
+	public void aFarCallContinuationIsDecodedAtTheCalleesWidthAndWalked() throws Exception {
+		lay("0x8100", "e2 20 6b", "G");   // SEP #$20 ; RTL : returns with M=1
+		// F: PHK ; PER +3 (pushes $8007) ; JML G ; then, undecoded, at $8008:
+		// LDA #$7f (two bytes at M=1) ; PHA ; PLB ; RTS
+		lay("0x8000", "4b 62 03 00 5c 00 81 00", "F");
+		builder.setBytes("0x8008", "a9 7f 48 ab 60", false);
+		// C: PEA #$7e7e ; PLB ; PLB ; JSR F ; LDA $1234 ; RTS
+		lay("0x8200", "f4 7e 7e ab ab 20 00 80 " + LDA_1234 + " 60", "C");
+		farCalls();
+		assertNotNull("the continuation is decoded",
+			program.getListing().getInstructionAt(addr(0x8008)));
+		assertEquals("at the width G returns with", 1, mAt(0x8008));
+		assertEquals(2, program.getListing().getInstructionAt(addr(0x8008)).getLength());
+		assertEquals("RTS", program.getListing().getInstructionAt(addr(0x800c)).getMnemonicString());
+		analyze();
+		assertEquals("F returns the bank its continuation sets", Integer.valueOf(0x7f),
+			dbrAt(0x8208));
+	}
+
+	@Test
+	public void aFarCallIntoACalleeOfMixedWidthIsNotDecoded() throws Exception {
+		lay("0x8100", "f0 02 e2 20 6b", "G");   // BEQ +2 ; SEP #$20 ; RTL : M mixed on return
+		lay("0x8000", "4b 62 03 00 5c 00 81 00", "F");
+		builder.setBytes("0x8008", "a9 7f 48 ab 60", false);
+		farCalls();
+		assertNull(program.getListing().getInstructionAt(addr(0x8008)));
+	}
+
+	@Test
+	public void aPushedAddressOtherThanTheFallThroughIsNotDecoded() throws Exception {
+		lay("0x8100", "6b", "G");   // RTL
+		lay("0x8000", "4b 62 04 00 5c 00 81 00", "F");   // PER +4: returns to $8009, not $8008
+		builder.setBytes("0x8008", "ea ea ea 60", false);
+		farCalls();
+		assertNull(program.getListing().getInstructionAt(addr(0x8008)));
+		assertNull(program.getListing().getInstructionAt(addr(0x8009)));
+	}
+
+	@Test
+	public void aFarCallIntoAnRtsRoutineIsNotDecoded() throws Exception {
+		lay("0x8100", "60", "G");   // RTS: a PHK / PER push would be pulled wrongly
+		lay("0x8000", "4b 62 03 00 5c 00 81 00", "F");
+		builder.setBytes("0x8008", "ea 60", false);
+		farCalls();
+		assertNull(program.getListing().getInstructionAt(addr(0x8008)));
+	}
+
 	@Test
 	public void tdcPhaPlbTakesDpsLowByte() throws Exception {
 		// SEP #$20 ; TDC ; PHA ; PLB ; LDA $1234 ; RTS, with DP = $007e stamped at the TDC
