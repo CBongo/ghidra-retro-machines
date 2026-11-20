@@ -2,11 +2,11 @@
 REALROM program w_ff3.sfc
 REALROM sha256 10eccc5d2fab81346dd759f6be478dcb682eef981e8d3d662da176e1f9a996bc
 REALROM language 65816:LE:24:retro
-REALROM instrs 96696
+REALROM instrs 96692
 REALROM functions 3234
-REALROM ctx E0M0X0 20507
+REALROM ctx E0M0X0 20504
 REALROM ctx E0M0X1 4050
-REALROM ctx E0M1X0 63227
+REALROM ctx E0M1X0 63226
 REALROM ctx E0M1X1 8890
 REALROM ctx E1M1X1 22
 REALROM desync BRK 0
@@ -14,10 +14,10 @@ REALROM desync COP 0
 REALROM desync STP 0
 REALROM desync WDM 0
 REALROM ops PHP 230
-REALROM ops PLP 223
+REALROM ops PLP 222
 REALROM ops REP 2055
 REALROM ops RTI 12
-REALROM ops SEP 2061
+REALROM ops SEP 2060
 REALROM ops XCE 4
 REALROM bookmarks.error 12
 REALROM bookmark      4 Bad Instruction: Multiple flows produced inconsistent instruction prototype at # - possibly due to inconsistent context (flow from #)
@@ -129,7 +129,7 @@ REALROM computed JMP (!$0xn) sites=3 withTargets=2
 REALROM computed JMP (!$0xn,X) sites=54 withTargets=54
 REALROM computed JSR (!$0xn,X) sites=39 withTargets=38
 REALROM computed RTI <UNSUPPORTn> sites=12 withTargets=0
-REALROM plp sites=222 paired=218 ambiguous=0 unpaired=4 stale=0
+REALROM plp sites=221 paired=217 ambiguous=0 unpaired=4 stale=0
 REALROM dp operands=16284 known=8894 withRef=8894 knownWithRef=8894
 REALROM dp writer PLD sites=51 knownAfter=34
 REALROM dp writer TCD sites=3 knownAfter=3

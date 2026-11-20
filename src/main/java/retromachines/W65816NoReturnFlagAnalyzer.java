@@ -42,8 +42,8 @@ import ghidra.util.task.TaskMonitor;
  * Discovered" does for the functions it flags. Stock is off for SNES programs since grm-9nxj.39
  * (all three flags it set on the snes-analysis rows were wrong), so this is the only analyzer
  * that sets the flag on the 65816; scope is 65816-only by owner ruling (2026-11-18), 6502 is
- * grm-hf5h.32. <b>Disabled by default</b> until FF3 {@code ee0eab} settles whether the scan is
- * sound (see the constructor).
+ * grm-hf5h.32. <b>Enabled by default</b> (owner ruling 2026-11-19: FF3 {@code ee0eab} is a cut
+ * cutscene handler that never runs, so the flag is right in effect; see the constructor).
  * <p>
  * The test is {@link W65816NoReturnProof}'s structural scan, the one the DP summary already
  * trusts for tail jumps (grm-hf5h.26): every path from the entry is seen and none reaches
@@ -82,13 +82,14 @@ public class W65816NoReturnFlagAnalyzer extends AbstractAnalyzer {
 		// Late: after jump-table recovery, so a computed jump has all of its targets (one with
 		// only some resolved would hide a return from the scan).
 		setPriority(AnalysisPriority.CODE_ANALYSIS.after().after());
-		// OFF until the scan's soundness is settled (grm-hf5h.27): on w_ff3 it flags ee0eab,
-		// whose callers expect it to return (PHP/PHB/JSR/PLB/PLP), and how it gets back is open
-		// (docs/human-research-todo.md 1.1). Enabled, the snes-analysis rows move only w_ff3 (-4
+		// ON (owner ruling 2026-11-19, grm-hf5h.27): on w_ff3 it flags ee0eab, a cut cutscene
+		// handler that never runs; its caller ee7574 (PHP/PHB/JSR/PLB/PLP) expects a return, so
+		// the dead fall-through is lost (docs/human-research-todo.md, Answered table). The
+		// snes-analysis rows move only w_ff3 (-4
 		// instrs, the ee7576 cut); w_ct's -14 (six dispatches stopped by stock
 		// CallFixupChangeAnalyzer) is given back by W65816NoReturnDispatchRepairAnalyzer
 		// (grm-hf5h.33).
-		setDefaultEnablement(false);
+		setDefaultEnablement(true);
 		setSupportsOneTimeAnalysis();
 	}
 
