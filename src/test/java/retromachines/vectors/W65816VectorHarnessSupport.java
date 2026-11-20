@@ -155,7 +155,9 @@ final class W65816VectorHarnessSupport {
 	private static final Map<String, String> REGISTER_NAMES = new LinkedHashMap<>();
 	static {
 		REGISTER_NAMES.put("pc", "PC");
-		REGISTER_NAMES.put("s", "SP");
+		// grm-9nxj.44: the corpus's 16-bit S maps to S16, the low two bytes of the 3-byte SP
+		// (so the bank byte, SP's top byte, is 0 and is not compared); see unmodelledReason.
+		REGISTER_NAMES.put("s", "S16");
 		REGISTER_NAMES.put("a", "C");
 		REGISTER_NAMES.put("x", "X");
 		REGISTER_NAMES.put("y", "Y");
@@ -486,8 +488,14 @@ final class W65816VectorHarnessSupport {
 		int decodeBoundary = 0;
 		int bankWrap = 0;
 		int corpusDefect = 0;
+		int unmodelled = 0;
 		TreeSet<String> mismatchedFields = new TreeSet<>();
 		for (VectorCase raw : rawCases) {
+			// grm-9nxj.44: decided from the raw case alone, counted in the open, never scored.
+			if (unmodelledReason(opcodeHex, raw) != null) {
+				unmodelled++;
+				continue;
+			}
 			installContextFor(runner, runner.language(),
 				raw.initialRegs().getOrDefault("p", 0), raw.initialRegs().getOrDefault("e", 0));
 			VectorCase adapted = adapt(seedRealizableEmulationStack(raw));
@@ -524,11 +532,51 @@ final class W65816VectorHarnessSupport {
 				}
 			}
 		}
-		int total = rawCases.size() - decodeBoundary - bankWrap - corpusDefect;
+		int total = rawCases.size() - decodeBoundary - bankWrap - corpusDefect - unmodelled;
 		OpcodeBaseline.Status status =
 			passed == total ? OpcodeBaseline.Status.PASS : OpcodeBaseline.Status.FAIL;
 		return new OpcodeBaseline(rowKey, mnemonic, status, passed, total,
-			List.copyOf(mismatchedFields), decodeBoundary, bankWrap, corpusDefect);
+			List.copyOf(mismatchedFields), decodeBoundary, bankWrap, corpusDefect, unmodelled);
+	}
+
+	/**
+	 * Bead grm-9nxj.44: names the one case class the oracle gets right but this language
+	 * deliberately does not model, or returns null for a case that is compared. In NATIVE mode
+	 * hardware wraps S inside bank 0 (a push at $0000 continues at $FFFF, a pull past $FFFF
+	 * continues at $0000), while {@code SP} is a 3-byte register so the stock decompiler sees
+	 * {@code SP + c} as a stack reference; its arithmetic runs on to $FFFFFF / $010000 instead.
+	 * Exact wrap is bead grm-0mrf. Decided from the case alone: initial {@code e == 0} and
+	 * either the signed 16-bit change in S leaves [0, $FFFF] (push/pull; a lower bound, a
+	 * push-then-pull across the boundary is not caught) or, for the stack-relative opcodes
+	 * ({@code xx3}), {@code S + d (+1)} passes $FFFF. TCS/TXS/XCE load S outright and are skipped,
+	 * since a delta test misreads them. {@code tools/recon/w65816_stack_wrap_census.py} computes
+	 * the same count from the raw corpus (315 of 2,540,200 native cases, 21 opcodes).
+	 */
+	static String unmodelledReason(String opcodeHex, VectorCase c) {
+		Integer e = c.initialRegs().get("e");
+		Integer s0 = c.initialRegs().get("s");
+		Integer s1 = c.finalRegs().get("s");
+		if (e == null || e != 0 || s0 == null || s1 == null) {
+			return null;
+		}
+		int op = Integer.parseInt(opcodeHex, 16);
+		if (op == 0x1B || op == 0x9A || op == 0xFB) {
+			return null;
+		}
+		int delta = (short) ((s1 - s0) & 0xFFFF);
+		int moved = s0 + delta;
+		boolean wrap = moved < 0 || moved > 0xFFFF;
+		if (!wrap && (op & 0x0F) == 0x03) {
+			int pc = c.initialRegs().getOrDefault("pbr", 0) << 16 | c.initialRegs().get("pc");
+			int operandAddr = (pc & 0xFF0000) | ((pc + 1) & 0xFFFF);
+			for (VectorCase.RamByte b : c.initialRam()) {
+				if (b.address() == operandAddr) {
+					wrap = s0 + b.value() + 1 > 0xFFFF;
+					break;
+				}
+			}
+		}
+		return wrap ? "native-mode stack access crosses the 16-bit S boundary; SP is linear" : null;
 	}
 
 	/**

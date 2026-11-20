@@ -19,9 +19,9 @@
 01.E  ORA (<$0xf6,X)  PASS  10000/10000
 01.N  ORA (<$0x23,X)  PASS  9998/9998  (2 bank-wrap)
 02.E  COP $0xfb  PASS  9999/9999  (1 bank-wrap)
-02.N  COP $0x38  PASS  10000/10000
+02.N  COP $0x38  PASS  9998/9998  (2 unmodelled)
 03.E  ORA $0xff,S  PASS  10000/10000
-03.N  ORA $0xe3,S  PASS  9997/9997  (1 decode-boundary)  (2 bank-wrap)
+03.N  ORA $0xe3,S  PASS  9978/9978  (1 decode-boundary)  (2 bank-wrap)  (19 unmodelled)
 04.E  TSB <$0x3  PASS  10000/10000
 04.N  TSB <$0x75  PASS  10000/10000
 05.E  ORA <$0x7  PASS  10000/10000
@@ -53,7 +53,7 @@
 12.E  ORA (<$0x3f)  PASS  10000/10000
 12.N  ORA (<$0x2f)  PASS  10000/10000
 13.E  ORA ($0x44,S),Y  PASS  10000/10000
-13.N  ORA ($0xf7,S),Y  PASS  9998/9998  (2 bank-wrap)
+13.N  ORA ($0xf7,S),Y  PASS  9971/9971  (2 bank-wrap)  (27 unmodelled)
 14.E  TRB <$0x48  PASS  10000/10000
 14.N  TRB <$0xaa  PASS  10000/10000
 15.E  ORA <$0x4c,X  PASS  10000/10000
@@ -85,7 +85,7 @@
 22.E  JSL !>$0xdb2584  PASS  10000/10000
 22.N  JSL !>$0x8fcddf  PASS  10000/10000
 23.E  AND $0x89,S  PASS  10000/10000
-23.N  AND $0x3b,S  PASS  10000/10000
+23.N  AND $0x3b,S  PASS  9983/9983  (17 unmodelled)
 24.E  BIT <$0x8d  PASS  9999/9999  (1 bank-wrap)
 24.N  BIT <$0xfa  PASS  10000/10000
 25.E  AND <$0x91  PASS  9999/9999  (1 bank-wrap)
@@ -101,7 +101,7 @@
 2A.E  ROL A  PASS  10000/10000
 2A.N  ROL A  PASS  9999/9999  (1 bank-wrap)
 2B.E  PLD  PASS  10000/10000
-2B.N  PLD  PASS  10000/10000
+2B.N  PLD  PASS  9999/9999  (1 unmodelled)
 2C.E  BIT !$0x1baf  PASS  10000/10000
 2C.N  BIT !$0xb2ff  PASS  9999/9999  (1 bank-wrap)
 2D.E  AND !$0xb4b4  PASS  10000/10000
@@ -117,7 +117,7 @@
 32.E  AND (<$0xc9)  PASS  10000/10000
 32.N  AND (<$0xa6)  PASS  9999/9999  (1 bank-wrap)
 33.E  AND ($0xcd,S),Y  PASS  9999/9999  (1 bank-wrap)
-33.N  AND ($0xf7,S),Y  PASS  9999/9999  (1 bank-wrap)
+33.N  AND ($0xf7,S),Y  PASS  9974/9974  (1 bank-wrap)  (25 unmodelled)
 34.E  BIT <$0xd2,X  PASS  9999/9999  (1 bank-wrap)
 34.N  BIT <$0x86,X  PASS  10000/10000
 35.E  AND <$0xd6,X  PASS  9999/9999  (1 bank-wrap)
@@ -149,7 +149,7 @@
 42.E  WDM  PASS  10000/10000
 42.N  WDM  PASS  9999/9999  (1 bank-wrap)
 43.E  EOR $0x12,S  PASS  10000/10000
-43.N  EOR $0x9d,S  PASS  9999/9999  (1 bank-wrap)
+43.N  EOR $0x9d,S  PASS  9984/9984  (1 bank-wrap)  (15 unmodelled)
 44.E  MVP 0x69,0x17  PASS  100/100
 44.N  MVP 0xd1,0xc9  PASS  100/100
 45.E  EOR <$0x1b  PASS  10000/10000
@@ -159,7 +159,7 @@
 47.E  EOR [<$0x24]  PASS  10000/10000
 47.N  EOR [<$0x7]  PASS  9999/9999  (1 bank-wrap)
 48.E  PHA  PASS  9998/9998  (2 bank-wrap)
-48.N  PHA  PASS  10000/10000
+48.N  PHA  PASS  9999/9999  (1 unmodelled)
 49.E  EOR #$0x2c  PASS  10000/10000
 49.N  EOR #$0xaa  PASS  10000/10000
 4A.E  LSR A  PASS  9999/9999  (1 bank-wrap)
@@ -181,7 +181,7 @@
 52.E  EOR (<$0x53)  PASS  10000/10000
 52.N  EOR (<$0x49)  PASS  10000/10000
 53.E  EOR ($0x57,S),Y  PASS  9999/9999  (1 bank-wrap)
-53.N  EOR ($0x74,S),Y  PASS  10000/10000
+53.N  EOR ($0x74,S),Y  PASS  9980/9980  (20 unmodelled)
 54.E  MVN 0xf3,0x5c  PASS  100/100
 54.N  MVN 0x5a,0xe  PASS  100/100
 55.E  EOR <$0x60,X  PASS  10000/10000
@@ -213,7 +213,7 @@
 62.E  PER 0x4b98  PASS  10000/10000
 62.N  PER -0x51a2  PASS  10000/10000
 63.E  ADC $0x9c,S  PASS  9999/9999  (1 bank-wrap)
-63.N  ADC $0x8d,S  PASS  10000/10000
+63.N  ADC $0x8d,S  PASS  9982/9982  (18 unmodelled)
 64.E  STZ <$0xa0  PASS  10000/10000
 64.N  STZ <$0x0  PASS  10000/10000
 65.E  ADC <$0xa5  PASS  10000/10000
@@ -229,7 +229,7 @@
 6A.E  ROR A  PASS  10000/10000
 6A.N  ROR A  PASS  10000/10000
 6B.E  RTL  PASS  10000/10000
-6B.N  RTL  PASS  10000/10000
+6B.N  RTL  PASS  9999/9999  (1 unmodelled)
 6C.E  JMP (!$0x41c3)  PASS  10000/10000
 6C.N  JMP (!$0xa790)  PASS  10000/10000
 6D.E  ADC !$0xdac7  PASS  9999/9999  (1 bank-wrap)
@@ -245,7 +245,7 @@
 72.E  ADC (<$0xdd)  PASS  9999/9999  (1 bank-wrap)
 72.N  ADC (<$0x6b)  PASS  10000/10000
 73.E  ADC ($0xe1,S),Y  PASS  10000/10000
-73.N  ADC ($0xc6,S),Y  PASS  10000/10000
+73.N  ADC ($0xc6,S),Y  PASS  9984/9984  (16 unmodelled)
 74.E  STZ <$0xe5,X  PASS  10000/10000
 74.N  STZ <$0xc8,X  PASS  10000/10000
 75.E  ADC <$0xea,X  PASS  9999/9999  (1 bank-wrap)
@@ -277,7 +277,7 @@
 82.E  BRL $0x007065  PASS  10000/10000
 82.N  BRL $0x003024  PASS  10000/10000
 83.E  STA $0x26,S  PASS  10000/10000
-83.N  STA $0x6b,S  PASS  10000/10000
+83.N  STA $0x6b,S  PASS  9985/9985  (15 unmodelled)
 84.E  STY <$0x2a  PASS  9999/9999  (1 bank-wrap)
 84.N  STY <$0xf2  PASS  10000/10000
 85.E  STA <$0x2e  PASS  10000/10000
@@ -309,7 +309,7 @@
 92.E  STA (<$0x66)  PASS  10000/10000
 92.N  STA (<$0x36)  PASS  9999/9999  (1 bank-wrap)
 93.E  STA ($0x6b,S),Y  PASS  10000/10000
-93.N  STA ($0x1c,S),Y  PASS  10000/10000
+93.N  STA ($0x1c,S),Y  PASS  9984/9984  (16 unmodelled)
 94.E  STY <$0x6f,X  PASS  9999/9999  (1 bank-wrap)
 94.N  STY <$0x6d,X  PASS  10000/10000
 95.E  STA <$0x73,X  PASS  10000/10000
@@ -341,7 +341,7 @@ A1.N  LDA (<$0x7e,X)  PASS  10000/10000
 A2.E  LDX #$0xab  PASS  9999/9999  (1 decode-boundary)
 A2.N  LDX #$0xda  PASS  10000/10000
 A3.E  LDA $0xb0,S  PASS  10000/10000
-A3.N  LDA $0x73,S  PASS  10000/10000
+A3.N  LDA $0x73,S  PASS  9988/9988  (12 unmodelled)
 A4.E  LDY <$0xb4  PASS  10000/10000
 A4.N  LDY <$0x17  PASS  10000/10000
 A5.E  LDA <$0xb8  PASS  10000/10000
@@ -373,7 +373,7 @@ B1.N  LDA (<$0xea),Y  PASS  10000/10000
 B2.E  LDA (<$0xf0)  PASS  10000/10000
 B2.N  LDA (<$0xa2)  PASS  10000/10000
 B3.E  LDA ($0xf4,S),Y  PASS  10000/10000
-B3.N  LDA ($0xb3,S),Y  PASS  10000/10000
+B3.N  LDA ($0xb3,S),Y  PASS  9975/9975  (25 unmodelled)
 B4.E  LDY <$0xf9,X  PASS  10000/10000
 B4.N  LDY <$0xe,X  PASS  10000/10000
 B5.E  LDA <$0xfd,X  PASS  10000/10000
@@ -405,7 +405,7 @@ C1.N  CMP (<$0x43,X)  PASS  10000/10000
 C2.E  REP #$0x35  PASS  9999/9999  (1 bank-wrap)
 C2.N  REP #$0x11  PASS  10000/10000
 C3.E  CMP $0x39,S  PASS  10000/10000
-C3.N  CMP $0xe3,S  PASS  9999/9999  (1 bank-wrap)
+C3.N  CMP $0xe3,S  PASS  9979/9979  (1 bank-wrap)  (20 unmodelled)
 C4.E  CPY <$0x3e  PASS  10000/10000
 C4.N  CPY <$0x17  PASS  10000/10000
 C5.E  CMP <$0x42  PASS  10000/10000
@@ -437,7 +437,7 @@ D1.N  CMP (<$0xc0),Y  PASS  10000/10000
 D2.E  CMP (<$0x7a)  PASS  9998/9998  (1 decode-boundary)  (1 bank-wrap)
 D2.N  CMP (<$0x9b)  PASS  10000/10000
 D3.E  CMP ($0x7e,S),Y  PASS  10000/10000
-D3.N  CMP ($0x12,S),Y  PASS  10000/10000
+D3.N  CMP ($0x12,S),Y  PASS  9976/9976  (24 unmodelled)
 D4.E  PEI (<$0x82)  PASS  10000/10000
 D4.N  PEI (<$0x26)  PASS  9999/9999  (1 bank-wrap)
 D5.E  CMP <$0x87,X  PASS  9999/9999  (1 bank-wrap)
@@ -451,7 +451,7 @@ D8.N  CLD  PASS  10000/10000
 D9.E  CMP !$0x3a98,Y  PASS  9999/9999  (1 bank-wrap)
 D9.N  CMP !$0x3286,Y  PASS  10000/10000
 DA.E  PHX  PASS  10000/10000
-DA.N  PHX  PASS  9999/9999  (1 bank-wrap)
+DA.N  PHX  PASS  9998/9998  (1 bank-wrap)  (1 unmodelled)
 DB.E  STP  N/A  0/10000  STP halts the processor pending a hardware reset; no post-single-step state exists
 DB.N  STP  N/A  0/10000  STP halts the processor pending a hardware reset; no post-single-step state exists
 DC.E  JML [!$0x4a5]  PASS  9999/9999  (1 bank-wrap)
@@ -469,7 +469,7 @@ E1.N  SBC (<$0x7a,X)  PASS  10000/10000
 E2.E  SEP #$0xbf  PASS  9999/9999  (1 bank-wrap)
 E2.N  SEP #$0xd6  PASS  9998/9998  (2 bank-wrap)
 E3.E  SBC $0xc3,S  PASS  9998/9998  (2 bank-wrap)
-E3.N  SBC $0xd,S  PASS  10000/10000
+E3.N  SBC $0xd,S  PASS  9984/9984  (16 unmodelled)
 E4.E  CPX <$0xc7  PASS  10000/10000
 E4.N  CPX <$0xf4  PASS  10000/10000
 E5.E  SBC <$0xcc  PASS  10000/10000
@@ -501,7 +501,7 @@ F1.N  SBC (<$0x6),Y  PASS  10000/10000
 F2.E  SBC (<$0x4)  PASS  10000/10000
 F2.N  SBC (<$0x36)  PASS  9999/9999  (1 bank-wrap)
 F3.E  SBC ($0x8,S),Y  PASS  10000/10000
-F3.N  SBC ($0x29,S),Y  PASS  10000/10000
+F3.N  SBC ($0x29,S),Y  PASS  9976/9976  (24 unmodelled)
 F4.E  PEA !$0x520c  PASS  9999/9999  (1 bank-wrap)
 F4.N  PEA !$0x697f  PASS  10000/10000
 F5.E  SBC <$0x11,X  PASS  9999/9999  (1 bank-wrap)

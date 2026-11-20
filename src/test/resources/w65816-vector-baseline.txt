@@ -409,7 +409,7 @@ C1.N  CMP (<$0x43,X)  PASS  8/8
 C2.E  REP #$0x35  PASS  8/8
 C2.N  REP #$0x11  PASS  8/8
 C3.E  CMP $0x39,S  PASS  8/8
-C3.N  CMP $0xe3,S  PASS  8/8
+C3.N  CMP $0xe3,S  PASS  7/7  (1 unmodelled)
 C4.E  CPY <$0x3e  PASS  8/8
 C4.N  CPY <$0x17  PASS  8/8
 C5.E  CMP <$0x42  PASS  8/8

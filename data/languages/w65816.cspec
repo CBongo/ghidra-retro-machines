@@ -10,7 +10,9 @@
 
   Vendored verbatim at the commit above, with local modifications: this header, the
   __dp_preserved prototype after <default_proto> (a deliberate fork, grm-hf5h.28), and the
-  __dbr_preserved / __dp_dbr_preserved prototypes after it (same fork, grm-9nxj.32).
+  __dbr_preserved / __dp_dbr_preserved prototypes after it (same fork, grm-9nxj.32), and the
+  call stack model (grm-9nxj.47): extrapop="unknown" and SP in <unaffected> in those four
+  prototypes, plus the __unknown_purge prototype and <eval_called_prototype> at the end.
 -->
 
 <compiler_spec>
@@ -21,10 +23,24 @@
   <returnaddress>
     <varnode space="stack" offset="1" size="2"/>
   </returnaddress>
+  <!--
+    grm-9nxj.47: the call stack model. JSR/JSL push their return address in their own p-code,
+    so a callee's extrapop is what its return pulls: 2 for RTS, 3 for RTL. One prototype cannot
+    say which, so every prototype has extrapop="unknown" and stackshift 0, and
+    W65816StackPurgeAnalyzer sets Function.setStackPurgeSize 2/3 from a proven return. Java turns
+    that into the change in SP after a call for constant propagation (stackshift + purge) and
+    into the extrapop it sends the decompiler (purge + stackshift); SP is in <unaffected> so the
+    decompiler applies it. A function with no proven return keeps an unknown purge: constant
+    propagation then leaves SP unknown after the call. Never SP-unaffected with extrapop 0: the
+    pull after a call would read the pushed return address.
+  -->
   <default_proto>
-    <prototype name="__unknowncall" extrapop="0" stackshift="0" strategy="register">
+    <prototype name="__unknowncall" extrapop="unknown" stackshift="0" strategy="register">
       <input/>
       <output/>
+      <unaffected>
+        <register name="SP"/>
+      </unaffected>
     </prototype>
   </default_proto>
   <!--
@@ -33,10 +49,11 @@
     preserved or restored. The decompiler honours a callee's model only when it is locked, which
     Java does for any named convention (FunctionPrototype.grabFromFunction).
   -->
-  <prototype name="__dp_preserved" extrapop="0" stackshift="0" strategy="register">
+  <prototype name="__dp_preserved" extrapop="unknown" stackshift="0" strategy="register">
     <input/>
     <output/>
     <unaffected>
+      <register name="SP"/>
       <register name="DP"/>
     </unaffected>
   </prototype>
@@ -47,19 +64,36 @@
     functions whose exit summary proves DBR preserved (__dp_dbr_preserved when the DP analyzer
     proved DP too); __dp_preserved stays DP only. Never a default.
   -->
-  <prototype name="__dbr_preserved" extrapop="0" stackshift="0" strategy="register">
+  <prototype name="__dbr_preserved" extrapop="unknown" stackshift="0" strategy="register">
     <input/>
     <output/>
     <unaffected>
+      <register name="SP"/>
       <register name="DBR"/>
     </unaffected>
   </prototype>
-  <prototype name="__dp_dbr_preserved" extrapop="0" stackshift="0" strategy="register">
+  <prototype name="__dp_dbr_preserved" extrapop="unknown" stackshift="0" strategy="register">
     <input/>
     <output/>
     <unaffected>
+      <register name="SP"/>
       <register name="DP"/>
       <register name="DBR"/>
     </unaffected>
   </prototype>
+  <!--
+    grm-9nxj.47: the decompiler's model for a called function whose own model is not locked
+    (Java locks any named convention; W65816StackPurgeAnalyzer names the default for a function
+    it sets a purge on). Its known extrapop keeps the decompiler from GUESSING the unknown one:
+    with an unknown-extrapop default, ActionStackPtrFlow solves SP across such a call with an
+    x86 guess of 4 bytes, and a pull after the call reads an older push (measured,
+    W65816StackPurgeTest.unprovenCallFoldsNothing). With extrapop 0 and SP not unaffected, SP is
+    an INDIRECT after the call, unknown: nothing folds across it, as before grm-9nxj.47. Never
+    assign it to a function: constant propagation would keep SP at its post-push value.
+  -->
+  <prototype name="__unknown_purge" extrapop="0" stackshift="0" strategy="register">
+    <input/>
+    <output/>
+  </prototype>
+  <eval_called_prototype name="__unknown_purge"/>
 </compiler_spec>

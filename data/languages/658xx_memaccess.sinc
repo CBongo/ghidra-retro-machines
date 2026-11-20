@@ -69,16 +69,14 @@ macro flag16_NZ(_acc) {
 
 macro push8_native(_val8) {
     local value:1 = _val8;
-    local sp:3 = zext(SP);
-    *:1 sp = value;
+    *:1 SP = value;
 
     SP = SP - 1;
 }
 
 macro push8_emulation(_val8) {
     local value:1 = _val8;
-    local sp:3 = zext(SP);
-    *:1 sp = value;
+    *:1 SP = value;
 
     SPLow = SPLow - 1;
 }
@@ -110,14 +108,12 @@ macro push24_native(_val24) {
 
 macro pull8_native(var8) {
     SP = SP + 1;
-    local sp:3 = zext(SP);
-    var8 = *:1 sp;
+    var8 = *:1 SP;
 }
 
 macro pull8_emulation(var8) {
     SPLow = SPLow + 1;
-    local sp:3 = zext(SP);
-    var8 = *:1 sp;
+    var8 = *:1 SP;
 }
 
 macro pull16_native(var16) {
@@ -292,15 +288,17 @@ macro ref_data_bank(_out, _offset32) {
     _out = address:3;
 }
 
-# Get the address of a byte at some big offset from the stack pointer, taking wrapping into account.
+# Get the address of a byte at some big offset from the stack pointer.
+# grm-9nxj.44: SP is a 3-byte register, so this is linear: the 16-bit wrap of S inside bank 0 is
+# deliberately NOT modelled (a native-mode access crossing $0000/$FFFF runs on to $010000/$FFFFFF).
+# That is what lets the stock decompiler treat SP + c as a stack reference and fold stack slots;
+# the vector harness counts such cases as unmodelled. Exact wrap is bead grm-0mrf.
 macro ref_stack(_out, _offset32) {
     local _offset:4 = _offset32;
-    local address32:4 = zext(SP) + _offset;
-    local address:3 = zext(address32:2);
-    _out = address;
+    _out = SP + _offset:3;
 }
 
-# Read a byte from some big offset from the stack pointer, taking wrapping into account.
+# Read a byte from some big offset from the stack pointer (linear, see ref_stack).
 macro read_stack(_out, _offset32) {
     local address:3;
     ref_stack(address, _offset32);

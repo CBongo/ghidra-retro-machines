@@ -43,7 +43,11 @@ define register offset=0x00  size=3  [ PC_FULL ];
 define register offset=0x00  size=2  [ PC ];
 define register offset=0x02  size=1  [ PBR ];
 
-define register offset=0x10  size=2  [ C   X          Y          DP      SP ];
+define register offset=0x10  size=2  [ C   X          Y          DP      S16 ];
+# grm-9nxj.44: SP is the 16-bit S widened to the bus width (its top byte, 0x1a, is always 0),
+# so push/pull address the bus with SP itself and the stock decompiler sees SP+c, a stack
+# reference. S16 is the architectural 16-bit view for TCS/TSC/TSX/TXS.
+define register offset=0x18  size=3  [ SP ];
 define register offset=0x10  size=1  [ A B XLow XHigh YLow YHigh DPLow _ SPLow SPHigh ];
 define register offset=0x20  size=1  [ DBR ];
 
@@ -503,7 +507,8 @@ BIT_VAL16: Imm16    is op=0x89; Imm16  { export Imm16; }
     local this_pc:2 = this_pc_full:2;
     local pc_inc:2 = this_pc + 2;
 
-    push8_native(PBR);
+    local this_pbr:1 = this_pc_full(2);
+    push8_native(this_pbr);
     push16_native(pc_inc);
     push_status_native();
     IF = 1;
@@ -610,7 +615,8 @@ BIT_VAL16: Imm16    is op=0x89; Imm16  { export Imm16; }
     local this_pc:2 = this_pc_full:2;
     local pc_inc:2 = this_pc + 2;
 
-    push8_native(PBR);
+    local this_pbr:1 = this_pc_full(2);
+    push8_native(this_pbr);
     push16_native(pc_inc);
     push_status_native();
     IF = 1;
@@ -1327,12 +1333,16 @@ macro do_lsr16(_out, _data) {
 # PHK native.
 :PHK    is ctx_EF=0 & op=0x4b
 {
-    push8_native(PBR);
+    local this_pc_full:3 = inst_start;
+    local this_pbr:1 = this_pc_full(2);
+    push8_native(this_pbr);
 }
 # PHK emulation.
 :PHK    is ctx_EF=1 & op=0x4b
 {
-    push8_emulation(PBR);
+    local this_pc_full:3 = inst_start;
+    local this_pbr:1 = this_pc_full(2);
+    push8_emulation(this_pbr);
 }
 
 # PHP native.
@@ -1711,7 +1721,9 @@ macro do_ror16(_out, _data) {
     # "Unlike the RTS instruction, the program counter address pulled off the stack is the exact
     # address to return to... It does not need to be incremented as a subroutine’s return address
     # does."
-    local ret_addr:3 = (zext(PBR) << 16) | zext(pc);
+    local this_pc_full:3 = inst_start;
+    local this_pbr:1 = this_pc_full(2);
+    local ret_addr:3 = (zext(this_pbr) << 16) | zext(pc);
     goto [ret_addr];
 }
 
@@ -1752,7 +1764,9 @@ macro do_ror16(_out, _data) {
     pull16_native(pc);
     pc = pc + 1;
 
-    local ret_addr:3 = (zext(PBR) << 16) | zext(pc);
+    local this_pc_full:3 = inst_start;
+    local this_pbr:1 = this_pc_full(2);
+    local ret_addr:3 = (zext(this_pbr) << 16) | zext(pc);
     return [ret_addr];
 }
 # RTS emulation.
@@ -1762,7 +1776,9 @@ macro do_ror16(_out, _data) {
     pull16_emulation(pc);
     pc = pc + 1;
 
-    local ret_addr:3 = (zext(PBR) << 16) | zext(pc);
+    local this_pc_full:3 = inst_start;
+    local this_pbr:1 = this_pc_full(2);
+    local ret_addr:3 = (zext(this_pbr) << 16) | zext(pc);
     return [ret_addr];
 }
 
@@ -2077,7 +2093,7 @@ STZ_OP: RefDPIdxX    is op=0x74; RefDPIdxX  { export RefDPIdxX; }
 # TCS native.
 :TCS    is (ctx_EF=0 & op=0x1b)
 {
-    SP = C;
+    SP = zext(C);
 }
 # TCS emulation.
 :TCS    is (ctx_EF=1 & op=0x1b)
@@ -2131,8 +2147,8 @@ TEST_OP: RefDP    is dd=1; RefDP  { export RefDP; }
 
 :TSC    is op=0x3b
 {
-    C = SP;
-    flag16_NZ(SP);
+    C = S16;
+    flag16_NZ(S16);
 }
 
 # TSX 8 bit.
@@ -2144,8 +2160,8 @@ TEST_OP: RefDP    is dd=1; RefDP  { export RefDP; }
 # TSX 16 bit.
 :TSX    is (ctx_XF=0 & op=0xba)
 {
-    X = SP;
-    flag16_NZ(SP);
+    X = S16;
+    flag16_NZ(S16);
 }
 
 # TXA  8 -> 8  or  16 -> 8
@@ -2194,7 +2210,7 @@ TEST_OP: RefDP    is dd=1; RefDP  { export RefDP; }
 # TXS native  16 -> 16
 :TXS    is op=0x9a & ctx_EF=0 & ctx_XF=0
 {
-    SP = X;
+    SP = zext(X);
 }
 
 # TXY 8 bit.
