@@ -669,6 +669,8 @@ grm_decompiler_build_name() {
 			echo "candidate 12 + grm-hf5h.11 65816 CONCAT(B, A<<1) index labels on the table-bound (in-bounds) assumption (candidate 13)" ;;
 		4eec41b578f96bb0b472dcf272d524692d23174a77b609eb55ef4e5849028e57)
 			echo "candidate 13 + grm-hf5h.20 label from the current model's value range when the original's is in another Varnode's units (candidate 14)" ;;
+		b57f50c9c17cd4233c4aab972102d88903b5573afcc5e8ef48bd25c76d980891)
+			echo "candidate 14 + grm-hf5h.31 trialNorm scans a bounded index's whole range + grm-hf5h.21 INT_MULT by a power of two steps like a left shift (candidate 16)" ;;
 		588ec6c9c2a3fbebd7e1eaef6e8161b06b38fb815635ecb97c67b6de49f99496)
 			echo "12.2 patched, MinGW rebuild of ff1834fc's source (grm-gipk.25 control arm)" ;;
 		72a0ff7ed2032d3bc69703bf79db8d617197e00ea53519f4c3815d54c10662f0)
