@@ -161,9 +161,15 @@ re-applied to `Ghidra_12.2_build` and rebuilt, plus a fourth hunk (owner ruling,
 12.2's GP-6945 caps a decompile at 4 bad-data flows, and stock switch analysis then abandons
 functions that flow into unresolved bank windows -- real code lost on tmnt/ff1/cv3/contra. No
 program or tool option reaches that cap, so the local build sets `max_baddata` unlimited
-(`ff1834fc…`, patch on `grm-75ey`). **Since 2026-11-17 the installed build is candidate 14
-(`4eec41b5…`, `grm-hf5h.20`)**, verified by `realrom-test.sh check all` 78/78 on the installed
-binary. It stacks three `jumptable.cc` patches on candidate 10, one script each in
+(`ff1834fc…`, patch on `grm-75ey`). **Since 2026-11-19 the installed build is candidate 17
+(`74876d66…`, `grm-hf5h.21`)**, verified by `realrom-test.sh check all` 78/78 on the installed
+binary: candidate 14 plus `apply-hf5h21.py`, which treats an `INT_MULT` by a power of two like
+the left shift `RuleShift2Mult` rewrote it from, so the shifted-index label step still fires
+when the doubled index feeds an address add (cv3 `e137` and six more sites move from offset to
+index labels; no golden moved). Candidates 15/16 carried `apply-hf5h31.py` (trialNorm null-run
+tolerance), which regresses w_ff3 `c21b02` and is held until guarded (`grm-hf5h.34`); they were
+never installed. Before that the installed build was candidate 14 (`4eec41b5…`,
+`grm-hf5h.20`), verified the same way on 2026-11-17. It stacks three `jumptable.cc` patches on candidate 10, one script each in
 `tools/decompiler/`. Candidate 12 (`apply-hf5h11.py`, `grm-hf5h.11`) labels a switch on a shifted
 index `i<<c` by `i`, or by `i & mask` when the top bits may be set, and declines when the
 shifted-out bits pick the path (`grm-hf5h.19`). Candidate 13 (`apply-hf5h11-c13.py`) does the same
