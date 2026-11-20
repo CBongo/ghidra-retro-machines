@@ -330,7 +330,6 @@ public class W65816WidthAnalyzer extends AbstractAnalyzer {
 			if (phps == null || phps.isEmpty()) {
 				continue;
 			}
-			W65816WidthEffects.Effect k = effects.effect(cont);
 			Map<Register, Integer> stamp = new LinkedHashMap<>();
 			Register dReg = effects.dRegister();
 			List<Register> regs = new ArrayList<>(List.of(effects.mRegister(), effects.xRegister()));
@@ -338,16 +337,17 @@ public class W65816WidthAnalyzer extends AbstractAnalyzer {
 				regs.add(dReg);
 			}
 			for (Register reg : regs) {
-				// D (grm-hf5h.31) changes only how ADC/SBC decode, never an instruction's length, so
-				// it is restored whenever the saved value is known, not only when "needed".
-				boolean needs = reg.equals(dReg) || (reg.equals(effects.mRegister())
-					? k.m().needs() : k.x().needs());
+				// Restored whenever the saved value is known, not only when an instruction's LENGTH
+				// depends on it: D (grm-hf5h.31) changes only how ADC/SBC decode, and M/X also set how
+				// much PLA/PLX/PHA/PHX move. FF3 $C2:4F08 is PHX / PHP / ... REP #$10 ... / PLP / PLX /
+				// RTS: the PLX was left at the REP's 16-bit X, pulled two bytes for one, and every
+				// caller's stack walk went under its frame (grm-9nxj.46).
 				Set<Integer> savedValues = new LinkedHashSet<>();
 				for (Instruction php : phps) {
 					savedValues.add(effects.flag(php, reg));
 				}
 				int v = savedValues.iterator().next();
-				if (needs && savedValues.size() == 1 && (v == 0 || v == 1) &&
+				if (savedValues.size() == 1 && (v == 0 || v == 1) &&
 					v != effects.flag(after, reg)) {
 					stamp.put(reg, v);
 				}

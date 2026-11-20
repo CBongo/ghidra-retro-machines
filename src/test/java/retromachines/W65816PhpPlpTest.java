@@ -44,6 +44,30 @@ public class W65816PhpPlpTest extends AbstractProgramTest {
 		setContext("0x8000", "0x8fff", "ctx_EF", 0);
 	}
 
+	/**
+	 * grm-9nxj.46 (FF3 {@code $C2:4F08}): {@code PHX ; PHP ; REP #$10 ; PLP ; PLX ; RTS} at X=1.
+	 * The PLX after the PLP is one byte at either width, so its decode never "needed" X, but it
+	 * runs at the X the PHP saved and pulls one byte; left at the REP's X=0 it pulled two.
+	 */
+	@Test
+	public void plpContinuationGetsTheSavedWidthEvenWhenLengthsAgree() throws Exception {
+		setContext("0x8000", "0x8fff", "ctx_XF", 1);
+		setContext("0x8000", "0x8fff", "ctx_MF", 1);
+		builder.setBytes("0x8000", "da 08 c2 10 28 fa 60", false);
+		builder.disassemble("0x8000", 7, true);
+		Register x = program.getRegister("ctx_XF");
+		assertEquals("precondition: the language decodes the PLX at the REP's width",
+			BigInteger.ZERO, program.getListing().getInstructionAt(addr("0x8005")).getValue(x, false));
+
+		inTx(program, "analyze", () -> new W65816WidthAnalyzer().added(program,
+			new ghidra.program.model.address.AddressSet(addr("0x8000"), addr("0x8006")),
+			ghidra.util.task.TaskMonitor.DUMMY, new ghidra.app.util.importer.MessageLog()));
+
+		Instruction plx = program.getListing().getInstructionAt(addr("0x8005"));
+		assertNotNull(plx);
+		assertEquals("PLP restored the X the PHP saved", BigInteger.ONE, plx.getValue(x, false));
+	}
+
 	/** {@code PHP ; REP #$20 ; LDA #$1234 ; PLP ; RTS}: the caller's M survives the call. */
 	@Test
 	public void bracketedRoutinePreservesTheCallersWidth() throws Exception {

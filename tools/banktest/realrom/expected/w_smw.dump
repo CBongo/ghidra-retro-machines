@@ -4,10 +4,10 @@ REALROM sha256 0838e531fe22c077528febe14cb3ff7c492f1f5fa8de354192bdff7137c27f5b
 REALROM language 65816:LE:24:retro
 REALROM instrs 1367
 REALROM functions 34
-REALROM ctx E0M0X0 125
+REALROM ctx E0M0X0 124
 REALROM ctx E0M0X1 221
-REALROM ctx E0M1X0 115
-REALROM ctx E0M1X1 894
+REALROM ctx E0M1X0 114
+REALROM ctx E0M1X1 896
 REALROM ctx E1M1X1 12
 REALROM desync BRK 1
 REALROM desync COP 0
@@ -35,8 +35,7 @@ REALROM widtheffect callees=30 needsM=14 needsX=15
 REALROM widtheffect exitM preserves=13 sets0=0 sets1=12 mixedOrNone=5
 REALROM widtheffect exitX preserves=18 sets0=0 sets1=8 mixedOrNone=4
 REALROM widthconflict sites=41 entry=0 entryTargets=0 return=0 returnTargets=0
-REALROM exitwidth functions=34 returnsAtOtherWidth=1
-REALROM exitwidth 008079 entry=M1X1 exits=M1X0
+REALROM exitwidth functions=34 returnsAtOtherWidth=0
 REALROM computed BRK 0xn sites=1 withTargets=1
 REALROM computed JML [!$0x0] sites=1 withTargets=0
 REALROM computed RTI <UNSUPPORTn> sites=2 withTargets=0

@@ -4,10 +4,10 @@ REALROM sha256 414bacc05a18a6137c0de060b4094ab6d1b75105342b0bb36a42e45d945a0e4d
 REALROM language 65816:LE:24:retro
 REALROM instrs 47982
 REALROM functions 1202
-REALROM ctx E0M0X0 4356
-REALROM ctx E0M0X1 5
-REALROM ctx E0M1X0 43584
-REALROM ctx E0M1X1 34
+REALROM ctx E0M0X0 4346
+REALROM ctx E0M0X1 4
+REALROM ctx E0M1X0 43594
+REALROM ctx E0M1X1 35
 REALROM ctx E1M1X1 3
 REALROM desync BRK 0
 REALROM desync COP 0
@@ -70,15 +70,9 @@ REALROM widtheffect callees=1180 needsM=869 needsX=791
 REALROM widtheffect exitM preserves=520 sets0=2 sets1=328 mixedOrNone=330
 REALROM widtheffect exitX preserves=976 sets0=15 sets1=0 mixedOrNone=189
 REALROM widthconflict sites=3980 entry=0 entryTargets=0 return=0 returnTargets=0
-REALROM exitwidth functions=1202 returnsAtOtherWidth=13
-REALROM exitwidth 018383 entry=M0X0 exits=M1X0
-REALROM exitwidth 038009 entry=M1X0 exits=M0X0
-REALROM exitwidth 038036 entry=M1X0 exits=M0X0
+REALROM exitwidth functions=1202 returnsAtOtherWidth=7
 REALROM exitwidth 0383b9 entry=M0X0 exits=M1X0
-REALROM exitwidth 048008 entry=M1X0 exits=M0X0
-REALROM exitwidth 048107 entry=M1X0 exits=M0X0
 REALROM exitwidth 04816f entry=M1X0 exits=M0X0
-REALROM exitwidth 04864e entry=M1X0 exits=M0X0
 REALROM exitwidth 13e512 entry=M0X0 exits=M1X0
 REALROM exitwidth 13e53c entry=M0X0 exits=M1X0
 REALROM exitwidth 13e58b entry=M0X0 exits=M1X0

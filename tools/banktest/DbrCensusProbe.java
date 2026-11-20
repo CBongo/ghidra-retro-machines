@@ -52,6 +52,12 @@ public class DbrCensusProbe extends GhidraScript {
 		Object seed = UNK;
 	}
 
+	/** One decoded width flag as stamped in the context: 0, 1, or - when unset (grm-9nxj.46). */
+	static String flagOf(Instruction in, Register r) {
+		java.math.BigInteger v = r == null ? null : in.getValue(r, false);
+		return v == null ? "-" : v.toString();
+	}
+
 	Map<Address, Fn> fns = new LinkedHashMap<>();
 	Map<String, Integer> plb = new TreeMap<>(), plbConst = new TreeMap<>(), other = new TreeMap<>();
 	Map<String, List<String>> samples = new TreeMap<>();
@@ -455,7 +461,7 @@ public class DbrCensusProbe extends GhidraScript {
 		for (Instruction in : fn.ins) {
 			if (n++ >= 2000) break;
 			RegisterValue cv = currentProgram.getProgramContext().getRegisterValue(dbr, in.getAddress());
-			StringBuilder sb = new StringBuilder("DBR   " + in.getAddress() + " " + in + " ctxDBR=" + (cv != null && cv.hasValue() ? String.format("%02x", cv.getUnsignedValue().intValue()) : "-") + " dbr=" +
+			StringBuilder sb = new StringBuilder("DBR   " + in.getAddress() + " " + in + " ctxDBR=" + (cv != null && cv.hasValue() ? String.format("%02x", cv.getUnsignedValue().intValue()) : "-") + " mx=" + flagOf(in, mf) + flagOf(in, xf) + " dbr=" +
 				show(fn.state.get(in.getAddress())));
 			for (Reference r : in.getReferencesFrom())
 				if (!r.getReferenceType().isFlow()) sb.append(" [ref->").append(r.getToAddress()).append("]");

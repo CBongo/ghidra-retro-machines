@@ -1440,6 +1440,32 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 					}
 				}
 			}
+			propagateCauses(root, m, cause, q);
+			// A loss inside a loop leaves the loop UNKNOWN at its fixpoint, so it shows no known ->
+			// UNKNOWN step and seeded nothing above (FF3 c1c650: JSR c1022a, then JMP back to the
+			// loop head; grm-9nxj.46). Seed those from what each instruction would do to a known DBR.
+			for (Map.Entry<Address, State> s : m.entrySet()) {
+				Instruction ins = program.getListing().getInstructionAt(s.getKey());
+				if (ins == null || s.getValue().dbr != UNKNOWN || cause.containsKey(s.getKey())) {
+					continue;
+				}
+				String c = lossAt(ins, s.getValue().withDbr(ENTRY));
+				if (c == null) {
+					continue;
+				}
+				if (c.startsWith("call:") && ins.getFlows().length == 1) {
+					c = c + "@" + ins.getFlows()[0];
+				}
+				cause.put(s.getKey(), c);
+				q.add(s.getKey());
+			}
+			propagateCauses(root, m, cause, q);
+			causeMaps.put(root, cause);
+			return cause;
+		}
+
+		private void propagateCauses(Address root, Map<Address, State> m, Map<Address, String> cause,
+				ArrayDeque<Address> q) {
 			while (!q.isEmpty()) {
 				Address a = q.poll();
 				State st = m.get(a);
@@ -1454,8 +1480,42 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 					}
 				}
 			}
-			causeMaps.put(root, cause);
-			return cause;
+		}
+
+		/**
+		 * The local loss behind {@code f}'s UNKNOWN summary: its exit's cause, and when that is a
+		 * call, the callee's own leaf, recursively (grm-9nxj.46: FF3 c1022a -> c20003 -> c2111b ->
+		 * c24d1f ... ends where some routine loses DBR itself). Label {@code cause@function}; null
+		 * when {@code f}'s summary is not an unknown exit.
+		 */
+		private String leaf(Address f, Set<Address> path) {
+			String w = why.get(f);
+			if (w == null || !w.startsWith("exit with unknown DBR at ")) {
+				return w == null ? null : "summary:" + w.split(" at ")[0] + "@" + f;
+			}
+			if (!path.add(f) || path.size() > 64) {
+				return "cycle@" + f;
+			}
+			String at = w.substring("exit with unknown DBR at ".length()).split(" ")[0];
+			Address exit = program.getAddressFactory().getAddress(at);
+			String c = exit == null ? null : causeMap(f).get(exit);
+			Instruction ex = exit == null ? null : program.getListing().getInstructionAt(exit);
+			if (c == null && ex != null && isTailJump(ex)) {
+				// The exit is a tail jump whose target's summary is unknown (FF3 thunk c20003 ->
+				// c2111b): the loss is the target's, not at any instruction here.
+				String deeper = leaf(ex.getFlows()[0], path);
+				return deeper != null ? deeper : "tail@" + f;
+			}
+			if (c == null) {
+				return "merge/userOrRoot@" + f;
+			}
+			int cut = c.indexOf('@');
+			if (c.startsWith("call:") && cut > 0) {
+				String deeper = leaf(program.getAddressFactory().getAddress(c.substring(cut + 1)),
+					path);
+				return deeper != null ? deeper : c;
+			}
+			return (cut > 0 ? c.substring(0, cut) : c) + "@" + f;
 		}
 
 		private final Map<Address, Set<String>> rootMemo = new HashMap<>();
@@ -1614,6 +1674,25 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 						.getAddress(k.substring(k.indexOf('@') + 1))) : null;
 				out.add("rootFn " + k + " opsBehind=" + e.getValue() +
 					(w == null ? "" : " why=" + w.replace('\n', ' ')));
+			}
+			// The same losses by LEAF: the routine that actually loses DBR at the bottom of each
+			// chain of unknown-exit callees (an operand behind several roots counts for each).
+			Map<String, Integer> byLeaf = new HashMap<>();
+			for (Map.Entry<String, Integer> e : byRoot.entrySet()) {
+				String k = e.getKey();
+				int at = k.indexOf('@');
+				String l = k.startsWith("call:") && at > 0 ?
+					leaf(program.getAddressFactory().getAddress(k.substring(at + 1)), new HashSet<>()) :
+					null;
+				byLeaf.merge(l == null ? k : l, e.getValue(), Integer::sum);
+			}
+			for (Map.Entry<String, Integer> e : byCallee.entrySet()) {
+				String l = leaf(program.getAddressFactory().getAddress(e.getKey().split(" ")[0]),
+					new HashSet<>());
+				byLeaf.merge(l == null ? e.getKey() : l, e.getValue(), Integer::sum);
+			}
+			for (var e : topOf(byLeaf, top)) {
+				out.add("leaf " + e.getKey() + " ops=" + e.getValue());
 			}
 			for (var e : topOf(byCallee, top)) {
 				String w = why.get(program.getAddressFactory().getAddress(e.getKey().split(" ")[0]));
