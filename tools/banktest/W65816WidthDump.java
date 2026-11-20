@@ -763,6 +763,9 @@ public class W65816WidthDump extends GhidraScript {
 			else if (b.getComment().startsWith("DP conflict")) {
 				conflict++;
 			}
+			if (System.getenv("GRM_DP_ENTRY_SITES") != null) {   // grm-9nxj.38: per-entry, log only
+				println("DPE " + b.getAddress() + " " + b.getComment());
+			}
 		}
 		println("REALROM dp entry assumedPastUnknown=" + assumed + " conflict=" + conflict);
 	}

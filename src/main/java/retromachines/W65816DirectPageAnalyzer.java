@@ -18,6 +18,7 @@ package retromachines;
 import java.math.BigInteger;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -479,9 +480,18 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 		 * sticky. An external entry point, and a data reference to the entry (a pointer or vector)
 		 * unless a computed jump also resolved to it, still leave it UNKNOWN.
 		 *
-		 * <p>Termination: the known values each entry has ever seen only accumulate (an
-		 * observation is never retracted, even if its source later goes back to unknown), so each
-		 * entry moves at most twice, unseeded -> d -> CONFLICT, and is re-walked only on a move.
+		 * <p>A seeded function's ways out are judged in one walk per entry DP it has seen, and
+		 * carry the union (grm-9nxj.38). A CONFLICT entry's own walk runs with UNKNOWN, so reading
+		 * that one instead would drop what it passes on: a callee seeded from the first value to
+		 * arrive kept it, and one reached only after the conflict stayed unseeded, so the answer
+		 * depended on solve order (w_ff2 thunk 048004 -> 048107). Now a DP that passes through a
+		 * conflict entry reaches the callee as both values, a conflict there too.
+		 *
+		 * <p>Termination and order-independence: the values each entry has seen only accumulate,
+		 * and the set a way out carries is monotone in its function's seen set (a walk is a pure
+		 * function of its entry DP; call summaries do not read the solve), so this is a least
+		 * fixpoint over finite sets of DP constants. Each entry is re-walked only when its set
+		 * grows, once per new value plus once with UNKNOWN on becoming a CONFLICT.
 		 */
 		Map<Function, Map<Address, State>> solve(TaskMonitor monitor) throws CancelledException {
 			var fm = program.getFunctionManager();
@@ -512,26 +522,31 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 			Set<Function> queued = new HashSet<>(work);
 			Map<Function, Set<Integer>> seen = new HashMap<>();
 			Map<Function, Integer> entry = new LinkedHashMap<>();   // absent: unseeded
+			// The walks a seeded function's ways out are read from: one per entry DP it has seen
+			// (grm-9nxj.38). A CONFLICT entry's own walk (states) runs with UNKNOWN, which would
+			// hide every DP it passes on; reading its per-value walks instead makes a conflict
+			// reach its callees as a conflict, whatever order the entries were solved in.
+			Map<Function, Map<Integer, Map<Address, State>>> byValue = new HashMap<>();
 			while (!work.isEmpty()) {
 				monitor.checkCancelled();
 				Function g = work.poll();
 				queued.remove(g);
-				Integer was = entry.get(g);
-				if (was != null && was == CONFLICT) {
-					continue;
-				}
 				Set<Integer> s = seen.computeIfAbsent(g, k -> new LinkedHashSet<>());
-				knownEntryDpsBySource(sources.get(g), states).values().forEach(s::addAll);
-				if (s.isEmpty()) {
+				int before = s.size();
+				knownEntryDpsBySource(sources.get(g), states, byValue).values()
+						.forEach(s::addAll);
+				if (s.size() == before) {
 					continue;
 				}
 				int now = s.size() == 1 ? s.iterator().next() : CONFLICT;
-				if (was != null && was == now) {
-					continue;
-				}
 				entry.put(g, now);
-				int d = now == CONFLICT ? UNKNOWN : now;
-				states.put(g, walk(g, new State(d, UNKNOWN, UNKNOWN, UNKNOWN, List.of())));
+				Map<Integer, Map<Address, State>> walks =
+					byValue.computeIfAbsent(g, k -> new LinkedHashMap<>());
+				for (int v : s) {
+					walks.computeIfAbsent(v,
+						k -> walk(g, new State(k, UNKNOWN, UNKNOWN, UNKNOWN, List.of())));
+				}
+				states.put(g, now == CONFLICT ? walk(g, ENTRY) : walks.get(now));
 				for (Function c : dependents.getOrDefault(g, Set.of())) {
 					if (!blocked.contains(c) && queued.add(c)) {
 						work.add(c);
@@ -541,7 +556,7 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 			// The final count of known and ignored ways in, against the final walks.
 			for (Map.Entry<Function, Integer> e : entry.entrySet()) {
 				List<Address> src = sources.get(e.getKey());
-				int known = knownEntryDpsBySource(src, states).size();
+				int known = knownEntryDpsBySource(src, states, byValue).size();
 				seeds.put(e.getKey(), new Seed(e.getValue(), Set.copyOf(seen.get(e.getKey())),
 					known, src.size() - known));
 			}
@@ -591,7 +606,8 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 		 * absent. A source inside overlapping bodies may carry more than one.
 		 */
 		private Map<Address, Set<Integer>> knownEntryDpsBySource(List<Address> src,
-				Map<Function, Map<Address, State>> states) {
+				Map<Function, Map<Address, State>> states,
+				Map<Function, Map<Integer, Map<Address, State>>> byValue) {
 			Map<Address, Set<Integer>> out = new LinkedHashMap<>();
 			for (Address s : src) {
 				Instruction ins = program.getListing().getInstructionAt(s);
@@ -599,13 +615,18 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 					continue;
 				}
 				for (Function f : functionsAt(s)) {
-					State st = states.get(f) == null ? null : states.get(f).get(s);
-					if (st == null) {
-						continue;
-					}
-					int v = ins.getFlowType().isCall() ? st.dp : transfer(ins, st).dp;
-					if (v != UNKNOWN) {
-						out.computeIfAbsent(s, k -> new LinkedHashSet<>()).add(v);
+					Map<Integer, Map<Address, State>> walks = byValue.get(f);
+					Collection<Map<Address, State>> from = walks != null ? walks.values()
+							: states.get(f) == null ? List.of() : List.of(states.get(f));
+					for (Map<Address, State> w : from) {
+						State st = w.get(s);
+						if (st == null) {
+							continue;
+						}
+						int v = ins.getFlowType().isCall() ? st.dp : transfer(ins, st).dp;
+						if (v != UNKNOWN) {
+							out.computeIfAbsent(s, k -> new LinkedHashSet<>()).add(v);
+						}
 					}
 				}
 			}

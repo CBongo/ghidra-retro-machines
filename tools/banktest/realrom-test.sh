@@ -1216,6 +1216,18 @@ realrom_cache_key() {
 		# and unpinned dumps have differed before (grm-nems, grm-kon2), so a GRM_THREAD_PIN=1
 		# diagnostic run must never serve its dump to a normal `bless`.
 		printf 'threadpin:%s\n' "${GRM_THREAD_PIN:-0}"
+		# Diagnostic knobs the dump script reads itself (GRM_DP_WRITER_SITES, GRM_DP_ENTRY_SITES,
+		# ...) add lines to the dump, so a diagnostic run's dump must never serve a normal
+		# `bless` (grm-9nxj.38). Found by reading the script's own getenv calls, so a new knob is
+		# keyed with no edit here; only SET ones are emitted, so an unset run keeps its old key.
+		# GRM_ names only: REALROM_WORK_DIR is read too, but is a fresh temp dir every run.
+		local v
+		while read -r v; do
+			if [ -n "${!v+x}" ]; then
+				printf 'dumpenv:%s=%s\n' "$v" "${!v}"
+			fi
+		done < <(grep -oh 'getenv("GRM_[A-Za-z0-9_]*")' "$SCRIPT_DIR/$ROM_DUMP_SCRIPT" \
+				"$SCRIPT_DIR/RealRomDumpSupport.java" | sed 's/getenv("\(.*\)")/\1/' | sort -u)
 	} | sha256sum | cut -d' ' -f1
 }
 

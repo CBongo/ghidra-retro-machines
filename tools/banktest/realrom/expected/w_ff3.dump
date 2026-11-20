@@ -140,6 +140,6 @@ REALROM dp value 1000=40
 REALROM dp value 1100=34
 REALROM dp value 1300=200
 REALROM dp value 2100=175
-REALROM dp entry assumedPastUnknown=343 conflict=1
+REALROM dp entry assumedPastUnknown=343 conflict=2
 REALROM long operands=3507 withRef=3503
 === REALROM END ===

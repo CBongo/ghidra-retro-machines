@@ -91,15 +91,15 @@ REALROM computed JMP (!$0x6) sites=1 withTargets=1
 REALROM computed JMP (!$0xn) sites=3 withTargets=2
 REALROM computed RTI <UNSUPPORTn> sites=3 withTargets=0
 REALROM plp sites=14 paired=14 ambiguous=0 unpaired=0 stale=0
-REALROM dp operands=8868 known=8054 withRef=8064 knownWithRef=8054
+REALROM dp operands=8868 known=8053 withRef=8063 knownWithRef=8053
 REALROM dp writer PLD sites=47 knownAfter=37
 REALROM dp value 0000=4094
-REALROM dp value 0100=73
+REALROM dp value 0100=72
 REALROM dp value 0600=3570
 REALROM dp value 1e00=263
 REALROM dp value 2100=35
 REALROM dp value 4200=9
 REALROM dp value 4300=10
-REALROM dp entry assumedPastUnknown=42 conflict=3
+REALROM dp entry assumedPastUnknown=41 conflict=6
 REALROM long operands=993 withRef=991
 === REALROM END ===

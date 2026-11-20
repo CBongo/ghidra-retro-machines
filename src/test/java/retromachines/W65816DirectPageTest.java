@@ -351,6 +351,36 @@ public class W65816DirectPageTest extends AbstractProgramTest {
 			dpWarning(0x8200));
 	}
 
+	/**
+	 * grm-9nxj.38 (w_ff2 thunk 048004 -> 048107): a conflict at a thunk's entry reaches the
+	 * thunk's target as the same conflict, rather than leaving it unseeded (or, solved in another
+	 * order, seeded from whichever caller's DP arrived first).
+	 */
+	@Test
+	public void conflictPassesThroughATailJumpThunk() throws Exception {
+		lay("0x8300", "85 3d 60", "S");      // STA <$3d ; RTS
+		lay("0x8200", "4c 00 83", "T");      // JMP $8300
+		lay("0x8000", SET_600_CALL_8200, "C");
+		lay("0x8100", "a2 00 07 da 2b 20 00 82 60", "D");   // DP=$0700 ; JSR $8200
+		analyzeAll();
+		assertNull(dpAt(0x8300));
+		assertNull(dataRef(0x8300));
+		assertEquals("DP conflict at entry: ways in carry $0600, $0700; entry DP left unknown",
+			dpWarning(0x8300));
+	}
+
+	/** A conflict entry that sets its own DP before the jump still seeds the target cleanly. */
+	@Test
+	public void conflictEntryThatSetsDpStillSeedsItsTarget() throws Exception {
+		lay("0x8300", "85 3d 60", "S");
+		lay("0x8200", "a2 00 08 da 2b 4c 00 83", "T");   // DP=$0800 ; JMP $8300
+		lay("0x8000", SET_600_CALL_8200, "C");
+		lay("0x8100", "a2 00 07 da 2b 20 00 82 60", "D");
+		analyzeAll();
+		assertRef(0x8300, 0x083d, RefType.WRITE);
+		assertNull(dpWarning(0x8300));
+	}
+
 	/** Re-analysis does not stack a second warning on the same entry. */
 	@Test
 	public void reanalysisReplacesTheWarning() throws Exception {
