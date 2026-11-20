@@ -316,7 +316,10 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				continue;
 			}
 			String cur = f.getCallingConventionName();
-			boolean ours = DP_PRESERVED.equals(cur);
+			// Ours: any of the preserving prototypes (grm-9nxj.32 added the DBR pair; the DBR
+			// analyzer owns that half of the verdict, this one the DP half).
+			boolean ours = W65816DataBankAnalyzer.isOurs(cur);
+			boolean hadDp = W65816DataBankAnalyzer.hasDp(cur);
 			boolean unset = cur == null || cur.equals(Function.UNKNOWN_CALLING_CONVENTION_STRING) ||
 				cur.equals(Function.DEFAULT_CALLING_CONVENTION_STRING) || cur.equals(dflt);
 			if (!ours && !unset) {
@@ -325,13 +328,15 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 			Address at = f.getEntryPoint();
 			boolean keeps = w.preserves(at) || w.exitDp(at) == ENTRY_DP;
 			try {
-				if (keeps && !ours) {
-					f.setCallingConvention(DP_PRESERVED);
-					n[0]++;
-				}
-				else if (!keeps && ours) {
-					f.setCallingConvention(Function.UNKNOWN_CALLING_CONVENTION_STRING);
-					n[1]++;
+				if (keeps != hadDp) {
+					f.setCallingConvention(
+						W65816DataBankAnalyzer.compose(keeps, W65816DataBankAnalyzer.hasDbr(cur)));
+					if (keeps) {
+						n[0]++;
+					}
+					else {
+						n[1]++;
+					}
 				}
 			}
 			catch (InvalidInputException e) {
