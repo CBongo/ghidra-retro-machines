@@ -247,6 +247,50 @@ public class W65816RtsTrickTest extends AbstractProgramTest {
 		assertNotNull(recognize(rts));
 	}
 
+	private void setDbr(long from, long to, int v) throws Exception {
+		inTx(program, "DBR", () -> program.getProgramContext().setValue(
+			program.getRegister("DBR"), addr(from), addr(to), BigInteger.valueOf(v)));
+	}
+
+	/** grm-9nxj.43: tracked DBR != PBR puts the abs table in the DBR bank; targets stay in PBR. */
+	@Test
+	public void trackedDbrDiffersFromPbrReadsTheTableInTheDbrBank() throws Exception {
+		words("0x018000", 0x81ff, 0x820f, 0x0000);
+		// The $8000 words are code bytes in bank 0, so only DBR=1 can make this a table.
+		Address rts = dispatcher("0a aa bd 00 80 48 60");
+		assertEquals("fallback DBR==PBR", addr(0x8000), recognize(rts).table());
+		setDbr(0x8000, 0x8fff, 1);
+		W65816RtsTrick.Shape s = recognize(rts);
+		assertNotNull(s);
+		assertEquals(addr("0x018000"), s.table());
+		analyze(rts);
+		assertTargets(rts, 0x8200, 0x8210);
+		assertArray(0x018000, 2);
+	}
+
+	@Test
+	public void trackedDbrAgreeingWithPbrChangesNothing() throws Exception {
+		words("0x8100", 0x81ff, 0x820f, 0x0000);
+		Address rts = dispatcher("0a aa bd 00 81 48 60");
+		setDbr(0x8000, 0x8fff, 0);
+		assertEquals(addr(0x8100), recognize(rts).table());
+	}
+
+	@Test
+	public void trackedWramDbrDeclinesAnOtherwiseRomLookingTable() throws Exception {
+		Address rts = dispatcher("0a aa bd 00 81 48 60");
+		assertNotNull(recognize(rts));
+		setDbr(0x8000, 0x8fff, 0x7e);
+		assertNull(recognize(rts));
+	}
+
+	@Test
+	public void trackedDbrWithNoMemoryAtTheTableDeclines() throws Exception {
+		Address rts = dispatcher("0a aa bd 00 81 48 60");
+		setDbr(0x8000, 0x8fff, 5);
+		assertNull(recognize(rts));
+	}
+
 	@Test
 	public void absRamTableDeclines() throws Exception {
 		assertNull(recognize(dispatcher("bd 00 01 48 60")));

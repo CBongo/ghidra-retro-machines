@@ -12,6 +12,9 @@
 //   Q5 abs operands under an analyzer-stamped DBR: how many carry a reference, how many to the DBR's
 //      bank, where the targets land (instruction / defined data / undefined), samples, and every
 //      reference whose target is an instruction ("DBR refToInstruction").
+//   Q6 (grm-9nxj.42) "DBR loss": why abs operands still have no known DBR, by cause, with the root
+//      causes behind unseeded entries traced upstream (W65816DataBankAnalyzer.Diagnostics); Q4's
+//      dump adds the analyzer's own walk state per instruction ("DBR   walk") and takes any address.
 // Run on snes-analysis with REALROM_EXTRA_POSTSCRIPT=DbrCensusProbe.java REALROM_WORK_DIR=<dir> (no
 // dot-leading path element); output is the "DBR " lines of <dir>/<id>.log. Read-only.
 // The scan is linear (address order) per function, not flow-sensitive: an estimate, not the analyzer.
@@ -54,6 +57,7 @@ public class DbrCensusProbe extends GhidraScript {
 	Map<String, List<String>> samples = new TreeMap<>();
 	Register mf, xf, dbr;
 	retromachines.W65816DataBankAnalyzer.CallSummaries sums;
+	retromachines.W65816DataBankAnalyzer.Diagnostics diag;
 
 	@Override
 	protected void run() throws Exception {
@@ -77,6 +81,11 @@ public class DbrCensusProbe extends GhidraScript {
 			for (String s : e.getValue()) println("DBR sample " + e.getKey() + " " + s);
 		operandCensus();
 		functionCensus();
+		// Q6 (grm-9nxj.42): why abs operands still have no known DBR, by cause, top callees, top
+		// unseeded functions (the analyzer's own walk, W65816DataBankAnalyzer.Diagnostics).
+		diag = new retromachines.W65816DataBankAnalyzer.Diagnostics(currentProgram);
+		for (String line : diag.lossReport(25))
+			println("DBR loss " + line);
 		String sites = System.getenv("GRM_DBR_FUNCS");
 		if (sites != null && !sites.isBlank()) for (String s : sites.split(",")) dumpFunc(s.trim());
 	}
@@ -231,7 +240,7 @@ public class DbrCensusProbe extends GhidraScript {
 		return "other";
 	}
 
-	void operandCensus() {
+	void operandCensus() throws Exception {
 		Map<String, Integer> byRef = new TreeMap<>(), byMode = new TreeMap<>(), otherBanks = new TreeMap<>();
 		int dpInd = 0;
 		Pattern dpi = Pattern.compile("^\\(<");
@@ -286,6 +295,36 @@ public class DbrCensusProbe extends GhidraScript {
 		println("DBR absOperands byRefBank=" + byRef + " byMode=" + byMode);
 		println("DBR absOperands otherRefBanks=" + otherBanks);
 		println("DBR dpIndirectData instrs=" + dpInd + " (no static final address)");
+		rtsTrickCensus();
+	}
+
+	/** grm-9nxj.43: RTS windows (LDA abs,X/Y ... PHA ... RTS) by tracked DBR vs the PBR assumption. */
+	void rtsTrickCensus() throws Exception {
+		Listing l = currentProgram.getListing();
+		int windows = 0, unknown = 0, agree = 0, disagree = 0, resolved = 0, resolvedDisagree = 0;
+		for (Instruction rts : l.getInstructions(true)) {
+			if (!"RTS".equals(rts.getMnemonicString())) continue;
+			Instruction cur = rts, load = null; boolean pha = false;
+			for (int n = 0; n < 12 && cur != null; n++) {
+				Instruction prev = l.getInstructionBefore(cur.getMinAddress());
+				if (prev == null || !cur.getMinAddress().equals(prev.getFallThrough())) break;
+				int op = prev.getByte(0) & 0xff;
+				if (op == 0x48) pha = true;
+				if (pha && (op == 0xbd || op == 0xb9)) { load = prev; break; }
+				cur = prev;
+			}
+			if (load == null) continue;
+			windows++;
+			boolean res = rts.getComment(CommentType.EOL) != null && rts.getComment(CommentType.EOL).contains("65816 RTS trick");
+			if (res) resolved++;
+			RegisterValue v = currentProgram.getProgramContext().getRegisterValue(dbr, load.getMinAddress());
+			if (v == null || !v.hasValue()) { unknown++; continue; }
+			long bank = (rts.getMinAddress().getOffset() >> 16) & 0xff;
+			if (v.getUnsignedValue().longValue() == bank) agree++;
+			else { disagree++; if (res) resolvedDisagree++;
+				println("DBR rtsTrick disagree " + rts.getMinAddress() + " load " + load.getMinAddress() + " DBR=" + v.getUnsignedValue()); }
+		}
+		println("DBR rtsTrickWindows=" + windows + " resolved=" + resolved + " dbrUnknown=" + unknown + " dbrAgreesPbr=" + agree + " dbrDiffersPbr=" + disagree + " (resolved&differs=" + resolvedDisagree + ")");
 	}
 
 	Object resolve(Fn fn, Object s) {
@@ -380,6 +419,10 @@ public class DbrCensusProbe extends GhidraScript {
 
 	void dumpFunc(String s) {
 		Address a = currentProgram.getAddressFactory().getAddress(s);
+		if (a != null && !fns.containsKey(a)) {   // any address: its containing function
+			Function cf = currentProgram.getFunctionManager().getFunctionContaining(a);
+			if (cf != null) a = cf.getEntryPoint();
+		}
 		Fn fn = a == null ? null : fns.get(a);
 		if (fn == null) { println("DBR func " + s + ": not a function entry"); return; }
 		if (sums == null) sums = new retromachines.W65816DataBankAnalyzer.CallSummaries(currentProgram);
@@ -407,6 +450,7 @@ public class DbrCensusProbe extends GhidraScript {
 			for (int i = 0; i < 8 && p != null; i++, p = p.getPrevious()) back.add(0, p.getAddress() + " " + p);
 			for (String b : back) println("DBR       " + b);
 		}
+		for (String line : diag.states(a)) println("DBR   walk " + line);   // the analyzer's own states
 		int n = 0;
 		for (Instruction in : fn.ins) {
 			if (n++ >= 2000) break;

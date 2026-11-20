@@ -382,6 +382,14 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 	}
 
 	/**
+	 * Whether {@code a} is a shared epilogue (pulls what its jumper pushed and never returns on its
+	 * own frame); structural, uncached. Shared with {@link W65816DataBankAnalyzer} (grm-9nxj.42).
+	 */
+	static boolean isSharedEpilogue(Program program, Address a) {
+		return Walker.scanEpilogue(program, a);
+	}
+
+	/**
 	 * Read-only census hook (grm-hf5h.23): the analyzer's own call-summary verdict for a call
 	 * target, exactly as {@code afterCall} judges it, for probes that ask which callees really
 	 * change the caller's DP. One instance caches across targets, like one analysis run.
@@ -737,7 +745,7 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 		 * ~150,000 judgements each) and the row timed out.
 		 */
 		private boolean isEpilogue(Address a) {
-			return epilogues.computeIfAbsent(a, this::scanEpilogue);
+			return epilogues.computeIfAbsent(a, t -> scanEpilogue(program, t));
 		}
 
 		private static final int EPILOGUE_SCAN = 4096;   // FF3 $C5:0180 handler is several hundred
@@ -750,7 +758,7 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 		 * do their work and then tail-jump into the shared epilogue. Gives up (false) past
 		 * {@link #EPILOGUE_SCAN} instructions or on a depth that differs between two paths.
 		 */
-		private boolean scanEpilogue(Address a) {
+		static boolean scanEpilogue(Program program, Address a) {
 			Map<Address, Integer> seen = new HashMap<>();
 			ArrayDeque<Address> work = new ArrayDeque<>();
 			seen.put(a, 0);

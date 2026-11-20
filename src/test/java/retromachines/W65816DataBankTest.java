@@ -361,6 +361,104 @@ public class W65816DataBankTest extends AbstractProgramTest {
 		assertEquals(Integer.valueOf(0x7e), dbrAt(0x8003));
 	}
 
+	// ---- grm-9nxj.42 ----
+
+	@Test
+	public void aSharedPlbRtsEpilogueReachedByJumpPullsTheJumpersPhb() throws Exception {
+		// F: PHB ; PEA #$7f7f ; PLB ; PLB ; LDA $1234 ; JMP $8100 -> G: PLB ; RTS (its own function)
+		lay("0x8000", "8b f4 7f 7f ab ab " + LDA_1234 + " 4c 00 81", "F");
+		lay("0x8100", "ab 60", "G");
+		// H: PEA #$7e7e ; PLB ; PLB ; JSR F ; LDA $1234 ; RTS
+		lay("0x8200", "f4 7e 7e ab ab 20 00 80 " + LDA_1234 + " 60", "H");
+		analyze();
+		assertEquals(Integer.valueOf(0x7f), dbrAt(0x8006));
+		assertEquals("F restores the caller's DBR through G", Integer.valueOf(0x7e),
+			dbrAt(0x8208));
+		assertEquals(addr(0x7e1234), dataRef(0x8208).getToAddress());
+		assertEquals(W65816DataBankAnalyzer.DBR_PRESERVED, convention(0x8000));
+	}
+
+	@Test
+	public void aDispatchIntoSharedEpiloguesExitsWithTheDispatchersPhb() throws Exception {
+		// F: PHB ; PEA #$7f7f ; PLB ; PLB ; JMP ($8100,X) -> handler G: LDA $1234 ; PLB ; RTS
+		lay("0x8000", "8b f4 7f 7f ab ab 7c 00 81", "F");
+		lay("0x8200", LDA_1234 + " ab 60", "G");
+		inTx(program, "dispatch ref", () -> program.getReferenceManager().addMemoryReference(
+			addr(0x8006), addr(0x8200), RefType.COMPUTED_JUMP, SourceType.ANALYSIS, 0));
+		// C: PEA #$7e7e ; PLB ; PLB ; JSR F ; LDA $1234 ; RTS
+		lay("0x8300", "f4 7e 7e ab ab 20 00 80 " + LDA_1234 + " 60", "C");
+		analyze();
+		assertEquals("the handler runs under the dispatcher's DBR", Integer.valueOf(0x7f),
+			dbrAt(0x8200));
+		assertEquals("F returns the caller's DBR through the handler's PLB",
+			Integer.valueOf(0x7e), dbrAt(0x8308));
+	}
+
+	@Test
+	public void aTailJumpWithACallReturnOverrideIsATailExit() throws Exception {
+		lay("0x8100", "4b ab 60", "G");        // PHK ; PLB ; RTS : returns bank $00
+		lay("0x8000", "4c 00 81", "F");        // JMP G, overridden CALL_RETURN by Ghidra
+		inTx(program, "override", () -> program.getListing().getInstructionAt(addr(0x8000))
+				.setFlowOverride(ghidra.program.model.listing.FlowOverride.CALL_RETURN));
+		// C: PEA #$7e7e ; PLB ; PLB ; JSR F ; LDA $1234 ; RTS
+		lay("0x8200", "f4 7e 7e ab ab 20 00 80 " + LDA_1234 + " 60", "C");
+		analyze();
+		assertEquals("F returns what G returns", Integer.valueOf(0x00), dbrAt(0x8208));
+	}
+
+	@Test
+	public void anRtlThatPullsBelowItsEntryDoesNotMakeTheHelperAnRtlRoutine() throws Exception {
+		// F: PHB ; PEA #$7f7f ; PLB ; PLB ; JSR H ; PLB ; RTL
+		lay("0x8000", "8b f4 7f 7f ab ab 20 00 81 ab 6b", "F");
+		// H: BEQ +3 ; JMP $8009 (into F's PLB / RTL, for F's frame) ; RTS
+		lay("0x8100", "f0 03 4c 09 80 60", "H");
+		// C: PEA #$7e7e ; PLB ; PLB ; JSL F ; LDA $1234 ; RTS
+		lay("0x8200", "f4 7e 7e ab ab 22 00 80 00 " + LDA_1234 + " 60", "C");
+		analyze();
+		assertEquals("H returns by RTS for its JSR: F's stack is intact at its PLB",
+			Integer.valueOf(0x7e), dbrAt(0x8209));
+	}
+
+	@Test
+	public void phkPerJmlIsAFarCallThatComesBack() throws Exception {
+		lay("0x8100", "4b ab 6b", "G");   // PHK ; PLB ; RTL : returns bank $00
+		// F: PHK ; PER +3 (pushes $8007) ; JML G ; [$8008] LDA $1234 ; RTS
+		lay("0x8000", "4b 62 03 00 5c 00 81 00 " + LDA_1234 + " 60", "F");
+		builder.disassemble("0x8008", 4, false);
+		// C: PEA #$7e7e ; PLB ; PLB ; JSR F ; LDA $1234 ; RTS
+		lay("0x8200", "f4 7e 7e ab ab 20 00 80 " + LDA_1234 + " 60", "C");
+		analyze();
+		assertEquals("G's RTL comes back to $8008 with G's bank", Integer.valueOf(0x00),
+			dbrAt(0x8008));
+		assertEquals("F returns G's bank, not an unknown one", Integer.valueOf(0x00),
+			dbrAt(0x8208));
+	}
+
+	@Test
+	public void tdcPhaPlbTakesDpsLowByte() throws Exception {
+		// SEP #$20 ; TDC ; PHA ; PLB ; LDA $1234 ; RTS, with DP = $007e stamped at the TDC
+		lay("0x8000", "e2 20 7b 48 ab " + LDA_1234 + " 60", "F");
+		inTx(program, "DP", () -> program.getProgramContext().setValue(program.getRegister("DP"),
+			addr(0x8002), addr(0x8002), BigInteger.valueOf(0x007e)));
+		analyze();
+		assertEquals(Integer.valueOf(0x7e), dbrAt(0x8005));
+	}
+
+	@Test
+	public void tdcWithNoKnownDpLeavesDbrUnknown() throws Exception {
+		lay("0x8000", "e2 20 7b 48 ab " + LDA_1234 + " 60", "F");
+		analyze();
+		assertNull(dbrAt(0x8005));
+	}
+
+	@Test
+	public void txaPhaPlbCarriesAnImmediateThroughX() throws Exception {
+		// SEP #$30 ; LDX #$7e ; TXA ; PHA ; PLB ; LDA $1234 ; RTS
+		lay("0x8000", "e2 30 a2 7e 8a 48 ab " + LDA_1234 + " 60", "F");
+		analyze();
+		assertEquals(Integer.valueOf(0x7e), dbrAt(0x8007));
+	}
+
 	// ---- conventions ----
 
 	@Test

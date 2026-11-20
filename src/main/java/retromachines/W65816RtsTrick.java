@@ -57,7 +57,9 @@ import ghidra.program.model.mem.MemoryAccessException;
  * {@link RtsTrickDispatch}.
  *
  * <p><b>The table.</b> A long operand names its 24-bit address; an abs operand is taken in the
- * {@code RTS}'s bank (DBR is assumed equal to PBR, as in
+ * {@code RTS}'s bank unless DBR is tracked at the load ({@link W65816TrackedDbr}, grm-9nxj.43: then the
+ * table is in that bank, WRAM banks decline, and ROM is decided by the memory map, not the offset;
+ * DBR == PBR is the fallback, as in
  * {@link W65816JumpTableAnalyzer}'s load handling). RAM tables are declined: abs operands below
  * {@code $8000}, long operands whose low 16 bits are below {@code $8000} or whose bank is
  * {@code $7E}/{@code $7F}. Targets are in the {@code RTS}'s bank. The bound is
@@ -150,12 +152,34 @@ final class W65816RtsTrick {
 		catch (MemoryAccessException e) {
 			return null;
 		}
-		if ((operand & 0xffff) < 0x8000) {
-			return null;   // RAM or I/O table
+		// grm-9nxj.43: an abs operand is read in bank DBR. Use the tracked value (program context)
+		// where known; DBR == PBR is the fallback.
+		int dbr = isLong ? W65816TrackedDbr.UNKNOWN : W65816TrackedDbr.at(program, load.getMinAddress());
+		boolean tracked = dbr != W65816TrackedDbr.UNKNOWN;
+		long bank;
+		if (isLong) {
+			bank = operand & 0xff0000L;
 		}
-		long bank = isLong ? operand & 0xff0000L : rts.getMinAddress().getOffset() & 0xff0000L;
-		if (isLong && (bank == 0x7e0000L || bank == 0x7f0000L)) {
-			return null;
+		else if (tracked) {
+			bank = (long) dbr << 16;
+		}
+		else {
+			bank = rts.getMinAddress().getOffset() & 0xff0000L;
+		}
+		if ((isLong || tracked) && (bank == 0x7e0000L || bank == 0x7f0000L)) {
+			return null;   // WRAM table (a long operand, or a tracked DBR of $7E/$7F)
+		}
+		if (tracked) {
+			// The offset rule below guesses ROM from the offset alone; with the bank known, ask
+			// the memory map instead (HiROM tables sit at $xx:0000-$7FFF of banks $C0+).
+			var blk = program.getMemory().getBlock(
+				rts.getMinAddress().getNewAddress(bank | (operand & 0xffff)));
+			if (blk == null || blk.isWrite() || !blk.isInitialized()) {
+				return null;
+			}
+		}
+		else if ((operand & 0xffff) < 0x8000) {
+			return null;   // RAM or I/O table
 		}
 		for (int j = i + 1; j <= pha; j++) {
 			if (RtsTrickDispatch.hasNonFallThroughFlowInto(program, w[j].getMinAddress())) {

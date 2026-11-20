@@ -92,9 +92,18 @@ import ghidra.util.task.TaskMonitor;
  * {@code JSR/JSL (abs,X)} with several targets returns the DBR it was given; an exit that has
  * pulled below its entry stack is ignored (it returns to an outer frame); an exit with anything
  * of its own left on the stack is UNKNOWN. A {@code JSR} to a routine that only returns by
- * {@code RTL} consumes the bank byte the caller pushed. NOT yet handled: shared epilogues
- * ({@code ... PLB / RTL} entered by a jump after the jumper's {@code PHB}), and unresolved
- * indirect calls (DBR unknown after them).
+ * {@code RTL} consumes the bank byte the caller pushed.
+ *
+ * <p><b>grm-9nxj.42 additions.</b> A shared epilogue ({@code ... PLB / RTL} entered by a jump
+ * after the jumper's {@code PHB}, the DP analyzer's structural scan) is walked on with the
+ * jumper's stack instead of judged as a tail exit, and so are the handlers of a dispatch JMP
+ * that are all such epilogues (CT's sound driver). A jump or branch carrying Ghidra's
+ * CALL_RETURN override is a tail exit like a plain one; a tail jump over a return address of
+ * the routine's own ({@code PHK / PER / JML}) is a call that comes back. An RTL that pulls
+ * below the entry does not make the routine an RTL routine. {@code TDC} reads the DP
+ * analyzer's stamped DP, and {@code TAX/TAY/TXA/TYA} copy known bytes, so FF3's
+ * {@code TDC / PHA / PLB} resolves. Unresolved indirect calls still leave DBR unknown: no
+ * evidence says their targets preserve it.
  *
  * <p><b>Output.</b> Where DBR is known at an instruction inside a function's body it is stamped
  * as an assumed register value over that instruction (the decompiler reads only the entry
@@ -245,6 +254,58 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 		/** Why the summary is UNKNOWN, or null. */
 		public String why(Address target) {
 			return en.why.get(target);
+		}
+	}
+
+	/**
+	 * Read-only census hook (grm-9nxj.42): why absolute operands still have no known DBR, and
+	 * the analyzer's own per-instruction state for named functions. Solves summaries and seeds
+	 * once, afresh; changes nothing.
+	 */
+	public static final class Diagnostics {
+		private final Engine en;
+
+		public Diagnostics(Program program) {
+			en = new Engine(program);
+			try {
+				en.solveSummaries(TaskMonitor.DUMMY);
+				en.solveSeeds(TaskMonitor.DUMMY);
+			}
+			catch (CancelledException e) {
+				// cannot happen with the dummy monitor
+			}
+		}
+
+		/** Lost operands by cause, root causes behind unseeded entries, top callees. */
+		public List<String> lossReport(int top) {
+			return en.lossReport(top);
+		}
+
+		/** The walk's state before each instruction of the function at {@code entry}. */
+		public List<String> states(Address entry) {
+			List<String> out = new ArrayList<>();
+			Map<Address, State> m = en.states.get(entry);
+			out.add("seed=" + en.seedOf(entry) + " summary=" + en.verdict(entry) + " why=" +
+				en.why.get(entry) + " walked=" + (m == null ? "none" : m.size()));
+			if (m == null) {
+				return out;
+			}
+			List<Address> keys = new ArrayList<>(m.keySet());
+			java.util.Collections.sort(keys);
+			for (Address a : keys) {
+				State s = m.get(a);
+				out.add(a + " dbr=" + show(s.dbr) + " stack=" + s.stack + (s.under ? " under" : ""));
+			}
+			return out;
+		}
+
+		private static String show(int v) {
+			StringBuilder sb = new StringBuilder();
+			for (int x : expand(v)) {
+				sb.append(sb.length() == 0 ? "" : "|").append(x == ENTRY ? "E" :
+					x == UNKNOWN ? "?" : String.format("%02x", x));
+			}
+			return sb.toString();
 		}
 	}
 
@@ -499,6 +560,7 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 		private final Register ctxM;
 		private final Register ctxX;
 		private final Register dbrReg;
+		private final Register dpReg;
 		private final Register[] tracked;   // C, X, Y, SP, DBR
 
 		final Map<Address, Map<Address, State>> states = new LinkedHashMap<>();
@@ -521,6 +583,7 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 			ctxM = program.getRegister("ctx_MF");
 			ctxX = program.getRegister("ctx_XF");
 			dbrReg = program.getRegister("DBR");
+			dpReg = program.getRegister("DP");
 			tracked = new Register[] { program.getRegister("C"), program.getRegister("X"),
 				program.getRegister("Y"), program.getRegister("SP"), dbrReg };
 			scanUserValues();
@@ -612,6 +675,90 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 			return !a.equals(root) && program.getFunctionManager().getFunctionAt(a) != null;
 		}
 
+		private final Map<Address, Boolean> epilogues = new HashMap<>();
+
+		/**
+		 * Whether flow from {@code root}'s walk into {@code a} leaves it as a tail exit judged by
+		 * {@code a}'s summary: {@code a} is another function's entry that is not a shared epilogue.
+		 * A shared epilogue ({@code ... PLB / RTL} entered by a jump after the jumper's
+		 * {@code PHB}; grm-9nxj.42, the DP analyzer's structural {@code scanEpilogue}) is walked
+		 * on with the jumper's stack instead, so its {@code PLB} pulls the jumper's {@code PHB}.
+		 * Judged alone it pulls below its entry and has no exit of its own.
+		 */
+		private boolean tailExit(Address root, Address a) {
+			return otherEntry(root, a) && !isEpilogue(a);
+		}
+
+		private boolean isEpilogue(Address a) {
+			return epilogues.computeIfAbsent(a,
+				t -> W65816DirectPageAnalyzer.isSharedEpilogue(program, t));
+		}
+
+		/**
+		 * A dispatch JMP whose resolved handlers are all shared epilogues (grm-9nxj.42): CT's
+		 * sound driver {@code $C7:0140} ({@code PHB / PHD / ... / PLB / JMP ($0AD9,X)}, every
+		 * handler leaving through the code that pulls that frame, as FF3's {@code $C5:0160} does
+		 * for DP, grm-hf5h.26). A summary walk follows it instead of taking it as a rule-A exit,
+		 * so the handlers' {@code PLB} pulls the dispatcher's {@code PHB} and the routine's
+		 * exits are its RTLs.
+		 */
+		private boolean intoEpilogues(Instruction ins) {
+			Address[] fl = ins.getFlows();
+			if (fl.length == 0) {
+				return false;
+			}
+			for (Address a : fl) {
+				if (!isEpilogue(a)) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		/** A jump that is a call through a pushed return address: where it returns, and how. */
+		record PushedCall(Address cont, State after) {
+		}
+
+		/**
+		 * A tail jump into another routine reached with a known return address of this
+		 * routine's own on top of the stack: F-Zero's far call {@code PHK / PER ret-1 / JML f}
+		 * ({@code $00:8EAA}), or {@code PEA ret-1 / JMP f} for an RTS routine. When every exit
+		 * of {@code f} is one RTL (three bytes: bank, high, low) or one RTS (two), control comes
+		 * back to {@code ret} in this routine with those bytes pulled and {@code f}'s summary
+		 * applied: the jump is a call, not an exit (grm-9nxj.42). Without it such a jump was a
+		 * tail exit with bytes of its own on the stack, an UNKNOWN summary. Null otherwise.
+		 */
+		private PushedCall pushedCall(Address root, Instruction ins, State st) {
+			if (st == null || !isTailJump(ins) || !tailExit(root, ins.getFlows()[0])) {
+				return null;
+			}
+			Summary sm = summaryOf(ins.getFlows()[0]);
+			int n = sm.kinds.equals(Set.of("RTL")) ? 3 : sm.kinds.equals(Set.of("RTS")) ? 2 : 0;
+			List<Integer> stk = st.stack;
+			int size = stk.size();
+			if (n == 0 || size < n) {
+				return null;
+			}
+			int lo = stk.get(size - 1);
+			int hi = stk.get(size - 2);
+			// An RTS returns in the bank it runs in: the target's (a JML into an RTS routine).
+			int bank = n == 3 ? stk.get(size - 3) :
+				(int) ((ins.getFlows()[0].getOffset() >> 16) & 0xff);
+			if (lo < 0 || hi < 0 || bank < 0 || lo >= SET_BASE || hi >= SET_BASE ||
+				bank >= SET_BASE) {
+				return null;
+			}
+			long ret = (long) bank << 16 | (((hi << 8 | lo) + 1) & 0xffff);
+			Address cont = ins.getAddress().getAddressSpace().getAddress(ret);
+			if (program.getListing().getInstructionAt(cont) == null || tailExit(root, cont)) {
+				return null;   // no code there, or another routine's entry: not followed
+			}
+			int dbr = sm.apply(st.dbr);
+			State after = new State(dbr, UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN,
+				List.copyOf(stk.subList(0, size - n)), st.under, st.viaCall || dbr != st.dbr);
+			return new PushedCall(cont, after);
+		}
+
 		/**
 		 * @param dispatch follow an indirect JMP/JML's resolved targets inside the body (for
 		 *     stamping and seeding); a summary walk does not, rule A treats the jump as an exit
@@ -628,8 +775,10 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 				if (ins == null) {
 					continue;
 				}
-				State out = transfer(ins, in.get(at));
-				for (Address next : successors(root, ins, dispatch)) {
+				PushedCall pc = pushedCall(root, ins, in.get(at));
+				State out = pc != null ? pc.after() : transfer(ins, in.get(at));
+				for (Address next : pc != null ? List.of(pc.cont()) :
+					successors(root, ins, dispatch)) {
 					State old = in.get(next);
 					State merged = old == null ? out : old.meet(out);
 					Integer user = userVals.get(next);
@@ -658,6 +807,18 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 			return mn.equalsIgnoreCase("RTS") || mn.equalsIgnoreCase("RTL");
 		}
 
+		/**
+		 * A direct jump or branch with one target that may be a tail exit: a plain jump, or one
+		 * carrying Ghidra's CALL_RETURN override (FF3 {@code $C1:191D BRA}: a terminal call
+		 * flow). Missing the override left such routines with no exit
+		 * at all and an UNKNOWN summary (grm-9nxj.42).
+		 */
+		private static boolean isTailJump(Instruction ins) {
+			var ft = ins.getFlowType();
+			return !isCallInstr(ins) && !ft.isComputed() && ins.getFlows().length == 1 &&
+				(ft.isJump() || (ft.isCall() && ft.isTerminal()));
+		}
+
 		/** Unconditional indirect JMP/JML: rule A, a dispatch exit (as the DP analyzer). */
 		private static boolean isDispatchJmp(Instruction ins) {
 			var ft = ins.getFlowType();
@@ -669,9 +830,9 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 		private List<Address> successors(Address root, Instruction ins, boolean dispatch) {
 			List<Address> out = new ArrayList<>();
 			var ft = ins.getFlowType();
-			if (isDispatchJmp(ins) && dispatch) {
+			if (isDispatchJmp(ins) && (dispatch || intoEpilogues(ins))) {
 				for (Address a : ins.getFlows()) {
-					if (!otherEntry(root, a)) {
+					if (!tailExit(root, a)) {
 						out.add(a);
 					}
 				}
@@ -690,7 +851,7 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 				return out;
 			}
 			for (Address a : ins.getFlows()) {
-				if (!otherEntry(root, a)) {
+				if (!tailExit(root, a)) {
 					out.add(a);
 				}
 			}
@@ -705,6 +866,9 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 			why.remove(root);
 			Set<Integer> outs = new java.util.LinkedHashSet<>();
 			Set<String> kinds = new HashSet<>();
+			int unders = 0;
+			int noRetTails = 0;
+			String underAt = null;
 			for (Map.Entry<Address, State> e : in.entrySet()) {
 				Instruction ins = program.getListing().getInstructionAt(e.getKey());
 				if (ins == null) {
@@ -712,31 +876,43 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 				}
 				State st = e.getValue();
 				Set<Integer> out;
+				Set<String> k;
 				if (isReturn(ins)) {
 					out = expand(st.dbr);
-					kinds.add(ins.getMnemonicString().toUpperCase(Locale.ROOT));
+					k = Set.of(ins.getMnemonicString().toUpperCase(Locale.ROOT));
 				}
-				else if (isDispatchJmp(ins)) {
+				else if (isDispatchJmp(ins) && !intoEpilogues(ins)) {
 					out = expand(st.dbr);
-					kinds.add("?");
+					k = Set.of("?");
 				}
-				else if (!isCallInstr(ins) && !ins.getFlowType().isComputed() &&
-					ins.getFlows().length == 1 && ins.getFlowType().isJump() &&
-					otherEntry(root, ins.getFlows()[0])) {
+				else if (isTailJump(ins) && tailExit(root, ins.getFlows()[0])) {
+					if (pushedCall(root, ins, st) != null) {
+						continue;   // a call: it comes back into this routine
+					}
 					Address t = ins.getFlows()[0];
 					if (neverReturns(t)) {
+						noRetTails++;
 						continue;
 					}
 					Summary ts = summaryOf(t);
 					out = ts.mapped(st.dbr);
-					kinds.addAll(ts.kinds.isEmpty() ? Set.of("?") : ts.kinds);
+					k = (ts.kinds.isEmpty() ? Set.of("?") : ts.kinds);
 				}
 				else {
 					continue;
 				}
 				if (st.under) {
+					unders++;
+					if (underAt == null) {
+						underAt = e.getKey() + " " + ins;
+					}
 					continue;   // returns to an outer frame, not to the caller
 				}
+				// Only counted exits say how the routine returns: an RTL that pulls below the
+				// entry (a JSR'd helper jumping into its caller's PLB / RTL epilogue, CT
+				// $C7:0A39) returns for an outer frame, and must not make a JSR caller pop
+				// a bank byte or poison its stack (grm-9nxj.42).
+				kinds.addAll(k);
 				String why = null;
 				if (!st.stack.isEmpty() && !st.stack.equals(POISONED)) {
 					out = Set.of(UNKNOWN);
@@ -751,7 +927,9 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 				outs.addAll(out);
 			}
 			if (outs.isEmpty()) {
-				why.putIfAbsent(root, in.isEmpty() ? "walk empty/gave up" : "no exit reached");
+				why.putIfAbsent(root, in.isEmpty() ? "walk empty/gave up" : "no exit reached" +
+					" (under=" + unders + (underAt == null ? "" : " first " + underAt) +
+					", noReturnTails=" + noRetTails + ")");
 				outs.add(UNKNOWN);
 			}
 			if (outs.contains(UNKNOWN)) {
@@ -869,6 +1047,29 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 					int hi = v == UNKNOWN ? UNKNOWN : ins.getLength() == 3 ? v >> 8 : 0;
 					return x ? s.withX(lo, hi) : s.withY(lo, hi);
 				}
+				case "TDC": {
+					// A = DP, from the DP analyzer's (or the user's) stamped value: FF3's
+					// TDC / PHA / PLB sets DBR to DP's low byte (grm-9nxj.42).
+					BigInteger d = dpReg == null ? null : ins.getValue(dpReg, false);
+					if (d == null) {
+						return s.withA(UNKNOWN, UNKNOWN);
+					}
+					int v = d.intValue() & 0xffff;
+					return s.withA(v & 0xff, v >> 8);
+				}
+				case "TAX", "TAY": {
+					int w = width(ins, ctxX);
+					int lo = w == UNKNOWN ? UNKNOWN : s.aLo;
+					int hi = w == 2 ? s.aHi : w == 1 ? 0 : UNKNOWN;
+					return mn.equals("TAX") ? s.withX(lo, hi) : s.withY(lo, hi);
+				}
+				case "TXA", "TYA": {
+					int w = width(ins, ctxM);
+					int lo = mn.equals("TXA") ? s.xLo : s.yLo;
+					int hi = mn.equals("TXA") ? s.xHi : s.yHi;
+					return w == 2 ? s.withA(lo, hi) : w == 1 ? s.withA(lo, s.aHi) :
+						s.withA(UNKNOWN, UNKNOWN);
+				}
 				case "XBA":
 					return s.withA(s.aHi, s.aLo);
 				case "PHA":
@@ -881,8 +1082,22 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 					return push(s, s.dbr);
 				case "PHK":
 					return push(s, (int) ((ins.getAddress().getOffset() >> 16) & 0xff));
-				case "PHD", "PEI", "PER":
+				case "PHD", "PEI":
 					return push(push(s, UNKNOWN), UNKNOWN);
+				case "PER": {
+					// Pushes the address of the next instruction plus the displacement (a return
+					// address for F-Zero's PHK / PER / JML far call).
+					int v = UNKNOWN;
+					try {
+						int disp = (short) ((ins.getByte(1) & 0xff) | (ins.getByte(2) & 0xff) << 8);
+						v = (int) ((ins.getAddress().getOffset() + 3 + disp) & 0xffff);
+					}
+					catch (ghidra.program.model.mem.MemoryAccessException e) {
+						// leave unknown
+					}
+					return push(push(s, v == UNKNOWN ? UNKNOWN : v >> 8),
+						v == UNKNOWN ? UNKNOWN : v & 0xff);
+				}
 				case "PHP":
 					return push(s, UNKNOWN);
 				case "PEA": {
@@ -1138,6 +1353,283 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 					}
 				}
 			}
+		}
+
+		// -- loss census (probes only) --
+
+		/** Why a function's entry seed is unknown. */
+		private String seedLoss(Function g) {
+			Integer s = seeds.get(g.getEntryPoint());
+			if (s != null && s == CONFLICT) {
+				return "conflict";
+			}
+			List<Address> src = entrySources(g, isReset(g.getEntryPoint()));
+			if (src == null) {
+				return program.getSymbolTable().isExternalEntryPoint(g.getEntryPoint()) ?
+					"external" : "dataref/noref";
+			}
+			return "noKnownWayIn";
+		}
+
+		/** Why an instruction turns a known DBR into UNKNOWN, or null when it does not. */
+		private String lossAt(Instruction ins, State st) {
+			if (st.dbr == UNKNOWN) {
+				return null;
+			}
+			String mn = ins.getMnemonicString().toUpperCase(Locale.ROOT);
+			State out = transfer(ins, st);
+			if (out.dbr != UNKNOWN) {
+				return null;
+			}
+			if (mn.equals("JSR") || mn.equals("JSL")) {
+				Address[] fl = ins.getFlows();
+				if (fl.length == 0) {
+					return "call:unresolvedIndirect";
+				}
+				if (fl.length > 1) {
+					return "call:multi";
+				}
+				String w = why.getOrDefault(fl[0], "?");
+				int cut = w.indexOf(" at ");
+				w = cut > 0 ? w.substring(0, cut) : w;
+				cut = w.indexOf(" (");
+				w = cut > 0 ? w.substring(0, cut) : w;
+				if (w.startsWith("non-empty stack")) {
+					w = "non-empty stack";
+				}
+				return "call:" + w;
+			}
+			if (mn.equals("PLB")) {
+				if (st.stack.isEmpty()) {
+					return "plb:underflow";
+				}
+				int top = st.stack.get(st.stack.size() - 1);
+				return top == FLOOR ? "plb:floor" : "plb:unknownByte";
+			}
+			return "op:" + mn;
+		}
+
+		private final Map<Address, Map<Address, String>> causeMaps = new HashMap<>();
+
+		/**
+		 * Per instruction of {@code root}'s walk whose DBR is UNKNOWN, the loss point it came
+		 * from: a cause label propagated forward from each instruction that turns a known DBR
+		 * into UNKNOWN (call labels carry {@code @callee}).
+		 */
+		private Map<Address, String> causeMap(Address root) {
+			Map<Address, String> got = causeMaps.get(root);
+			if (got != null) {
+				return got;
+			}
+			Map<Address, State> m = states.getOrDefault(root, Map.of());
+			Map<Address, String> cause = new HashMap<>();
+			ArrayDeque<Address> q = new ArrayDeque<>();
+			for (Map.Entry<Address, State> s : m.entrySet()) {
+				Instruction ins = program.getListing().getInstructionAt(s.getKey());
+				String c = ins == null ? null : lossAt(ins, s.getValue());
+				if (c == null) {
+					continue;
+				}
+				if (c.startsWith("call:") && ins.getFlows().length == 1) {
+					c = c + "@" + ins.getFlows()[0];
+				}
+				for (Address n : successors(root, ins, true)) {
+					if (!cause.containsKey(n)) {
+						cause.put(n, c);
+						q.add(n);
+					}
+				}
+			}
+			while (!q.isEmpty()) {
+				Address a = q.poll();
+				State st = m.get(a);
+				Instruction ins = program.getListing().getInstructionAt(a);
+				if (st == null || ins == null || st.dbr != UNKNOWN) {
+					continue;
+				}
+				for (Address n : successors(root, ins, true)) {
+					if (!cause.containsKey(n)) {
+						cause.put(n, cause.get(a));
+						q.add(n);
+					}
+				}
+			}
+			causeMaps.put(root, cause);
+			return cause;
+		}
+
+		private final Map<Address, Set<String>> rootMemo = new HashMap<>();
+
+		/**
+		 * The root causes behind an unseeded function's entry: following each way in upstream
+		 * through callers that are themselves unseeded, to a local loss point, an unknowable
+		 * entry (vector / data ref), a source with no walk state, or a cycle of unseeded
+		 * functions with no known way in at all.
+		 */
+		private Set<String> roots(Address g, Set<Address> onPath) {
+			Set<String> memo = rootMemo.get(g);
+			if (memo != null) {
+				return memo;
+			}
+			Set<String> out = new java.util.TreeSet<>();
+			if (!onPath.add(g) || onPath.size() > 200) {
+				out.add("cycle/deep");
+				return out;
+			}
+			Function fg = program.getFunctionManager().getFunctionAt(g);
+			Integer sd = seeds.get(g);
+			List<Address> src = fg == null ? null : entrySources(fg, isReset(g));
+			if (sd != null && sd == CONFLICT) {
+				out.add("conflict@" + g);
+			}
+			else if (src == null) {
+				out.add((program.getSymbolTable().isExternalEntryPoint(g) ? "external@" :
+					"dataref@") + g);
+			}
+			else {
+				for (Address s : src) {
+					Instruction ins = program.getListing().getInstructionAt(s);
+					List<Function> fs = functionsAt(s);
+					if (ins == null || fs.isEmpty()) {
+						out.add("noFunction");
+						continue;
+					}
+					for (Function f : fs) {
+						Address fe = f.getEntryPoint();
+						Map<Address, State> m = states.get(fe);
+						State st = m == null ? null : m.get(s);
+						if (st == null) {
+							out.add(m == null || m.isEmpty() ? "walkEmpty" : "notReached");
+							continue;
+						}
+						int v = ins.getFlowType().isCall() ? st.dbr : transfer(ins, st).dbr;
+						if (resolve(v, seedOf(fe)) != UNKNOWN) {
+							continue;   // a known way in: cannot be what blocks the seed
+						}
+						if (v == UNKNOWN) {
+							String c = causeMap(fe).getOrDefault(s, "merge/userOrRoot");
+							if (!ins.getFlowType().isCall() && lossAt(ins, st) != null) {
+								c = lossAt(ins, st);
+							}
+							out.add(c.indexOf('@') > 0 ? c : c + "@" + s);
+						}
+						else if (!expand(v).contains(ENTRY)) {
+							out.add("set");
+						}
+						else {
+							out.addAll(roots(fe, onPath));
+						}
+					}
+				}
+				if (out.isEmpty()) {
+					out.add("noWaysInAtAll");
+				}
+			}
+			onPath.remove(g);
+			rootMemo.put(g, out);
+			return out;
+		}
+
+		/** Report lines: lost abs operands by cause, top callees and top unseeded functions. */
+		List<String> lossReport(int top) {
+			Map<String, Integer> byCause = new java.util.TreeMap<>();
+			Map<String, Integer> byCallee = new HashMap<>();
+			Map<String, Integer> byUnseeded = new HashMap<>();
+			Map<String, Integer> byRootClass = new java.util.TreeMap<>();
+			Map<String, Integer> byRoot = new HashMap<>();
+			int known = 0;
+			int lost = 0;
+			for (Map.Entry<Address, Map<Address, State>> e : states.entrySet()) {
+				Function f = program.getFunctionManager().getFunctionAt(e.getKey());
+				if (f == null) {
+					continue;
+				}
+				Address root = e.getKey();
+				Map<Address, State> m = e.getValue();
+				int seed = seedOf(root);
+				Map<Address, String> cause = causeMap(root);
+				int fnLost = 0;
+				for (Map.Entry<Address, State> s : m.entrySet()) {
+					if (!f.getBody().contains(s.getKey())) {
+						continue;
+					}
+					Instruction ins = program.getListing().getInstructionAt(s.getKey());
+					if (ins == null || absOperand(ins) == UNKNOWN) {
+						continue;
+					}
+					int v = s.getValue().dbr;
+					if (resolve(v, seed) != UNKNOWN) {
+						known++;
+						continue;
+					}
+					lost++;
+					String c;
+					if (v != UNKNOWN) {
+						Set<Integer> mem = expand(v);
+						c = mem.contains(ENTRY) && seed == UNKNOWN ? "unseeded:" + seedLoss(f) :
+							"set(" + mem.size() + ")";
+						if (c.startsWith("unseeded")) {
+							byUnseeded.merge(root + " " + c, 1, Integer::sum);
+							fnLost++;
+						}
+					}
+					else {
+						c = cause.getOrDefault(s.getKey(), "merge/userOrRoot");
+						int at = c.indexOf('@');
+						if (at > 0) {
+							byCallee.merge(c.substring(at + 1) + " " + c.substring(0, at), 1,
+								Integer::sum);
+							c = c.substring(0, at);
+						}
+					}
+					byCause.merge(c, 1, Integer::sum);
+				}
+				if (fnLost > 0) {
+					// Unseeded operands, by the root causes upstream (an operand counts once per
+					// distinct root class; a function with several classes adds to each).
+					Set<String> rs = roots(root, new HashSet<>());
+					Set<String> classes = new java.util.TreeSet<>();
+					for (String r : rs) {
+						int at = r.indexOf('@');
+						classes.add(at > 0 ? r.substring(0, at) : r);
+						if (at > 0) {
+							byRoot.merge(r, fnLost, Integer::sum);
+						}
+					}
+					byRootClass.merge(rs.size() == 1 ? "only " + classes.iterator().next() :
+						"mixed " + classes, fnLost, Integer::sum);
+				}
+			}
+			List<String> out = new ArrayList<>();
+			out.add("knownAbs=" + known + " lostAbs=" + lost);
+			for (Map.Entry<String, Integer> c : byCause.entrySet()) {
+				out.add("cause " + c.getKey() + " " + c.getValue());
+			}
+			for (Map.Entry<String, Integer> c : byRootClass.entrySet()) {
+				out.add("unseededRoot " + c.getKey() + " ops=" + c.getValue());
+			}
+			for (var e : topOf(byRoot, top)) {
+				String k = e.getKey();
+				String w = k.startsWith("call:") ? why.get(program.getAddressFactory()
+						.getAddress(k.substring(k.indexOf('@') + 1))) : null;
+				out.add("rootFn " + k + " opsBehind=" + e.getValue() +
+					(w == null ? "" : " why=" + w.replace('\n', ' ')));
+			}
+			for (var e : topOf(byCallee, top)) {
+				String w = why.get(program.getAddressFactory().getAddress(e.getKey().split(" ")[0]));
+				out.add("callee " + e.getKey() + " ops=" + e.getValue() + " why=" +
+					(w == null ? null : w.replace('\n', ' ')));
+			}
+			for (var e : topOf(byUnseeded, top)) {
+				out.add("unseededFn " + e.getKey() + " ops=" + e.getValue());
+			}
+			return out;
+		}
+
+		private static List<Map.Entry<String, Integer>> topOf(Map<String, Integer> m, int n) {
+			List<Map.Entry<String, Integer>> l = new ArrayList<>(m.entrySet());
+			l.sort((a, b) -> b.getValue() - a.getValue());
+			return l.subList(0, Math.min(n, l.size()));
 		}
 
 		// -- output --

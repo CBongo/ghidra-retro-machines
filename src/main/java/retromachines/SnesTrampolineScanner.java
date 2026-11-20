@@ -54,7 +54,10 @@ import ghidra.program.model.symbol.Reference;
  * walking back through fall-through instructions with no other instruction that changes that
  * register in between, and no incoming branch, call or jump into the walked instructions. The
  * store width is the M (A/Z) or X (X/Y) flag in the program context at the store, and must equal
- * the immediate's width. Absolute stores assume DBR is a low-RAM bank. Direct-page, indexed,
+ * the immediate's width. An absolute store lands in the tracked DBR
+ * ({@link W65816TrackedDbr}, read from the program context where {@link W65816DataBankAnalyzer}
+ * or the user set it, so a store under DBR {@code $7F} or {@code $40} is not low RAM); where DBR is
+ * unknown it assumes a low-RAM bank (grm-9nxj.43). Direct-page, indexed,
  * indirect, block-move and DMA writes are NOT tracked. A byte is usable only if it receives
  * exactly one distinct constant and no write of unknown value; anything else is ambiguous and the
  * hop is not followed.
@@ -93,6 +96,11 @@ final class SnesTrampolineScanner {
 	private Map<Long, ByteWrites> writes;
 	private List<Rec> recs;
 	private Address curRun;
+	/** Absolute stores seen (grm-9nxj.43): DBR unknown (old assumption), tracked and agreeing, tracked and not. */
+	private int absAssumed;
+	private int absAgreed;
+	private int absDisagreed;
+	private final List<String> absDisagreeSamples = new ArrayList<>();
 
 	/** One constant-or-unknown byte written to low RAM by one store, in program order. */
 	private record Rec(long t, Integer value, Address site, Address run) {}
@@ -115,6 +123,13 @@ final class SnesTrampolineScanner {
 		List<Handler> out = new ArrayList<>();
 		s.follow("NMI", 0xFFEA, out);
 		s.follow("IRQ", 0xFFEE, out);
+		if (s.writes != null) {
+			notes.add(String.format("absolute stores to the low-RAM window by DBR: %d tracked " +
+				"and agreeing with the low-RAM assumption, %d tracked and outside low RAM " +
+				"(dropped), %d unknown (assumed low RAM)%s", s.absAgreed, s.absDisagreed,
+				s.absAssumed, s.absDisagreeSamples.isEmpty() ? "" : "; e.g. " +
+					s.absDisagreeSamples));
+		}
 		return out;
 	}
 
@@ -411,6 +426,28 @@ final class SnesTrampolineScanner {
 				ea |= (long) Math.max(bank, 0) << 16;
 			}
 			long t = ramView(ea);
+			if (!isLong) {
+				// grm-9nxj.43: an absolute store lands in bank DBR. Use the tracked value; the old
+				// assumption (a low-RAM bank, i.e. the offset alone decides) is the fallback.
+				int dbr = W65816TrackedDbr.at(program, ins.getAddress());
+				if (dbr == W65816TrackedDbr.UNKNOWN) {
+					absAssumed++;
+				}
+				else {
+					long tracked = ramView(((long) dbr << 16) | ea);
+					if (tracked == t) {
+						absAgreed++;
+					}
+					else {
+						absDisagreed++;
+						if (absDisagreeSamples.size() < 8) {
+							absDisagreeSamples.add(String.format("%s DBR=$%02X",
+								ins.getAddress(), dbr));
+						}
+					}
+					t = tracked;
+				}
+			}
 			if (t < 0) {
 				continue;
 			}
