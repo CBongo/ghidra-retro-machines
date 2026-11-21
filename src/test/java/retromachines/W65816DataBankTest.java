@@ -555,4 +555,30 @@ public class W65816DataBankTest extends AbstractProgramTest {
 		analyze();
 		assertEquals(W65816DirectPageAnalyzer.DP_PRESERVED, convention(0x8100));
 	}
+
+	// ---- callee drops its caller's arguments (grm-9nxj.46, FF3 $C2:5864) ----
+
+	/**
+	 * H sets DBR $7e and calls F; F pushes two argument words and calls P, which moves its return
+	 * address over them ({@code LDA $01,S ; STA $05,S}), pulls four bytes and returns. F's stack
+	 * is empty again at its RTS, so F preserves DBR and H's LDA after the call is under $7e.
+	 */
+	@Test
+	public void calleeThatDropsItsArgumentsBalancesTheCaller() throws Exception {
+		lay("0x8100", "a3 01 83 05 68 68 60", "P");
+		lay("0x8000", "f4 11 11 f4 22 22 20 00 81 60", "F");
+		lay("0x8200", "f4 7e 7e ab ab 20 00 80 " + LDA_1234 + " 60", "H");
+		analyze();
+		assertEquals(Integer.valueOf(0x7e), dbrAt(0x8208));
+	}
+
+	/** The same tail storing to $03,S does not move the return address over the pulled bytes. */
+	@Test
+	public void aMisplacedReturnAddressCopyIsNotAnArgumentDrop() throws Exception {
+		lay("0x8100", "a3 01 83 03 68 68 60", "P");
+		lay("0x8000", "f4 11 11 f4 22 22 20 00 81 60", "F");
+		lay("0x8200", "f4 7e 7e ab ab 20 00 80 " + LDA_1234 + " 60", "H");
+		analyze();
+		assertNull(dbrAt(0x8208));
+	}
 }

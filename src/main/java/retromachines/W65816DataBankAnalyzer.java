@@ -518,8 +518,16 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 	private static final State ENTRY_STATE =
 		new State(ENTRY, UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN, List.of(), false, false);
 
-	/** A function's exit summary: the DBR its returns carry, and how it returns. */
-	record Summary(Set<Integer> outs, Set<String> kinds) {
+	/**
+	 * A function's exit summary: the DBR its returns carry, how it returns, and how many bytes of
+	 * its caller's stack it drops ({@link W65816CalleePop}; {@link #PURGE_VARIES} when its exits
+	 * disagree).
+	 */
+	record Summary(Set<Integer> outs, Set<String> kinds, int purge) {
+
+		Summary(Set<Integer> outs, Set<String> kinds) {
+			this(outs, kinds, 0);
+		}
 
 		/**
 		 * The DBR after a call from a caller holding {@code caller} (a constant, {@link #ENTRY}
@@ -551,6 +559,9 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 	}
 
 	private static final Summary OPTIMISTIC = new Summary(Set.of(ENTRY), Set.of());
+
+	/** {@link Summary#purge} when a routine's exits drop different numbers of caller bytes. */
+	static final int PURGE_VARIES = -1;
 
 	// ---- the engine ----------------------------------------------------------------------
 
@@ -615,7 +626,7 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 				}
 				int c = changes.merge(root, 1, Integer::sum);
 				if (c > MAX_CHANGES) {
-					now = new Summary(Set.of(UNKNOWN), now.kinds());
+					now = new Summary(Set.of(UNKNOWN), now.kinds(), now.purge());
 					frozen.add(root);
 				}
 				summaries.put(root, now);
@@ -733,7 +744,8 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 				return null;
 			}
 			Summary sm = summaryOf(ins.getFlows()[0]);
-			int n = sm.kinds.equals(Set.of("RTL")) ? 3 : sm.kinds.equals(Set.of("RTS")) ? 2 : 0;
+			int n = sm.purge != 0 ? 0 :
+				sm.kinds.equals(Set.of("RTL")) ? 3 : sm.kinds.equals(Set.of("RTS")) ? 2 : 0;
 			List<Integer> stk = st.stack;
 			int size = stk.size();
 			if (n == 0 || size < n) {
@@ -869,6 +881,7 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 			int unders = 0;
 			int noRetTails = 0;
 			String underAt = null;
+			Integer purge = null;
 			for (Map.Entry<Address, State> e : in.entrySet()) {
 				Instruction ins = program.getListing().getInstructionAt(e.getKey());
 				if (ins == null) {
@@ -877,9 +890,18 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 				State st = e.getValue();
 				Set<Integer> out;
 				Set<String> k;
+				int drops = 0;
 				if (isReturn(ins)) {
 					out = expand(st.dbr);
 					k = Set.of(ins.getMnemonicString().toUpperCase(Locale.ROOT));
+					// A tail that drops the caller's arguments (W65816CalleePop) pulls below the
+					// entry on purpose and still returns to the caller, its arguments gone.
+					W65816CalleePop.Tail tail = W65816CalleePop.tailAt(program, ins);
+					State at = tail == null ? null : in.get(tail.store());
+					if (at != null && at.stack.isEmpty() && !at.under) {
+						drops = tail.bytes();
+						st = st.withStack(List.of(), false);
+					}
 				}
 				else if (isDispatchJmp(ins) && !intoEpilogues(ins)) {
 					out = expand(st.dbr);
@@ -897,6 +919,15 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 					Summary ts = summaryOf(t);
 					out = ts.mapped(st.dbr);
 					k = (ts.kinds.isEmpty() ? Set.of("?") : ts.kinds);
+					if (ts.purge == PURGE_VARIES) {
+						drops = PURGE_VARIES;
+					}
+					else if (ts.purge > 0 && !st.stack.equals(POISONED)) {
+						// The target drops this routine's own pushes first, then its caller's.
+						int keep = Math.max(0, st.stack.size() - ts.purge);
+						drops = ts.purge - (st.stack.size() - keep);
+						st = st.withStack(List.copyOf(st.stack.subList(0, keep)), st.under);
+					}
 				}
 				else {
 					continue;
@@ -913,6 +944,8 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 				// $C7:0A39) returns for an outer frame, and must not make a JSR caller pop
 				// a bank byte or poison its stack (grm-9nxj.42).
 				kinds.addAll(k);
+				purge = purge == null || purge == drops ? Integer.valueOf(drops) :
+					Integer.valueOf(PURGE_VARIES);
 				String why = null;
 				if (!st.stack.isEmpty() && !st.stack.equals(POISONED)) {
 					out = Set.of(UNKNOWN);
@@ -936,7 +969,7 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 				outs.clear();   // one canonical form
 				outs.add(UNKNOWN);
 			}
-			return new Summary(Set.copyOf(outs), Set.copyOf(kinds));
+			return new Summary(Set.copyOf(outs), Set.copyOf(kinds), purge == null ? 0 : purge);
 		}
 
 		private boolean neverReturns(Address a) {
@@ -1156,7 +1189,19 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 			if (flows.length == 1) {
 				Summary sm = summaryOf(flows[0]);
 				dbr = sm.apply(s.dbr);
-				if (ins.getMnemonicString().equalsIgnoreCase("JSR") && sm.kinds.contains("RTL")) {
+				if (sm.purge == PURGE_VARIES) {
+					stack = POISONED;
+				}
+				else if (sm.purge > 0) {
+					// The callee dropped the arguments this caller pushed (W65816CalleePop).
+					State t = s;
+					for (int i = 0; i < sm.purge && !t.stack.equals(POISONED); i++) {
+						t = (State) pop(t)[1];
+					}
+					stack = t.stack;
+					s = t;
+				}
+				else if (ins.getMnemonicString().equalsIgnoreCase("JSR") && sm.kinds.contains("RTL")) {
 					if (sm.kinds.size() == 1) {
 						// A JSR into a routine that returns by RTL also pulls the bank the caller
 						// pushed (FZero's PHK / JSR thunk), as the DP analyzer models.
