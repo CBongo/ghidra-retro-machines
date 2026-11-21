@@ -300,14 +300,7 @@ final class MosOperands {
 
 	/** Whether {@code instr} is an interrupt return that pops status and a 2-byte address ({@code RTI}). */
 	static boolean isInterruptReturn(Instruction instr) {
-		return (PcodeShapes.isReturnOp(instr) || isTerminalIndirectGoto(instr)) &&
-			restoresStatus(instr);
-	}
-
-	/** RTI is an indirect goto (not a RETURN op) in the 65816 sleigh; BRK/COP/STP are too. */
-	private static boolean isTerminalIndirectGoto(Instruction instr) {
-		ghidra.program.model.symbol.FlowType ft = instr.getFlowType();
-		return ft.isTerminal() || (ft.isComputed() && ft.isJump());
+		return PcodeShapes.isReturnOp(instr) && restoresStatus(instr);
 	}
 
 	/** Whether {@code instr} pulls the status register (writes the carry flag's register / PSW). */

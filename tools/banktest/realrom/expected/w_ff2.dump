@@ -83,7 +83,6 @@ REALROM computed JMP (!$0x0) sites=11 withTargets=9
 REALROM computed JMP (!$0x2) sites=1 withTargets=1
 REALROM computed JMP (!$0x6) sites=1 withTargets=1
 REALROM computed JMP (!$0xn) sites=3 withTargets=2
-REALROM computed RTI <UNSUPPORTn> sites=3 withTargets=0
 REALROM plp sites=14 paired=14 ambiguous=0 unpaired=0 stale=0
 REALROM dp operands=8868 known=8053 withRef=8063 knownWithRef=8053
 REALROM dp writer PLD sites=47 knownAfter=37

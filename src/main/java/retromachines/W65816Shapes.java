@@ -32,8 +32,8 @@ import ghidra.program.model.symbol.RefType;
  * <p>
  * What p-code CANNOT see stays out of here and stays mnemonic in the callers (design rulings R2,
  * R4): the M/X/E width and mode changes ({@code REP}, {@code SEP}, {@code XCE}, the status pull of
- * {@code PLP}) are context actions invisible in p-code, and {@code RTI} is an indirect goto rather
- * than a {@code RETURN} (it is told apart by {@link MosOperands#isInterruptReturn}). Push and pull
+ * {@code PLP}) are context actions invisible in p-code, and {@code RTI} is a {@code RETURN} that
+ * is told apart from {@code RTS}/{@code RTL} by {@link MosOperands#isInterruptReturn}. Push and pull
  * sizes already reflect the width the instruction was DECODED at; a caller that must bail when the
  * width is unknown keeps its own width source.
  */
@@ -181,11 +181,12 @@ final class W65816Shapes {
 
 	/**
 	 * Whether this is a subroutine return ({@code RTS}, {@code RTL}): a plain terminator. {@code RTI}
-	 * is an indirect goto and is NOT one (design ruling R4); ask {@link MosOperands#isInterruptReturn}.
+	 * is a RETURN op too but NOT one of these (design ruling R4); ask {@link MosOperands#isInterruptReturn}.
 	 */
 	static boolean isReturn(Instruction ins) {
 		FlowType ft = ins.getFlowType();
-		return ft.isTerminal() && !ft.isCall() && !ft.isJump() && !ft.isComputed();
+		return ft.isTerminal() && !ft.isCall() && !ft.isJump() && !ft.isComputed() &&
+			!MosOperands.isInterruptReturn(ins);
 	}
 
 	/** The bytes a subroutine return pulls: 2 for {@code RTS}, 3 for {@code RTL}; 0 when not a return. */

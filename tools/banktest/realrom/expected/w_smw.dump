@@ -38,7 +38,6 @@ REALROM widthconflict sites=41 entry=0 entryTargets=0 return=0 returnTargets=0
 REALROM exitwidth functions=34 returnsAtOtherWidth=0
 REALROM computed BRK 0xn sites=1 withTargets=1
 REALROM computed JML [!$0x0] sites=1 withTargets=0
-REALROM computed RTI <UNSUPPORTn> sites=2 withTargets=0
 REALROM plp sites=3 paired=3 ambiguous=0 unpaired=0 stale=0
 REALROM dp operands=121 known=6 withRef=6 knownWithRef=6
 REALROM dp writer TCD sites=1 knownAfter=1

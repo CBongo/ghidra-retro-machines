@@ -493,10 +493,8 @@ final class PcodeShapes {
 	}
 
 	/**
-	 * Whether {@code instr} has a {@code RETURN} op: {@code RTS}, {@code RTL}, SPC700 {@code RET}.
-	 * {@code RTI} is NOT uniformly a RETURN op (the 65816 sleigh ends it in an indirect goto, as it
-	 * does {@code BRK}/{@code COP}/{@code STP}); callers that mean "RTS or RTI" keep an explicit
-	 * RTI test. Use {@link Instruction#getFlowType()} for control-flow classification.
+	 * Whether {@code instr} has a {@code RETURN} op: {@code RTS}, {@code RTL}, {@code RTI}, SPC700
+	 * {@code RET}/{@code RETI}. {@code BRK}/{@code COP}/{@code STP} are not (indirect goto). Use {@link Instruction#getFlowType()} for control-flow classification.
 	 */
 	static boolean isReturnOp(Instruction instr) {
 		for (PcodeOp op : ops(instr)) {

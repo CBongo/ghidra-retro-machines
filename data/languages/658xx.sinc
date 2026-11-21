@@ -13,7 +13,11 @@
 # recovery depends on), so these files diverge permanently once that lands. See
 # docs/65816-language-survey.md for the evaluation that led here.
 #
-# Vendored verbatim at the commit above; the only modification is this header.
+# Vendored verbatim at the commit above, except this header and one semantic divergence
+# (grm-9nxj.51): both RTI constructors (native and emulation) end in `return [ret_addr]`
+# where upstream has `goto [ret_addr]`, so RTI is a p-code RETURN like the 6502's RTI and
+# the SPC700's RETI rather than a computed jump (cf. ghidra-snes#6). Stack pulls are unchanged.
+# BRK/COP/STP keep their upstream indirect goto.
 # ---------------------------------------------------------------------------------------
 
 # sleigh specification file for the WDC 65816
@@ -1705,7 +1709,7 @@ macro do_ror16(_out, _data) {
     # address to return tot... It does not need to be incremented as a subroutine’s return address
     # does."
     local ret_addr:3 = (zext(pbr) << 16) | zext(pc);
-    goto [ret_addr];
+    return [ret_addr];
 }
 
 # RTI emulation.
@@ -1724,7 +1728,7 @@ macro do_ror16(_out, _data) {
     local this_pc_full:3 = inst_start;
     local this_pbr:1 = this_pc_full(2);
     local ret_addr:3 = (zext(this_pbr) << 16) | zext(pc);
-    goto [ret_addr];
+    return [ret_addr];
 }
 
 # RTL native.
