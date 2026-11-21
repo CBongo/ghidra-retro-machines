@@ -19,6 +19,7 @@ hardcoded.
 | Switch-label kinds and counts across a run; diff two decompiler builds | `banktest/SwitchLabelCensus.java`, then `banktest/slc-summary.py` |
 | Which offset-label switch sites get their index from where | `recon/offset_label_classify.py` (with `banktest/IndexBackChainProbe.java`) |
 | Parameter and return census (A/X/Y/carry/ZP in and out) | `banktest/ParamReturnCensusProbe.java`, then `recon/param_return_census.py` |
+| Which functions got an inferred signature, per row | `banktest/ParamReturnCommitCount.java` |
 | Compare two builds, commits or toolchains on real ROMs | `banktest/ab-test.sh`; per-address diffs via `InstructionListDump`, `FunctionListDump`, `CallSiteListDump` |
 | Which analyzer created, changed or removed a code unit or function | `banktest/CodeUnitWatchProbe.java`, `FunctionWatchProbe.java` (prescripts) |
 | Where is a pinned row's ROM image; decode its bytes | `banktest/dis6502.py --find <row-id>`, or `dis6502.py <rom> <map> <start> <end>` |

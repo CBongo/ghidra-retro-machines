@@ -40,6 +40,8 @@ import ghidra.program.model.pcode.PcodeOp;
 import ghidra.program.model.pcode.Varnode;
 import ghidra.program.model.symbol.FlowType;
 import ghidra.program.model.symbol.RefType;
+import ghidra.program.model.symbol.Reference;
+import ghidra.program.model.symbol.ReferenceManager;
 
 /**
  * Per-function PARAMETER / RETURN-VALUE evidence for the 6502-family CPUs (6502, 6510, 65816;
@@ -1082,26 +1084,40 @@ public final class ParamReturnEvidence {
 
 		// -------------------------------------------------------------- caller side
 
+		/**
+		 * Callers come from the ReferenceManager, not from scanning call instructions: every
+		 * reference TO the entry whose type is a call (computed-call and far-call references our
+		 * analyzers add included), plus the callers of any thunk of the function.
+		 */
 		private void callerSide(Map<Address, List<Instruction>> bodies) {
-			for (Map.Entry<Address, List<Instruction>> en : bodies.entrySet()) {
-				for (Instruction ins : en.getValue()) {
-					Ia a = ia(ins);
-					if (a.bad) {
-						continue;
-					}
-					if (a.call && !a.ft.isComputed()) {
-						FnEvidence g = result.byEntry.get(singleFlow(ins));
-						if (g == null) {
-							continue;
+			ReferenceManager rm = program.getReferenceManager();
+			for (Address entry : bodies.keySet()) {
+				FnEvidence g = result.byEntry.get(entry);
+				Function f = fm.getFunctionAt(entry);
+				if (g == null || f == null) {
+					continue;
+				}
+				List<Address> targets = new ArrayList<>();
+				targets.add(entry);
+				for (Address t : f.getFunctionThunkAddresses(true) == null ? new Address[0]
+						: f.getFunctionThunkAddresses(true)) {
+					targets.add(t);
+				}
+				Set<Address> seen = new HashSet<>();
+				for (Address target : targets) {
+					for (Reference ref : rm.getReferencesTo(target)) {
+						if (ref.getReferenceType().isCall()) {
+							Instruction ci = listing.getInstructionAt(ref.getFromAddress());
+							if (ci == null || ia(ci).bad || !seen.add(ci.getAddress())) {
+								continue;
+							}
+							g.sites++;
+							lookAhead(ci, g);
+							lookBack(ci, g);
 						}
-						g.sites++;
-						lookAhead(ins, g);
-						lookBack(ins, g);
-					}
-					else if (a.ft.isJump() && !a.ft.isComputed()) {
-						for (Address t : ins.getFlows()) {
-							FnEvidence g = result.byEntry.get(t);
-							if (g != null && !t.equals(en.getKey())) {
+						else if (ref.getReferenceType().isJump()) {
+							Function from = listing.getFunctionContaining(ref.getFromAddress());
+							if (from == null || !from.equals(f)) {
 								g.jumpRefs++;
 							}
 						}
