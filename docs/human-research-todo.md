@@ -63,6 +63,19 @@ Each is minutes of work and settles something specific. Highest value per unit e
     plan is a narrow rule: a `JSR` into an `RTL`-only routine whose popped byte is not a provable
     `PHK` of the current bank does not return to the fall-through.
 
+- [ ] **NES `JMP (zp)` / `JMP (abs)` through a RAM vector (1.21): callback, or a table indexed in
+  the callers?** (`grm-gipk.29` P3). 31 computed jumps with no recovered table jump through a RAM
+  cell that code elsewhere writes. Static analysis cannot tell a callback pointer (correct as is,
+  nothing to recover) from a dispatch whose table is indexed in the caller before the pointer is
+  stored. Sites: metroid_u `JMP ($e2)` in `b31b`/`b34b`/`bc36` (in several banks; set by `JSR
+  b4bd`/`bc53`); kicarus `JMP ($eb)` in three bank routines and the NMI; cv3 `e653` (+3 mirrors);
+  wizwarr `ff83` (x3), `8a40`, `d95d`, `c615`; ultimaav `e2ca`/`e2cd` (vectors `$700`/`$702`),
+  `c148`; ironsword `ffda`/`ffe3`. Even a few answers help: for each, does the value stored into
+  the vector come from a ROM table indexed by game state (then it is a dispatch to recover), or
+  is it a fixed handler address set once (a callback)?
+  - **Why it matters:** these are the bulk of the remaining "no table" sites; a "callback" answer
+    retires them from the reachability backlog, a "table" answer becomes a recognizer bead.
+
 ---
 
 ## 2. Def-use passes on untraced titles
