@@ -518,4 +518,78 @@ public class PcodeShapesTest extends AbstractBundledLanguageTest {
 		assertTrue(MosOperands.storesRegister(ins(L6502, "9d 00 90"), 'A'));
 		assertTrue("BRK is a computed jump", ins(L6502, "00").getFlowType().isComputed());
 	}
+
+	@Test
+	public void dispatchRecognizerShapes() throws Exception {
+		// absolute-indexed accumulator loads: 6502 LDA abs,X / abs,Y, SPC700 MOV A,!abs+X / +Y
+		CpuRegs r = regs(ins(L6502, "ea"));
+		PcodeShapes.IndexedLoad ldx = PcodeShapes.indexedLoad(ins(L6502, "bd 34 12"));
+		assertEquals(r.acc(), ldx.dst());
+		assertEquals(r.x(), ldx.index());
+		assertEquals(0x1234, ldx.base());
+		assertEquals(r.y(), PcodeShapes.indexedLoad(ins(L6502, "b9 34 12")).index());
+		assertNull(PcodeShapes.indexedLoad(ins(L6502, "ad 34 12")));
+		assertNull(PcodeShapes.indexedLoad(ins(L6502, "b1 12")));
+		CpuRegs spc = regs(ins(LSPC, "00"));
+		PcodeShapes.IndexedLoad sx = PcodeShapes.indexedLoad(ins(LSPC, "f5 34 12"));
+		assertEquals(spc.acc(), sx.dst());
+		assertEquals(spc.x(), sx.index());
+		assertEquals(0x1234, sx.base());
+		assertEquals(spc.y(), PcodeShapes.indexedLoad(ins(LSPC, "f6 34 12")).index());
+
+		// AND #imm
+		assertEquals(Long.valueOf(0x0f),
+			PcodeShapes.bitOpConstant(ins(L6502, "29 0f"), r.acc(), PcodeOp.INT_AND));
+		assertNull(PcodeShapes.bitOpConstant(ins(L6502, "25 0f"), r.acc(), PcodeOp.INT_AND));
+		assertNull(PcodeShapes.bitOpConstant(ins(L6502, "09 0f"), r.acc(), PcodeOp.INT_AND));
+		assertEquals(Long.valueOf(0x07),
+			PcodeShapes.bitOpConstant(ins(LSPC, "28 07"), spc.acc(), PcodeOp.INT_AND));
+
+		// CMP/CPX #imm and which register
+		assertEquals(Long.valueOf(0x20), PcodeShapes.compareImmediate(ins(L6502, "c9 20"), r.acc()));
+		assertEquals(Long.valueOf(5), PcodeShapes.compareImmediate(ins(L6502, "e0 05"), r.x()));
+		assertNull(PcodeShapes.compareImmediate(ins(L6502, "cd 00 90"), r.acc()));
+		assertEquals(Long.valueOf(0x20), PcodeShapes.compareImmediate(ins(LSPC, "68 20"), spc.acc()));
+		assertEquals(Long.valueOf(9), PcodeShapes.compareImmediate(ins(LSPC, "c8 09"), spc.x()));
+		assertTrue(MosOperands.comparesRegister(ins(L6502, "c9 20"), 'A'));
+		assertTrue(MosOperands.comparesRegister(ins(L6502, "e0 05"), 'X'));
+		assertFalse(MosOperands.comparesRegister(ins(L6502, "e0 05"), 'A'));
+		assertFalse(MosOperands.comparesRegister(ins(L6502, "69 05"), 'A'));
+		assertFalse(MosOperands.comparesRegister(ins(L6502, "aa"), 'A'));
+		assertTrue(MosOperands.comparesRegister(ins(LSPC, "c8 09"), 'X'));
+		assertTrue(MosOperands.isImmediateOperand(ins(L6502, "e0 05")));
+		assertFalse(MosOperands.isImmediateOperand(ins(L6502, "e4 05")));
+		assertTrue(MosOperands.isBpl(ins(L6502, "10 05")));
+		assertFalse(MosOperands.isBpl(ins(L6502, "30 05")));
+		assertTrue(MosOperands.isEorOnAccumulator(ins(L6502, "49 ff")));
+		assertFalse(MosOperands.isEorOnAccumulator(ins(L6502, "29 ff")));
+
+		// returns, CPU-correct: RTI pulls status, RTL pops 3 but is a subroutine-style return
+		assertTrue(MosOperands.isSubroutineReturn(ins(L6502, "60")));
+		assertFalse(MosOperands.isInterruptReturn(ins(L6502, "60")));
+		assertTrue(MosOperands.isInterruptReturn(ins(L65816, "40")));
+		assertFalse(MosOperands.isSubroutineReturn(ins(L65816, "40")));
+		assertFalse("RTL is no interrupt return", MosOperands.isInterruptReturn(ins(L65816, "6b")));
+		assertTrue(MosOperands.isSubroutineReturn(ins(LSPC, "6f")));
+		assertFalse(MosOperands.isSubroutineReturn(ins(LSPC, "7f")));
+		assertTrue(MosOperands.isInterruptReturn(ins(LSPC, "7f")));
+		assertFalse("the 6502-family RTS test leaves the SPC700 RET out",
+			MosOperands.isRts(ins(LSPC, "6f")));
+		assertTrue(MosOperands.isRts(ins(L6502, "60")));
+		assertTrue(MosOperands.isRtsOrRti(ins(L6502, "40")));
+
+		// software interrupt, stack touching, JSR
+		assertTrue(MosOperands.isSoftwareInterrupt(ins(L6502, "00")));
+		assertFalse(MosOperands.isSoftwareInterrupt(ins(L6502, "6c 00 90")));
+		assertTrue(MosOperands.rebasesStackPointer(ins(L6502, "9a")));
+		assertFalse(MosOperands.rebasesStackPointer(ins(L6502, "48")));
+		assertTrue(MosOperands.touchesStack(ins(L6502, "48")));
+		assertTrue(MosOperands.touchesStack(ins(L6502, "9a")));
+		assertFalse(MosOperands.touchesStack(ins(L6502, "aa")));
+		assertTrue(MosOperands.isJsr(ins(L6502, "20 00 90")));
+		assertFalse(MosOperands.isJsr(ins(L6502, "4c 00 90")));
+		assertFalse(MosOperands.isJsr(ins(LSPC, "3f 00 90")));
+		assertTrue(MosOperands.isNativeCall(ins(L6502, "20 00 90")));
+		assertFalse(MosOperands.isNativeCall(ins(L6502, "4c 00 90")));
+	}
 }

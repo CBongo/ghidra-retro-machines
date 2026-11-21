@@ -533,27 +533,19 @@ final class SnesTrampolineScanner {
 				prev.getFlowType().isTerminal()) {
 				return null;
 			}
-			if (loads(m, reg)) {
-				int op;
-				try {
-					op = prev.getByte(0) & 0xFF;
-				}
-				catch (MemoryAccessException e) {
-					return null;
-				}
-				boolean imm = op == 0xA9 || op == 0xA2 || op == 0xA0;
-				if (!imm || prev.getLength() - 1 != width) {
-					return null;
-				}
-				long v = 0;
-				for (int i = 0; i < width; i++) {
-					int b = byteAt(prev.getAddress().add(1 + i));
-					if (b < 0) {
-						return null;
-					}
-					v |= (long) b << (8 * i);
-				}
-				return v;
+			// The register at the store's width (the decoded p-code writes exactly that width:
+			// 8-bit LDA writes A, 16-bit LDA writes C), and its widest view for overlap.
+			CpuRegs regs = CpuRegs.of(program.getLanguage());
+			Register exact = reg == 'A' ? (width == 2 ? regs.accWide() : regs.acc())
+					: reg == 'X' ? (width == 2 ? regs.x() : regs.xLow())
+					: (width == 2 ? regs.y() : regs.yLow());
+			Register wide = reg == 'A' ? regs.accWide() : reg == 'X' ? regs.x() : regs.y();
+			Long constant = PcodeShapes.constantInto(prev, exact);
+			if (constant != null) {
+				return width == 2 ? constant & 0xFFFFL : constant & 0xFFL;
+			}
+			if (PcodeShapes.writesRegister(prev, wide)) {
+				return null; // a load of another width or form, or any other write to it
 			}
 			if (clobbers(m, reg)) {
 				return null;
@@ -570,14 +562,6 @@ final class SnesTrampolineScanner {
 			}
 		}
 		return false;
-	}
-
-	private static boolean loads(String m, char reg) {
-		return switch (reg) {
-			case 'A' -> m.equals("LDA");
-			case 'X' -> m.equals("LDX");
-			default -> m.equals("LDY");
-		};
 	}
 
 	private static boolean clobbers(String m, char reg) {

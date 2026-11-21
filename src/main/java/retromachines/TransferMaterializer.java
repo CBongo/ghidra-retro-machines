@@ -497,7 +497,7 @@ final class TransferMaterializer {
 		catch (AddressOutOfBoundsException e) {
 			return;
 		}
-		RefType refType = LoopIdioms.mnem(jmp).equals("JSR")
+		RefType refType = MosOperands.isNativeCall(jmp)
 				? RefType.UNCONDITIONAL_CALL
 				: RefType.UNCONDITIONAL_JUMP;
 		ReferenceManager refMgr = program.getReferenceManager();

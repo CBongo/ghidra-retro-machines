@@ -139,7 +139,7 @@ final class InlineJumpTableDispatch {
 			if (instr == null) {
 				return null; // not (yet) disassembled -- inconclusive
 			}
-			String mn = instr.getMnemonicString();
+			Shape shape = shapeOf(instr);
 			FlowType ft = instr.getFlowType();
 
 			// The terminator: JMP (p), only valid once both bytes of the entry are loaded.
@@ -160,7 +160,7 @@ final class InlineJumpTableDispatch {
 
 			if (pending == PENDING_PLA_STORE) {
 				Address zp = directZeroPageStoreAddress(instr);
-				if (!"STA".equals(mn) || zp == null) {
+				if (shape != Shape.STA || zp == null) {
 					return Boolean.FALSE;
 				}
 				if (parkState == 2) {
@@ -197,15 +197,15 @@ final class InlineJumpTableDispatch {
 					continue;
 				}
 				// The lo byte goes on the stack instead of into a cell (megaman3 JumpEngine).
-				if (loadCount == 0 && parkState == 0 && ("PHA".equals(mn) || "TAX".equals(mn))) {
+				if (loadCount == 0 && parkState == 0 && (shape == Shape.PHA || shape == Shape.TAX)) {
 					parkState = 1;
-					parkedInX = "TAX".equals(mn);
+					parkedInX = shape == Shape.TAX;
 					pending = PENDING_NONE;
 					pc = instr.getFallThrough();
 					continue;
 				}
 				Address zp = directZeroPageStoreAddress(instr);
-				if (!"STA".equals(mn) || zp == null) {
+				if (shape != Shape.STA || zp == null) {
 					return Boolean.FALSE;
 				}
 				if (parkState == 1) {
@@ -229,33 +229,33 @@ final class InlineJumpTableDispatch {
 				continue;
 			}
 
-			switch (mn) {
-				case "ASL":
+			switch (shape) {
+				case ASL:
 					if (!isAccumulatorMode(instr) || ySet) {
 						return Boolean.FALSE;
 					}
 					aslCount++;
 					break;
-				case "TAY":
+				case TAY:
 					if (ySet || aslCount != 1) {
 						return Boolean.FALSE;
 					}
 					ySet = true;
 					yOffset = 0;
 					break;
-				case "INY":
+				case INY:
 					if (!ySet) {
 						return Boolean.FALSE;
 					}
 					yOffset++;
 					break;
-				case "DEY":
+				case DEY:
 					if (!ySet) {
 						return Boolean.FALSE;
 					}
 					yOffset--;
 					break;
-				case "PLA":
+				case PLA:
 					if (parkState == 1 || parkState == 3) {
 						return Boolean.FALSE; // PLA before the hi load, or a second one
 					}
@@ -275,7 +275,7 @@ final class InlineJumpTableDispatch {
 					plaCount++;
 					pending = PENDING_PLA_STORE;
 					break;
-				case "LDA": {
+				case LDA: {
 					Address indirectBase = indirectIndexedYOperand(instr);
 					if (indirectBase == null || hiAddr == null || !indirectBase.equals(loAddr) ||
 						!ySet || loadCount >= 2 || parkState >= 2) {
@@ -300,11 +300,11 @@ final class InlineJumpTableDispatch {
 					pending = PENDING_LOAD_STORE;
 					break;
 				}
-				case "STY":
-				case "STX": {
+				case STY:
+				case STX: {
 					if (parkedInX && parkState == 2) {
 						// the X-parked lo byte lands just below the stored hi byte
-						Address zp = "STX".equals(mn) ? directZeroPageStoreAddress(instr) : null;
+						Address zp = shape == Shape.STX ? directZeroPageStoreAddress(instr) : null;
 						if (zp == null || hiVectorAddr == null || !hiVectorAddr.equals(zp.add(1))) {
 							return Boolean.FALSE;
 						}
@@ -327,14 +327,14 @@ final class InlineJumpTableDispatch {
 					}
 					break;
 				}
-				case "LDY": {
+				case LDY: {
 					// Harmless restore, only after both loads are done.
 					if (loadCount != 2 || !isYRestore(instr, absoluteSave)) {
 						return Boolean.FALSE;
 					}
 					break;
 				}
-				case "LDX": {
+				case LDX: {
 					// Harmless X restore (metroid_u c27c: LDX $69), only after both loads are done.
 					if (loadCount != 2 || !isXRestore(instr, absoluteSave)) {
 						return Boolean.FALSE;
@@ -706,13 +706,64 @@ final class InlineJumpTableDispatch {
 	// Small instruction-shape helpers (raw opcode bytes, like IndirectJumpConstantPointer's).
 	// ---------------------------------------------------------------------
 
+	/** What the dispatcher walk takes an instruction for, read off its p-code. */
+	private enum Shape {
+		ASL, TAY, TAX, INY, DEY, PLA, PHA, LDA, LDX, LDY, STA, STX, STY, OTHER
+	}
+
+	private static Shape shapeOf(Instruction instr) {
+		switch (MosOperands.stackOp(instr)) {
+			case PULL_A:
+				return Shape.PLA;
+			case PUSH_A:
+				return Shape.PHA;
+			default:
+				break;
+		}
+		switch (MosOperands.loadedRegister(instr)) {
+			case 'A':
+				return Shape.LDA;
+			case 'X':
+				return Shape.LDX;
+			case 'Y':
+				return Shape.LDY;
+			default:
+				break;
+		}
+		Character from = MosOperands.transferSource(instr, 'Y');
+		if (from != null && from == 'A') {
+			return Shape.TAY;
+		}
+		from = MosOperands.transferSource(instr, 'X');
+		if (from != null && from == 'A') {
+			return Shape.TAX;
+		}
+		if (MosOperands.incrementsBy(instr, 'Y', 1)) {
+			return Shape.INY;
+		}
+		if (MosOperands.incrementsBy(instr, 'Y', -1)) {
+			return Shape.DEY;
+		}
+		Character stored = MosOperands.storeRegister(instr);
+		if (stored != null) {
+			return switch (stored) {
+				case 'A' -> Shape.STA;
+				case 'X' -> Shape.STX;
+				case 'Y' -> Shape.STY;
+				default -> Shape.OTHER;
+			};
+		}
+		return MosOperands.isAslAccumulator(instr) ? Shape.ASL : Shape.OTHER;
+	}
+
 	private static boolean isAccumulatorMode(Instruction instr) {
-		return opcodeByte(instr) == 0x0a; // ASL A
+		return MosOperands.isAslAccumulator(instr);
 	}
 
 	/** {@code JMP} with the plain absolute-indirect operand (opcode {@code 0x6c}). */
 	private static boolean isIndirectJump(Instruction instr) {
-		return "JMP".equals(instr.getMnemonicString()) && opcodeByte(instr) == 0x6c;
+		FlowType ft = instr.getFlowType();
+		return ft.isJump() && ft.isComputed() && opcodeByte(instr) == 0x6c;
 	}
 
 	/** The pointer cell of a {@code JMP ($nnnn)}, when that cell is a zero-page address
@@ -724,21 +775,19 @@ final class InlineJumpTableDispatch {
 
 	/** {@code STA $nn} (direct zero-page, opcode {@code 0x85}) -- the store address, or null. */
 	private static Address directZeroPageStoreAddress(Instruction instr) {
-		if (!"STA".equals(instr.getMnemonicString()) || opcodeByte(instr) != 0x85) {
-			// also allow STY $nn (0x84) / STX $nn (0x86) for the harmless-save case
-			int op = opcodeByte(instr);
-			String mn = instr.getMnemonicString();
-			if (("STY".equals(mn) && op == 0x84) || ("STX".equals(mn) && op == 0x86)) {
-				return zeroPageOperand(instr);
-			}
-			return null;
+		// also STY $nn (0x84) / STX $nn (0x86) for the harmless-save case
+		int op = opcodeByte(instr);
+		Character stored = MosOperands.storeRegister(instr);
+		if (stored != null && ((stored == 'A' && op == 0x85) || (stored == 'Y' && op == 0x84) ||
+			(stored == 'X' && op == 0x86))) {
+			return zeroPageOperand(instr);
 		}
-		return zeroPageOperand(instr);
+		return null;
 	}
 
 	/** {@code LDY $nn} (direct zero-page, opcode {@code 0xa4}) -- the load address, or null. */
 	private static Address directZeroPageLoadAddress(Instruction instr) {
-		if (!"LDY".equals(instr.getMnemonicString()) || opcodeByte(instr) != 0xa4) {
+		if (MosOperands.loadedRegister(instr) != 'Y' || opcodeByte(instr) != 0xa4) {
 			return null;
 		}
 		return zeroPageOperand(instr);
@@ -752,8 +801,8 @@ final class InlineJumpTableDispatch {
 	 */
 	private static Address absoluteRamRegisterSave(Program program, Instruction instr) {
 		int op = opcodeByte(instr);
-		String mn = instr.getMnemonicString();
-		if (!("STY".equals(mn) && op == 0x8c) && !("STX".equals(mn) && op == 0x8e)) {
+		Character stored = MosOperands.storeRegister(instr);
+		if (stored == null || !((stored == 'Y' && op == 0x8c) || (stored == 'X' && op == 0x8e))) {
 			return null;
 		}
 		Address cell = absoluteOperand(instr);
@@ -769,7 +818,7 @@ final class InlineJumpTableDispatch {
 
 	/** {@code LDX $nn} (zero page, {@code 0xa6}), or {@code LDX} of the absolute save cell. */
 	private static boolean isXRestore(Instruction instr, Address absoluteSave) {
-		if (!"LDX".equals(instr.getMnemonicString())) {
+		if (MosOperands.loadedRegister(instr) != 'X') {
 			return false;
 		}
 		int op = opcodeByte(instr);
@@ -783,14 +832,14 @@ final class InlineJumpTableDispatch {
 		if (directZeroPageLoadAddress(instr) != null) {
 			return true;
 		}
-		return absoluteSave != null && "LDY".equals(instr.getMnemonicString()) &&
+		return absoluteSave != null && MosOperands.loadedRegister(instr) == 'Y' &&
 			opcodeByte(instr) == 0xac && absoluteSave.equals(absoluteOperand(instr));
 	}
 
 	/** {@code LDA ($nn),Y} (indirect indexed, opcode {@code 0xb1}) -- the zero-page base address
 	 *  (i.e. {@code $nn}), or null. */
 	private static Address indirectIndexedYOperand(Instruction instr) {
-		if (!"LDA".equals(instr.getMnemonicString()) || opcodeByte(instr) != 0xb1) {
+		if (MosOperands.loadedRegister(instr) != 'A' || opcodeByte(instr) != 0xb1) {
 			return null;
 		}
 		return zeroPageOperand(instr);

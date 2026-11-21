@@ -103,13 +103,12 @@ public class RtsTrickDispatchAnalyzer extends AbstractAnalyzer {
 	public boolean added(Program program, AddressSetView set, TaskMonitor monitor, MessageLog log)
 			throws CancelledException {
 		Listing listing = program.getListing();
-		String returnMnemonic = RtsTrickDispatch.Dialect.of(program).returnMnemonic;
 		List<Instruction> rtsSites = new ArrayList<>();
 		InstructionIterator it = listing.getInstructions(set, true);
 		while (it.hasNext()) {
 			monitor.checkCancelled();
 			Instruction instr = it.next();
-			if (returnMnemonic.equals(instr.getMnemonicString())) {
+			if (MosOperands.isSubroutineReturn(instr)) {
 				rtsSites.add(instr);
 			}
 		}

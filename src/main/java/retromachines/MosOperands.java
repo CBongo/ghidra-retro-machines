@@ -300,15 +300,80 @@ final class MosOperands {
 
 	/** Whether {@code instr} is an interrupt return that pops status and a 2-byte address ({@code RTI}). */
 	static boolean isInterruptReturn(Instruction instr) {
-		return PcodeShapes.isReturnOp(instr) && stackDelta(instr) == 3;
+		return (PcodeShapes.isReturnOp(instr) || isTerminalIndirectGoto(instr)) &&
+			restoresStatus(instr);
+	}
+
+	/** RTI is an indirect goto (not a RETURN op) in the 65816 sleigh; BRK/COP/STP are too. */
+	private static boolean isTerminalIndirectGoto(Instruction instr) {
+		ghidra.program.model.symbol.FlowType ft = instr.getFlowType();
+		return ft.isTerminal() || (ft.isComputed() && ft.isJump());
+	}
+
+	/** Whether {@code instr} pulls the status register (writes the carry flag's register / PSW). */
+	private static boolean restoresStatus(Instruction instr) {
+		CpuRegs regs = CpuRegs.of(instr.getProgram().getLanguage());
+		return PcodeShapes.writesRegister(instr, regs.carry().reg()) &&
+			stackDelta(instr) > 0;
 	}
 
 	/** Whether {@code instr} returns popping a 2-byte address ({@code RTS}, not {@code RTI}). */
 	static boolean isSubroutineReturn(Instruction instr) {
-		return PcodeShapes.isReturnOp(instr) && stackDelta(instr) == 2;
+		return PcodeShapes.isReturnOp(instr) && !restoresStatus(instr) && stackDelta(instr) == 2;
 	}
 
-	/** Whether {@code instr} branches on the Z or N flag ({@code BEQ}/{@code BNE}/{@code BMI}/{@code BPL}). */
+	/** Whether {@code instr} is {@code RTS} or {@code RTI} on the 6502 family (SPC700 {@code RET}/{@code RETI} are left out: W4 candidate). */
+	static boolean isRtsOrRti(Instruction instr) {
+		return CpuRegs.of(instr.getProgram().getLanguage()).psw() == null &&
+			(isSubroutineReturn(instr) || isInterruptReturn(instr));
+	}
+
+	/** Whether {@code instr} pushes, pulls or rebases the stack ({@code PHA}, {@code PLP}, {@code TXS}). */
+	static boolean touchesStack(Instruction instr) {
+		return rebasesStackPointer(instr) || stackDelta(instr) != 0;
+	}
+
+	/** Whether {@code instr} sets the stack pointer to a non-constant offset ({@code TXS}). */
+	static boolean rebasesStackPointer(Instruction instr) {
+		return PcodeShapes.netStackDelta(instr, CpuRegs.of(instr.getProgram().getLanguage()))
+			.isEmpty();
+	}
+
+	/**
+	 * Whether {@code instr} is the 6502 {@code RTS} (a plain 2-byte return); the SPC700 {@code RET}
+	 * is left out to keep the old mnemonic reach (W4 candidate).
+	 */
+	static boolean isRts(Instruction instr) {
+		return CpuRegs.of(instr.getProgram().getLanguage()).psw() == null &&
+			isSubroutineReturn(instr);
+	}
+
+	/** Whether {@code instr} ends in an interrupt vector jump with no operand ({@code BRK}). */
+	static boolean isSoftwareInterrupt(Instruction instr) {
+		ghidra.program.model.symbol.FlowType ft = instr.getFlowType();
+		return ft.isComputed() && ft.isJump() && instr.getNumOperands() == 0;
+	}
+
+	/**
+	 * Whether {@code instr}'s ENCODED flow (before any flow override) is a call: {@code JSR}, never a
+	 * {@code JMP} that shared-return analysis re-typed as a call (grm-jjuc R3).
+	 */
+	static boolean isNativeCall(Instruction instr) {
+		return instr.getPrototype().getFlowType(instr.getInstructionContext()).isCall();
+	}
+
+	/**
+	 * Whether {@code instr} is a plain subroutine call ({@code JSR}; on the 65816 also {@code JSL}, but no caller reaches it there).
+	 * Control-flow kind comes from the flow types (R3: a {@code JMP} retyped to a call by
+	 * shared-return analysis has no push, so the stack effect excludes it). The SPC700 {@code CALL}
+	 * is left out to keep the old mnemonic-{@code JSR} reach (W4 candidate).
+	 */
+	static boolean isJsr(Instruction instr) {
+		return instr.getFlowType().isCall() && instr.getPrototype().getFlowType(instr.getInstructionContext()).isCall() &&
+			CpuRegs.of(instr.getProgram().getLanguage()).psw() == null;
+	}
+
+	/** Whether {@code instr} is a branch on the Z or N flag ({@code BEQ}/{@code BNE}/{@code BMI}/{@code BPL}). */
 	static boolean isZnBranch(Instruction instr) {
 		PcodeShapes.FlagBranch fb = PcodeShapes.branchOnFlag(instr);
 		return fb != null && (fb.kind() == CpuRegs.FlagKind.ZERO ||
@@ -320,6 +385,34 @@ final class MosOperands {
 		PcodeShapes.FlagBranch fb = PcodeShapes.branchOnFlag(branch);
 		boolean flag = fb.kind() == CpuRegs.FlagKind.ZERO ? z : n;
 		return flag == fb.takenWhenSet();
+	}
+
+	/** Whether {@code instr} branches on N, taken when it is clear ({@code BPL}). */
+	static boolean isBpl(Instruction instr) {
+		PcodeShapes.FlagBranch fb = PcodeShapes.branchOnFlag(instr);
+		return fb != null && fb.kind() == CpuRegs.FlagKind.NEGATIVE && !fb.takenWhenSet();
+	}
+
+	/**
+	 * Whether {@code instr} compares {@code reg} ({@code 'A'}/{@code 'X'}/{@code 'Y'}) with an
+	 * operand and keeps nothing but flags ({@code CMP}/{@code CPX}/{@code CPY}): it reads the
+	 * register, writes the carry flag and writes neither the register nor memory.
+	 */
+	static boolean comparesRegister(Instruction instr, char reg) {
+		Register r = regOf(instr, reg);
+		CpuRegs regs = CpuRegs.of(instr.getProgram().getLanguage());
+		return r != null && PcodeShapes.readsRegister(instr, r) &&
+			PcodeShapes.writesRegister(instr, regs.carry().reg()) &&
+			!PcodeShapes.writesRegister(instr, r) && !PcodeShapes.writesMemory(instr);
+	}
+
+	/** Whether {@code instr}'s operand is an immediate ({@code #imm}): its only operand object is a scalar. */
+	static boolean isImmediateOperand(Instruction instr) {
+		if (instr.getNumOperands() < 1) {
+			return false;
+		}
+		Object[] objs = instr.getOpObjects(0);
+		return objs.length == 1 && objs[0] instanceof Scalar;
 	}
 
 	/** Whether {@code instr} branches on Z, taken when it is clear ({@code BNE}). */
@@ -351,6 +444,12 @@ final class MosOperands {
 	static boolean isOrOnAccumulator(Instruction instr) {
 		return PcodeShapes.bitOpOn(instr,
 			CpuRegs.of(instr.getProgram().getLanguage()).acc()) == PcodeOp.INT_OR;
+	}
+
+	/** Whether {@code instr} computes {@code A := A ^ x} ({@code EOR}, any operand mode). */
+	static boolean isEorOnAccumulator(Instruction instr) {
+		return PcodeShapes.bitOpOn(instr,
+			CpuRegs.of(instr.getProgram().getLanguage()).acc()) == PcodeOp.INT_XOR;
 	}
 
 	/** Whether {@code instr} is the accumulator form of {@code LSR} ({@code A := A >> 1}). */

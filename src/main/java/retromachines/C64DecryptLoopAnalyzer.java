@@ -118,7 +118,7 @@ public class C64DecryptLoopAnalyzer extends AbstractAnalyzer {
 			if (monitor.isCancelled()) {
 				break;
 			}
-			if (!LoopIdioms.mnem(eor).equals("EOR")) {
+			if (!MosOperands.isEorOnAccumulator(eor)) {
 				continue;
 			}
 			tryRecognize(program, listing, eor, monitor, log);
@@ -131,8 +131,8 @@ public class C64DecryptLoopAnalyzer extends AbstractAnalyzer {
 			TaskMonitor monitor, MessageLog log) {
 		Instruction lda = listing.getInstructionBefore(eor.getAddress());
 		Instruction sta = listing.getInstructionAfter(eor.getAddress());
-		if (lda == null || sta == null || !LoopIdioms.mnem(lda).equals("LDA") ||
-			!LoopIdioms.mnem(sta).equals("STA")) {
+		if (lda == null || sta == null || !MosOperands.loadsInto(lda, 'A') ||
+			!MosOperands.storesRegister(sta, 'A')) {
 			return;
 		}
 
@@ -167,8 +167,8 @@ public class C64DecryptLoopAnalyzer extends AbstractAnalyzer {
 		// Invariant 3: index step + conditional back-branch to the loop head (the LDA).
 		Instruction step = listing.getInstructionAfter(sta.getAddress());
 		Instruction branch = step == null ? null : listing.getInstructionAfter(step.getAddress());
-		boolean downCount = step != null && LoopIdioms.mnem(step).equals(LoopIdioms.decMnemonic(idx));
-		boolean bpl = branch != null && LoopIdioms.mnem(branch).equals("BPL");
+		boolean downCount = step != null && LoopIdioms.decrements(step, idx);
+		boolean bpl = branch != null && MosOperands.isBpl(branch);
 		boolean backEdge = branch != null && LoopIdioms.branchTargets(branch, lda.getAddress());
 
 		// Bound the range. Only the clean form -- LDX/LDY #(len-1); ...; DEX/DEY; BPL loop --
@@ -237,17 +237,17 @@ public class C64DecryptLoopAnalyzer extends AbstractAnalyzer {
 	private boolean tryUpCount(Program program, Listing listing, Instruction lda, Instruction step,
 			Register idx, Address base, RecognizedDecryptor.KeyModel key, TaskMonitor monitor,
 			MessageLog log) {
-		if (step == null || !LoopIdioms.mnem(step).equals(LoopIdioms.incMnemonic(idx))) {
+		if (step == null || !LoopIdioms.increments(step, idx)) {
 			return false;
 		}
 		Instruction next = listing.getInstructionAfter(step.getAddress());
 		if (next == null) {
 			return false;
 		}
-		String cmpMnem = idx.getName().equalsIgnoreCase("X") ? "CPX" : "CPY";
 		int end = 256;
 		Instruction branch = next;
-		if (LoopIdioms.mnem(next).equals(cmpMnem) && MosOperands.isImmediate(next)) {
+		if (MosOperands.comparesRegister(next, Character.toUpperCase(idx.getName().charAt(0))) &&
+			MosOperands.isImmediateOperand(next)) {
 			Integer e = MosOperands.immediateOperandValue(next);
 			if (e == null) {
 				return false;
@@ -255,7 +255,7 @@ public class C64DecryptLoopAnalyzer extends AbstractAnalyzer {
 			end = e == 0 ? 256 : e;
 			branch = listing.getInstructionAfter(next.getAddress());
 		}
-		if (branch == null || !LoopIdioms.mnem(branch).equals("BNE") || branch.getLength() != 2) {
+		if (branch == null || !MosOperands.isBne(branch) || branch.getLength() != 2) {
 			return false;
 		}
 

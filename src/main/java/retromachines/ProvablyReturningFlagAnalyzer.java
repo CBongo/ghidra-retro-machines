@@ -237,14 +237,14 @@ public class ProvablyReturningFlagAnalyzer extends AbstractAnalyzer {
 		}
 		boolean rts = false;
 		for (Instruction i : program.getListing().getInstructions(fn.getBody(), true)) {
-			String m = i.getMnemonicString();
-			if (m.equals("RTI") || m.equals("BRK") || m.equals("TXS")) {
+			if (MosOperands.isInterruptReturn(i) || MosOperands.isSoftwareInterrupt(i) ||
+				MosOperands.rebasesStackPointer(i)) {
 				return false;
 			}
-			if (m.equals("RTS")) {
+			if (MosOperands.isRts(i)) {
 				rts = true;
 			}
-			if (m.equals("JMP") && i.getFlowType().isIndirect()) {
+			if (i.getFlowType().isJump() && i.getFlowType().isIndirect()) {
 				return false;
 			}
 			if (i.getFlowType().isCall()) {
@@ -342,18 +342,16 @@ public class ProvablyReturningFlagAnalyzer extends AbstractAnalyzer {
 			if (i == null || !block.contains(i.getMaxAddress())) {
 				return false;
 			}
-			switch (i.getMnemonicString()) {
-				case "PHA", "PHP", "PLA", "PLP", "TXS", "JSR", "JSL", "RTI", "RTL", "BRK" -> {
-					return false;
-				}
-				default -> {
-				}
+			if (MosOperands.isRts(i)) {
+				continue; // a leaf
 			}
-			if (i.getFlowType().isIndirect() || i.getFlowType().isCall()) {
+			// anything that touches the stack, calls, or leaves by an interrupt/long return
+			if (MosOperands.touchesStack(i) || i.getFlowType().isCall() ||
+				MosOperands.isInterruptReturn(i) || MosOperands.isSoftwareInterrupt(i)) {
 				return false;
 			}
-			if (i.getMnemonicString().equals("RTS")) {
-				continue; // a leaf
+			if (i.getFlowType().isIndirect()) {
+				return false;
 			}
 			for (Address flow : i.getFlows()) {
 				if (flow.compareTo(at) <= 0) {

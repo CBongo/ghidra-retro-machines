@@ -28,6 +28,7 @@ import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.Memory;
 import ghidra.program.model.mem.MemoryAccessException;
+import ghidra.program.model.pcode.PcodeOp;
 import ghidra.program.model.mem.MemoryBlock;
 
 /**
@@ -165,8 +166,8 @@ final class TwoLevelPointerDispatch {
 
 		int hiSt = lastWriter(run, n, zp2 + 1);
 		int loSt = lastWriter(run, n, zp2);
-		if (hiSt < 1 || loSt < 1 || opcode(run.get(hiSt)) != 0x85 ||
-			opcode(run.get(loSt)) != 0x85) {
+		if (hiSt < 1 || loSt < 1 || !isZeroPageStoreOfA(run.get(hiSt)) ||
+			!isZeroPageStoreOfA(run.get(loSt))) {
 			return null;
 		}
 		int hiLd = hiSt - 1;
@@ -180,14 +181,14 @@ final class TwoLevelPointerDispatch {
 			return null;
 		}
 		// Exactly one INY between the low store and the high load.
-		if (hiLd - loSt != 2 || !"INY".equals(run.get(loSt + 1).getMnemonicString())) {
+		if (hiLd - loSt != 2 || !MosOperands.incrementsBy(run.get(loSt + 1), 'Y', 1)) {
 			return null;
 		}
 
 		// Y for the inner load: ASL A / TAY, optionally AND #imm first.
 		int tay = lastRegisterWriter(run, loLd, "Y");
-		if (tay < 1 || !"TAY".equals(run.get(tay).getMnemonicString()) ||
-			opcode(run.get(tay - 1)) != 0x0a) {
+		if (tay < 1 || !isTransferFromA(run.get(tay), 'Y') ||
+			!MosOperands.isAslAccumulator(run.get(tay - 1))) {
 			return null;
 		}
 		Integer innerCap = andCap(run, tay - 2);
@@ -195,14 +196,14 @@ final class TwoLevelPointerDispatch {
 		// The outer pair: zp1/zp1+1 last written from LDA T,R / LDA T+1,R.
 		int z1LoSt = lastWriter(run, loLd, z1);
 		int z1HiSt = lastWriter(run, loLd, z1 + 1);
-		if (z1LoSt < 1 || z1HiSt < 1 || opcode(run.get(z1LoSt)) != 0x85 ||
-			opcode(run.get(z1HiSt)) != 0x85) {
+		if (z1LoSt < 1 || z1HiSt < 1 || !isZeroPageStoreOfA(run.get(z1LoSt)) ||
+			!isZeroPageStoreOfA(run.get(z1HiSt))) {
 			return null;
 		}
 		Instruction loTab = run.get(z1LoSt - 1);
 		Instruction hiTab = run.get(z1HiSt - 1);
-		int op = opcode(loTab);
-		if ((op != 0xb9 && op != 0xbd) || opcode(hiTab) != op) {
+		String reg = absoluteAccumulatorLoadIndex(loTab);
+		if (reg == null || !reg.equals(absoluteAccumulatorLoadIndex(hiTab))) {
 			return null;
 		}
 		Long t = absolute(loTab);
@@ -210,7 +211,6 @@ final class TwoLevelPointerDispatch {
 		if (t == null || t1 == null || t1 != t + 1) {
 			return null;
 		}
-		String reg = op == 0xb9 ? "Y" : "X";
 		int first = Math.min(z1LoSt, z1HiSt) - 1;
 		int second = Math.max(z1LoSt, z1HiSt) - 1;
 		for (int i = first + 1; i < second; i++) {
@@ -220,9 +220,8 @@ final class TwoLevelPointerDispatch {
 		}
 		Integer outerCap = null;
 		int idx = lastRegisterWriter(run, first, reg);
-		String transfer = "Y".equals(reg) ? "TAY" : "TAX";
-		if (idx >= 1 && transfer.equals(run.get(idx).getMnemonicString()) &&
-			opcode(run.get(idx - 1)) == 0x0a) {
+		if (idx >= 1 && isTransferFromA(run.get(idx), reg.charAt(0)) &&
+			MosOperands.isAslAccumulator(run.get(idx - 1))) {
 			outerCap = andCap(run, idx - 2);
 		}
 
@@ -287,11 +286,10 @@ final class TwoLevelPointerDispatch {
 			if (IndirectJumpConstantPointer.isDirectWriteTo(in, offset)) {
 				return i;
 			}
-			switch (opcode(in)) {
-				case 0x95, 0x94, 0x96, 0x91, 0x81, 0xf6, 0xd6, 0x16, 0x56, 0x36, 0x76:
-					return i;
-				default:
-					break;
+			// a zero-page indexed or indirect store (2-byte forms only: the absolute-indexed
+			// stores were never writers here)
+			if (in.getLength() == 2 && PcodeShapes.hasComputedStore(in)) {
+				return i;
 			}
 		}
 		return -1;
@@ -323,16 +321,12 @@ final class TwoLevelPointerDispatch {
 
 	/** {@code AND #imm} at {@code i}: {@code imm + 1} entries (at most 128); else null. */
 	private static Integer andCap(List<Instruction> run, int i) {
-		if (i < 0 || opcode(run.get(i)) != 0x29) {
+		if (i < 0 || run.get(i).getLength() != 2) {
 			return null;
 		}
-		try {
-			int imm = run.get(i).getByte(1) & 0xff;
-			return Math.min(imm + 1, MAX_ENTRIES);
-		}
-		catch (MemoryAccessException e) {
-			return null;
-		}
+		Long imm = PcodeShapes.bitOpConstant(run.get(i),
+			CpuRegs.of(run.get(i).getProgram().getLanguage()).acc(), PcodeOp.INT_AND);
+		return imm == null ? null : Math.min((int) (imm & 0xff) + 1, MAX_ENTRIES);
 	}
 
 	// ---------------------------------------------------------------------
@@ -519,9 +513,33 @@ final class TwoLevelPointerDispatch {
 		}
 	}
 
+	/** {@code STA $nn} (a plain store of A in the 2-byte zero-page encoding). */
+	private static boolean isZeroPageStoreOfA(Instruction in) {
+		return MosOperands.storesRegister(in, 'A') && in.getLength() == 2;
+	}
+
+	/** {@code TAX}/{@code TAY}: {@code in} copies A into the index register {@code reg} ({@code 'X'}/{@code 'Y'}). */
+	private static boolean isTransferFromA(Instruction in, char reg) {
+		Character from = MosOperands.transferSource(in, reg);
+		return from != null && from == 'A';
+	}
+
+	/** {@code "X"}/{@code "Y"} when {@code in} is {@code LDA abs,X}/{@code abs,Y}, else null. */
+	private static String absoluteAccumulatorLoadIndex(Instruction in) {
+		CpuRegs regs = CpuRegs.of(in.getProgram().getLanguage());
+		PcodeShapes.IndexedLoad load = PcodeShapes.indexedLoad(in);
+		if (load == null || in.getLength() != 3 || !load.dst().equals(regs.acc())) {
+			return null;
+		}
+		if (load.index().equals(regs.x())) {
+			return "X";
+		}
+		return load.index().equals(regs.y()) ? "Y" : null;
+	}
+
 	/** {@code LDA ($nn),Y} (opcode {@code 0xb1}): {@code $nn}, else null. */
 	private static Long indirectY(Instruction in) {
-		if (opcode(in) != 0xb1 || in.getLength() != 2) {
+		if (MosOperands.loadedRegister(in) != 'A' || opcode(in) != 0xb1 || in.getLength() != 2) {
 			return null;
 		}
 		try {

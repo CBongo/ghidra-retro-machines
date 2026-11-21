@@ -23,6 +23,8 @@ import java.util.Set;
 import java.util.function.Function;
 
 import ghidra.program.model.address.Address;
+import ghidra.program.model.lang.Register;
+import ghidra.program.model.scalar.Scalar;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
@@ -282,38 +284,144 @@ final class PopReturnHelper {
 	}
 
 	private static Operand operand(Instruction instr, Integer xRel) {
-		String text = instr.toString();
-		int sp = text.indexOf(' ');
-		if (sp < 0) {
+		if (instr.getNumOperands() < 1) {
 			return Operand.UNTRACKED;
 		}
-		String op = text.substring(sp + 1).trim().replace(" ", "");
-		try {
-			if (op.equals("A")) {
-				return new Operand(Operand.ACC, 0);
-			}
-			if (op.startsWith("#")) {
-				return new Operand(Operand.IMM, Long.decode(op.substring(1)));
-			}
-			if (op.startsWith("(")) {
-				return Operand.UNTRACKED;
-			}
-			if (op.endsWith(",X")) {
-				long base = Long.decode(op.substring(0, op.length() - 2));
-				if (base >= 0x100 && base < 0x200 && xRel != null) {
-					// $0101+S0 is slot 0 and X = S0 + xRel
-					return new Operand(Operand.SLOT, 0x101 - base - xRel);
+		Long base = null;
+		boolean address = false;
+		boolean indexedByX = false;
+		for (Object o : instr.getOpObjects(0)) {
+			if (o instanceof Register reg) {
+				if (!reg.getName().equals("X") || indexedByX) {
+					return Operand.UNTRACKED;
 				}
+				indexedByX = true;
+			}
+			else if (base == null && (o instanceof Address || o instanceof Scalar)) {
+				address = o instanceof Address;
+				base = o instanceof Address ad ? ad.getOffset() : ((Scalar) o).getUnsignedValue();
+			}
+			else {
 				return Operand.UNTRACKED;
 			}
-			if (op.contains(",")) {
-				return Operand.UNTRACKED;
-			}
-			return new Operand(Operand.CELL, Long.decode(op));
 		}
-		catch (NumberFormatException e) {
+		if (base == null) {
 			return Operand.UNTRACKED;
 		}
+		if (indexedByX) {
+			if (base >= 0x100 && base < 0x200 && xRel != null) {
+				// $0101+S0 is slot 0 and X = S0 + xRel
+				return new Operand(Operand.SLOT, 0x101 - base - xRel);
+			}
+			return Operand.UNTRACKED;
+		}
+		return address ? new Operand(Operand.CELL, base) : new Operand(Operand.IMM, base);
+	}
+
+	/** What an instruction does to the tracked machine, read off its p-code (grm-jjuc W2). */
+	private enum Effect {
+		PHA, PHP, PLA, PLP, TSX, INX, DEX, TXS, LDX, TAX, TXA, LDY, TAY, TYA, WRITES_Y, LDA, STA,
+		STX, STY, CLC, SEC, ADC, SBC, WRITES_A, WRITES_CARRY, INC_DEC, SHIFT, RTS, INTERRUPT, OTHER
+	}
+
+	private static Effect effect(Instruction instr) {
+		switch (MosOperands.stackOp(instr)) {
+			case PUSH_A:
+				return Effect.PHA;
+			case PUSH_STATUS:
+				return Effect.PHP;
+			case PULL_A:
+				return Effect.PLA;
+			case PULL_STATUS:
+				return Effect.PLP;
+			default:
+				break;
+		}
+		if (CpuRegs.of(instr.getProgram().getLanguage()).psw() == null &&
+			MosOperands.isSubroutineReturn(instr)) {
+			return Effect.RTS;
+		}
+		if (MosOperands.isInterruptReturn(instr)) {
+			return Effect.INTERRUPT;
+		}
+		FlowType flow = instr.getFlowType();
+		if (flow.isComputed() && flow.isJump() && instr.getNumOperands() == 0) {
+			return Effect.INTERRUPT; // BRK: a jump through the interrupt vector
+		}
+		CpuRegs regs = CpuRegs.of(instr.getProgram().getLanguage());
+		if (MosOperands.copiesStackPointerInto(instr, 'X')) {
+			return Effect.TSX;
+		}
+		if (!flow.isCall() && PcodeShapes.netStackDelta(instr, regs).isEmpty() &&
+			PcodeShapes.readsRegister(instr, regs.x())) {
+			return Effect.TXS;
+		}
+		switch (MosOperands.loadedRegister(instr)) {
+			case 'X':
+				return Effect.LDX;
+			case 'Y':
+				return Effect.LDY;
+			case 'A':
+				return Effect.LDA;
+			default:
+				break;
+		}
+		Character from = MosOperands.transferSource(instr, 'X');
+		if (from != null && from == 'A') {
+			return Effect.TAX;
+		}
+		from = MosOperands.transferSource(instr, 'Y');
+		if (from != null && from == 'A') {
+			return Effect.TAY;
+		}
+		from = MosOperands.transferSource(instr, 'A');
+		if (from != null) {
+			return from == 'X' ? Effect.TXA : Effect.TYA;
+		}
+		if (MosOperands.storesRegister(instr, 'A')) {
+			return Effect.STA;
+		}
+		if (MosOperands.storesRegister(instr, 'X')) {
+			return Effect.STX;
+		}
+		if (MosOperands.storesRegister(instr, 'Y')) {
+			return Effect.STY;
+		}
+		Integer carry = MosOperands.constantCarry(instr);
+		if (carry != null) {
+			return carry == 0 ? Effect.CLC : Effect.SEC;
+		}
+		// ADC/SBC stay mnemonic (decimal-flag branch, stock carry bugs: grm-jjuc design R1/W4)
+		String mn = instr.getMnemonicString();
+		if (mn.equals("ADC")) {
+			return Effect.ADC;
+		}
+		if (mn.equals("SBC")) {
+			return Effect.SBC;
+		}
+		if (MosOperands.incrementsBy(instr, 'X', 1)) {
+			return Effect.INX;
+		}
+		if (MosOperands.incrementsBy(instr, 'X', -1)) {
+			return Effect.DEX;
+		}
+		if (MosOperands.modifiesRegister(instr, 'Y') &&
+			!MosOperands.modifiesRegister(instr, 'A')) {
+			return Effect.WRITES_Y;
+		}
+		if (PcodeShapes.incrementOf(instr, regs.acc()) != null ||
+			PcodeShapes.rmwIncrement(instr) != null) {
+			return Effect.INC_DEC;
+		}
+		boolean writesCarry = PcodeShapes.writesRegister(instr, regs.carry().reg());
+		if (writesCarry && (PcodeShapes.writesRegister(instr, regs.acc()) ||
+			PcodeShapes.writesMemory(instr))) {
+			return Effect.SHIFT;
+		}
+		if (PcodeShapes.writesRegister(instr, regs.acc())) {
+			return Effect.WRITES_A;
+		}
+		return writesCarry ? Effect.WRITES_CARRY : Effect.OTHER;
 	}
 
 	private static Val read(Regs r, Operand o) {
@@ -468,80 +576,79 @@ final class PopReturnHelper {
 				return Unwind.DECLINE;
 			}
 			Regs r = new Regs(s);
-			String mn = instr.getMnemonicString();
 			Unwind exit = null;
-			switch (mn) {
-				case "PHA" -> {
+			switch (effect(instr)) {
+				case PHA -> {
 					r.depth++;
 					r.slots.put(r.depth, r.a);
 				}
-				case "PHP" -> {
+				case PHP -> {
 					r.depth++;
 					r.slots.put(r.depth, Val.UNKNOWN);
 				}
-				case "PLA" -> {
+				case PLA -> {
 					r.a = r.slot(r.depth);
 					r.depth--;
 				}
-				case "PLP" -> {
+				case PLP -> {
 					r.carry = Val.UNKNOWN;
 					r.depth--;
 				}
 				// S = S0 - depth, so TSX leaves X = S0 - depth: track X relative to S0
-				case "TSX" -> {
+				case TSX -> {
 					r.xRel = -r.depth;
 					r.x = Val.UNKNOWN;
 				}
-				case "INX" -> {
+				case INX -> {
 					r.xRel = r.xRel == null ? null : r.xRel + 1;
 					r.x = Val.UNKNOWN;
 				}
-				case "DEX" -> {
+				case DEX -> {
 					r.xRel = r.xRel == null ? null : r.xRel - 1;
 					r.x = Val.UNKNOWN;
 				}
-				case "TXS" -> {
+				case TXS -> {
 					if (r.xRel == null) {
 						return Unwind.DECLINE;
 					}
 					r.depth = -r.xRel;
 				}
-				case "LDX" -> {
+				case LDX -> {
 					r.x = read(r, operand(instr, r.xRel));
 					r.xRel = null;
 				}
-				case "TAX" -> {
+				case TAX -> {
 					r.x = r.a;
 					r.xRel = null;
 				}
-				case "TXA" -> r.a = r.xRel == null ? r.x : Val.UNKNOWN;
-				case "LDY" -> r.y = read(r, operand(instr, r.xRel));
-				case "TAY" -> r.y = r.a;
-				case "TYA" -> r.a = r.y;
-				case "INY", "DEY" -> r.y = Val.UNKNOWN;
-				case "LDA" -> r.a = read(r, operand(instr, r.xRel));
-				case "STA" -> write(r, operand(instr, r.xRel), r.a);
-				case "STX" -> write(r, operand(instr, r.xRel), r.x);
-				case "STY" -> write(r, operand(instr, r.xRel), r.y);
-				case "CLC" -> r.carry = Val.constant(0);
-				case "SEC" -> r.carry = Val.constant(1);
-				case "ADC" -> adc(r, read(r, operand(instr, r.xRel)));
-				case "AND", "ORA", "EOR" -> r.a = Val.UNKNOWN;
-				case "SBC" -> {
+				case TXA -> r.a = r.xRel == null ? r.x : Val.UNKNOWN;
+				case LDY -> r.y = read(r, operand(instr, r.xRel));
+				case TAY -> r.y = r.a;
+				case TYA -> r.a = r.y;
+				case WRITES_Y -> r.y = Val.UNKNOWN;
+				case LDA -> r.a = read(r, operand(instr, r.xRel));
+				case STA -> write(r, operand(instr, r.xRel), r.a);
+				case STX -> write(r, operand(instr, r.xRel), r.x);
+				case STY -> write(r, operand(instr, r.xRel), r.y);
+				case CLC -> r.carry = Val.constant(0);
+				case SEC -> r.carry = Val.constant(1);
+				case ADC -> adc(r, read(r, operand(instr, r.xRel)));
+				case WRITES_A -> r.a = Val.UNKNOWN;
+				case SBC -> {
 					r.a = Val.UNKNOWN;
 					r.carry = Val.UNKNOWN;
 				}
-				case "CMP", "CPX", "CPY" -> r.carry = Val.UNKNOWN;
-				case "INC", "DEC" -> {
-					Operand o = operand(instr, r.xRel);
-					write(r, o, step(read(r, o), mn.equals("INC") ? 1 : -1));
+				case WRITES_CARRY -> r.carry = Val.UNKNOWN;
+				case INC_DEC -> {
+					Operand o = incDecOperand(instr, r.xRel);
+					write(r, o, step(read(r, o), incDecStep(instr)));
 				}
-				case "ASL", "LSR", "ROL", "ROR" -> {
-					write(r, operand(instr, r.xRel), Val.UNKNOWN);
+				case SHIFT -> {
+					write(r, shiftOperand(instr, r.xRel), Val.UNKNOWN);
 					r.carry = Val.UNKNOWN;
 				}
-				case "RTS" -> exit = exitAt(r, r.depth, 0, false);
-				case "RTI", "BRK" -> {
+				case RTS -> exit = exitAt(r, r.depth, 0, false);
+				case INTERRUPT -> {
 					return Unwind.DECLINE;
 				}
 				default -> {
@@ -650,20 +757,40 @@ final class PopReturnHelper {
 		return result == null ? Unwind.DECLINE : result;
 	}
 
+	/** The {@code +1}/{@code -1} an {@code INC}/{@code DEC} applies, accumulator or memory form. */
+	private static int incDecStep(Instruction instr) {
+		Integer k = PcodeShapes.incrementOf(instr,
+			CpuRegs.of(instr.getProgram().getLanguage()).acc());
+		return k != null ? k : PcodeShapes.rmwIncrement(instr);
+	}
+
+	private static Operand incDecOperand(Instruction instr, Integer xRel) {
+		return PcodeShapes.incrementOf(instr,
+			CpuRegs.of(instr.getProgram().getLanguage()).acc()) != null
+					? new Operand(Operand.ACC, 0)
+					: operand(instr, xRel);
+	}
+
+	/** The accumulator when the shift writes A, else its memory operand. */
+	private static Operand shiftOperand(Instruction instr, Integer xRel) {
+		return PcodeShapes.writesRegister(instr,
+			CpuRegs.of(instr.getProgram().getLanguage()).acc()) ? new Operand(Operand.ACC, 0)
+					: operand(instr, xRel);
+	}
+
 	/** The pointer cell of {@code JMP (abs)}, or null for any other computed jump. */
 	private static Long indirectCell(Instruction instr) {
-		String text = instr.toString();
-		int open = text.indexOf('(');
-		int close = text.indexOf(')');
-		if (open < 0 || close < open || close != text.length() - 1) {
+		if (instr.getNumOperands() != 1) {
 			return null;
 		}
-		try {
-			return Long.decode(text.substring(open + 1, close).trim());
+		Long cell = null;
+		for (Object o : instr.getOpObjects(0)) {
+			if (cell != null || !(o instanceof Address || o instanceof Scalar)) {
+				return null;
+			}
+			cell = o instanceof Address a ? a.getOffset() : ((Scalar) o).getUnsignedValue();
 		}
-		catch (NumberFormatException e) {
-			return null;
-		}
+		return cell;
 	}
 
 	/** The routine has advanced its own return address (slot 0 holds {@code LO(0)+k}, k != 0). */

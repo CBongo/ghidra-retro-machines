@@ -136,7 +136,7 @@ final class SearchLoopDispatch {
 		for (int i = 0; i + 1 < run.size(); i++) {
 			Long base = indexedLoadBase(run.get(i), y);
 			Instruction store = run.get(i + 1);
-			if (base != null && "STA".equalsIgnoreCase(store.getMnemonicString())) {
+			if (base != null && MosOperands.storesRegister(store, 'A')) {
 				Long zp = scalarOperand(store);
 				if (zp != null) {
 					baseByZp.put(zp, base);
@@ -210,11 +210,11 @@ final class SearchLoopDispatch {
 		// After the branch: k DEYs, then the BPL back to L.
 		int step = 0;
 		Instruction cur = FlowEdges.nextFallThrough(listing, branch);
-		while (cur != null && LoopIdioms.decMnemonic(y).equalsIgnoreCase(cur.getMnemonicString())) {
+		while (cur != null && LoopIdioms.decrements(cur, y)) {
 			step++;
 			cur = FlowEdges.nextFallThrough(listing, cur);
 		}
-		if (cur == null || step == 0 || !"BPL".equalsIgnoreCase(cur.getMnemonicString()) ||
+		if (cur == null || step == 0 || !MosOperands.isBpl(cur) ||
 			cur.getFlows().length != 1) {
 			return null;
 		}
@@ -235,7 +235,7 @@ final class SearchLoopDispatch {
 			if (i >= MAX_RUN || MosOperands.writesRegister(cur, y)) {
 				return null;
 			}
-			comparesIndexed |= "CMP".equalsIgnoreCase(cur.getMnemonicString()) &&
+			comparesIndexed |= MosOperands.comparesRegister(cur, 'A') &&
 				y.equals(LoopIdioms.indexReg(cur));
 			if (cur.equals(branch)) {
 				break;
@@ -283,16 +283,13 @@ final class SearchLoopDispatch {
 
 	/** {@code n} for {@code LDY #n} / {@code LDX #n} of the register {@code idx}, else null. */
 	private static Integer ldImmediate(Instruction instr, Register idx) {
-		if (!("LD" + idx.getName()).equalsIgnoreCase(instr.getMnemonicString()) || instr.getLength() != 2) {
-			return null;
-		}
-		Long v = scalarOperand(instr);
-		return v == null || !instr.toString().contains("#") ? null : v.intValue() & 0xff;
+		Long v = PcodeShapes.constantInto(instr, idx);
+		return v == null || instr.getLength() != 2 ? null : v.intValue() & 0xff;
 	}
 
 	/** The base of {@code LDA base,Y} / {@code LDA base,X} (absolute, indexed by {@code y}), else null. */
 	private static Long indexedLoadBase(Instruction instr, Register y) {
-		if (!"LDA".equalsIgnoreCase(instr.getMnemonicString()) || instr.getLength() != 3) {
+		if (!MosOperands.loadsFromMemoryInto(instr, 'A') || instr.getLength() != 3) {
 			return null;
 		}
 		boolean byY = false;

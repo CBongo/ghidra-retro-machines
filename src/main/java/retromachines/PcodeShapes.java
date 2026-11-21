@@ -482,6 +482,98 @@ final class PcodeShapes {
 	}
 
 	/**
+	 * The constant {@code k} when {@code reg} ends up as {@code reg <opcode> k} with {@code k} an
+	 * immediate ({@code AND #imm}, SPC700 {@code AND A,#imm}), where {@code opcode} is the p-code
+	 * {@link PcodeOp#INT_AND}/{@code INT_OR}/{@code INT_XOR}; null for a memory operand or any
+	 * other shape.
+	 */
+	static Long bitOpConstant(Instruction instr, Register reg, int opcode) {
+		if (reg == null || bitOpOn(instr, reg) != opcode) {
+			return null;
+		}
+		Walk w = new Walk(instr);
+		Varnode rv = varnodeOf(reg);
+		Val v = w.finalValue(rv);
+		PcodeOp op = w.ops[v.op];
+		for (int i = 0; i < 2; i++) {
+			if (w.isEntry(v.op, op.getInput(i), rv)) {
+				Val other = w.trace(v.op, op.getInput(1 - i));
+				return other.kind == Val.CONST ? Long.valueOf(other.c) : null;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * The constant {@code reg} is compared with when the instruction subtracts/compares {@code reg}'s
+	 * entry value against an immediate ({@code CMP #imm}, {@code CPX #imm}, SPC700 {@code CMP A,#imm}),
+	 * else null: read off the {@code INT_SUB}/{@code INT_LESS}/{@code INT_LESSEQUAL} the compare
+	 * emits, whichever operand order, so a memory operand answers null.
+	 */
+	static Long compareImmediate(Instruction instr, Register reg) {
+		if (reg == null) {
+			return null;
+		}
+		Walk w = new Walk(instr);
+		Varnode rv = varnodeOf(reg);
+		for (int j = 0; j < w.ops.length; j++) {
+			PcodeOp op = w.ops[j];
+			int opc = op.getOpcode();
+			if (opc != PcodeOp.INT_SUB && opc != PcodeOp.INT_LESS && opc != PcodeOp.INT_LESSEQUAL) {
+				continue;
+			}
+			for (int i = 0; i < 2; i++) {
+				if (w.isEntry(j, op.getInput(i), rv)) {
+					Val other = w.trace(j, op.getInput(1 - i));
+					if (other.kind == Val.CONST) {
+						return other.c;
+					}
+				}
+			}
+		}
+		return null;
+	}
+
+	/** An absolute-indexed load: {@code dst := *[base + index]} ({@code LDA abs,X}, SPC700 {@code MOV A,!abs+X}). */
+	record IndexedLoad(Register dst, Register index, long base) {}
+
+	/**
+	 * The {@link IndexedLoad} the instruction performs (a non-stack {@code LOAD} whose address is a
+	 * constant plus the entry value of one register, zero-extension looked through), or null.
+	 */
+	static IndexedLoad indexedLoad(Instruction instr) {
+		Register dst = loadDestination(instr);
+		if (dst == null) {
+			return null;
+		}
+		Walk w = new Walk(instr);
+		w.stackWalk();
+		for (int j = 0; j < w.ops.length; j++) {
+			PcodeOp op = w.ops[j];
+			if (op.getOpcode() != PcodeOp.LOAD || w.stackAccess[j]) {
+				continue;
+			}
+			Val addr = w.trace(j, op.getInput(1));
+			if (addr.kind != Val.OPAQUE || addr.partial || addr.op < 0 ||
+				w.ops[addr.op].getOpcode() != PcodeOp.INT_ADD) {
+				continue;
+			}
+			PcodeOp add = w.ops[addr.op];
+			for (int i = 0; i < 2; i++) {
+				Val k = w.trace(addr.op, add.getInput(i));
+				Val r = w.trace(addr.op, add.getInput(1 - i));
+				if (k.kind == Val.CONST && r.kind == Val.LIVE && r.vn.isRegister()) {
+					Register idx = w.registerFor(r.vn);
+					if (idx != null) {
+						return new IndexedLoad(dst, idx, k.c);
+					}
+				}
+			}
+		}
+		return null;
+	}
+
+	/**
 	 * {@code k} when the instruction read-modify-writes one memory cell as {@code cell + k}
 	 * ({@code INC abs} = +1, {@code DEC zp,X} = -1), else null. The cell is either a fixed address
 	 * (ram-space input and output) or a computed {@code LOAD}/{@code STORE} pair. Registers

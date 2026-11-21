@@ -30,6 +30,7 @@ import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.Memory;
 import ghidra.program.model.mem.MemoryAccessException;
+import ghidra.program.model.pcode.PcodeOp;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.symbol.FlowType;
 import ghidra.program.model.symbol.Reference;
@@ -119,9 +120,10 @@ final class RtsTrickDispatch {
 	/** Cap on planar entries: the index register is a byte. */
 	static final int MAX_PLANAR_ENTRIES = 256;
 
-	/** 6502 mnemonics that are never "stack-neutral, branch-free noise" between the parts. */
-	private static final Set<String> NOT_NOISE =
-		Set.of("PHA", "PLA", "PHP", "PLP", "TXS", "JSR", "RTS", "RTI", "BRK", "JMP");
+	/**
+	 * 6502 mnemonics that write an index register. Kept as the mnemonic sets (grm-jjuc W4
+	 * candidate): a p-code "writes X" would also see LAX/LAS/LXA/SBX.
+	 */
 	private static final Set<String> X_WRITERS = Set.of("INX", "DEX", "LDX", "TAX", "TSX");
 	private static final Set<String> Y_WRITERS = Set.of("INY", "DEY", "LDY", "TAY");
 
@@ -135,15 +137,10 @@ final class RtsTrickDispatch {
 	 */
 	enum Dialect {
 		/** 6502 family: {@code LDA abs,X/Y} / {@code PHA} / {@code RTS}, which pops target - 1. */
-		MOS6502("RTS", 0x48, 0xbd, 0xb9, 1, 0xaa, 0xa8, 0x0a, 0x29) {
+		MOS6502(1) {
 			@Override
 			boolean writesIndex(Instruction instr, boolean x) {
 				return (x ? X_WRITERS : Y_WRITERS).contains(instr.getMnemonicString());
-			}
-
-			@Override
-			boolean isNoise(Instruction instr) {
-				return isStraight(instr) && !NOT_NOISE.contains(instr.getMnemonicString());
 			}
 		},
 		/**
@@ -151,42 +148,18 @@ final class RtsTrickDispatch {
 		 * itself ({@code pop16(PC)}, no +1). The AKAO drivers' command dispatch (FF3 0a12/0c69, CT
 		 * 0e10, Lemmings 1175, Secret of Mana 100e; RtsTrickProbe survey on grm-gipk.8).
 		 */
-		SPC700("RET", 0x2d, 0xf5, 0xf6, 0, 0x5d, 0xfd, 0x1c, 0x28) {
+		SPC700(0) {
 			@Override
 			boolean writesIndex(Instruction instr, boolean x) {
 				return writesRegister(instr, instr.getProgram().getRegister(x ? "X" : "Y"));
 			}
-
-			@Override
-			boolean isNoise(Instruction instr) {
-				String m = instr.getMnemonicString();
-				return isStraight(instr) && !"PUSH".equals(m) && !"POP".equals(m) &&
-					!writesRegister(instr, instr.getProgram().getCompilerSpec().getStackPointer());
-			}
 		};
 
-		final String returnMnemonic;
-		final int pushOpcode;
-		final int loadX;
-		final int loadY;
+		/** What the return adds to the popped word (6502 +1, SPC700 0). */
 		final int bias;
-		/** {@code TAX}/{@code TAY} ({@code MOV X,A}/{@code MOV Y,A}), {@code ASL A}, {@code AND #imm}. */
-		final int transferX;
-		final int transferY;
-		final int aslA;
-		final int andImm;
 
-		Dialect(String returnMnemonic, int pushOpcode, int loadX, int loadY, int bias,
-				int transferX, int transferY, int aslA, int andImm) {
-			this.returnMnemonic = returnMnemonic;
-			this.pushOpcode = pushOpcode;
-			this.loadX = loadX;
-			this.loadY = loadY;
+		Dialect(int bias) {
 			this.bias = bias;
-			this.transferX = transferX;
-			this.transferY = transferY;
-			this.aslA = aslA;
-			this.andImm = andImm;
 		}
 
 		/** The dialect's {@code BRK} opcode, which a driver may use as a placeholder; -1 if none. */
@@ -198,7 +171,9 @@ final class RtsTrickDispatch {
 		abstract boolean writesIndex(Instruction instr, boolean x);
 
 		/** Stack-neutral, branch-free filler allowed between the parts. */
-		abstract boolean isNoise(Instruction instr);
+		boolean isNoise(Instruction instr) {
+			return isStraight(instr) && !MosOperands.touchesStack(instr);
+		}
 
 		/** The SPC700 dialect for that processor; the 6502 one for every other 8-bit language. */
 		static Dialect of(Program program) {
@@ -270,7 +245,7 @@ final class RtsTrickDispatch {
 	/** The push-pair shape ending at {@code rts}, or null when it is not conclusively this idiom. */
 	static Shape recognize(Program program, Instruction rts) {
 		Dialect d = Dialect.of(program);
-		if (!d.returnMnemonic.equals(rts.getMnemonicString())) {
+		if (!MosOperands.isSubroutineReturn(rts)) {
 			return null;
 		}
 		Listing listing = program.getListing();
@@ -292,29 +267,29 @@ final class RtsTrickDispatch {
 		while (i >= 0 && d.isNoise(w[i])) {
 			i--;
 		}
-		if (i < 1 || !isPush(d, w[i])) {
+		if (i < 1 || !isPush(w[i])) {
 			return null;
 		}
 		int push2 = i;
 		int load2 = i - 1;
-		int tLo = loadOperand(d, w[load2]);
-		int reg = loadRegister(d, w[load2]);
+		int tLo = loadOperand(w[load2]);
+		char reg = loadRegister(w[load2]);
 		if (tLo < 0) {
 			return null;
 		}
 		i = load2 - 1;
 		while (i >= 0 && d.isNoise(w[i])) {
-			if (d.writesIndex(w[i], reg == d.loadX)) {
+			if (d.writesIndex(w[i], reg == 'X')) {
 				return null; // R changes between the loads
 			}
 			i--;
 		}
-		if (i < 1 || !isPush(d, w[i])) {
+		if (i < 1 || !isPush(w[i])) {
 			return null;
 		}
 		int load1 = i - 1;
-		int tHi = loadOperand(d, w[load1]);
-		if (tHi < 0 || loadRegister(d, w[load1]) != reg || tHi == tLo) {
+		int tHi = loadOperand(w[load1]);
+		if (tHi < 0 || loadRegister(w[load1]) != reg || tHi == tLo) {
 			return null;
 		}
 		// No flow into the sequence between the first load and the last push: a join there could
@@ -328,7 +303,7 @@ final class RtsTrickDispatch {
 				return null;
 			}
 		}
-		int mask = maskCap(program, d, w, load1, reg == d.loadX, tHi == tLo + 1);
+		int mask = maskCap(program, w, load1, reg == 'X', tHi == tLo + 1);
 		// grm-gipk.18: SPC700 only (the 6502/65816 dialects have their own cap logic and were not
 		// re-gated against caller-side guards); the first load's index may be bounded by a CMP chain.
 		return new Shape(rts.getMinAddress(), tHi, tLo, d.bias, mask,
@@ -339,19 +314,22 @@ final class RtsTrickDispatch {
 	 * The entry cap of {@code AND #mask / ASL A* / TAX|TAY} directly before the first load, or 0
 	 * when the index is not masked there (or flow joins after the {@code AND}, bypassing it).
 	 */
-	private static int maskCap(Program program, Dialect d, Instruction[] w, int load1, boolean x,
+	private static int maskCap(Program program, Instruction[] w, int load1, boolean x,
 			boolean interleaved) {
 		int j = load1 - 1;
-		if (j < 0 || opcode(w[j]) != (x ? d.transferX : d.transferY) || w[j].getLength() != 1) {
+		Character from = j < 0 ? null : MosOperands.transferSource(w[j], x ? 'X' : 'Y');
+		if (from == null || from != 'A' || w[j].getLength() != 1) {
 			return 0;
 		}
 		int shifts = 0;
 		j--;
-		while (j >= 0 && opcode(w[j]) == d.aslA && w[j].getLength() == 1) {
+		while (j >= 0 && MosOperands.isAslAccumulator(w[j]) && w[j].getLength() == 1) {
 			shifts++;
 			j--;
 		}
-		if (j < 0 || opcode(w[j]) != d.andImm || w[j].getLength() != 2) {
+		Long imm = j < 0 ? null : PcodeShapes.bitOpConstant(w[j], CpuRegs.of(
+			w[j].getProgram().getLanguage()).acc(), PcodeOp.INT_AND);
+		if (imm == null || w[j].getLength() != 2) {
 			return 0;
 		}
 		for (int k = j + 1; k <= load1; k++) {
@@ -359,24 +337,9 @@ final class RtsTrickDispatch {
 				return 0;
 			}
 		}
-		int mask;
-		try {
-			mask = w[j].getByte(1) & 0xff;
-		}
-		catch (MemoryAccessException e) {
-			return 0;
-		}
+		int mask = (int) (imm & 0xff);
 		long maxIndex = ((long) mask) << shifts;
 		return (int) (interleaved ? maxIndex / 2 + 1 : maxIndex + 1);
-	}
-
-	private static int opcode(Instruction instr) {
-		try {
-			return instr.getByte(0) & 0xff;
-		}
-		catch (MemoryAccessException e) {
-			return -1;
-		}
 	}
 
 	static boolean isStraight(Instruction instr) {
@@ -385,38 +348,37 @@ final class RtsTrickDispatch {
 			ft.isComputed()) && instr.getFallThrough() != null;
 	}
 
-	/** The dialect's one-byte accumulator push ({@code PHA}, {@code PUSH A}). */
-	private static boolean isPush(Dialect d, Instruction instr) {
-		try {
-			return instr.getLength() == 1 && (instr.getByte(0) & 0xff) == d.pushOpcode;
-		}
-		catch (MemoryAccessException e) {
-			return false;
-		}
+	/** The one-byte accumulator push ({@code PHA}, {@code PUSH A}). */
+	private static boolean isPush(Instruction instr) {
+		return instr.getLength() == 1 && MosOperands.stackOp(instr) == MosOperands.StackOp.PUSH_A;
 	}
 
 	/** The absolute-indexed accumulator load's 16-bit operand, or -1. */
-	private static int loadOperand(Dialect d, Instruction instr) {
-		if (loadRegister(d, instr) < 0 || instr.getLength() != 3) {
+	private static int loadOperand(Instruction instr) {
+		PcodeShapes.IndexedLoad load = indexedAccumulatorLoad(instr);
+		if (load == null || instr.getLength() != 3) {
 			return -1;
 		}
-		try {
-			return (instr.getByte(1) & 0xff) | ((instr.getByte(2) & 0xff) << 8);
-		}
-		catch (MemoryAccessException e) {
-			return -1;
-		}
+		return (int) (load.base() & 0xffff);
 	}
 
-	/** The opcode when {@code instr} is the dialect's {@code abs,X} or {@code abs,Y} load, else -1. */
-	private static int loadRegister(Dialect d, Instruction instr) {
-		try {
-			int op = instr.getByte(0) & 0xff;
-			return (op == d.loadX || op == d.loadY) ? op : -1;
+	/** {@code 'X'} or {@code 'Y'} when {@code instr} is the {@code LDA abs,X/Y} accumulator load, else 0. */
+	private static char loadRegister(Instruction instr) {
+		PcodeShapes.IndexedLoad load = indexedAccumulatorLoad(instr);
+		if (load == null || instr.getLength() != 3) {
+			return 0;
 		}
-		catch (MemoryAccessException e) {
-			return -1;
+		return load.index().getName().equals("X") ? 'X' : 'Y';
+	}
+
+	private static PcodeShapes.IndexedLoad indexedAccumulatorLoad(Instruction instr) {
+		CpuRegs regs = CpuRegs.of(instr.getProgram().getLanguage());
+		PcodeShapes.IndexedLoad load = PcodeShapes.indexedLoad(instr);
+		if (load == null || !load.dst().equals(regs.acc()) ||
+			!(load.index().equals(regs.x()) || load.index().equals(regs.y()))) {
+			return null;
 		}
+		return load;
 	}
 
 	static boolean hasNonFallThroughFlowInto(Program program, Address at) {

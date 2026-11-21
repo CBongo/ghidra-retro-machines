@@ -15,8 +15,6 @@
  */
 package retromachines;
 
-import java.util.Locale;
-import java.util.Map;
 import java.util.Set;
 
 import ghidra.app.cmd.function.CreateFunctionCmd;
@@ -72,13 +70,6 @@ public class BranchAlwaysPairAnalyzer extends AbstractAnalyzer {
 	/** The 6502-family ISAs we ship or load onto, all with these eight flag branches. */
 	private static final Set<String> SUPPORTED_PROCESSORS = Set.of("6502", "6510", "65816");
 
-	/** Each flag branch and its complement. */
-	private static final Map<String, String> COMPLEMENT = Map.of(
-		"BPL", "BMI", "BMI", "BPL",
-		"BVC", "BVS", "BVS", "BVC",
-		"BCC", "BCS", "BCS", "BCC",
-		"BNE", "BEQ", "BEQ", "BNE");
-
 	public BranchAlwaysPairAnalyzer() {
 		super(NAME, DESCRIPTION, AnalyzerType.INSTRUCTION_ANALYZER);
 		// Straight after disassembly: before functions are laid down at FUNCTION_ANALYSIS, and
@@ -124,13 +115,12 @@ public class BranchAlwaysPairAnalyzer extends AbstractAnalyzer {
 	/** The second branch of an always-taken pair starting at {@code first}, or null. Package
 	 *  access for tests. */
 	static Instruction alwaysTakenSecond(Program program, Instruction first) {
-		String complement = COMPLEMENT.get(first.getMnemonicString().toUpperCase(Locale.ROOT));
-		if (complement == null || !first.hasFallthrough()) {
+		PcodeShapes.FlagBranch firstBranch = PcodeShapes.branchOnFlag(first);
+		if (firstBranch == null || !first.hasFallthrough()) {
 			return null;
 		}
 		Instruction second = program.getListing().getInstructionAt(first.getFallThrough());
-		if (second == null ||
-			!complement.equals(second.getMnemonicString().toUpperCase(Locale.ROOT)) ||
+		if (second == null || !isComplement(firstBranch, PcodeShapes.branchOnFlag(second)) ||
 			second.isFallThroughOverridden()) {
 			return null;
 		}
@@ -140,5 +130,12 @@ public class BranchAlwaysPairAnalyzer extends AbstractAnalyzer {
 			return null; // reachable other than by the first branch's fall-through
 		}
 		return second;
+	}
+
+	/** Whether {@code other} branches on the same flag with the opposite polarity. */
+	private static boolean isComplement(PcodeShapes.FlagBranch first,
+			PcodeShapes.FlagBranch other) {
+		return other != null && other.kind() == first.kind() &&
+			other.takenWhenSet() != first.takenWhenSet();
 	}
 }

@@ -195,7 +195,7 @@ public class InlineJumpTableDispatchAnalyzer extends AbstractAnalyzer {
 		while (it.hasNext()) {
 			monitor.checkCancelled();
 			Instruction instr = it.next();
-			if ("JSR".equals(instr.getMnemonicString())) {
+			if (MosOperands.isJsr(instr)) {
 				sites.add(instr);
 			}
 		}

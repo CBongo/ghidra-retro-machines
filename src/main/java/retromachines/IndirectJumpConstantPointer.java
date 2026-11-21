@@ -86,13 +86,11 @@ final class IndirectJumpConstantPointer {
 	 * {@link #classifyMode} and its javadoc.
 	 */
 	static boolean isIndirectJumpSite(Instruction instr) {
-		if (!"JMP".equals(instr.getMnemonicString())) {
-			return false;
-		}
 		FlowType ft = instr.getFlowType();
 		if (!ft.isJump() || !ft.isComputed()) {
 			return false;
 		}
+		// 0x6c (JMP abs-indirect) is an addressing-mode decode of the raw byte: kept (R1)
 		return opcodeByte(instr) == 0x6c;
 	}
 
@@ -161,17 +159,16 @@ final class IndirectJumpConstantPointer {
 			if (instr == null) {
 				return null;
 			}
-			String mn = instr.getMnemonicString();
 			Mode mode = classifyMode(instr);
 			Address operand = directAddress(instr);
-			if ("LDA".equals(mn)) {
+			if (plainLoad(instr) == 'A') {
 				symA = operand == null ? null : switch (mode) {
 					case INDEXED_X -> new long[] { operand.getOffset(), 0, xVersion };
 					case INDEXED_Y -> new long[] { operand.getOffset(), 1, yVersion };
 					default -> null;
 				};
 			}
-			else if ("STA".equals(mn) && mode == Mode.DIRECT && operand != null &&
+			else if (isStoreOf(instr, 'A') && mode == Mode.DIRECT && operand != null &&
 				(operand.equals(p) || operand.equals(p1))) {
 				if (operand.equals(p)) {
 					lo = symA;
@@ -281,8 +278,7 @@ final class IndirectJumpConstantPointer {
 	}
 
 	private static boolean isIndexedStoreTo(Instruction instr, SlotTable table) {
-		String mn = instr.getMnemonicString();
-		if (!("STA".equals(mn) || "STX".equals(mn) || "STY".equals(mn))) {
+		if (MosOperands.storeRegister(instr) == null) {
 			return false;
 		}
 		Mode mode = classifyMode(instr);
@@ -354,8 +350,7 @@ final class IndirectJumpConstantPointer {
 	}
 
 	private static boolean isDirectStoreTo(Instruction instr, Address p, Address p1) {
-		String mn = instr.getMnemonicString();
-		if (!("STA".equals(mn) || "STX".equals(mn) || "STY".equals(mn))) {
+		if (MosOperands.storeRegister(instr) == null) {
 			return false;
 		}
 		if (classifyMode(instr) != Mode.DIRECT) {
@@ -453,7 +448,7 @@ final class IndirectJumpConstantPointer {
 				return null; // after a possible bank switch this may not be the code that runs
 			}
 			FlowType ft = instr.getFlowType();
-			boolean computedJump = "JMP".equals(instr.getMnemonicString()) && ft.isJump() &&
+			boolean computedJump = ft.isJump() &&
 				ft.isComputed();
 			if (computedJump) {
 				if (pc.equals(siteAddr)) {
@@ -472,8 +467,7 @@ final class IndirectJumpConstantPointer {
 			if (ft.isConditional()) {
 				return null; // any conditional branch stops the walk
 			}
-			String mn = instr.getMnemonicString();
-			if ("JSR".equals(mn)) {
+			if (MosOperands.isJsr(instr)) {
 				Address target = singleFlowTarget(instr);
 				if (target == null || callStack.size() >= MAX_CALL_DEPTH) {
 					return null;
@@ -486,7 +480,7 @@ final class IndirectJumpConstantPointer {
 				pc = target;
 				continue;
 			}
-			if ("RTS".equals(mn) || "RTI".equals(mn)) {
+			if (MosOperands.isRtsOrRti(instr)) {
 				if (callStack.isEmpty()) {
 					return null; // empty stack -- this path exits the walk's own frame
 				}
@@ -533,17 +527,14 @@ final class IndirectJumpConstantPointer {
 	 * that is the grm-v60 write-once rule's stated scope, which its corroboration step backstops.
 	 */
 	static boolean isDirectWriteTo(Instruction instr, long offset) {
-		int op = opcodeByte(instr);
-		switch (op) {
-			case 0x85, 0x8d, 0x86, 0x8e, 0x84, 0x8c, // STA STX STY
-				0xe6, 0xee, 0xc6, 0xce, // INC DEC
-				0x06, 0x0e, 0x46, 0x4e, 0x26, 0x2e, 0x66, 0x6e: // ASL LSR ROL ROR
-				break;
-			default:
-				return false;
+		// a fixed-address write is a ram-space output varnode in the p-code (indexed and
+		// indirect forms are computed STOREs, so they are deliberately not writers here)
+		for (Address a : PcodeShapes.memoryWrites(instr)) {
+			if (a.getOffset() == offset) {
+				return true;
+			}
 		}
-		Address a = directAddress(instr);
-		return a != null && a.getOffset() == offset;
+		return false;
 	}
 
 	/**
@@ -553,11 +544,11 @@ final class IndirectJumpConstantPointer {
 	 */
 	static Integer storedConstant(Program program, Instruction store, TaskMonitor monitor)
 			throws CancelledException {
-		String mn = store.getMnemonicString();
-		Reg reg = switch (mn) {
-			case "STA" -> Reg.A;
-			case "STX" -> Reg.X;
-			case "STY" -> Reg.Y;
+		Character stored = MosOperands.storeRegister(store);
+		Reg reg = stored == null ? null : switch (stored) {
+			case 'A' -> Reg.A;
+			case 'X' -> Reg.X;
+			case 'Y' -> Reg.Y;
 			default -> null;
 		};
 		if (reg == null || classifyMode(store) != Mode.DIRECT) {
@@ -629,8 +620,7 @@ final class IndirectJumpConstantPointer {
 			if (ft.isConditional() || ft.isComputed()) {
 				return null;
 			}
-			String mn = instr.getMnemonicString();
-			if ("JSR".equals(mn)) {
+			if (MosOperands.isJsr(instr)) {
 				Address target = singleFlowTarget(instr);
 				Address ret = instr.getFallThrough();
 				if (target == null || ret == null || callStack.size() >= MAX_CALL_DEPTH) {
@@ -640,7 +630,7 @@ final class IndirectJumpConstantPointer {
 				pc = target;
 				continue;
 			}
-			if ("RTS".equals(mn) || "RTI".equals(mn)) {
+			if (MosOperands.isRtsOrRti(instr)) {
 				if (callStack.isEmpty()) {
 					return null;
 				}
@@ -714,76 +704,116 @@ final class IndirectJumpConstantPointer {
 	// ---------------------------------------------------------------------
 
 	private static void applyInstruction(Program program, Instruction instr, WalkState st) {
-		switch (instr.getMnemonicString()) {
-			case "LDA":
+		switch (plainLoad(instr)) {
+			case 'A':
 				st.a = loadValue(instr, st);
 				return;
-			case "LDX":
+			case 'X':
 				st.x = loadValue(instr, st);
 				return;
-			case "LDY":
+			case 'Y':
 				st.y = loadValue(instr, st);
-				return;
-			case "STA":
-				applyStore(program, instr, st, Reg.A);
-				return;
-			case "STX":
-				applyStore(program, instr, st, Reg.X);
-				return;
-			case "STY":
-				applyStore(program, instr, st, Reg.Y);
-				return;
-			case "TAX":
-				st.x = st.a;
-				return;
-			case "TAY":
-				st.y = st.a;
-				return;
-			case "TXA":
-				st.a = st.x;
-				return;
-			case "TYA":
-				st.a = st.y;
-				return;
-			case "INX":
-				st.x = step(st.x, 1);
-				return;
-			case "DEX":
-				st.x = step(st.x, -1);
-				return;
-			case "INY":
-				st.y = step(st.y, 1);
-				return;
-			case "DEY":
-				st.y = step(st.y, -1);
-				return;
-			case "ASL":
-				if (classifyMode(instr) == Mode.ACCUMULATOR) {
-					st.a = st.a == null ? null : ((st.a << 1) & 0xff);
-					return;
-				}
-				break;
-			case "LSR":
-				if (classifyMode(instr) == Mode.ACCUMULATOR) {
-					st.a = st.a == null ? null : ((st.a >> 1) & 0xff);
-					return;
-				}
-				break;
-			case "AND":
-				st.a = applyLogic(instr, st, 0);
-				return;
-			case "ORA":
-				st.a = applyLogic(instr, st, 1);
-				return;
-			case "EOR":
-				st.a = applyLogic(instr, st, 2);
 				return;
 			default:
 				break;
 		}
+		Character stored = MosOperands.storeRegister(instr);
+		if (stored != null) {
+			switch (stored) {
+				case 'A':
+					applyStore(program, instr, st, Reg.A);
+					return;
+				case 'X':
+					applyStore(program, instr, st, Reg.X);
+					return;
+				case 'Y':
+					applyStore(program, instr, st, Reg.Y);
+					return;
+				default:
+					break;
+			}
+		}
+		if (isTransfer(instr, 'X', 'A')) {
+			st.x = st.a;
+			return;
+		}
+		if (isTransfer(instr, 'Y', 'A')) {
+			st.y = st.a;
+			return;
+		}
+		if (isTransfer(instr, 'A', 'X')) {
+			st.a = st.x;
+			return;
+		}
+		if (isTransfer(instr, 'A', 'Y')) {
+			st.a = st.y;
+			return;
+		}
+		if (MosOperands.incrementsBy(instr, 'X', 1)) {
+			st.x = step(st.x, 1);
+			return;
+		}
+		if (MosOperands.incrementsBy(instr, 'X', -1)) {
+			st.x = step(st.x, -1);
+			return;
+		}
+		if (MosOperands.incrementsBy(instr, 'Y', 1)) {
+			st.y = step(st.y, 1);
+			return;
+		}
+		if (MosOperands.incrementsBy(instr, 'Y', -1)) {
+			st.y = step(st.y, -1);
+			return;
+		}
+		if (classifyMode(instr) == Mode.ACCUMULATOR) {
+			if (MosOperands.isAslAccumulator(instr)) {
+				st.a = st.a == null ? null : ((st.a << 1) & 0xff);
+			}
+			else {
+				st.a = st.a == null ? null : ((st.a >> 1) & 0xff);
+			}
+			return;
+		}
+		int logic = bitOp(instr);
+		if (logic >= 0) {
+			st.a = applyLogic(instr, st, logic);
+			return;
+		}
 		// Everything else (ROL/ROR, memory-operand ASL/LSR, NOP, flag-only ops, TXS/TSX,
 		// PHA/PHP/PLA/PLP, CMP/BIT/ADC/SBC, illegal opcodes, ...): conservatively, via p-code.
 		applyGeneric(program, instr, st);
+	}
+
+	/** The register {@code instr} loads (and writes no other of A/X/Y), or 0. */
+	private static char plainLoad(Instruction instr) {
+		char r = MosOperands.loadedRegister(instr);
+		if (r == 0) {
+			return 0;
+		}
+		for (char c : new char[] { 'A', 'X', 'Y' }) {
+			if (c != r && MosOperands.modifiesRegister(instr, c)) {
+				return 0; // an undocumented LAX-style load that also writes another register
+			}
+		}
+		return r;
+	}
+
+	private static boolean isStoreOf(Instruction instr, char reg) {
+		Character c = MosOperands.storeRegister(instr);
+		return c != null && c == reg;
+	}
+
+	/** Whether {@code instr} is a plain copy {@code dst := src} that writes no other of A/X/Y. */
+	private static boolean isTransfer(Instruction instr, char dst, char src) {
+		Character from = MosOperands.transferSource(instr, dst);
+		return from != null && from == src;
+	}
+
+	/** 0 = AND, 1 = ORA, 2 = EOR on the accumulator, else -1. */
+	private static int bitOp(Instruction instr) {
+		int op = PcodeShapes.bitOpOn(instr,
+			CpuRegs.of(instr.getProgram().getLanguage()).acc());
+		return op == PcodeOp.INT_AND ? 0 : op == PcodeOp.INT_OR ? 1 : op == PcodeOp.INT_XOR ? 2 : -1;
 	}
 
 	private static Integer step(Integer v, int delta) {
@@ -819,64 +849,88 @@ final class IndirectJumpConstantPointer {
 	 *  listed here (including every (zp,X)/(zp),Y indirect form) is {@link Mode#OTHER}. */
 	private static Mode classifyMode(Instruction instr) {
 		int opcode = opcodeByte(instr);
-		if (opcode < 0) {
-			return Mode.OTHER;
+		if (opcode < 0 || CpuRegs.of(instr.getProgram().getLanguage()).psw() != null) {
+			return Mode.OTHER; // (the SPC700 opcode map is a different one)
 		}
-		return switch (instr.getMnemonicString()) {
-			case "LDA" -> switch (opcode) {
-				case 0xa9 -> Mode.IMMEDIATE;
-				case 0xa5, 0xad -> Mode.DIRECT;
-				case 0xb5, 0xbd -> Mode.INDEXED_X;
-				case 0xb9 -> Mode.INDEXED_Y;
-				default -> Mode.OTHER;
-			};
-			case "LDX" -> switch (opcode) {
-				case 0xa2 -> Mode.IMMEDIATE;
-				case 0xa6, 0xae -> Mode.DIRECT;
-				case 0xb6, 0xbe -> Mode.INDEXED_Y;
-				default -> Mode.OTHER;
-			};
-			case "LDY" -> switch (opcode) {
-				case 0xa0 -> Mode.IMMEDIATE;
-				case 0xa4, 0xac -> Mode.DIRECT;
-				case 0xb4, 0xbc -> Mode.INDEXED_X;
-				default -> Mode.OTHER;
-			};
-			case "STA" -> switch (opcode) {
-				case 0x85, 0x8d -> Mode.DIRECT;
-				case 0x95, 0x9d -> Mode.INDEXED_X;
-				case 0x99 -> Mode.INDEXED_Y;
-				default -> Mode.OTHER;
-			};
-			case "STX" -> switch (opcode) {
-				case 0x86, 0x8e -> Mode.DIRECT;
-				case 0x96 -> Mode.INDEXED_Y;
-				default -> Mode.OTHER;
-			};
-			case "STY" -> switch (opcode) {
-				case 0x84, 0x8c -> Mode.DIRECT;
-				case 0x94 -> Mode.INDEXED_X;
-				default -> Mode.OTHER;
-			};
-			case "AND" -> switch (opcode) {
-				case 0x29 -> Mode.IMMEDIATE;
-				case 0x25, 0x2d -> Mode.DIRECT;
-				default -> Mode.OTHER; // indexed AND not modeled precisely (imm/zp/abs only)
-			};
-			case "ORA" -> switch (opcode) {
-				case 0x09 -> Mode.IMMEDIATE;
-				case 0x05, 0x0d -> Mode.DIRECT;
-				default -> Mode.OTHER;
-			};
-			case "EOR" -> switch (opcode) {
-				case 0x49 -> Mode.IMMEDIATE;
-				case 0x45, 0x4d -> Mode.DIRECT;
-				default -> Mode.OTHER;
-			};
-			case "ASL" -> opcode == 0x0a ? Mode.ACCUMULATOR : Mode.OTHER;
-			case "LSR" -> opcode == 0x4a ? Mode.ACCUMULATOR : Mode.OTHER;
-			default -> Mode.OTHER;
-		};
+		// WHICH operation is read off the p-code; the addressing mode is the opcode column (R1)
+		switch (plainLoad(instr)) {
+			case 'A':
+				return switch (opcode) {
+					case 0xa9 -> Mode.IMMEDIATE;
+					case 0xa5, 0xad -> Mode.DIRECT;
+					case 0xb5, 0xbd -> Mode.INDEXED_X;
+					case 0xb9 -> Mode.INDEXED_Y;
+					default -> Mode.OTHER;
+				};
+			case 'X':
+				return switch (opcode) {
+					case 0xa2 -> Mode.IMMEDIATE;
+					case 0xa6, 0xae -> Mode.DIRECT;
+					case 0xb6, 0xbe -> Mode.INDEXED_Y;
+					default -> Mode.OTHER;
+				};
+			case 'Y':
+				return switch (opcode) {
+					case 0xa0 -> Mode.IMMEDIATE;
+					case 0xa4, 0xac -> Mode.DIRECT;
+					case 0xb4, 0xbc -> Mode.INDEXED_X;
+					default -> Mode.OTHER;
+				};
+			default:
+				break;
+		}
+		Character stored = MosOperands.storeRegister(instr);
+		if (stored != null) {
+			switch (stored) {
+				case 'A':
+					return switch (opcode) {
+						case 0x85, 0x8d -> Mode.DIRECT;
+						case 0x95, 0x9d -> Mode.INDEXED_X;
+						case 0x99 -> Mode.INDEXED_Y;
+						default -> Mode.OTHER;
+					};
+				case 'X':
+					return switch (opcode) {
+						case 0x86, 0x8e -> Mode.DIRECT;
+						case 0x96 -> Mode.INDEXED_Y;
+						default -> Mode.OTHER;
+					};
+				case 'Y':
+					return switch (opcode) {
+						case 0x84, 0x8c -> Mode.DIRECT;
+						case 0x94 -> Mode.INDEXED_X;
+						default -> Mode.OTHER;
+					};
+				default:
+					break;
+			}
+		}
+		switch (bitOp(instr)) {
+			case 0: // AND; indexed forms are not modeled precisely (imm/zp/abs only)
+				return switch (opcode) {
+					case 0x29 -> Mode.IMMEDIATE;
+					case 0x25, 0x2d -> Mode.DIRECT;
+					default -> Mode.OTHER;
+				};
+			case 1: // ORA
+				return switch (opcode) {
+					case 0x09 -> Mode.IMMEDIATE;
+					case 0x05, 0x0d -> Mode.DIRECT;
+					default -> Mode.OTHER;
+				};
+			case 2: // EOR
+				return switch (opcode) {
+					case 0x49 -> Mode.IMMEDIATE;
+					case 0x45, 0x4d -> Mode.DIRECT;
+					default -> Mode.OTHER;
+				};
+			default:
+				break;
+		}
+		if (MosOperands.isAslAccumulator(instr) || MosOperands.isLsrAccumulator(instr)) {
+			return Mode.ACCUMULATOR;
+		}
+		return Mode.OTHER;
 	}
 
 	/** The raw 16-bit-or-8-bit address operand a {@link Mode#DIRECT}, {@link Mode#INDEXED_X},

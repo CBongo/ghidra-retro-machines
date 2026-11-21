@@ -128,7 +128,7 @@ public class PopReturnHelperAnalyzer extends AbstractAnalyzer {
 		Map<Address, PopReturnHelper.Unwind> skippers = new LinkedHashMap<>();
 		for (Instruction instr : program.getListing().getInstructions(set, true)) {
 			monitor.checkCancelled();
-			if (!"JSR".equals(instr.getMnemonicString()) || !instr.getFlowType().isCall()) {
+			if (!MosOperands.isJsr(instr)) {
 				continue;
 			}
 			Address[] flows = instr.getFlows();
@@ -442,8 +442,7 @@ public class PopReturnHelperAnalyzer extends AbstractAnalyzer {
 					continue; // a helper's own JSRs stay stopped; only returning callees resume
 				}
 				for (Instruction call : callsTo(program, entry)) {
-					String mn = call.getMnemonicString();
-					if (!("JSR".equals(mn) || "JSL".equals(mn)) ||
+					if (!call.getPrototype().getFlowType(call.getInstructionContext()).isCall() ||
 						call.getFlowOverride() != FlowOverride.CALL_RETURN) {
 						continue;
 					}

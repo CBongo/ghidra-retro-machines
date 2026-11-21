@@ -19,7 +19,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -196,21 +195,20 @@ final class CrossBlockStackPairing {
 				span.crossedMechanismWrite = true;
 			}
 			steps++;
-			String mnem = prev.getMnemonicString().toUpperCase(Locale.ROOT);
-			switch (mnem) {
-				case "PHA" -> {
+			switch (MosOperands.stackOp(prev)) {
+				case PUSH_A -> {
 					if (--depth == 0) {
 						span.steps = steps;
 						return prev;
 					}
 				}
-				case "PHP" -> {
+				case PUSH_STATUS -> {
 					if (--depth == 0) {
 						span.steps = steps;
 						return null; // the matching push is a status byte, not a value
 					}
 				}
-				case "PLA", "PLP" -> depth++;
+				case PULL_A, PULL_STATUS -> depth++;
 				default -> {
 					// BUG FIX (grm-mej.3 increment 3, found by CallCrossingPushPullProgramTest):
 					// writesStackPointer must NOT fire on the call instruction itself. A JSR's
@@ -278,6 +276,15 @@ final class CrossBlockStackPairing {
 	}
 
 	/**
+	 * Whether {@code instr}'s own (un-overridden) flow is a jump while its effective flow is a
+	 * call: a {@code JMP} re-typed by shared-return analysis (grm-hsv.13). Ghidra emits the
+	 * overridden p-code, so only the prototype's flow type can tell (grm-jjuc R3).
+	 */
+	private static boolean isJumpRetypedAsCall(Instruction instr) {
+		return instr.getPrototype().getFlowType(instr.getInstructionContext()).isJump();
+	}
+
+	/**
 	 * True when {@code headAddr} is a SHARED-RETURN-CALL TAIL entry (bead grm-hsv.13): a function
 	 * entry whose every incoming reference, of ANY kind, is a flow reference from a
 	 * {@code JMP} that Ghidra's shared-return analysis re-typed as a call
@@ -295,7 +302,7 @@ final class CrossBlockStackPairing {
 				return false;
 			}
 			Instruction src = listing.getInstructionAt(ref.getFromAddress());
-			if (src == null || !"JMP".equalsIgnoreCase(src.getMnemonicString())) {
+			if (src == null || !isJumpRetypedAsCall(src)) {
 				return false; // a genuine JSR (or an undisassembled source)
 			}
 			jumps++;
@@ -643,8 +650,7 @@ final class CrossBlockStackPairing {
 				throw CrossBlockAbandon.INSTANCE;
 			}
 			boolean mech = hooks.isMechanismWrite(predInstr);
-			if (predInstr.getFlowType().isCall() &&
-				!"JMP".equalsIgnoreCase(predInstr.getMnemonicString())) {
+			if (predInstr.getFlowType().isCall() && !isJumpRetypedAsCall(predInstr)) {
 				// (A JMP re-typed as a call by shared-return analysis is a plain jump into a
 				// shared tail -- grm-hsv.13 -- and takes the default branch below.)
 				// Stepped over via the same fall-through witness findMatchingPush already relies
@@ -658,9 +664,8 @@ final class CrossBlockStackPairing {
 						predAddr, child.sawMechanismWrite() || mech)));
 				continue;
 			}
-			String mnem = predInstr.getMnemonicString().toUpperCase(Locale.ROOT);
-			switch (mnem) {
-				case "PHA" -> {
+			switch (MosOperands.stackOp(predInstr)) {
+				case PUSH_A -> {
 					int next = depth - 1;
 					if (next == 0) {
 						// A TERMINAL node: unlike every other case below, this predAddr is never
@@ -677,7 +682,7 @@ final class CrossBlockStackPairing {
 								.add(carryMechanism(child, mech)));
 					}
 				}
-				case "PHP" -> {
+				case PUSH_STATUS -> {
 					if (depth - 1 == 0) {
 						throw CrossBlockAbandon.INSTANCE; // the matching push is a status byte
 					}
@@ -685,7 +690,7 @@ final class CrossBlockStackPairing {
 						depth - 1).ifPresent(child -> contributions
 							.add(carryMechanism(child, mech)));
 				}
-				case "PLA", "PLP" -> solveCrossBlock(program, listing, hooks, env, stackPointer,
+				case PULL_A, PULL_STATUS -> solveCrossBlock(program, listing, hooks, env, stackPointer,
 					ctx, predAddr, depth + 1)
 						.ifPresent(child -> contributions.add(carryMechanism(child, mech)));
 				default -> {

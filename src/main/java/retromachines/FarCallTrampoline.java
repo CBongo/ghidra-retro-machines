@@ -147,11 +147,8 @@ final class FarCallTrampoline {
 			if (instr.getLength() < 2) {
 				continue;
 			}
-			switch (instr.getMnemonicString()) {
-				case "STA", "STX", "STY", "INC", "DEC", "ASL", "LSR", "ROL", "ROR":
-					break;
-				default:
-					continue;
+			if (!PcodeShapes.writesMemory(instr)) {
+				continue;
 			}
 			Address operand = operandOffsetAddress(instr);
 			if (operand != null &&
@@ -301,7 +298,7 @@ final class FarCallTrampoline {
 				return run;
 			}
 			FlowType ft = cur.getFlowType();
-			if ("JSR".equals(cur.getMnemonicString())) {
+			if (cur.getPrototype().getFlowType(cur.getInstructionContext()).isCall()) {
 				if (reachesSite(program, singleTarget(cur), site)) {
 					return run;
 				}
@@ -376,7 +373,7 @@ final class FarCallTrampoline {
 				if (from == null) {
 					continue;
 				}
-				boolean jsr = "JSR".equals(from.getMnemonicString());
+				boolean jsr = from.getPrototype().getFlowType(from.getInstructionContext()).isCall();
 				boolean jmp = IndirectJumpConstantPointer.isDirectJump(from);
 				if (!jsr && !jmp) {
 					continue;
@@ -409,7 +406,7 @@ final class FarCallTrampoline {
 						continue;
 					}
 					Instruction from = listing.getInstructionAt(ref.getFromAddress());
-					if (from != null && ("JSR".equals(from.getMnemonicString()) ||
+					if (from != null && (from.getPrototype().getFlowType(from.getInstructionContext()).isCall() ||
 						IndirectJumpConstantPointer.isDirectJump(from))) {
 						callers.add(from);
 					}

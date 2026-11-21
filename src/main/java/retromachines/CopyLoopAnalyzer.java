@@ -163,7 +163,7 @@ public class CopyLoopAnalyzer extends AbstractAnalyzer {
 			if (monitor.isCancelled()) {
 				break;
 			}
-			if (!LoopIdioms.mnem(sta).equals("STA")) {
+			if (!MosOperands.storesRegister(sta, 'A')) {
 				continue;
 			}
 			RunFromElsewhere.Request request = tryRecognize(program, listing, sta);
@@ -224,7 +224,7 @@ public class CopyLoopAnalyzer extends AbstractAnalyzer {
 		}
 		Instruction cur = listing.getInstructionAfter(init);
 		for (int i = 0; i < LoopIdioms.COUNTER_LOOKBACK && cur != null; i++) {
-			if (LoopIdioms.mnem(cur).equals("STA") && LoopIdioms.mnem(prev).equals("LDA")) {
+			if (MosOperands.storesRegister(cur, 'A') && MosOperands.loadsInto(prev, 'A')) {
 				return cur;
 			}
 			prev = cur;
@@ -239,7 +239,7 @@ public class CopyLoopAnalyzer extends AbstractAnalyzer {
 	private RunFromElsewhere.Request tryRecognize(Program program, Listing listing,
 			Instruction sta) {
 		Instruction lda = listing.getInstructionBefore(sta.getAddress());
-		if (lda == null || !LoopIdioms.mnem(lda).equals("LDA")) {
+		if (lda == null || !MosOperands.loadsInto(lda, 'A')) {
 			return null;
 		}
 
@@ -265,8 +265,8 @@ public class CopyLoopAnalyzer extends AbstractAnalyzer {
 		// Index step + conditional back-branch to the loop head (the LDA).
 		Instruction step = listing.getInstructionAfter(sta.getAddress());
 		Instruction branch = step == null ? null : listing.getInstructionAfter(step.getAddress());
-		boolean downCount = step != null && LoopIdioms.mnem(step).equals(LoopIdioms.decMnemonic(idx));
-		boolean bpl = branch != null && LoopIdioms.mnem(branch).equals("BPL");
+		boolean downCount = step != null && LoopIdioms.decrements(step, idx);
+		boolean bpl = branch != null && MosOperands.isBpl(branch);
 		boolean backEdge = branch != null && LoopIdioms.branchTargets(branch, lda.getAddress());
 
 		// Bound the range from the LDX/LDY #imm counter init. Only the clean down-counting form

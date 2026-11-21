@@ -69,11 +69,6 @@ final class IndexGuardRecovery {
 	/** Straight-line instructions walked back before giving up; the chains are a handful long. */
 	private static final int MAX_RUN = 32;
 
-	/** {@code TAX}-style moves: mnemonic to {destination, source}. */
-	private static final Map<String, String[]> TRANSFERS = Map.of("TAX", new String[] { "X", "A" },
-		"TAY", new String[] { "Y", "A" }, "TXA", new String[] { "A", "X" }, "TYA",
-		new String[] { "A", "Y" });
-
 	/** The slots (relative to the table base, in entries) the guard says the dispatch reaches. */
 	record Span(int first, int last, String evidence) {}
 
@@ -323,8 +318,8 @@ final class IndexGuardRecovery {
 				cmp = before;
 			}
 		}
-		Register cmpReg = compareRegister(program, cmp);
-		Integer imm = compareImmediate(cmp);
+		Register cmpReg = compareRegister(cmp);
+		Integer imm = cmpReg == null ? null : compareImmediate(cmp, cmpReg);
 		if (cmpReg == null || imm == null || !sameRegister(cmpReg, reg)) {
 			return null;
 		}
@@ -341,13 +336,17 @@ final class IndexGuardRecovery {
 		return out;
 	}
 
+	/** BCC/BCS/BEQ/BNE read off the p-code (the flag the branch tests and its polarity), else null. */
 	private static IndexGuard.Branch branchKind(Instruction in) {
-		try {
-			return IndexGuard.Branch.valueOf(in.getMnemonicString().toUpperCase(Locale.ROOT));
-		}
-		catch (IllegalArgumentException e) {
+		PcodeShapes.FlagBranch fb = PcodeShapes.branchOnFlag(in);
+		if (fb == null) {
 			return null;
 		}
+		return switch (fb.kind()) {
+			case CARRY -> fb.takenWhenSet() ? IndexGuard.Branch.BCS : IndexGuard.Branch.BCC;
+			case ZERO -> fb.takenWhenSet() ? IndexGuard.Branch.BEQ : IndexGuard.Branch.BNE;
+			default -> null;
+		};
 	}
 
 	/**
@@ -358,25 +357,18 @@ final class IndexGuardRecovery {
 	 */
 	private static Register effectOf(Program program, Instruction prev, Register reg,
 			List<IndexGuard.Op> opsBackward) {
-		String mnem = prev.getMnemonicString().toUpperCase(Locale.ROOT);
-		Register dst = null;
-		Register src = null;
-		if (mnem.equals("MOV") && prev.getNumOperands() == 2) {
-			dst = single(prev, 0);
-			src = single(prev, 1);
-		}
-		else if (TRANSFERS.containsKey(mnem)) {
-			String[] t = TRANSFERS.get(mnem);
-			dst = program.getRegister(t[0]);
-			src = program.getRegister(t[1]);
-		}
-		if (dst != null && src != null && sameRegister(dst, reg)) {
+		Register src = PcodeShapes.copySource(prev, reg);
+		if (src != null && !(CpuRegs.of(program.getLanguage()).spViews().contains(src))) {
 			return src; // reg was just copied from src: track src instead
 		}
-		if ((mnem.equals("ASL") || mnem.equals("LSR")) && prev.getNumOperands() <= 1) {
-			Register acc = prev.getNumOperands() == 1 ? single(prev, 0) : program.getRegister("A");
-			if (acc != null && sameRegister(acc, reg)) {
-				opsBackward.add(mnem.equals("ASL") ? IndexGuard.Op.ASL1 : IndexGuard.Op.LSR1);
+		Register acc = CpuRegs.of(program.getLanguage()).acc();
+		if (acc != null && sameRegister(acc, reg)) {
+			if (PcodeShapes.shiftLeftBy1(prev, reg)) {
+				opsBackward.add(IndexGuard.Op.ASL1);
+				return reg;
+			}
+			if (PcodeShapes.shiftRightBy1(prev, reg)) {
+				opsBackward.add(IndexGuard.Op.LSR1);
 				return reg;
 			}
 		}
@@ -392,42 +384,21 @@ final class IndexGuardRecovery {
 		return a.getBaseRegister().equals(b.getBaseRegister()) && a.getName().equals(b.getName());
 	}
 
-	/** The one register object operand {@code i} is, or null. */
-	private static Register single(Instruction instr, int i) {
-		Object[] objs = instr.getOpObjects(i);
-		return objs.length == 1 && objs[0] instanceof Register r ? r : null;
+	/** The register a CMP/CPX/CPY compares, read off the p-code, or null. */
+	private static Register compareRegister(Instruction cmp) {
+		CpuRegs regs = CpuRegs.of(cmp.getProgram().getLanguage());
+		for (char c : new char[] { 'A', 'X', 'Y' }) {
+			if (MosOperands.comparesRegister(cmp, c)) {
+				return c == 'A' ? regs.acc() : c == 'X' ? regs.x() : regs.y();
+			}
+		}
+		return null;
 	}
 
-	/** The register a CMP/CPX/CPY compares: its register operand, else implied by the mnemonic. */
-	private static Register compareRegister(Program program, Instruction cmp) {
-		String mnem = cmp.getMnemonicString().toUpperCase(Locale.ROOT);
-		switch (mnem) {
-			case "CMP":
-				Register explicit = cmp.getNumOperands() == 2 ? single(cmp, 0) : null;
-				return explicit != null ? explicit
-						: cmp.getNumOperands() == 1 ? program.getRegister("A") : null;
-			case "CPX":
-				return program.getRegister("X");
-			case "CPY":
-				return program.getRegister("Y");
-			default:
-				return null;
-		}
-	}
-
-	/** The immediate of a CMP/CPX/CPY ({@code #n} operand), else null. */
-	private static Integer compareImmediate(Instruction cmp) {
-		int last = cmp.getNumOperands() - 1;
-		if (last < 0) {
-			return null;
-		}
-		// The "#" is part of the mnemonic line, not of the operand text, on SPC700; the listing text
-		// is the one spelling that carries it on every language.
-		Object[] objs = cmp.getOpObjects(last);
-		if (!cmp.toString().contains("#") || objs.length != 1 || !(objs[0] instanceof Scalar s)) {
-			return null;
-		}
-		return (int) (s.getUnsignedValue() & 0xff);
+	/** The immediate {@code reg} is compared with ({@code #n} operand), else null. */
+	private static Integer compareImmediate(Instruction cmp, Register reg) {
+		Long c = PcodeShapes.compareImmediate(cmp, reg);
+		return c == null ? null : (int) (c & 0xff);
 	}
 
 	// ------------------------------------------------------------------------------------------

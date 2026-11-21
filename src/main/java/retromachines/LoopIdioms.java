@@ -55,32 +55,27 @@ final class LoopIdioms {
 	private LoopIdioms() {
 	}
 
-	static String mnem(Instruction instr) {
-		return instr.getMnemonicString().toUpperCase(Locale.ROOT);
+	/** Whether {@code instr} decrements index register {@code idx} by one ({@code DEX}/{@code DEY}). */
+	static boolean decrements(Instruction instr, Register idx) {
+		Integer k = PcodeShapes.incrementOf(instr, idx);
+		return k != null && k == -1;
 	}
 
-	/** The DEX/DEY mnemonic that decrements index register {@code idx}, or "" if neither. */
-	static String decMnemonic(Register idx) {
-		String n = idx.getName().toUpperCase(Locale.ROOT);
-		if (n.equals("X")) {
-			return "DEX";
-		}
-		if (n.equals("Y")) {
-			return "DEY";
-		}
-		return "";
+	/** Whether {@code instr} increments index register {@code idx} by one ({@code INX}/{@code INY}). */
+	static boolean increments(Instruction instr, Register idx) {
+		Integer k = PcodeShapes.incrementOf(instr, idx);
+		return k != null && k == 1;
 	}
 
-	/** The INX/INY mnemonic that increments index register {@code idx}, or "" if neither. */
-	static String incMnemonic(Register idx) {
-		String n = idx.getName().toUpperCase(Locale.ROOT);
-		if (n.equals("X")) {
-			return "INX";
-		}
-		if (n.equals("Y")) {
-			return "INY";
-		}
-		return "";
+	/** Whether {@code instr} loads a constant into {@code idx} ({@code LDX #imm}/{@code LDY #imm}). */
+	static boolean loadsConstant(Instruction instr, Register idx) {
+		return PcodeShapes.constantInto(instr, idx) != null;
+	}
+
+	/** Whether {@code instr} is a direct (non-computed, unconditional) jump or call ({@code JMP}/{@code JSR}). */
+	static boolean isDirectJumpOrCall(Instruction instr) {
+		FlowType ft = instr.getFlowType();
+		return (ft.isJump() || ft.isCall()) && !ft.isComputed() && !ft.isConditional();
 	}
 
 	/** The single base address of an indexed operand (abs,X / abs,Y / zp,X), or null when the
@@ -249,16 +244,12 @@ final class LoopIdioms {
 
 	/** Walk back from {@code lda} for the {@code LDX/LDY #imm} that seeds index {@code idx}. */
 	static Instruction findCounterInit(Listing listing, Instruction lda, Register idx) {
-		String load = "LDX";
-		if (idx.getName().equalsIgnoreCase("Y")) {
-			load = "LDY";
-		}
-		else if (!idx.getName().equalsIgnoreCase("X")) {
+		if (!isIndexRegister(idx)) {
 			return null;
 		}
 		Instruction cur = listing.getInstructionBefore(lda.getAddress());
 		for (int i = 0; i < COUNTER_LOOKBACK && cur != null; i++) {
-			if (mnem(cur).equals(load) && MosOperands.isImmediate(cur)) {
+			if (loadsConstant(cur, idx)) {
 				return cur;
 			}
 			cur = listing.getInstructionBefore(cur.getAddress());
@@ -269,11 +260,9 @@ final class LoopIdioms {
 	/** How many instructions {@link #findDominatingCounterInit} may visit before giving up. */
 	static final int COUNTER_WALK_BUDGET = 96;
 
-	/** The mnemonics that write index register {@code X} / {@code Y}, other than the immediate load. */
-	private static final java.util.Set<String> X_WRITERS = java.util.Set.of("LDX", "TAX", "TSX",
-		"INX", "DEX");
-	private static final java.util.Set<String> Y_WRITERS = java.util.Set.of("LDY", "TAY", "INY",
-		"DEY");
+	private static boolean isIndexRegister(Register idx) {
+		return idx.getName().equalsIgnoreCase("X") || idx.getName().equalsIgnoreCase("Y");
+	}
 
 	/**
 	 * The {@code LDX/LDY #imm} that seeds {@code idx} on EVERY path into the loop, found by walking
@@ -293,17 +282,7 @@ final class LoopIdioms {
 	 */
 	static Instruction findDominatingCounterInit(Program program, Instruction lda, Register idx,
 			Instruction loopBranch) {
-		java.util.Set<String> writers;
-		String load;
-		if (idx.getName().equalsIgnoreCase("X")) {
-			writers = X_WRITERS;
-			load = "LDX";
-		}
-		else if (idx.getName().equalsIgnoreCase("Y")) {
-			writers = Y_WRITERS;
-			load = "LDY";
-		}
-		else {
+		if (!isIndexRegister(idx)) {
 			return null;
 		}
 		Listing listing = program.getListing();
@@ -352,9 +331,9 @@ final class LoopIdioms {
 				if (!seen.add(p.getAddress())) {
 					continue;
 				}
-				String m = mnem(p);
-				if (m.equals(load) && MosOperands.isImmediate(p)) {
-					Integer v = MosOperands.immediateOperandValue(p);
+				if (loadsConstant(p, idx)) {
+					Long c = PcodeShapes.constantInto(p, idx);
+					Integer v = c == null ? null : (int) (c & 0xffffffffL);
 					if (v == null || (value != null && !value.equals(v))) {
 						return null;
 					}
@@ -364,7 +343,7 @@ final class LoopIdioms {
 					}
 					continue; // this path is settled
 				}
-				if (writers.contains(m) || m.equals("JSR") || p.getFlowType().isCall()) {
+				if (PcodeShapes.writesRegister(p, idx) || p.getFlowType().isCall()) {
 					return null;
 				}
 				if (seen.size() > COUNTER_WALK_BUDGET) {
@@ -391,8 +370,7 @@ final class LoopIdioms {
 		}
 		Instruction cur = listing.getInstructionAt(branch.getFallThrough());
 		for (int i = 0; i < JUMP_LOOKAHEAD && cur != null; i++) {
-			String m = mnem(cur);
-			if (m.equals("JMP") || m.equals("JSR")) {
+			if (isDirectJumpOrCall(cur)) {
 				Address t = MosOperands.plainAbsoluteTarget(cur);
 				if (t != null && t.compareTo(base) >= 0 && t.compareTo(end) <= 0) {
 					return cur.getAddress();
@@ -463,8 +441,7 @@ final class LoopIdioms {
 				if (site == null) {
 					continue;
 				}
-				String m = mnem(site);
-				if (!(m.equals("JMP") || m.equals("JSR")) ||
+				if (!isDirectJumpOrCall(site) ||
 					!target.equals(MosOperands.plainAbsoluteTarget(site))) {
 					continue;
 				}
@@ -640,8 +617,8 @@ final class LoopIdioms {
 		// The step and the optional compare, in the last slots before B.
 		int stepAt = body.size() - 2;
 		Integer compareTo = null;
-		if (stepAt > 0 && mnem(body.get(stepAt)).equals("CP" + rn) &&
-			MosOperands.isImmediate(body.get(stepAt))) {
+		if (stepAt > 0 && MosOperands.comparesRegister(body.get(stepAt), rn.charAt(0)) &&
+			MosOperands.isImmediateOperand(body.get(stepAt))) {
 			compareTo = MosOperands.immediateOperandValue(body.get(stepAt));
 			if (compareTo == null) {
 				return null;
@@ -651,12 +628,11 @@ final class LoopIdioms {
 		if (stepAt < 0 || !body.get(stepAt).equals(writer) || body.indexOf(access) >= stepAt) {
 			return null;
 		}
-		String step = mnem(writer);
 		int d;
-		if (step.equals("DE" + rn)) {
+		if (MosOperands.incrementsBy(writer, rn.charAt(0), -1)) {
 			d = -1;
 		}
-		else if (step.equals("IN" + rn)) {
+		else if (MosOperands.incrementsBy(writer, rn.charAt(0), +1)) {
 			d = +1;
 		}
 		else {
@@ -669,7 +645,7 @@ final class LoopIdioms {
 			return null;
 		}
 		Integer n;
-		if (mnem(p).equals("LD" + rn) && MosOperands.isImmediate(p)) {
+		if (MosOperands.isImmediateLoadInto(p, rn.charAt(0))) {
 			n = MosOperands.immediateOperandValue(p);
 		}
 		else if (Mos6502ConstantSemantics.INSTANCE.writes(p, loc)) {
@@ -683,14 +659,13 @@ final class LoopIdioms {
 		}
 		n &= 0xFF;
 
-		String br = mnem(b);
-		if (br.equals("BPL") && compareTo == null) {
+		if (MosOperands.isBpl(b) && compareTo == null) {
 			if (d < 0) {
 				return new CountedLoop(head, new IndexRange(0, n));
 			}
 			return new CountedLoop(head, n <= 0x7F ? new IndexRange(n, 0x7F) : new IndexRange(n, n));
 		}
-		if (!br.equals("BNE")) {
+		if (!MosOperands.isBne(b)) {
 			return null;
 		}
 		// BNE: the body sees n, n+d, ..., and the loop exits when the STEPPED value equals t.
