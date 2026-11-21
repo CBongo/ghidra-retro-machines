@@ -18,7 +18,6 @@ package retromachines;
 import java.math.BigInteger;
 import java.util.ArrayDeque;
 import java.util.List;
-import java.util.Set;
 
 import ghidra.program.model.address.Address;
 import ghidra.program.model.lang.Register;
@@ -62,13 +61,6 @@ final class W65816RtlTrick {
 	/** How many instructions before the {@code RTL} the straight-line window may span. */
 	static final int MAX_WINDOW = 14;
 
-	/** Stack-touching (or stack-moving, or calling) mnemonics: never noise after the push. */
-	private static final Set<String> NOT_NOISE = Set.of("PHA", "PHX", "PHY", "PHB", "PHD", "PHK",
-		"PHP", "PEA", "PEI", "PER", "PLA", "PLX", "PLY", "PLB", "PLD", "PLP", "TCS", "TXS", "JSR",
-		"JSL", "RTI", "BRK", "COP");
-
-	private static final int PHA = 0x48;
-	private static final int DEC_A = 0x3a;
 	private static final int LDA_ABS_X = 0xbd;
 	private static final int LDA_ABS_Y = 0xb9;
 	private static final int LDA_LONG_X = 0xbf;
@@ -111,8 +103,8 @@ final class W65816RtlTrick {
 		Instruction[] w = seq.toArray(new Instruction[0]);
 
 		int i = w.length - 2;
-		while (i >= 0 && opcode(w[i]) != PHA) {
-			if (NOT_NOISE.contains(w[i].getMnemonicString())) {
+		while (i >= 0 && !W65816Shapes.pushesAccumulator(w[i])) {
+			if (W65816Shapes.touchesStack(w[i])) {
 				return null;
 			}
 			i--;
@@ -124,7 +116,7 @@ final class W65816RtlTrick {
 		int wordPha = i;
 		int k = 0;
 		int j = i - 1;
-		while (j >= 0 && opcode(w[j]) == DEC_A && w[j].getLength() == 1) {
+		while (j >= 0 && W65816Shapes.decrementsAccumulator(w[j]) && w[j].getLength() == 1) {
 			k++;
 			j--;
 		}
@@ -143,7 +135,7 @@ final class W65816RtlTrick {
 			w[j].getMnemonicString().equalsIgnoreCase("SEP"))) {
 			j--;
 		}
-		if (j < 1 || opcode(w[j]) != PHA || w[j].getLength() != 1 || flag(w[j], "ctx_MF") != 1 ||
+		if (j < 1 || !W65816Shapes.pushesAccumulator(w[j]) || w[j].getLength() != 1 || flag(w[j], "ctx_MF") != 1 ||
 			flag(w[j], "ctx_EF") != 0) {
 			return null;
 		}

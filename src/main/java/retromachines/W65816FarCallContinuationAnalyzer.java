@@ -33,7 +33,6 @@ import ghidra.program.model.listing.ContextChangeException;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
-import ghidra.program.model.mem.MemoryAccessException;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.task.TaskMonitor;
@@ -175,7 +174,7 @@ public class W65816FarCallContinuationAnalyzer extends AbstractAnalyzer {
 			return null;
 		}
 		Instruction phk = adjacentBefore(listing, push);
-		boolean far = phk != null && phk.getMnemonicString().equalsIgnoreCase("PHK");
+		boolean far = phk != null && W65816Shapes.pushesProgramBank(phk);
 		Address callee = jmp.getFlows()[0];
 		long bank = jmp.getMinAddress().getOffset() & 0xff0000L;
 		if (!far && (callee.getOffset() & 0xff0000L) != bank) {
@@ -229,19 +228,6 @@ public class W65816FarCallContinuationAnalyzer extends AbstractAnalyzer {
 
 	/** The word a {@code PER} or {@code PEA} pushes, or -1. */
 	private static int pushedWord(Instruction push) {
-		String mn = push.getMnemonicString().toUpperCase(Locale.ROOT);
-		if (push.getLength() != 3 || !(mn.equals("PER") || mn.equals("PEA"))) {
-			return -1;
-		}
-		try {
-			int w = (push.getByte(1) & 0xff) | (push.getByte(2) & 0xff) << 8;
-			if (mn.equals("PEA")) {
-				return w;
-			}
-			return (int) ((push.getMinAddress().getOffset() + 3 + (short) w) & 0xffff);
-		}
-		catch (MemoryAccessException e) {
-			return -1;
-		}
+		return W65816Shapes.pushedConstantWord(push);
 	}
 }

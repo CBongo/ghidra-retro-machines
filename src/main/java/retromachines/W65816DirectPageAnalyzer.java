@@ -802,18 +802,18 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				if (i == null) {
 					return false;
 				}
-				String mn = i.getMnemonicString().toUpperCase(Locale.ROOT);
-				if (mn.startsWith("PH") || mn.equals("PEA") || mn.equals("PEI") || mn.equals("PER")) {
+				// Counts push and pull INSTRUCTIONS, not bytes (a W4 candidate: bytes).
+				if (W65816Shapes.push(i) != null) {
 					depth++;
 				}
-				else if (mn.startsWith("PL")) {
+				else if (W65816Shapes.pull(i) != null) {
 					if (depth == 0) {
 						pullsBelow = true;
 						continue;   // this path now belongs to the jumper's frame
 					}
 					depth--;
 				}
-				else if (mn.equals("RTS") || mn.equals("RTL") || mn.equals("RTI")) {
+				else if (W65816Shapes.isReturn(i) || MosOperands.isInterruptReturn(i)) {
 					return false;   // returns with its own pushes balanced: a routine
 				}
 				var ft = i.getFlowType();
@@ -903,15 +903,6 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 			return new State(dp, a, x, y, s.stack);
 		}
 
-		/** The 16-bit constant of a {@code #imm} operand decoded as 16-bit, or UNKNOWN. */
-		private static int imm16(Instruction ins) {
-			if (ins.getLength() != 3 || ins.getNumOperands() < 1 ||
-				!ins.getDefaultOperandRepresentation(0).startsWith("#")) {
-				return UNKNOWN;
-			}
-			return scalar(ins);
-		}
-
 		private static int scalar(Instruction ins) {
 			for (Object o : ins.getOpObjects(0)) {
 				if (o instanceof Scalar s) {
@@ -922,56 +913,75 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 		}
 
 		State transfer(Instruction ins, State s) {
-			String mn = ins.getMnemonicString().toUpperCase(Locale.ROOT);
-			switch (mn) {
-				case "LDA":
-					return with(s, s.dp, imm16(ins), s.x, s.y);
-				case "LDX":
-					return with(s, s.dp, s.a, imm16(ins), s.y);
-				case "LDY":
-					return with(s, s.dp, s.a, s.x, imm16(ins));
-				case "TCD":
-					return with(s, s.a, s.a, s.x, s.y);
-				case "PHA":
-					return pushReg(s, width(ins, ctxM), s.a);
-				case "PHX":
-					return pushReg(s, width(ins, ctxX), s.x);
-				case "PHY":
-					return pushReg(s, width(ins, ctxX), s.y);
-				case "PHD":
-					return push(s, new Pushed(2, s.dp, true));   // tagged: see unwoundFrameDp
-				case "PEA":
-					return push(s, new Pushed(2, scalar(ins)));
-				case "PEI", "PER":
-					return push(s, new Pushed(2, UNKNOWN));
-				case "PHP", "PHB", "PHK":
-					return push(s, new Pushed(1, UNKNOWN));
-				case "PLA": {
-					Object[] r = pop(s, width(ins, ctxM));
-					return with((State) r[1], s.dp, UNKNOWN, s.x, s.y);
-				}
-				case "PLX": {
-					Object[] r = pop(s, width(ins, ctxX));
-					return with((State) r[1], s.dp, s.a, UNKNOWN, s.y);
-				}
-				case "PLY": {
-					Object[] r = pop(s, width(ins, ctxX));
-					return with((State) r[1], s.dp, s.a, s.x, UNKNOWN);
-				}
-				case "PLP", "PLB": {
-					Object[] r = pop(s, 1);
-					return (State) r[1];
-				}
-				case "PLD": {
-					Object[] r = pop(s, 2);
-					State n = (State) r[1];
-					return with(n, (Integer) r[0], s.a, s.x, s.y);
-				}
-				case "JSR", "JSL":
-					return afterCall(ins, s);
-				default:
-					return generic(ins, s);
+			if (W65816Shapes.isCall(ins)) {
+				return afterCall(ins, s);
 			}
+			W65816Shapes.ConstLoad cl = W65816Shapes.constLoad(ins);
+			if (cl != null) {
+				// Only a 16-bit immediate is a known value; an 8-bit one forgets the register.
+				int v = cl.bytes() == 2 ? (int) (cl.value() & 0xffff) : UNKNOWN;
+				switch (cl.role()) {
+					case A:
+						return with(s, s.dp, v, s.x, s.y);
+					case X:
+						return with(s, s.dp, s.a, v, s.y);
+					default:
+						return with(s, s.dp, s.a, s.x, v);
+				}
+			}
+			W65816Shapes.Transfer tr = W65816Shapes.transfer(ins);
+			if (tr != null && tr.src() == W65816Shapes.Role.A &&
+				tr.dst() == W65816Shapes.Role.DP) {
+				return with(s, s.a, s.a, s.x, s.y);   // TCD
+			}
+			W65816Shapes.Push push = W65816Shapes.push(ins);
+			if (push != null) {
+				switch (push.role()) {
+					case A:
+						return pushReg(s, width(ins, ctxM), s.a);
+					case X:
+						return pushReg(s, width(ins, ctxX), s.x);
+					case Y:
+						return pushReg(s, width(ins, ctxX), s.y);
+					case DP:
+						return push(s, new Pushed(2, s.dp, true));   // tagged: see unwoundFrameDp
+					default:
+						// A constant word (PEA) keeps its value; every other push (PEI, PER, PHP,
+						// PHB, PHK) is unknown bytes. PER's return address folds to a constant in
+						// p-code too, but the old model left it unknown: kept (W4 candidate).
+						return push(s, new Pushed(push.bytes(),
+							push.bytes() == 2 && push.constant() != null &&
+								!"PER".equalsIgnoreCase(ins.getMnemonicString())
+									? (int) (push.constant() & 0xffff) : UNKNOWN));
+				}
+			}
+			W65816Shapes.Pull pl = W65816Shapes.pull(ins);
+			if (pl != null) {
+				switch (pl.role()) {
+					case A: {
+						Object[] r = pop(s, width(ins, ctxM));
+						return with((State) r[1], s.dp, UNKNOWN, s.x, s.y);
+					}
+					case X: {
+						Object[] r = pop(s, width(ins, ctxX));
+						return with((State) r[1], s.dp, s.a, UNKNOWN, s.y);
+					}
+					case Y: {
+						Object[] r = pop(s, width(ins, ctxX));
+						return with((State) r[1], s.dp, s.a, s.x, UNKNOWN);
+					}
+					case DP: {
+						Object[] r = pop(s, 2);
+						State n = (State) r[1];
+						return with(n, (Integer) r[0], s.a, s.x, s.y);
+					}
+					default: {
+						Object[] r = pop(s, 1);   // PLP, PLB
+						return (State) r[1];
+					}
+				}
+			}
+			return generic(ins, s);
 		}
 
 		private State pushReg(State s, int w, int value) {
@@ -1082,7 +1092,7 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 		private List<Pushed> rtlConsumesPushedBank(Instruction ins, State s) {
 			Address[] flows = ins.getFlows();
 			if (s.stack == null || s.stack.isEmpty() || flows.length != 1 ||
-				!ins.getMnemonicString().equalsIgnoreCase("JSR") ||
+				W65816Shapes.callPushBytes(ins) != 2 ||
 				s.stack.get(s.stack.size() - 1).width != 1) {
 				return s.stack;
 			}
@@ -1189,11 +1199,10 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				if (i == null || UNWOUND.equals(e.getValue().stack)) {
 					continue;
 				}
-				String mn = i.getMnemonicString().toUpperCase(Locale.ROOT);
 				var ft = i.getFlowType();
 				Address[] fl = i.getFlows();
-				if (mn.equals("RTS") || mn.equals("RTL")) {
-					kinds.add(mn);
+				if (W65816Shapes.isReturn(i)) {
+					kinds.add(W65816Shapes.returnKind(i));
 				}
 				else if (isDispatchJmp(i)) {
 					kinds.add("?");
@@ -1320,7 +1329,7 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				int out = UNKNOWN;
 				boolean exit = false;
 				int drops = 0;
-				if (mn.equals("RTS") || mn.equals("RTL")) {
+				if (W65816Shapes.isReturn(i)) {
 					exit = true;
 					out = st.dp;
 					// A tail that drops the caller's arguments pulls below the entry on purpose
@@ -1414,7 +1423,7 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 					}
 					d = out;
 				}
-				else if (mn.equals("RTI")) {
+				else if (MosOperands.isInterruptReturn(i)) {   // RTI stays explicit (R4)
 					if (ok) {
 						why = "RTI";
 						whyAt = i.getAddress();
@@ -1504,10 +1513,7 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 		 * extending this rule), not JSR/JSL (abs,X).
 		 */
 		private static boolean isDispatchJmp(Instruction i) {
-			var ft = i.getFlowType();
-			return ft.isComputed() && ft.isJump() && !ft.isCall() && !ft.isConditional() &&
-				(i.getMnemonicString().equalsIgnoreCase("JMP") ||
-					i.getMnemonicString().equalsIgnoreCase("JML"));
+			return W65816Shapes.isDispatchJump(i);
 		}
 
 		/**
@@ -1582,15 +1588,17 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				if (live != null && !live.contains(i.getAddress())) {
 					continue;   // a handler reached only through a dispatch JMP (rule A)
 				}
-				String mn = i.getMnemonicString().toUpperCase(Locale.ROOT);
 				var ft = i.getFlowType();
-				if (mn.equals("TCD")) {
+				W65816Shapes.Transfer tcd = W65816Shapes.transfer(i);
+				W65816Shapes.Push push = W65816Shapes.push(i);
+				W65816Shapes.Pull pull = W65816Shapes.pull(i);
+				if (tcd != null && tcd.dst() == W65816Shapes.Role.DP) {
 					ok = false;
 				}
-				else if (mn.equals("PHD")) {
+				else if (push != null && push.role() == W65816Shapes.Role.DP) {
 					phd++;
 				}
-				else if (mn.equals("PLD")) {
+				else if (pull != null && pull.role() == W65816Shapes.Role.DP) {
 					pld++;
 				}
 				else if (ft.isCall()) {
@@ -1724,18 +1732,9 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				}
 			}
 			program.getReferenceManager().addMemoryReference(ins.getMinAddress(), to,
-				indirect ? RefType.READ : typeOf(ins.getMnemonicString().toUpperCase(Locale.ROOT)),
+				indirect ? RefType.READ : W65816Shapes.memAccessKind(ins),
 				SourceType.ANALYSIS, 0);
 			return true;
 		}
-	}
-
-	/** Data-reference type for a 65816 mnemonic (shared with {@link W65816AbsLongRefAnalyzer}). */
-	static RefType typeOf(String mn) {
-		return switch (mn) {
-			case "STA", "STX", "STY", "STZ" -> RefType.WRITE;
-			case "INC", "DEC", "ASL", "LSR", "ROL", "ROR", "TSB", "TRB" -> RefType.READ_WRITE;
-			default -> RefType.READ;
-		};
 	}
 }

@@ -48,7 +48,6 @@ import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.pcode.PcodeOp;
 import ghidra.program.model.pcode.Varnode;
-import ghidra.program.model.scalar.Scalar;
 import ghidra.program.model.symbol.RefType;
 import ghidra.program.model.symbol.Reference;
 import ghidra.program.model.symbol.SourceType;
@@ -838,13 +837,11 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 		}
 
 		private static boolean isCallInstr(Instruction ins) {
-			String mn = ins.getMnemonicString();
-			return mn.equalsIgnoreCase("JSR") || mn.equalsIgnoreCase("JSL");
+			return W65816Shapes.isCall(ins);
 		}
 
 		private static boolean isReturn(Instruction ins) {
-			String mn = ins.getMnemonicString();
-			return mn.equalsIgnoreCase("RTS") || mn.equalsIgnoreCase("RTL");
+			return W65816Shapes.isReturn(ins);
 		}
 
 		/**
@@ -861,10 +858,7 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 
 		/** Unconditional indirect JMP/JML: rule A, a dispatch exit (as the DP analyzer). */
 		private static boolean isDispatchJmp(Instruction ins) {
-			var ft = ins.getFlowType();
-			String mn = ins.getMnemonicString();
-			return ft.isComputed() && !ft.isConditional() && !isCallInstr(ins) &&
-				(mn.equalsIgnoreCase("JMP") || mn.equalsIgnoreCase("JML"));
+			return W65816Shapes.isDispatchJump(ins);
 		}
 
 		private List<Address> successors(Address root, Instruction ins, boolean dispatch) {
@@ -921,7 +915,7 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 				int drops = 0;
 				if (isReturn(ins)) {
 					out = expand(st.dbr);
-					k = Set.of(ins.getMnemonicString().toUpperCase(Locale.ROOT));
+					k = Set.of(W65816Shapes.returnKind(ins));
 					// A tail that drops the caller's arguments (W65816CalleePop) pulls below the
 					// entry on purpose and still returns to the caller, its arguments gone.
 					W65816CalleePop.Tail tail = W65816CalleePop.tailAt(program, ins);
@@ -1021,23 +1015,6 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 			return v == null ? UNKNOWN : (v.signum() == 0 ? 2 : 1);
 		}
 
-		private static int scalarOf(Instruction ins) {
-			if (ins.getNumOperands() < 1) {
-				return UNKNOWN;
-			}
-			for (Object o : ins.getOpObjects(0)) {
-				if (o instanceof Scalar s) {
-					return (int) (s.getUnsignedValue() & 0xffff);
-				}
-			}
-			return UNKNOWN;
-		}
-
-		private static boolean isImmediate(Instruction ins) {
-			return ins.getNumOperands() >= 1 &&
-				ins.getDefaultOperandRepresentation(0).startsWith("#");
-		}
-
 		private static State push(State s, int b) {
 			if (s.stack.size() >= STACK_LIMIT) {
 				return s.withStack(POISONED, s.under);
@@ -1089,125 +1066,126 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 
 		State transfer(Instruction ins, State s) {
 			String mn = ins.getMnemonicString().toUpperCase(Locale.ROOT);
-			switch (mn) {
-				case "LDA": {
-					if (!isImmediate(ins)) {
-						return s.withA(UNKNOWN, UNKNOWN);
-					}
-					int v = scalarOf(ins);
-					if (v == UNKNOWN) {
-						return s.withA(UNKNOWN, UNKNOWN);
-					}
-					return ins.getLength() == 3 ? s.withA(v & 0xff, v >> 8) :
-						s.withA(v & 0xff, s.aHi);
-				}
-				case "LDX", "LDY": {
-					boolean x = mn.equals("LDX");
-					int v = isImmediate(ins) ? scalarOf(ins) : UNKNOWN;
-					int lo = v == UNKNOWN ? UNKNOWN : v & 0xff;
-					int hi = v == UNKNOWN ? UNKNOWN : ins.getLength() == 3 ? v >> 8 : 0;
-					return x ? s.withX(lo, hi) : s.withY(lo, hi);
-				}
-				case "TDC": {
-					// A = DP, from the DP analyzer's (or the user's) stamped value: FF3's
-					// TDC / PHA / PLB sets DBR to DP's low byte (grm-9nxj.42).
-					BigInteger d = dpReg == null ? null : ins.getValue(dpReg, false);
-					if (d == null) {
-						return s.withA(UNKNOWN, UNKNOWN);
-					}
-					int v = d.intValue() & 0xffff;
-					return s.withA(v & 0xff, v >> 8);
-				}
-				case "TAX", "TAY": {
-					int w = width(ins, ctxX);
-					int lo = w == UNKNOWN ? UNKNOWN : s.aLo;
-					int hi = w == 2 ? s.aHi : w == 1 ? 0 : UNKNOWN;
-					return mn.equals("TAX") ? s.withX(lo, hi) : s.withY(lo, hi);
-				}
-				case "TXA", "TYA": {
-					int w = width(ins, ctxM);
-					int lo = mn.equals("TXA") ? s.xLo : s.yLo;
-					int hi = mn.equals("TXA") ? s.xHi : s.yHi;
-					return w == 2 ? s.withA(lo, hi) : w == 1 ? s.withA(lo, s.aHi) :
-						s.withA(UNKNOWN, UNKNOWN);
-				}
-				case "XBA":
-					return s.withA(s.aHi, s.aLo);
-				case "PHA":
-					return pushReg(s, width(ins, ctxM), s.aLo, s.aHi);
-				case "PHX":
-					return pushReg(s, width(ins, ctxX), s.xLo, s.xHi);
-				case "PHY":
-					return pushReg(s, width(ins, ctxX), s.yLo, s.yHi);
-				case "PHB":
-					return push(s, s.dbr);
-				case "PHK":
-					return push(s, (int) ((ins.getAddress().getOffset() >> 16) & 0xff));
-				case "PHD", "PEI":
-					return push(push(s, UNKNOWN), UNKNOWN);
-				case "PER": {
-					// Pushes the address of the next instruction plus the displacement (a return
-					// address for F-Zero's PHK / PER / JML far call).
-					int v = UNKNOWN;
-					try {
-						int disp = (short) ((ins.getByte(1) & 0xff) | (ins.getByte(2) & 0xff) << 8);
-						v = (int) ((ins.getAddress().getOffset() + 3 + disp) & 0xffff);
-					}
-					catch (ghidra.program.model.mem.MemoryAccessException e) {
-						// leave unknown
-					}
-					return push(push(s, v == UNKNOWN ? UNKNOWN : v >> 8),
-						v == UNKNOWN ? UNKNOWN : v & 0xff);
-				}
-				case "PHP":
-					return push(s, UNKNOWN);
-				case "PEA": {
-					int v = scalarOf(ins);
-					return push(push(s, v == UNKNOWN ? UNKNOWN : v >> 8),
-						v == UNKNOWN ? UNKNOWN : v & 0xff);
-				}
-				case "PLA": {
-					int w = width(ins, ctxM);
-					Object[] r = pull(s, w);
-					State n = (State) r[2];
-					return w == 2 ? n.withA((Integer) r[0], (Integer) r[1]) :
-						n.withA((Integer) r[0], w == 1 ? n.aHi : UNKNOWN);
-				}
-				case "PLX", "PLY": {
-					int w = width(ins, ctxX);
-					Object[] r = pull(s, w);
-					State n = (State) r[2];
-					int hi = w == 2 ? (Integer) r[1] : w == 1 ? 0 : UNKNOWN;
-					return mn.equals("PLX") ? n.withX((Integer) r[0], hi) :
-						n.withY((Integer) r[0], hi);
-				}
-				case "PLB": {
-					Object[] r = pop(s);
-					return ((State) r[1]).withDbr((Integer) r[0]);
-				}
-				case "PLD": {
-					return (State) pull(s, 2)[2];
-				}
-				case "PLP", "SEP", "REP", "XCE": {
-					State n = mn.equals("PLP") ? (State) pull(s, 1)[2] : s;
-					// A change of X width zeroes or exposes the index registers' high bytes.
-					return n.withX(n.xLo, UNKNOWN).withY(n.yLo, UNKNOWN);
-				}
-				case "MVN", "MVP": {
-					int dest = UNKNOWN;
-					try {
-						dest = ins.getByte(1) & 0xff;
-					}
-					catch (ghidra.program.model.mem.MemoryAccessException e) {
-						// leave unknown
-					}
-					return generic(ins, s).withDbr(dest);
-				}
-				case "JSR", "JSL":
-					return afterCall(ins, s);
-				default:
-					return generic(ins, s);
+			// Width and mode changes are context actions, invisible in p-code (design ruling R2).
+			if (mn.equals("PLP") || mn.equals("SEP") || mn.equals("REP") || mn.equals("XCE")) {
+				State n = mn.equals("PLP") ? (State) pull(s, 1)[2] : s;
+				// A change of X width zeroes or exposes the index registers' high bytes.
+				return n.withX(n.xLo, UNKNOWN).withY(n.yLo, UNKNOWN);
 			}
+			if (W65816Shapes.isCall(ins)) {
+				return afterCall(ins, s);
+			}
+			W65816Shapes.ConstLoad cl = W65816Shapes.constLoad(ins);
+			if (cl != null) {
+				int v = (int) cl.value();
+				boolean wide = cl.bytes() == 2;
+				switch (cl.role()) {
+					case A:
+						return wide ? s.withA(v & 0xff, v >> 8) : s.withA(v & 0xff, s.aHi);
+					case X:
+						return s.withX(v & 0xff, wide ? v >> 8 : 0);
+					default:
+						return s.withY(v & 0xff, wide ? v >> 8 : 0);
+				}
+			}
+			W65816Shapes.Transfer tr = W65816Shapes.transfer(ins);
+			if (tr != null) {
+				State t = transferState(ins, s, tr);
+				if (t != null) {
+					return t;
+				}
+			}
+			if (W65816Shapes.swapsAccumulatorHalves(ins)) {
+				return s.withA(s.aHi, s.aLo);
+			}
+			W65816Shapes.Push push = W65816Shapes.push(ins);
+			if (push != null) {
+				switch (push.role()) {
+					case A:
+						return pushReg(s, width(ins, ctxM), s.aLo, s.aHi);
+					case X:
+						return pushReg(s, width(ins, ctxX), s.xLo, s.xHi);
+					case Y:
+						return pushReg(s, width(ins, ctxX), s.yLo, s.yHi);
+					case DBR:
+						return push(s, s.dbr);
+					default: {
+						// A constant (PHK, PEA, PER) stacks its bytes high first; any other
+						// computed value (PHP, PHD, PEI) is unknown bytes.
+						State n = s;
+						for (int i = push.bytes() - 1; i >= 0; i--) {
+							n = push(n, push.constant() == null ? UNKNOWN :
+								((int) (push.constant() >> (8 * i)) & 0xff));
+						}
+						return n;
+					}
+				}
+			}
+			W65816Shapes.Pull pl = W65816Shapes.pull(ins);
+			if (pl != null) {
+				switch (pl.role()) {
+					case A: {
+						int w = width(ins, ctxM);
+						Object[] r = pull(s, w);
+						State n = (State) r[2];
+						return w == 2 ? n.withA((Integer) r[0], (Integer) r[1]) :
+							n.withA((Integer) r[0], w == 1 ? n.aHi : UNKNOWN);
+					}
+					case X, Y: {
+						int w = width(ins, ctxX);
+						Object[] r = pull(s, w);
+						State n = (State) r[2];
+						int hi = w == 2 ? (Integer) r[1] : w == 1 ? 0 : UNKNOWN;
+						return pl.role() == W65816Shapes.Role.X ? n.withX((Integer) r[0], hi) :
+							n.withY((Integer) r[0], hi);
+					}
+					case DBR: {
+						Object[] r = pop(s);
+						return ((State) r[1]).withDbr((Integer) r[0]);
+					}
+					case DP:
+						return (State) pull(s, 2)[2];
+					default:
+						break;
+				}
+			}
+			Long dest = W65816Shapes.constIntoDbr(ins);
+			if (dest != null) {
+				return generic(ins, s).withDbr((int) (dest & 0xff));
+			}
+			return generic(ins, s);
+		}
+
+		/** The abstract state after a register transfer the analyzer models; null for any other. */
+		private State transferState(Instruction ins, State s, W65816Shapes.Transfer tr) {
+			W65816Shapes.Role src = tr.src();
+			W65816Shapes.Role dst = tr.dst();
+			if (src == W65816Shapes.Role.DP && dst == W65816Shapes.Role.A) {
+				// A = DP, from the DP analyzer's (or the user's) stamped value: FF3's
+				// TDC / PHA / PLB sets DBR to DP's low byte (grm-9nxj.42).
+				BigInteger d = dpReg == null ? null : ins.getValue(dpReg, false);
+				if (d == null) {
+					return s.withA(UNKNOWN, UNKNOWN);
+				}
+				int v = d.intValue() & 0xffff;
+				return s.withA(v & 0xff, v >> 8);
+			}
+			if (src == W65816Shapes.Role.A &&
+				(dst == W65816Shapes.Role.X || dst == W65816Shapes.Role.Y)) {
+				int w = width(ins, ctxX);
+				int lo = w == UNKNOWN ? UNKNOWN : s.aLo;
+				int hi = w == 2 ? s.aHi : w == 1 ? 0 : UNKNOWN;
+				return dst == W65816Shapes.Role.X ? s.withX(lo, hi) : s.withY(lo, hi);
+			}
+			if (dst == W65816Shapes.Role.A &&
+				(src == W65816Shapes.Role.X || src == W65816Shapes.Role.Y)) {
+				int w = width(ins, ctxM);
+				int lo = src == W65816Shapes.Role.X ? s.xLo : s.yLo;
+				int hi = src == W65816Shapes.Role.X ? s.xHi : s.yHi;
+				return w == 2 ? s.withA(lo, hi) : w == 1 ? s.withA(lo, s.aHi) :
+					s.withA(UNKNOWN, UNKNOWN);
+			}
+			return null;
 		}
 
 		private State afterCall(Instruction ins, State s) {
@@ -1229,7 +1207,7 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 					stack = t.stack;
 					s = t;
 				}
-				else if (ins.getMnemonicString().equalsIgnoreCase("JSR") && sm.kinds.contains("RTL")) {
+				else if (W65816Shapes.callPushBytes(ins) == 2 && sm.kinds.contains("RTL")) {
 					if (sm.kinds.size() == 1) {
 						// A JSR into a routine that returns by RTL also pulls the bank the caller
 						// pushed (FZero's PHK / JSR thunk), as the DP analyzer models.
@@ -1449,12 +1427,11 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 			if (st.dbr == UNKNOWN) {
 				return null;
 			}
-			String mn = ins.getMnemonicString().toUpperCase(Locale.ROOT);
 			State out = transfer(ins, st);
 			if (out.dbr != UNKNOWN) {
 				return null;
 			}
-			if (mn.equals("JSR") || mn.equals("JSL")) {
+			if (W65816Shapes.isCall(ins)) {
 				Address[] fl = ins.getFlows();
 				if (fl.length == 0) {
 					return "call:unresolvedIndirect";
@@ -1472,14 +1449,15 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 				}
 				return "call:" + w;
 			}
-			if (mn.equals("PLB")) {
+			W65816Shapes.Pull pl = W65816Shapes.pull(ins);
+			if (pl != null && pl.role() == W65816Shapes.Role.DBR) {
 				if (st.stack.isEmpty()) {
 					return "plb:underflow";
 				}
 				int top = st.stack.get(st.stack.size() - 1);
 				return top == FLOOR ? "plb:floor" : "plb:unknownByte";
 			}
-			return "op:" + mn;
+			return "op:" + ins.getMnemonicString().toUpperCase(Locale.ROOT);
 		}
 
 		private final Map<Address, Map<Address, String>> causeMaps = new HashMap<>();
@@ -1884,9 +1862,8 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 			if (ins.getLength() != 3 || ins.getNumOperands() < 1 || ins.getFlowType().isJump() || ins.getFlowType().isCall() || ins.getFlowType().isTerminal()) {
 				return UNKNOWN;
 			}
-			String mn = ins.getMnemonicString().toUpperCase(Locale.ROOT);
-			if (mn.equals("PEA") || mn.equals("PER") || mn.equals("PEI") || mn.equals("MVN") ||
-				mn.equals("MVP")) {
+			// PEA/PER (pushes) and MVN/MVP (block moves) are not data references.
+			if (W65816Shapes.push(ins) != null || W65816Shapes.constIntoDbr(ins) != null) {
 				return UNKNOWN;
 			}
 			String r = ins.getDefaultOperandRepresentation(0);
@@ -1931,7 +1908,7 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 				return false;
 			}
 			program.getReferenceManager().addMemoryReference(ins.getMinAddress(), to,
-				W65816DirectPageAnalyzer.typeOf(ins.getMnemonicString().toUpperCase(Locale.ROOT)),
+				W65816Shapes.memAccessKind(ins),
 				SourceType.ANALYSIS, 0);
 			return true;
 		}

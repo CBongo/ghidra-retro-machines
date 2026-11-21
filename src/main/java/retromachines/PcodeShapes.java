@@ -366,6 +366,76 @@ final class PcodeShapes {
 	}
 
 	/**
+	 * The constant a push stores to the stack, folded through unique temporaries ({@code PEA},
+	 * 65816 {@code PHK}, {@code PER}: {@code inst_next + disp} is built from integer ops), or null
+	 * when any stacked byte is not a constant. A multi-byte push stores the HIGH byte first, so the
+	 * stores combine most-significant first. Null for an instruction with no stack store.
+	 */
+	static Long pushedConstant(Instruction instr) {
+		Walk w = new Walk(instr);
+		w.stackWalk();
+		long value = 0;
+		int n = 0;
+		for (int j = 0; j < w.ops.length; j++) {
+			if (w.ops[j].getOpcode() == PcodeOp.STORE && w.stackAccess[j]) {
+				Long b = w.fold(j, w.ops[j].getInput(2));
+				if (b == null || w.ops[j].getInput(2).getSize() != 1) {
+					return null;
+				}
+				value = (value << 8) | (b & 0xff);
+				n++;
+			}
+		}
+		return n == 0 ? null : Long.valueOf(value);
+	}
+
+	/** {@link #dataAccess} bit: a non-stack {@code LOAD}. */
+	static final int DATA_READ = 1;
+	/** {@link #dataAccess} bit: a non-stack {@code STORE}. */
+	static final int DATA_WRITE = 2;
+
+	/**
+	 * Which kinds of computed (non-stack) memory access the instruction makes: a bit set of
+	 * {@link #DATA_READ} and {@link #DATA_WRITE}. {@code LDA abs} reads, {@code STA abs} writes,
+	 * {@code INC abs}/{@code TSB} do both; pushes and pulls are stack traffic and count as neither.
+	 */
+	static int dataAccess(Instruction instr) {
+		Walk w = new Walk(instr);
+		w.stackWalk();
+		int bits = 0;
+		for (int j = 0; j < w.ops.length; j++) {
+			if (w.stackAccess[j]) {
+				continue;
+			}
+			if (w.ops[j].getOpcode() == PcodeOp.LOAD) {
+				bits |= DATA_READ;
+			}
+			else if (w.ops[j].getOpcode() == PcodeOp.STORE) {
+				bits |= DATA_WRITE;
+			}
+		}
+		return bits;
+	}
+
+	/**
+	 * Whether the instruction leaves through a call, return or indirect jump ({@code CALL},
+	 * {@code CALLIND}, {@code RETURN}, {@code BRANCHIND}): the calls, returns, interrupts and
+	 * indirect jumps, which also touch the stack but are not stack transfers. Direct branches are
+	 * not counted: a p-code-relative {@code CBRANCH} (65816 {@code PLP}) sits inside plain pulls.
+	 */
+	static boolean hasFlowOp(Instruction instr) {
+		for (PcodeOp op : ops(instr)) {
+			switch (op.getOpcode()) {
+				case PcodeOp.BRANCHIND, PcodeOp.CALL, PcodeOp.CALLIND, PcodeOp.RETURN:
+					return true;
+				default:
+					break;
+			}
+		}
+		return false;
+	}
+
+	/**
 	 * The (single) non-flag, non-SP register an instruction that loads from the stack writes
 	 * ({@code PLA}, {@code PLX}, 65816 {@code PLB}/{@code PLD}), or null. A status pull
 	 * ({@code PLP}, SPC700 {@code POP PSW}) and returns ({@code RTS}/{@code RTI}) write no such
@@ -774,6 +844,65 @@ final class PcodeShapes {
 				return Val.opaque(j, out, true);
 			}
 			return piece(eval(j), (int) (vn.getOffset() - out.getOffset()), vn.getSize());
+		}
+
+		/** The constant {@code vn} holds as read by op {@code idx}, folded through integer ops; null if not constant. */
+		Long fold(int idx, Varnode vn) {
+			if (vn.isConstant()) {
+				return vn.getOffset() & mask(vn.getSize());
+			}
+			int j = lastWrite(idx, vn);
+			if (j < 0) {
+				return null;
+			}
+			Varnode out = ops[j].getOutput();
+			if (!contains(out, vn)) {
+				return null;
+			}
+			Long v = foldOp(j);
+			if (v == null) {
+				return null;
+			}
+			return (v >>> (8 * (vn.getOffset() - out.getOffset()))) & mask(vn.getSize());
+		}
+
+		private Long foldOp(int j) {
+			PcodeOp op = ops[j];
+			int opc = op.getOpcode();
+			long m = mask(op.getOutput().getSize());
+			switch (opc) {
+				case PcodeOp.COPY:
+				case PcodeOp.INT_ZEXT: {
+					Long a = fold(j, op.getInput(0));
+					return a == null ? null : a & m;
+				}
+				case PcodeOp.SUBPIECE: {
+					Long a = fold(j, op.getInput(0));
+					return a == null || !op.getInput(1).isConstant() ? null
+						: (a >>> (8 * op.getInput(1).getOffset())) & m;
+				}
+				case PcodeOp.INT_ADD, PcodeOp.INT_SUB, PcodeOp.INT_AND, PcodeOp.INT_OR,
+						PcodeOp.INT_XOR, PcodeOp.INT_LEFT, PcodeOp.INT_RIGHT: {
+					Long a = fold(j, op.getInput(0));
+					Long b = fold(j, op.getInput(1));
+					if (a == null || b == null) {
+						return null;
+					}
+					long r;
+					switch (opc) {
+						case PcodeOp.INT_ADD -> r = a + b;
+						case PcodeOp.INT_SUB -> r = a - b;
+						case PcodeOp.INT_AND -> r = a & b;
+						case PcodeOp.INT_OR -> r = a | b;
+						case PcodeOp.INT_XOR -> r = a ^ b;
+						case PcodeOp.INT_LEFT -> r = b >= 64 ? 0 : a << b;
+						default -> r = b >= 64 ? 0 : a >>> b;
+					}
+					return r & m;
+				}
+				default:
+					return null;
+			}
 		}
 
 		/** The value op {@code j} leaves in its output, looking through copy-like ops. */

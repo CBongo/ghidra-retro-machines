@@ -214,7 +214,7 @@ final class W65816WidthEffects {
 				m = UNKNOWN;
 				x = UNKNOWN;
 			}
-			if (mn.equals("RTS") || mn.equals("RTL")) {
+			if (W65816Shapes.isReturn(in)) {
 				exitM.add(m);
 				exitX.add(x);
 				continue;

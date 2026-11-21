@@ -17,7 +17,6 @@ package retromachines;
 
 import java.util.ArrayDeque;
 import java.util.HashMap;
-import java.util.Locale;
 import java.util.Map;
 
 import ghidra.program.model.address.Address;
@@ -90,22 +89,21 @@ final class W65816ReturnProof {
 			if (i == null) {
 				return null;
 			}
-			String mn = i.getMnemonicString().toUpperCase(Locale.ROOT);
-			switch (mn) {
-				case "RTS", "RTL" -> {
-					if (d != 0 || (kind != null && !kind.equals(mn))) {
-						return null;
-					}
-					kind = mn;
-					continue;
-				}
-				case "RTI", "BRK", "COP", "STP", "TXS", "TCS", "XCE" -> {
+			if (W65816Shapes.isReturn(i)) {
+				String rk = W65816Shapes.returnKind(i);
+				if (d != 0 || (kind != null && !kind.equals(rk))) {
 					return null;
 				}
-				default -> {
-				}
+				kind = rk;
+				continue;
 			}
-			int delta = stackDelta(fx, i, mn);
+			// RTI stays explicit (R4) and XCE is a mode change, invisible in p-code (R2); BRK, COP
+			// and STP are computed jumps and fall to the isComputed test below; TXS/TCS rewrite SP.
+			if (MosOperands.isInterruptReturn(i) || W65816Shapes.rebasesStack(i) ||
+				i.getMnemonicString().equalsIgnoreCase("XCE")) {
+				return null;
+			}
+			int delta = stackDelta(fx, i);
 			if (delta == Integer.MIN_VALUE) {
 				return null; // width unknown
 			}
@@ -153,18 +151,24 @@ final class W65816ReturnProof {
 	}
 
 	/** Bytes {@code i} pushes (negative: pulls), or {@link Integer#MIN_VALUE} if unknown. */
-	private static int stackDelta(W65816WidthEffects fx, Instruction i, String mn) {
-		return switch (mn) {
-			case "PHA" -> bytes(fx.flag(i, fx.mRegister()));
-			case "PLA" -> neg(bytes(fx.flag(i, fx.mRegister())));
-			case "PHX", "PHY" -> bytes(fx.flag(i, fx.xRegister()));
-			case "PLX", "PLY" -> neg(bytes(fx.flag(i, fx.xRegister())));
-			case "PHP", "PHB", "PHK" -> 1;
-			case "PLP", "PLB" -> -1;
-			case "PHD", "PEA", "PEI", "PER" -> 2;
-			case "PLD" -> -2;
+	private static int stackDelta(W65816WidthEffects fx, Instruction i) {
+		W65816Shapes.Push push = W65816Shapes.push(i);
+		W65816Shapes.Pull pull = W65816Shapes.pull(i);
+		if (push == null && pull == null) {
+			return 0;
+		}
+		// The byte count comes from the p-code, but this proof bails when the width the
+		// instruction was decoded at is not a known context value (the width source is kept).
+		W65816Shapes.Role role = push != null ? push.role() : pull.role();
+		int known = switch (role) {
+			case A -> bytes(fx.flag(i, fx.mRegister()));
+			case X, Y -> bytes(fx.flag(i, fx.xRegister()));
 			default -> 0;
 		};
+		if (known == Integer.MIN_VALUE) {
+			return Integer.MIN_VALUE;
+		}
+		return push != null ? push.bytes() : -pull.bytes();
 	}
 
 	/** A register's size in bytes from its width flag (1 = 8-bit), or MIN_VALUE if unknown. */
@@ -172,7 +176,4 @@ final class W65816ReturnProof {
 		return flag == 1 ? 1 : flag == 0 ? 2 : Integer.MIN_VALUE;
 	}
 
-	private static int neg(int v) {
-		return v == Integer.MIN_VALUE ? v : -v;
-	}
 }

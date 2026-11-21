@@ -15,7 +15,6 @@
  */
 package retromachines;
 
-import java.util.Locale;
 
 import ghidra.app.services.AbstractAnalyzer;
 import ghidra.app.services.AnalysisPriority;
@@ -91,8 +90,7 @@ public class W65816AbsLongRefAnalyzer extends AbstractAnalyzer {
 					return false;
 				}
 			}
-			RefType type = W65816DirectPageAnalyzer.typeOf(
-				in.getMnemonicString().toUpperCase(Locale.ROOT));
+			RefType type = W65816Shapes.memAccessKind(in);
 			program.getReferenceManager().addMemoryReference(in.getMinAddress(), to, type,
 				SourceType.ANALYSIS, 0);
 			return true;

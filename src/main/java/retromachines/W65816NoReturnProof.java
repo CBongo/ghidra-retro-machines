@@ -19,7 +19,6 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
 
 import ghidra.program.model.address.Address;
@@ -67,8 +66,7 @@ final class W65816NoReturnProof {
 				unproven = true;   // keep looking: a return elsewhere still decides it
 				continue;
 			}
-			String mn = i.getMnemonicString().toUpperCase(Locale.ROOT);
-			if (mn.equals("RTS") || mn.equals("RTL") || mn.equals("RTI")) {
+			if (W65816Shapes.isReturn(i) || MosOperands.isInterruptReturn(i)) {
 				return false;
 			}
 			FlowType ft = i.getFlowType();

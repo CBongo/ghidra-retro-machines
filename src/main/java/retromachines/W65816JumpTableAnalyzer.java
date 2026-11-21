@@ -906,11 +906,11 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 	 */
 	static boolean indexNonZero(Listing listing, Instruction use) {
 		Instruction tax = fallsFrom(listing, use);
-		if (tax == null || !tax.getMnemonicString().equalsIgnoreCase("TAX") || hasFlowInto(tax)) {
+		if (tax == null || !W65816Shapes.copiesAccumulatorToX(tax) || hasFlowInto(tax)) {
 			return false;
 		}
 		Instruction beq = fallsFrom(listing, tax);
-		if (beq == null || !beq.getMnemonicString().equalsIgnoreCase("BEQ")) {
+		if (beq == null || !W65816Shapes.branchesOn(beq, CpuRegs.FlagKind.ZERO, true)) {
 			return false;
 		}
 		Instruction test = fallsFrom(listing, beq);
@@ -956,13 +956,13 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 		if (!ft.isComputed() || ft.isCall() || in.getNumOperands() != 1) {
 			return null;
 		}
-		String mn = in.getMnemonicString().toUpperCase(Locale.ROOT);
+		// A computed, non-call, one-operand jump: JMP (ptr) is the "(" form, JML [ptr] the "[" form.
 		String op = in.getDefaultOperandRepresentation(0);
 		int bytes;
-		if (mn.equals("JMP") && op.startsWith("(") && !op.contains(",")) {
+		if (op.startsWith("(") && !op.contains(",")) {
 			bytes = 2;
 		}
-		else if (mn.equals("JML") && op.startsWith("[")) {
+		else if (op.startsWith("[")) {
 			bytes = 3;
 		}
 		else {
@@ -1124,10 +1124,7 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 		if (!ft.isComputed() || ft.isTerminal() || in.getNumOperands() != 1) {
 			return null;
 		}
-		String mn = in.getMnemonicString().toUpperCase(Locale.ROOT);
-		if (!mn.equals("JMP") && !mn.equals("JSR")) {
-			return null;
-		}
+		// JMP/JSR (abs,X): the only computed, non-terminal jump or call written "(...,X)".
 		String op = in.getDefaultOperandRepresentation(0);
 		if (!op.startsWith("(") || !op.endsWith(",X)")) {
 			return null;
@@ -1248,7 +1245,9 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 			String pmn = prev.getMnemonicString().toUpperCase(Locale.ROOT);
 			if (prev.getFlowType().isJump()) {
 				// Only a carry guard on A, met by falling through, bounds the index.
-				Instruction cmp = sawTax && (pmn.equals("BCC") || pmn.equals("BCS")) &&
+				boolean bcs = W65816Shapes.branchesOn(prev, CpuRegs.FlagKind.CARRY, true);
+				boolean bcc = W65816Shapes.branchesOn(prev, CpuRegs.FlagKind.CARRY, false);
+				Instruction cmp = sawTax && (bcc || bcs) &&
 					!hasFlowInto(prev) ? fallsFrom(listing, prev) : null;
 				Long k = cmp != null &&
 					cmp.getMnemonicString().equalsIgnoreCase("CMP") ? immediate(cmp) : null;
@@ -1256,7 +1255,7 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 					break;
 				}
 				// BCS skips when A >= k, so falling through means A < k; BCC the reverse.
-				chain.add(new W65816JumpTables.IndexOp(pmn.equals("BCS")
+				chain.add(new W65816JumpTables.IndexOp(bcs
 						? W65816JumpTables.IndexOp.Kind.BELOW
 						: W65816JumpTables.IndexOp.Kind.AT_LEAST, k));
 				cur = cmp;
@@ -1264,13 +1263,13 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 			}
 			cur = prev;
 			String mn = pmn;
-			String op = cur.getNumOperands() > 0 ? cur.getDefaultOperandRepresentation(0) : "";
 			if (!sawTax) {
-				if (mn.equals("TAX")) {
+				if (W65816Shapes.copiesAccumulatorToX(cur)) {
 					sawTax = true;
 					continue;
 				}
-				if (mn.equals("PLX")) {
+				W65816Shapes.Pull pulled = W65816Shapes.pull(cur);
+				if (pulled != null && pulled.role() == W65816Shapes.Role.X) {
 					Instruction first = zeroExtendingTransfer(listing, cur);
 					if (first == null) {
 						break;
@@ -1287,7 +1286,7 @@ public class W65816JumpTableAnalyzer extends AbstractAnalyzer {
 				}
 				break;
 			}
-			if (mn.equals("ASL") && (op.isEmpty() || op.equals("A"))) {
+			if (W65816Shapes.shiftsAccumulatorLeft(cur)) {
 				chain.add(new W65816JumpTables.IndexOp(W65816JumpTables.IndexOp.Kind.SHIFT, 1));
 				continue;
 			}
