@@ -726,6 +726,34 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 			return true;
 		}
 
+		/**
+		 * A dispatch JMP whose resolved handlers all lie inside {@code root}'s own function body,
+		 * none another function's entry (grm-9nxj.49): FF3's script interpreter {@code $EE:7084}
+		 * ({@code PHP / ... / JMP ($76FB,X)}, 256 entries into 41 handlers that loop back with
+		 * {@code JMP $7093} or leave through {@code JMP $70A6}: {@code PLP / RTS}). The handlers
+		 * are part of the routine, so a summary walk follows them, as for
+		 * {@link #intoEpilogues}, instead of taking the jump as a rule-A exit with the
+		 * {@code PHP} byte still pushed.
+		 */
+		private boolean intoBody(Address root, Instruction ins) {
+			Address[] fl = ins.getFlows();
+			Function f = program.getFunctionManager().getFunctionAt(root);
+			if (fl.length == 0 || f == null) {
+				return false;
+			}
+			for (Address a : fl) {
+				if (!f.getBody().contains(a) || otherEntry(root, a)) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		/** A dispatch JMP a summary walk follows rather than takes as a rule-A exit. */
+		private boolean followsDispatch(Address root, Instruction ins) {
+			return intoEpilogues(ins) || intoBody(root, ins);
+		}
+
 		/** A jump that is a call through a pushed return address: where it returns, and how. */
 		record PushedCall(Address cont, State after) {
 		}
@@ -842,7 +870,7 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 		private List<Address> successors(Address root, Instruction ins, boolean dispatch) {
 			List<Address> out = new ArrayList<>();
 			var ft = ins.getFlowType();
-			if (isDispatchJmp(ins) && (dispatch || intoEpilogues(ins))) {
+			if (isDispatchJmp(ins) && (dispatch || followsDispatch(root, ins))) {
 				for (Address a : ins.getFlows()) {
 					if (!tailExit(root, a)) {
 						out.add(a);
@@ -903,7 +931,7 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 						st = st.withStack(List.of(), false);
 					}
 				}
-				else if (isDispatchJmp(ins) && !intoEpilogues(ins)) {
+				else if (isDispatchJmp(ins) && !followsDispatch(root, ins)) {
 					out = expand(st.dbr);
 					k = Set.of("?");
 				}

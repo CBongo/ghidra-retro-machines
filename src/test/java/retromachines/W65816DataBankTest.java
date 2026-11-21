@@ -394,6 +394,30 @@ public class W65816DataBankTest extends AbstractProgramTest {
 			Integer.valueOf(0x7e), dbrAt(0x8308));
 	}
 
+	/**
+	 * grm-9nxj.49 (FF3's script interpreter {@code $EE:7084}): F = PHP ; LDX #0 ;
+	 * JMP ($8100,X), with two handlers in F's own body: one does its work and jumps back to the
+	 * LDX (LDA $1234 ; JMP $8001), the other leaves (PLP ; RTS). Taken as a rule-A exit the
+	 * dispatch leaves the PHP byte pushed and F's summary unknown; followed, every exit is the
+	 * PLP / RTS, so F preserves DBR and C's LDA after the call is under $7e. (A single handler
+	 * that ends in PLP / RTS is a shared epilogue, which grm-9nxj.42 already followed.)
+	 */
+	@Test
+	public void aDispatchIntoTheRoutinesOwnBodyIsFollowedNotAnExit() throws Exception {
+		lay("0x8000", "08 a2 00 00 7c 00 81 " + LDA_1234 + " 4c 01 80 28 60", "F");
+		inTx(program, "dispatch refs", () -> {
+			program.getReferenceManager().addMemoryReference(addr(0x8004), addr(0x8007),
+				RefType.COMPUTED_JUMP, SourceType.ANALYSIS, 0);
+			program.getReferenceManager().addMemoryReference(addr(0x8004), addr(0x800d),
+				RefType.COMPUTED_JUMP, SourceType.ANALYSIS, 1);
+		});
+		lay("0x8300", "f4 7e 7e ab ab 20 00 80 " + LDA_1234 + " 60", "C");
+		analyze();
+		assertEquals("preserves",
+			new W65816DataBankAnalyzer.CallSummaries(program).verdict(addr(0x8000)));
+		assertEquals(Integer.valueOf(0x7e), dbrAt(0x8308));
+	}
+
 	@Test
 	public void aTailJumpWithACallReturnOverrideIsATailExit() throws Exception {
 		lay("0x8100", "4b ab 60", "G");        // PHK ; PLB ; RTS : returns bank $00
