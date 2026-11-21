@@ -31,6 +31,7 @@ import ghidra.program.database.ProgramBuilder;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.lang.Register;
 import ghidra.program.model.listing.Instruction;
+import ghidra.program.model.pcode.PcodeOp;
 
 /**
  * {@link PcodeShapes} and {@link CpuRegs} over real decoded bytes (bead grm-jjuc, wave 0): stock
@@ -454,5 +455,67 @@ public class PcodeShapesTest extends AbstractBundledLanguageTest {
 		assertBranch(ins(LSPC, "10 05"), CpuRegs.FlagKind.NEGATIVE, false);
 		assertBranch(ins(LSPC, "70 05"), CpuRegs.FlagKind.OVERFLOW, true);
 		assertBranch(ins(LSPC, "50 05"), CpuRegs.FlagKind.OVERFLOW, false);
+	}
+
+	@Test
+	public void bitOpsShiftsAndRmw6502() throws Exception {
+		Instruction and = ins(L6502, "29 0f");
+		CpuRegs r = regs(and);
+		assertEquals(PcodeOp.INT_AND, PcodeShapes.bitOpOn(and, r.acc()));
+		assertEquals(PcodeOp.INT_OR, PcodeShapes.bitOpOn(ins(L6502, "0d 00 90"), r.acc()));
+		assertEquals(PcodeOp.INT_XOR, PcodeShapes.bitOpOn(ins(L6502, "49 01"), r.acc()));
+		assertEquals(-1, PcodeShapes.bitOpOn(ins(L6502, "a9 01"), r.acc()));
+		assertEquals(-1, PcodeShapes.bitOpOn(ins(L6502, "69 01"), r.acc()));
+
+		assertTrue(PcodeShapes.shiftRightBy1(ins(L6502, "4a"), r.acc()));
+		assertFalse("memory LSR writes no A",
+			PcodeShapes.shiftRightBy1(ins(L6502, "46 12"), r.acc()));
+		assertFalse("ROR is not a plain shift",
+			PcodeShapes.shiftRightBy1(ins(L6502, "6a"), r.acc()));
+		assertFalse(PcodeShapes.shiftRightBy1(ins(L6502, "0a"), r.acc()));
+
+		assertEquals(Integer.valueOf(1), PcodeShapes.rmwIncrement(ins(L6502, "ee 00 90")));
+		assertEquals(Integer.valueOf(-1), PcodeShapes.rmwIncrement(ins(L6502, "c6 12")));
+		assertEquals(Integer.valueOf(1), PcodeShapes.rmwIncrement(ins(L6502, "fe 00 90")));
+		assertNull(PcodeShapes.rmwIncrement(ins(L6502, "e8")));
+		assertNull(PcodeShapes.rmwIncrement(ins(L6502, "8d 00 90")));
+		assertNull(PcodeShapes.rmwIncrement(ins(L6502, "0e 00 90")));
+	}
+
+	@Test
+	public void mosOperandsStackAndLoads6502() throws Exception {
+		assertEquals(MosOperands.StackOp.PUSH_A, MosOperands.stackOp(ins(L6502, "48")));
+		assertEquals(MosOperands.StackOp.PUSH_STATUS, MosOperands.stackOp(ins(L6502, "08")));
+		assertEquals(MosOperands.StackOp.PULL_A, MosOperands.stackOp(ins(L6502, "68")));
+		assertEquals(MosOperands.StackOp.PULL_STATUS, MosOperands.stackOp(ins(L6502, "28")));
+		assertEquals(MosOperands.StackOp.NONE, MosOperands.stackOp(ins(L6502, "60")));
+		assertEquals(MosOperands.StackOp.NONE, MosOperands.stackOp(ins(L6502, "9a")));
+		assertTrue(MosOperands.isSubroutineReturn(ins(L6502, "60")));
+		assertFalse(MosOperands.isSubroutineReturn(ins(L6502, "40")));
+		assertTrue(MosOperands.isInterruptReturn(ins(L6502, "40")));
+		assertEquals('A', MosOperands.loadedRegister(ins(L6502, "a9 01")));
+		assertEquals('X', MosOperands.loadedRegister(ins(L6502, "ae 00 90")));
+		assertEquals('Y', MosOperands.loadedRegister(ins(L6502, "b4 12")));
+		assertEquals(0, MosOperands.loadedRegister(ins(L6502, "aa")));
+		assertEquals(0, MosOperands.loadedRegister(ins(L6502, "69 01")));
+		assertEquals(Character.valueOf('A'), MosOperands.transferSource(ins(L6502, "aa"), 'X'));
+		assertNull(MosOperands.transferSource(ins(L6502, "aa"), 'A'));
+		assertTrue(MosOperands.copiesStackPointerInto(ins(L6502, "ba"), 'X'));
+		assertFalse(MosOperands.copiesStackPointerInto(ins(L6502, "aa"), 'X'));
+		assertTrue(MosOperands.incrementsBy(ins(L6502, "ca"), 'X', -1));
+		assertTrue(MosOperands.isBne(ins(L6502, "d0 05")));
+		assertTrue(MosOperands.isZnBranch(ins(L6502, "10 05")));
+		assertFalse(MosOperands.isZnBranch(ins(L6502, "90 05")));
+		assertTrue(MosOperands.znBranchTaken(ins(L6502, "10 05"), false, false));
+		assertEquals(Integer.valueOf(0), MosOperands.constantCarry(ins(L6502, "18")));
+		assertEquals(Integer.valueOf(1), MosOperands.constantCarry(ins(L6502, "38")));
+		assertNull(MosOperands.constantCarry(ins(L6502, "ea")));
+		assertTrue(MosOperands.writesMemory(ins(L6502, "8d 00 90")));
+		assertTrue(MosOperands.writesMemory(ins(L6502, "e6 12")));
+		assertFalse(MosOperands.writesMemory(ins(L6502, "0a")));
+		assertFalse(MosOperands.writesMemory(ins(L6502, "48")));
+		assertFalse(MosOperands.writesMemory(ins(L6502, "20 00 90")));
+		assertTrue(MosOperands.storesRegister(ins(L6502, "9d 00 90"), 'A'));
+		assertTrue("BRK is a computed jump", ins(L6502, "00").getFlowType().isComputed());
 	}
 }

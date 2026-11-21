@@ -921,12 +921,12 @@ public class SerialShiftBankSwitchStrategy extends AbstractRangeBankSwitchStrate
 		if ((original & 0x80) != 0) {
 			return true; // tier A: the first write is the unmodified byte, op-independent
 		}
-		String mnem = instr.getMnemonicString().toUpperCase(Locale.ROOT);
+		Integer step = PcodeShapes.rmwIncrement(instr);
 		int modified;
-		if (mnem.equals("INC")) {
+		if (step != null && step == 1) {
 			modified = (original + 1) & 0xFF;
 		}
-		else if (mnem.equals("DEC")) {
+		else if (step != null && step == -1) {
 			modified = (original - 1) & 0xFF;
 		}
 		else {
@@ -1050,11 +1050,13 @@ public class SerialShiftBankSwitchStrategy extends AbstractRangeBankSwitchStrate
 		switch (instr.getMnemonicString().toUpperCase(Locale.ROOT)) {
 			case "NOP", "CLC", "SEC", "CLD", "SED", "CLV":
 				return true;
-			case "INC", "DEC":
+			default:
+				Integer step = PcodeShapes.rmwIncrement(instr);
+				if (step == null || (step != 1 && step != -1)) {
+					return false;
+				}
 				Address target = MosOperands.plainAbsoluteTarget(instr);
 				return target != null && !inRange(target) && registerOffsetWritten(instr) == null;
-			default:
-				return false;
 		}
 	}
 
@@ -1092,7 +1094,7 @@ public class SerialShiftBankSwitchStrategy extends AbstractRangeBankSwitchStrate
 	 * strategy-match cache.
 	 */
 	private CountedLoop matchCountedLoopBranch(Program program, Instruction instr) {
-		if (!instr.getMnemonicString().equalsIgnoreCase("BNE")) {
+		if (!MosOperands.isBne(instr)) {
 			return null;
 		}
 		Address[] flows = instr.getFlows();
@@ -1113,8 +1115,9 @@ public class SerialShiftBankSwitchStrategy extends AbstractRangeBankSwitchStrate
 		if (dec == null) {
 			return null;
 		}
-		String decMnem = dec.getMnemonicString().toUpperCase(Locale.ROOT);
-		if (!decMnem.equals("DEX") && !decMnem.equals("DEY")) {
+		char counterReg = MosOperands.incrementsBy(dec, 'X', -1) ? 'X'
+			: MosOperands.incrementsBy(dec, 'Y', -1) ? 'Y' : 0; // DEX | DEY
+		if (counterReg == 0) {
 			return null;
 		}
 		Instruction bne = FlowEdges.nextFallThrough(listing, dec);
@@ -1133,7 +1136,7 @@ public class SerialShiftBankSwitchStrategy extends AbstractRangeBankSwitchStrate
 			return null;
 		}
 
-		char counterReg = decMnem.charAt(2); // 'X' | 'Y'
+
 		// The counter init may sit up to MAX_INTERVENING inert straight-line instructions before the
 		// head (grm-hsv.6: ultimaav f355 has INC $FD between LDX #5 and the loop). Only instructions
 		// that touch neither A, X, Y nor any register-range memory are skipped (isInertFiller).
@@ -1145,7 +1148,7 @@ public class SerialShiftBankSwitchStrategy extends AbstractRangeBankSwitchStrate
 				(skipped > 0 && FlowEdges.isControlFlowJoin(program, next, prev))) {
 				return null;
 			}
-			if (prev.getMnemonicString().equalsIgnoreCase("LD" + counterReg)) {
+			if (MosOperands.loadsInto(prev, counterReg)) {
 				counterInit = prev;
 				break;
 			}
@@ -1367,15 +1370,9 @@ public class SerialShiftBankSwitchStrategy extends AbstractRangeBankSwitchStrate
 	/** {@code LSR} in accumulator (implied) addressing -- zero operands, or a bare "A"
 	 *  operand representation, as opposed to {@code LSR <addr>} (memory RMW). */
 	private static boolean isLsrAccumulator(Instruction instr) {
-		if (!instr.getMnemonicString().equalsIgnoreCase("LSR")) {
-			return false;
-		}
-		if (instr.getNumOperands() == 0) {
-			return true;
-		}
-		String rep = instr.getDefaultOperandRepresentation(0);
-		return rep == null || rep.equalsIgnoreCase("A");
+		return MosOperands.isLsrAccumulator(instr);
 	}
+
 
 	// ------------------------------------------------------------------
 	// Field/byte helpers (same conventions as SelectDataBankSwitchStrategy)

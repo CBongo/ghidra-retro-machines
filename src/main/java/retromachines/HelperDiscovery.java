@@ -822,7 +822,7 @@ final class HelperDiscovery {
 			return true;
 		}
 		Instruction entry = program.getListing().getInstructionAt(second.entry());
-		if (entry != null && entry.getMnemonicString().equalsIgnoreCase("LD" + reg)) {
+		if (entry != null && MosOperands.loadsInto(entry, reg)) {
 			return true;
 		}
 		for (Instruction i : program.getListing().getInstructions(first.function().getBody(),
@@ -1184,9 +1184,8 @@ final class HelperDiscovery {
 			}
 			char[] state = inState.get(at);
 			char[] out = state.clone();
-			String mnemonic = instr.getMnemonicString();
 			for (int d = 0; d < 3; d++) {
-				Character source = transferSourceInto(mnemonic, regs.charAt(d));
+				Character source = MosOperands.transferSource(instr, regs.charAt(d));
 				if (source != null) {
 					out[d] = state[regs.indexOf(source)];
 				}
@@ -1226,23 +1225,6 @@ final class HelperDiscovery {
 	/** The abstract "defined inside this function" label of {@link #inboundRegisterOrigin}. */
 	private static final char LOCAL = 'L';
 
-	/**
-	 * The source register of a transfer that writes {@code dest} ({@code TXA}/{@code TYA} write
-	 * {@code A} from {@code X}/{@code Y}; {@code TAX}/{@code TAY} write {@code X}/{@code Y} from
-	 * {@code A}), or {@code null} when {@code mnem} is not such a transfer or does not write
-	 * {@code dest}. A small local duplicate of {@code StoredValueScanner}'s private
-	 * {@code transferSource} rather than a widened import: four lines, kept free to drift from
-	 * that one if either ever needs a transfer the other does not.
-	 */
-	private static Character transferSourceInto(String mnem, char dest) {
-		return switch (mnem) {
-			case "TAX" -> dest == 'X' ? 'A' : null;
-			case "TAY" -> dest == 'Y' ? 'A' : null;
-			case "TXA" -> dest == 'A' ? 'X' : null;
-			case "TYA" -> dest == 'A' ? 'Y' : null;
-			default -> null;
-		};
-	}
 
 	/**
 	 * Every instruction in {@code f} that ends a path through it: {@code RTS}/{@code RTI}
@@ -1269,8 +1251,10 @@ final class HelperDiscovery {
 		return exits;
 	}
 
+
 	/**
-	 * Step cap for {@link #constantStubLanding}'s walk. A stub is two to four instructions
+	 * Step cap for {@link #constantStubLanding}'s walk.
+ A stub is two to four instructions
 	 * (Punch-Out's longest is {@code LDA #imm / BNE / STA $0E / BNE}); the cap only stops a loop.
 	 */
 	private static final int MAX_STUB_STEPS = 12;
@@ -1423,11 +1407,10 @@ final class HelperDiscovery {
 		if (load == null || load.isFallThroughOverridden()) {
 			return null;
 		}
-		String mnem = load.getMnemonicString().toUpperCase(Locale.ROOT);
-		if (mnem.length() != 3 || !mnem.startsWith("LD") || "AXY".indexOf(mnem.charAt(2)) < 0) {
+		char reg = MosOperands.loadedRegister(load);
+		if (reg == 0) {
 			return null;
 		}
-		char reg = mnem.charAt(2);
 		Address cell = HelperArgumentRecovery.argumentReloadSource(load, reg);
 		if (cell == null || StackFloor.mayAliasStack(program, cell)) {
 			return null;
@@ -1442,14 +1425,13 @@ final class HelperDiscovery {
 			return null;
 		}
 		FlowType flow = branch.getFlowType();
-		String bm = branch.getMnemonicString().toUpperCase(Locale.ROOT);
 		Address landingSite;
 		boolean skippable;
 		if (switchResults.containsKey(afterLoad)) {
 			landingSite = afterLoad; // falls straight into the write
 			skippable = false;
 		}
-		else if (bm.equals("BNE") && flow.isConditional() && !flow.isComputed() &&
+		else if (MosOperands.isBne(branch) && flow.isConditional() && !flow.isComputed() &&
 			branch.getFlows().length == 1 && !branch.isFallThroughOverridden()) {
 			landingSite = branch.getFlows()[0];
 			skippable = true;
@@ -1457,7 +1439,7 @@ final class HelperDiscovery {
 				return null;
 			}
 		}
-		else if (bm.equals("JMP") && flow.isJump() && flow.isUnConditional() &&
+		else if (flow.isJump() && flow.isUnConditional() &&
 			!flow.isComputed() && branch.getFlows().length == 1) {
 			landingSite = branch.getFlows()[0];
 			skippable = false;
@@ -1540,7 +1522,9 @@ final class HelperDiscovery {
 			String mnem = instr.getMnemonicString().toUpperCase(Locale.ROOT);
 			FlowType flow = instr.getFlowType();
 			Address next = instr.getFallThrough();
-			if (mnem.equals("LDA") || mnem.equals("LDX") || mnem.equals("LDY")) {
+			char loaded = MosOperands.loadedRegister(instr);
+
+			if (loaded != 0) {
 				if (!MosOperands.isImmediate(instr)) {
 					return null;
 				}
@@ -1548,9 +1532,9 @@ final class HelperDiscovery {
 				if (imm == null || next == null) {
 					return null;
 				}
-				switch (mnem) {
-					case "LDA" -> a = imm;
-					case "LDX" -> x = imm;
+				switch (loaded) {
+					case 'A' -> a = imm;
+					case 'X' -> x = imm;
 					default -> y = imm;
 				}
 				flagValue = imm;
@@ -1560,21 +1544,15 @@ final class HelperDiscovery {
 				!flow.isTerminal() && next != null) {
 				pc = next;
 			}
-			else if (mnem.equals("JMP") && flow.isJump() && flow.isUnConditional() &&
+			else if (flow.isJump() && flow.isUnConditional() &&
 				!flow.isComputed() && instr.getFlows().length == 1) {
 				pc = instr.getFlows()[0];
 			}
-			else if ((mnem.equals("BEQ") || mnem.equals("BNE") || mnem.equals("BMI") ||
-				mnem.equals("BPL")) && flow.isConditional() && !flow.isComputed() &&
+			else if (MosOperands.isZnBranch(instr) && flow.isConditional() && !flow.isComputed() &&
 				instr.getFlows().length == 1 && flagValue != null) {
 				boolean z = (flagValue & 0xFF) == 0;
 				boolean n = (flagValue & 0x80) != 0;
-				boolean taken = switch (mnem) {
-					case "BEQ" -> z;
-					case "BNE" -> !z;
-					case "BMI" -> n;
-					default -> !n;
-				};
+				boolean taken = MosOperands.znBranchTaken(instr, z, n);
 				pc = taken ? instr.getFlows()[0] : instr.getMaxAddress().next();
 				if (pc == null) {
 					return null;

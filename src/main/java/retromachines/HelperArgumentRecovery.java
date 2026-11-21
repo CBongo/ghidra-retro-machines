@@ -1442,15 +1442,15 @@ final class HelperArgumentRecovery {
 			}
 			boolean modelled = false;
 			if (reg == 'A') {
-				switch (instr.getMnemonicString()) {
-					case "PHA" -> {
+				switch (MosOperands.stackOp(instr)) {
+					case PUSH_A -> {
 						if (straightLine) {
 							saved.push(holdsArgument);
 						}
 						forgetCellsThePushMayHaveHit(program, argumentCells);
 						modelled = true;
 					}
-					case "PLA" -> {
+					case PULL_A -> {
 						if (straightLine && !saved.isEmpty()) {
 							holdsArgument = saved.pop();
 						}
@@ -1463,7 +1463,7 @@ final class HelperArgumentRecovery {
 						}
 						modelled = true;
 					}
-					case "PHP" -> {
+					case PUSH_STATUS -> {
 						// Modelled only to keep the DEPTH right, so an interleaved status push
 						// cannot make a later PLA pop the wrong byte. A status byte is never the
 						// argument.
@@ -1473,7 +1473,7 @@ final class HelperArgumentRecovery {
 						forgetCellsThePushMayHaveHit(program, argumentCells);
 						modelled = true;
 					}
-					case "PLP" -> {
+					case PULL_STATUS -> {
 						if (straightLine && !saved.isEmpty()) {
 							saved.pop();
 						}
@@ -1567,7 +1567,9 @@ final class HelperArgumentRecovery {
 	 * the latch, never a false proof.
 	 */
 	private static boolean copiesArgument(Instruction instr, Register register, char reg) {
-		if ("PH".concat(String.valueOf(reg)).equals(instr.getMnemonicString())) {
+		if (MosOperands.pushesByte(instr) &&
+			PcodeShapes.pushedRegister(instr) != null &&
+			PcodeShapes.pushedRegister(instr).equals(register)) {
 			return false;
 		}
 		Character stored = MosOperands.storeRegister(instr);
@@ -2043,21 +2045,23 @@ final class HelperArgumentRecovery {
 			if (instr == null || instr.getFlowType().isCall() || instr.getFlows().length > 0) {
 				return null;
 			}
-			String mnem = instr.getMnemonicString().toUpperCase(Locale.ROOT);
-			boolean push = mnem.equals("PHA") || mnem.equals("PHP");
-			boolean pull = mnem.equals("PLA") || mnem.equals("PLP");
+			MosOperands.StackOp stackOp = MosOperands.stackOp(instr);
+			boolean push = stackOp == MosOperands.StackOp.PUSH_A ||
+				stackOp == MosOperands.StackOp.PUSH_STATUS;
+			boolean pull = stackOp == MosOperands.StackOp.PULL_A ||
+				stackOp == MosOperands.StackOp.PULL_STATUS;
 			if (!push && mayWriteStackPage(instr)) {
 				return null;
 			}
 			if (!push && !pull && writesStackPointer(instr, stackPointer)) {
 				return null;
 			}
-			if (mnem.equals("PHA") && aIsArgument) {
+			if (stackOp == MosOperands.StackOp.PUSH_A && aIsArgument) {
 				argumentPushes.add(instr.getMinAddress());
 			}
 			if (MosOperands.writesRegister(instr, a)) {
 				aIsArgument = false;
-				Instruction pha = mnem.equals("LDA") && isStackPageIndexedAccess(instr)
+				Instruction pha = MosOperands.loadsInto(instr, 'A') && isStackPageIndexedAccess(instr)
 						? StoredValueScanner.stackRelativeReloadPush(program, instr, StoredValueScanner.Hooks.INERT,
 							entry, MAX_RELOAD_WALK)
 						: null;
@@ -2065,13 +2069,14 @@ final class HelperArgumentRecovery {
 					current = ReloadTransform.IDENTITY;
 				}
 				else {
-					current = current == null ? null : applyToReloaded(current, instr, mnem, carry);
+					current = current == null ? null : applyToReloaded(current, instr, carry);
 				}
 			}
-			if (mnem.equals("CLC")) {
+			Integer constantCarry = MosOperands.constantCarry(instr);
+			if (constantCarry != null && constantCarry == 0) {
 				carry = 0;
 			}
-			else if (mnem.equals("SEC")) {
+			else if (constantCarry != null && constantCarry == 1) {
 				carry = 1;
 			}
 			else if (carryFlag == null || MosOperands.writesRegister(instr, carryFlag)) {
@@ -2096,15 +2101,19 @@ final class HelperArgumentRecovery {
 	/** One step of {@link #argumentReloadTransform}'s affine tracking, or {@code null} when
 	 *  {@code instr} is not one of the modelled accumulator transforms. */
 	private static ReloadTransform applyToReloaded(ReloadTransform t, Instruction instr,
-			String mnem, Integer carry) {
-		switch (mnem) {
-			case "ASL" -> {
-				if (MosOperands.isAccumulatorForm(instr) && t.shift() < 7) {
+			Integer carry) {
+		// ADC stays a mnemonic test: its p-code branches on the decimal flag (and the stock NES
+		// language has carry-in bugs, grm-o9k/grm-ef46), so no single INT_ADD shape exists.
+		boolean adc = "ADC".equalsIgnoreCase(instr.getMnemonicString());
+		switch (adc ? 1 : MosOperands.isAslAccumulator(instr) ? 2
+			: MosOperands.isOrOnAccumulator(instr) ? 3 : 0) {
+			case 2 -> {
+				if (t.shift() < 7) {
 					return new ReloadTransform(t.shift() + 1, (t.add() << 1) & 0xFF);
 				}
 				return null;
 			}
-			case "ADC" -> {
+			case 1 -> {
 				Integer imm = MosOperands.isImmediate(instr)
 						? MosOperands.immediateOperandValue(instr) : null;
 				if (imm == null || carry == null) {
@@ -2112,7 +2121,7 @@ final class HelperArgumentRecovery {
 				}
 				return new ReloadTransform(t.shift(), (t.add() + imm + carry) & 0xFF);
 			}
-			case "ORA" -> {
+			case 3 -> {
 				Integer imm = MosOperands.isImmediate(instr)
 						? MosOperands.immediateOperandValue(instr) : null;
 				int lowBits = (1 << t.shift()) - 1;
@@ -2357,20 +2366,20 @@ final class HelperArgumentRecovery {
 				SaveSlotForwarding.SlotWrite.NONE) {
 				return false;
 			}
-			String mnem = instr.getMnemonicString();
-			if (reg == 'A' && mnem.equals("PHA")) {
+			MosOperands.StackOp stackOp = MosOperands.stackOp(instr);
+			if (reg == 'A' && stackOp == MosOperands.StackOp.PUSH_A) {
 				saved.push(holds);
 			}
-			else if (reg == 'A' && mnem.equals("PLA")) {
+			else if (reg == 'A' && stackOp == MosOperands.StackOp.PULL_A) {
 				if (saved.isEmpty()) {
 					return false;
 				}
 				holds = saved.pop();
 			}
-			else if (mnem.equals("PHP")) {
+			else if (stackOp == MosOperands.StackOp.PUSH_STATUS) {
 				saved.push(Boolean.FALSE);
 			}
-			else if (mnem.equals("PLP")) {
+			else if (stackOp == MosOperands.StackOp.PULL_STATUS) {
 				if (saved.isEmpty()) {
 					return false;
 				}
@@ -2403,9 +2412,10 @@ final class HelperArgumentRecovery {
 	// Package-private (not private): SaveRestoreTrampolines.restoresEntryBank also calls
 	// this (grm-shnf step 3).
 	static Address argumentReloadSource(Instruction instr, char reg) {
-		if (!("LD" + reg).equals(instr.getMnemonicString())) {
+		if (!MosOperands.loadsInto(instr, reg)) {
 			return null;
 		}
+
 		return MosOperands.plainAbsoluteTarget(instr);
 	}
 

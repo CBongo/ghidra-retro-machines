@@ -15,12 +15,12 @@
  */
 package retromachines;
 
-import java.util.Set;
 
 import ghidra.program.model.address.Address;
 import ghidra.program.model.lang.Register;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.mem.MemoryAccessException;
+import ghidra.program.model.pcode.PcodeOp;
 import ghidra.program.model.scalar.Scalar;
 import ghidra.program.model.symbol.Reference;
 
@@ -34,11 +34,6 @@ final class MosOperands {
 
 	private MosOperands() {
 	}
-
-	private static final Set<String> A_MODIFIERS = Set.of("LDA", "TXA", "TYA", "PLA", "ADC", "SBC",
-		"AND", "ORA", "EOR", "ASL", "LSR", "ROL", "ROR");
-	private static final Set<String> X_MODIFIERS = Set.of("LDX", "TAX", "TSX", "INX", "DEX");
-	private static final Set<String> Y_MODIFIERS = Set.of("LDY", "TAY", "INY", "DEY");
 
 	/**
 	 * Whether {@code instr} uses the accumulator addressing mode ({@code ASL A} and friends)
@@ -145,29 +140,237 @@ final class MosOperands {
 		});
 	}
 
-	/**
-	 * Whether {@code mnem} (already upper-cased, from {@code instr}) is in {@code modifiers}
-	 * AND actually writes the register. ASL/LSR/ROL/ROR are in {@link #A_MODIFIERS} by
-	 * mnemonic but only write A in accumulator form; {@code ROR $F0} rotates memory and leaves A
-	 * alone (grm-jmsm: tmnt's {@code STA $21 / SEC / ROR $F0 / STA $FFFF} helper bodies).
-	 */
-	static boolean modifiesRegister(Set<String> modifiers, String mnem,
-			Instruction instr) {
-		if (!modifiers.contains(mnem)) {
-			return false;
-		}
-		return !SHIFT_MNEMONICS.contains(mnem) || isAccumulatorForm(instr);
+	// ------------------------------------------------------------------
+	// p-code-backed replacements for the 6502 mnemonic tests (grm-jjuc W1)
+	// ------------------------------------------------------------------
+
+	private static Register regOf(Instruction instr, char reg) {
+		CpuRegs regs = CpuRegs.of(instr.getProgram().getLanguage());
+		return switch (reg) {
+			case 'A' -> regs.acc();
+			case 'X' -> regs.x();
+			case 'Y' -> regs.y();
+			default -> null;
+		};
 	}
 
-	private static final Set<String> SHIFT_MNEMONICS = Set.of("ASL", "LSR", "ROL", "ROR");
+	/**
+	 * Whether {@code instr} loads {@code reg} ({@code 'A'}/{@code 'X'}/{@code 'Y'}) from memory or a
+	 * constant ({@code LDA}/{@code LDX}/{@code LDY}, any addressing mode).
+	 */
+	static boolean loadsInto(Instruction instr, char reg) {
+		return loadsFromMemoryInto(instr, reg) || isImmediateLoadInto(instr, reg);
+	}
 
-	static Set<String> registerModifiers(char reg) {
-		return switch (reg) {
-			case 'A' -> A_MODIFIERS;
-			case 'X' -> X_MODIFIERS;
-			case 'Y' -> Y_MODIFIERS;
-			default -> Set.of();
-		};
+	/** Whether {@code instr} loads {@code reg} from a memory operand (not an immediate). */
+	static boolean loadsFromMemoryInto(Instruction instr, char reg) {
+		Register r = regOf(instr, reg);
+		return r != null && r.equals(PcodeShapes.loadDestination(instr));
+	}
+
+	/** Whether {@code instr} loads a constant into {@code reg} ({@code LDA #imm}). */
+	static boolean isImmediateLoadInto(Instruction instr, char reg) {
+		Register r = regOf(instr, reg);
+		return r != null && PcodeShapes.constantInto(instr, r) != null;
+	}
+
+	/** The register ({@code 'A'}/{@code 'X'}/{@code 'Y'}) {@code instr} loads from memory or a constant, or 0. */
+	static char loadedRegister(Instruction instr) {
+		Register dst = PcodeShapes.loadDestination(instr);
+		for (char c : new char[] { 'A', 'X', 'Y' }) {
+			Register r = regOf(instr, c);
+			if (r != null && (r.equals(dst) || PcodeShapes.constantInto(instr, r) != null)) {
+				return c;
+			}
+		}
+		return 0;
+	}
+
+	/** Whether {@code instr} is a plain store of {@code reg} ({@code STA}/{@code STX}/{@code STY}). */
+	static boolean storesRegister(Instruction instr, char reg) {
+		Character stored = storeRegister(instr);
+		return stored != null && stored == reg;
+	}
+
+	/** The constant {@code instr} loads into {@code reg} ({@code LDX #imm}), or null. */
+	static Long constantLoadedInto(Instruction instr, char reg) {
+		Register r = regOf(instr, reg);
+		return r == null ? null : PcodeShapes.constantInto(instr, r);
+	}
+
+	/** Whether {@code instr} loads any of A, X, Y from memory or a constant. */
+	static boolean loadsAnyRegister(Instruction instr) {
+		return loadsInto(instr, 'A') || loadsInto(instr, 'X') || loadsInto(instr, 'Y');
+	}
+
+	/**
+	 * The register ({@code 'A'}/{@code 'X'}/{@code 'Y'}) {@code reg} is plainly copied from by a
+	 * register transfer ({@code TAX}, {@code TAY}, {@code TXA}, {@code TYA}), or null.
+	 */
+	static Character transferSource(Instruction instr, char reg) {
+		Register dst = regOf(instr, reg);
+		if (dst == null) {
+			return null;
+		}
+		Register src = PcodeShapes.copySource(instr, dst);
+		for (char c : new char[] { 'A', 'X', 'Y' }) {
+			if (c != reg && src != null && src.equals(regOf(instr, c))) {
+				return c;
+			}
+		}
+		return null;
+	}
+
+	/** Net stack-pointer change in bytes (0 when it is not a constant). */
+	private static int stackDelta(Instruction instr) {
+		return PcodeShapes.netStackDelta(instr, CpuRegs.of(instr.getProgram().getLanguage()))
+			.orElse(0);
+	}
+
+	/** Whether {@code instr} sets {@code reg} to {@code reg + k} ({@code INX} = +1, {@code DEY} = -1). */
+	static boolean incrementsBy(Instruction instr, char reg, int k) {
+		Register r = regOf(instr, reg);
+		Integer got = r == null ? null : PcodeShapes.incrementOf(instr, r);
+		return got != null && got == k;
+	}
+
+	/** Whether {@code instr} copies the stack pointer into {@code reg} ({@code TSX}). */
+	static boolean copiesStackPointerInto(Instruction instr, char reg) {
+		Register dst = regOf(instr, reg);
+		Register src = dst == null ? null : PcodeShapes.copySource(instr, dst);
+		return src != null &&
+			CpuRegs.of(instr.getProgram().getLanguage()).spViews().contains(src);
+	}
+
+	/** The one-byte stack operations the bank-switch walks model, read off the p-code's stack effect. */
+	enum StackOp {
+		/** {@code PHA}: pushes the accumulator. */
+		PUSH_A,
+		/** {@code PLA}: pops into the accumulator. */
+		PULL_A,
+		/** {@code PHP}: pushes a computed status byte. */
+		PUSH_STATUS,
+		/** {@code PLP}: pops the status byte into the flags. */
+		PULL_STATUS,
+		/** Anything else (including {@code PHX}/{@code PLX}, which the walks never modelled). */
+		NONE
+	}
+
+	/** Classifies {@code instr} as one of the {@link StackOp}s by its measured stack effect. */
+	static StackOp stackOp(Instruction instr) {
+		int delta = stackDelta(instr);
+		if (delta == -1) {
+			Register pushed = PcodeShapes.pushedRegister(instr);
+			if (pushed == null) {
+				return StackOp.PUSH_STATUS;
+			}
+			return pushed.equals(regOf(instr, 'A')) ? StackOp.PUSH_A : StackOp.NONE;
+		}
+		if (delta == 1) {
+			Register pulled = PcodeShapes.pulledRegister(instr);
+			if (pulled == null) {
+				return StackOp.PULL_STATUS;
+			}
+			return pulled.equals(regOf(instr, 'A')) ? StackOp.PULL_A : StackOp.NONE;
+		}
+		return StackOp.NONE;
+	}
+
+	/** Whether {@code instr} pushes exactly one byte ({@code PHA}, {@code PHP}). */
+	static boolean pushesByte(Instruction instr) {
+		return stackDelta(instr) == -1;
+	}
+
+	/** Whether {@code instr} pops exactly one byte ({@code PLA}, {@code PLP}). */
+	static boolean popsByte(Instruction instr) {
+		return stackDelta(instr) == 1;
+	}
+
+	/** Whether {@code instr} pushes the accumulator ({@code PHA}). */
+	static boolean pushesAccumulator(Instruction instr) {
+		return pushesByte(instr) && CpuRegs.of(instr.getProgram().getLanguage()).acc()
+			.equals(PcodeShapes.pushedRegister(instr));
+	}
+
+	/** Whether {@code instr} pops into the accumulator ({@code PLA}). */
+	static boolean popsAccumulator(Instruction instr) {
+		return popsByte(instr) && CpuRegs.of(instr.getProgram().getLanguage()).acc()
+			.equals(PcodeShapes.pulledRegister(instr));
+	}
+
+	/** Whether {@code instr} is an interrupt return that pops status and a 2-byte address ({@code RTI}). */
+	static boolean isInterruptReturn(Instruction instr) {
+		return PcodeShapes.isReturnOp(instr) && stackDelta(instr) == 3;
+	}
+
+	/** Whether {@code instr} returns popping a 2-byte address ({@code RTS}, not {@code RTI}). */
+	static boolean isSubroutineReturn(Instruction instr) {
+		return PcodeShapes.isReturnOp(instr) && stackDelta(instr) == 2;
+	}
+
+	/** Whether {@code instr} branches on the Z or N flag ({@code BEQ}/{@code BNE}/{@code BMI}/{@code BPL}). */
+	static boolean isZnBranch(Instruction instr) {
+		PcodeShapes.FlagBranch fb = PcodeShapes.branchOnFlag(instr);
+		return fb != null && (fb.kind() == CpuRegs.FlagKind.ZERO ||
+			fb.kind() == CpuRegs.FlagKind.NEGATIVE);
+	}
+
+	/** Whether Z-or-N branch {@code branch} is taken when Z is {@code z} and N is {@code n}. */
+	static boolean znBranchTaken(Instruction branch, boolean z, boolean n) {
+		PcodeShapes.FlagBranch fb = PcodeShapes.branchOnFlag(branch);
+		boolean flag = fb.kind() == CpuRegs.FlagKind.ZERO ? z : n;
+		return flag == fb.takenWhenSet();
+	}
+
+	/** Whether {@code instr} branches on Z, taken when it is clear ({@code BNE}). */
+	static boolean isBne(Instruction instr) {
+		PcodeShapes.FlagBranch fb = PcodeShapes.branchOnFlag(instr);
+		return fb != null && fb.kind() == CpuRegs.FlagKind.ZERO && !fb.takenWhenSet();
+	}
+
+	/** Whether {@code instr} branches on Z, taken when it is set ({@code BEQ}). */
+	static boolean isBeq(Instruction instr) {
+		PcodeShapes.FlagBranch fb = PcodeShapes.branchOnFlag(instr);
+		return fb != null && fb.kind() == CpuRegs.FlagKind.ZERO && fb.takenWhenSet();
+	}
+
+	/** 0 or 1 when {@code instr} sets the carry flag to a constant ({@code CLC}/{@code SEC}), else null. */
+	static Integer constantCarry(Instruction instr) {
+		Long v = PcodeShapes.constantInto(instr,
+			CpuRegs.of(instr.getProgram().getLanguage()).carry().reg());
+		return v == null ? null : (int) (long) v;
+	}
+
+	/** Whether {@code instr} computes {@code A := A & x} ({@code AND}, any operand mode). */
+	static boolean isAndOnAccumulator(Instruction instr) {
+		return PcodeShapes.bitOpOn(instr,
+			CpuRegs.of(instr.getProgram().getLanguage()).acc()) == PcodeOp.INT_AND;
+	}
+
+	/** Whether {@code instr} computes {@code A := A | x} ({@code ORA}, any operand mode). */
+	static boolean isOrOnAccumulator(Instruction instr) {
+		return PcodeShapes.bitOpOn(instr,
+			CpuRegs.of(instr.getProgram().getLanguage()).acc()) == PcodeOp.INT_OR;
+	}
+
+	/** Whether {@code instr} is the accumulator form of {@code LSR} ({@code A := A >> 1}). */
+	static boolean isLsrAccumulator(Instruction instr) {
+		return PcodeShapes.shiftRightBy1(instr,
+			CpuRegs.of(instr.getProgram().getLanguage()).acc());
+	}
+
+	/** Whether {@code instr} is the accumulator form of {@code ASL} ({@code A := A << 1}). */
+	static boolean isAslAccumulator(Instruction instr) {
+		return PcodeShapes.shiftLeftBy1(instr,
+			CpuRegs.of(instr.getProgram().getLanguage()).acc());
+	}
+
+	/**
+	 * Whether {@code instr} writes any non-stack memory ({@code STA}/{@code STX}/{@code STY}/
+	 * {@code STZ}, a memory read-modify-write, {@code TSB}/{@code TRB}).
+	 */
+	static boolean writesMemory(Instruction instr) {
+		return PcodeShapes.writesMemory(instr);
 	}
 
 	static boolean isImmediate(Instruction instr) {

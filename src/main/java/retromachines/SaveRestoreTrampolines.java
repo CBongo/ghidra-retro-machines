@@ -247,9 +247,9 @@ final class SaveRestoreTrampolines {
 			}
 
 			boolean modelled = true;
-			switch (instr.getMnemonicString().toUpperCase(Locale.ROOT)) {
-				case "PHA" -> saved.push(a);
-				case "PLA" -> {
+			switch (MosOperands.stackOp(instr)) {
+				case PUSH_A -> saved.push(a);
+				case PULL_A -> {
 					if (saved.isEmpty()) {
 						return null; // popping the caller's frame, or a depth this walk lost
 					}
@@ -257,8 +257,8 @@ final class SaveRestoreTrampolines {
 				}
 				// PHP/PLP are modelled ONLY to keep the depth honest, so an interleaved status
 				// push cannot make a later PLA pop the wrong byte. A status byte is never a bank.
-				case "PHP" -> saved.push(Holds.NO);
-				case "PLP" -> {
+				case PUSH_STATUS -> saved.push(Holds.NO);
+				case PULL_STATUS -> {
 					if (saved.isEmpty()) {
 						return null;
 					}
@@ -447,24 +447,23 @@ final class SaveRestoreTrampolines {
 			if (instr == null) {
 				return null;
 			}
-			String mnemonic = instr.getMnemonicString().toUpperCase(Locale.ROOT);
-			if (mnemonic.equals("RTS")) {
+			if (MosOperands.isSubroutineReturn(instr)) {
 				if (!saved.isEmpty() || lastCommit.isEmpty() || source == null) {
 					return null;
 				}
 				return pairedClaim(mirrors, source, lastCommit, pairings);
 			}
 			boolean modelled = true;
-			switch (mnemonic) {
-				case "PHA" -> saved.push(a);
-				case "PLA" -> {
+			switch (MosOperands.stackOp(instr)) {
+				case PUSH_A -> saved.push(a);
+				case PULL_A -> {
 					if (saved.isEmpty()) {
 						return null;
 					}
 					a = saved.pop();
 				}
-				case "PHP" -> saved.push(Held.NO);
-				case "PLP" -> {
+				case PUSH_STATUS -> saved.push(Held.NO);
+				case PULL_STATUS -> {
 					if (saved.isEmpty()) {
 						return null;
 					}
@@ -503,8 +502,9 @@ final class SaveRestoreTrampolines {
 				}
 				Held newA = null;
 				Held newX = null;
-				if (mnemonic.equals("LDA") || mnemonic.equals("LDX")) {
-					char reg = mnemonic.charAt(2);
+				char loadedReg = MosOperands.loadedRegister(instr);
+				if (loadedReg == 'A' || loadedReg == 'X') {
+					char reg = loadedReg;
 					Address from = argumentReloadSource(instr, reg);
 					Held loaded = Held.NO;
 					if (from != null && !sawMechanismWrite && isLiveBankMirror(mirrors, from)) {
@@ -520,7 +520,7 @@ final class SaveRestoreTrampolines {
 						newX = loaded;
 					}
 				}
-				else if (mnemonic.equals("INX")) {
+				else if (MosOperands.incrementsBy(instr, 'X', 1)) {
 					newX = x.entry() ? new Held(true, x.source(), x.plus() + 1) : Held.NO;
 				}
 				else {
@@ -688,18 +688,18 @@ final class SaveRestoreTrampolines {
 			if (instr == null) {
 				return false;
 			}
-			String mnemonic = instr.getMnemonicString().toUpperCase(Locale.ROOT);
-			switch (mnemonic) {
-				case "RTS" -> {
-					return depth == 0;
-				}
-				case "PHA", "PHP" -> depth++;
-				case "PLA", "PLP" -> {
+			if (MosOperands.isSubroutineReturn(instr)) {
+				return depth == 0;
+			}
+			switch (MosOperands.stackOp(instr)) {
+				case PUSH_A, PUSH_STATUS -> depth++;
+				case PULL_A, PULL_STATUS -> {
 					if (depth == 0) {
 						return false;
 					}
 					depth--;
 				}
+
 				default -> {
 					if (instr.getFlowType().isCall() || switchSites.contains(instr.getMinAddress()) ||
 						LocalStoreForwarding.writesMemory(instr) ||

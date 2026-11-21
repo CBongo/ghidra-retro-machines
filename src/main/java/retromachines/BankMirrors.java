@@ -1282,8 +1282,6 @@ public final class BankMirrors {
 
 		private void walkFromMechanismWrite(Program program, Listing listing, Instruction store,
 				char reg, Set<Address> switchSites) {
-			String storeMnem = "ST" + reg;
-			String loadMnem = "LD" + reg;
 			// The stores seen on THIS walk, retyped wholesale if the walk turns out to have been
 			// carrying a read-back rather than a bank being committed (see below).
 			List<Cell> storedOnThisWalk = new ArrayList<>();
@@ -1310,9 +1308,7 @@ public final class BankMirrors {
 				if (loadedACell && FlowEdges.isControlFlowJoin(program, cur, prev)) {
 					return;
 				}
-				String mnem = prev.getMnemonicString().toUpperCase(Locale.ROOT);
-
-				if (mnem.equals(storeMnem)) {
+				if (MosOperands.storesRegister(prev, reg)) {
 					Long offset = writableCellOffset(program, prev);
 					if (offset != null) {
 						Cell cell = cells.computeIfAbsent(offset, k -> new Cell());
@@ -1324,7 +1320,7 @@ public final class BankMirrors {
 					continue;
 				}
 
-				if (mnem.equals(loadMnem) && !MosOperands.isImmediate(prev)) {
+				if (MosOperands.loadsInto(prev, reg) && !MosOperands.isImmediate(prev)) {
 					Address target = MosOperands.plainAbsoluteTarget(prev);
 					if (target != null && normalizedOffset(target) != null &&
 						romIdentifying.contains(normalizedOffset(target))) {
@@ -1413,8 +1409,6 @@ public final class BankMirrors {
 				}
 				char reg = entry.getValue();
 				AddressSetView helperBody = helperBodies.get(entry.getKey());
-				String loadMnem = "LD" + reg;
-
 				Instruction cur = call;
 				for (int i = 0; i < MAX_BACKWARD_SCAN; i++) {
 					Instruction prev = listing.getInstructionBefore(cur.getMinAddress());
@@ -1423,8 +1417,7 @@ public final class BankMirrors {
 						prev.getFlowType().isCall()) {
 						break;
 					}
-					String mnem = prev.getMnemonicString().toUpperCase(Locale.ROOT);
-					if (mnem.equals(loadMnem)) {
+					if (MosOperands.loadsInto(prev, reg)) {
 						if (!MosOperands.isImmediate(prev)) {
 							Long offset = writableCellOffset(program, prev);
 							if (offset != null) {
@@ -1511,13 +1504,8 @@ public final class BankMirrors {
 			}
 			Listing listing = program.getListing();
 			for (Instruction load : listing.getInstructions(true)) {
-				String mnem = load.getMnemonicString().toUpperCase(Locale.ROOT);
-				if (mnem.length() != 3 || !mnem.startsWith("LD") ||
-					MosOperands.isImmediate(load)) {
-					continue;
-				}
-				char reg = mnem.charAt(2);
-				if (reg != 'A' && reg != 'X' && reg != 'Y') {
+				char reg = MosOperands.loadedRegister(load);
+				if (reg == 0 || MosOperands.isImmediate(load)) {
 					continue;
 				}
 				Long from = normalizedOffset(MosOperands.plainAbsoluteTarget(load));
@@ -1532,7 +1520,6 @@ public final class BankMirrors {
 		 *  that stashes it, stopping at anything that could have changed {@code reg} on the way. */
 		private void walkToCopyDestination(Program program, Listing listing, Instruction load,
 				char reg) {
-			String storeMnem = "ST" + reg;
 			Instruction cur = load;
 			for (int i = 0; i < MAX_BACKWARD_SCAN; i++) {
 				Address fallThrough = cur.getFallThrough();
@@ -1544,7 +1531,8 @@ public final class BankMirrors {
 					next.getFlowType().isCall()) {
 					return;
 				}
-				if (next.getMnemonicString().toUpperCase(Locale.ROOT).equals(storeMnem)) {
+				if (MosOperands.storesRegister(next, reg)) {
+
 					Long offset = writableCellOffset(program, next);
 					if (offset != null) {
 						Cell cell = cells.computeIfAbsent(offset, k -> new Cell());

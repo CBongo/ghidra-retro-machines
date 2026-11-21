@@ -258,7 +258,7 @@ final class BankStackBrackets {
 			if (instr == null) {
 				return null;
 			}
-			String mnem = instr.getMnemonicString().toUpperCase(Locale.ROOT);
+			String mnem = shapeKey(instr);
 			boolean clcBefore = prevClc;
 			prevClc = false;
 			Integer immBefore = lastImmA;
@@ -395,16 +395,11 @@ final class BankStackBrackets {
 					}
 					else if (instr.getFlowType().isConditional() && !instr.getFlowType().isComputed() &&
 						instr.getFlows().length == 1 && immBefore != null) {
-						Boolean taken = switch (mnem) {
-							case "BNE" -> immBefore != 0;
-							case "BEQ" -> immBefore == 0;
-							case "BPL" -> immBefore < 0x80;
-							case "BMI" -> immBefore >= 0x80;
-							default -> null;
-						};
-						if (taken == null) {
+						if (!MosOperands.isZnBranch(instr)) {
 							return null;
 						}
+						boolean taken = MosOperands.znBranchTaken(instr, immBefore == 0,
+							immBefore >= 0x80);
 						next = taken ? instr.getFlows()[0] : instr.getFallThrough();
 					}
 					else if (instr.getFlows().length > 0) {
@@ -428,7 +423,53 @@ final class BankStackBrackets {
 		return null;
 	}
 
+	/**
+	 * The mnemonic-shaped key {@link #shapeAt}'s switch dispatches on, derived from the
+	 * instruction's p-code effect (stack op, constant carry, memory read-modify-write, register
+	 * load, register store) rather than its mnemonic; {@code "ADC"} stays a mnemonic test because
+	 * its p-code branches on the decimal flag (and stock NES carry-in is wrong, grm-o9k).
+	 * Anything the walk does not model keys to the empty string.
+	 */
+	private static String shapeKey(Instruction instr) {
+		if (MosOperands.isSubroutineReturn(instr)) {
+			return "RTS";
+		}
+		switch (MosOperands.stackOp(instr)) {
+			case PUSH_A:
+				return "PHA";
+			case PUSH_STATUS:
+				return "PHP";
+			case PULL_A:
+				return "PLA";
+			case PULL_STATUS:
+				return "PLP";
+			default:
+				break;
+		}
+		Integer carry = MosOperands.constantCarry(instr);
+		if (carry != null && carry == 0) {
+			return "CLC";
+		}
+		if ("ADC".equalsIgnoreCase(instr.getMnemonicString())) {
+			return "ADC";
+		}
+		Integer rmw = PcodeShapes.rmwIncrement(instr);
+		if (rmw != null && rmw == 1) {
+			return "INC";
+		}
+		if (rmw != null && rmw == -1) {
+			return "DEC";
+		}
+		char loaded = MosOperands.loadedRegister(instr);
+		if (loaded != 0) {
+			return "LD" + loaded;
+		}
+		Character stored = MosOperands.storeRegister(instr);
+		return stored == null ? "" : "ST" + stored;
+	}
+
 	private static Shape cachedShape(Context c, Address entry) {
+
 		if (c.cache().containsKey(entry)) {
 			return c.cache().get(entry);
 		}

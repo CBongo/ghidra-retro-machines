@@ -25,12 +25,11 @@ import ghidra.program.model.symbol.Reference;
 import retromachines.StoredValueScanner.Budget;
 import retromachines.StoredValueScanner.Hooks;
 import retromachines.StoredValueScanner.Scan;
-import java.util.Locale;
 
 import static retromachines.StoredValueScanner.MAX_BACKWARD_SCAN;
 import static retromachines.StoredValueScanner.MAX_RESOLVE_DEPTH;
 import static retromachines.StoredValueScanner.MAX_RESOLVE_STEPS;
-import static retromachines.StoredValueScanner.MEMORY_WRITERS;
+
 import static retromachines.StoredValueScanner.effectiveOperandTarget;
 import static retromachines.StoredValueScanner.effectiveTarget;
 import static retromachines.StoredValueScanner.pathPredecessor;
@@ -349,8 +348,9 @@ final class LocalStoreForwarding {
 	 * address for {@code STA $C3} but not for a computed one like {@code STA ($10),Y}; a write
 	 * reference exists only where something laid one down (the same refless-store gap
 	 * {@code MemoryLatchBankSwitchStrategy.writesInRange} needs two tiers for); and the mnemonic
-	 * test covers the read-modify-write stores, which {@link MosOperands#storeRegister} deliberately does not
-	 * recognize. Over-reporting merely forfeits a forward; under-reporting would be unsound.
+	 * p-code test ({@link PcodeShapes#writesMemory}) covers the read-modify-write stores, which
+	 * {@link MosOperands#storeRegister} deliberately does not recognize. Over-reporting
+ merely forfeits a forward; under-reporting would be unsound.
 	 * <p>
 	 * <b>Package-private for a second consumer</b> (bead grm-67g):
 	 * {@code HelperArgumentRecovery.inboundArgumentCell} asks the identical question -- "may this
@@ -371,7 +371,6 @@ final class LocalStoreForwarding {
 				return true;
 			}
 		}
-		return MEMORY_WRITERS.contains(instr.getMnemonicString().toUpperCase(Locale.ROOT)) &&
-			!MosOperands.isAccumulatorForm(instr);
+		return MosOperands.writesMemory(instr);
 	}
 }

@@ -558,12 +558,9 @@ final class ShadowCommits {
 	 */
 	private static String relayDetail(Program program, Instruction call, Instruction store,
 			Valid hint) {
-		char reg = switch (store.getMnemonicString().toUpperCase(Locale.ROOT)) {
-			case "STA" -> 'A';
-			case "STX" -> 'X';
-			case "STY" -> 'Y';
-			default -> '?';
-		};
+		Character stored = MosOperands.storeRegister(store);
+		char reg = stored == null ? '?' : stored;
+
 		Function fn = program.getFunctionManager().getFunctionContaining(call.getMinAddress());
 		if (reg == '?' || fn == null || !fn.getBody().contains(store.getMinAddress())) {
 			return null;

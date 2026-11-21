@@ -594,11 +594,8 @@ final class SaveSlotForwarding {
 				case NONE -> {
 				}
 			}
-			String mnem = instr.getMnemonicString().toUpperCase(Locale.ROOT);
-			if (mnem.equals("BRK")) {
-				return CensusResult.DIRTY;
-			}
-			if (mnem.equals("RTS") || mnem.equals("RTI")) {
+			// BRK (vector goes anywhere) is a computed jump and is caught by isComputed below.
+			if (PcodeShapes.isReturnOp(instr)) {
 				if (looksLikeReturnDispatch(listing, instr)) {
 					return CensusResult.DIRTY;
 				}
@@ -682,54 +679,46 @@ final class SaveSlotForwarding {
 
 		/** The registers after the non-call {@code instr} executes. */
 		IndexRegs after(Instruction instr) {
-			int op;
-			try {
-				op = instr.getByte(0) & 0xFF;
-			}
-			catch (MemoryAccessException e) {
-				return UNKNOWN;
-			}
 			Integer nx = x;
 			Integer ny = y;
-			switch (op) {
-				case 0xA2 -> nx = immediate(instr); // LDX #imm
-				case 0xA0 -> ny = immediate(instr); // LDY #imm
-				case 0xE8 -> nx = x == null ? null : (x + 1) & 0xFF; // INX
-				case 0xCA -> nx = x == null ? null : (x - 1) & 0xFF; // DEX
-				case 0xC8 -> ny = y == null ? null : (y + 1) & 0xFF; // INY
-				case 0x88 -> ny = y == null ? null : (y - 1) & 0xFF; // DEY
-				default -> {
-					if (writesRegister(instr, 'X')) {
-						nx = null;
-					}
-					if (writesRegister(instr, 'Y')) {
-						ny = null;
-					}
+			Long ldx = MosOperands.constantLoadedInto(instr, 'X'); // LDX #imm
+			Long ldy = MosOperands.constantLoadedInto(instr, 'Y'); // LDY #imm
+			if (ldx != null) {
+				nx = (int) (ldx & 0xFF);
+			}
+			else if (ldy != null) {
+				ny = (int) (ldy & 0xFF);
+			}
+			else if (MosOperands.incrementsBy(instr, 'X', 1)) { // INX
+				nx = x == null ? null : (x + 1) & 0xFF;
+			}
+			else if (MosOperands.incrementsBy(instr, 'X', -1)) { // DEX
+				nx = x == null ? null : (x - 1) & 0xFF;
+			}
+			else if (MosOperands.incrementsBy(instr, 'Y', 1)) { // INY
+				ny = y == null ? null : (y + 1) & 0xFF;
+			}
+			else if (MosOperands.incrementsBy(instr, 'Y', -1)) { // DEY
+				ny = y == null ? null : (y - 1) & 0xFF;
+			}
+			else {
+				if (writesRegister(instr, 'X')) {
+					nx = null;
+				}
+				if (writesRegister(instr, 'Y')) {
+					ny = null;
 				}
 			}
 			return new IndexRegs(nx, ny);
 		}
 
-		private static Integer immediate(Instruction instr) {
-			try {
-				return instr.getByte(1) & 0xFF;
-			}
-			catch (MemoryAccessException e) {
-				return null;
-			}
-		}
-
-		/** By mnemonic (LDX/TAX/TSX/PLX, LAX and kin) and by Ghidra's own result objects, so an
+		/** By p-code effect (LDX/TAX/TSX/PLX, LAX and kin) and by Ghidra's own result objects, so an
 		 *  instruction either one says writes the register makes it unknown. */
 		private static boolean writesRegister(Instruction instr, char reg) {
-			String m = instr.getMnemonicString().toUpperCase(Locale.ROOT);
-			boolean byName = reg == 'X'
-					? Set.of("LDX", "TAX", "TSX", "PLX", "INX", "DEX", "LAX", "LAS", "SBX", "AXS")
-							.contains(m)
-					: Set.of("LDY", "TAY", "PLY", "INY", "DEY").contains(m);
-			if (byName) {
+			if (MosOperands.modifiesRegister(instr, reg)) {
 				return true;
 			}
+
 			for (Object o : instr.getResultObjects()) {
 				if (o instanceof Register r &&
 					r.getName().equalsIgnoreCase(String.valueOf(reg))) {

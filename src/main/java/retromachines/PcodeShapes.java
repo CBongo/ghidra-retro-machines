@@ -437,6 +437,103 @@ final class PcodeShapes {
 		return false;
 	}
 
+	/**
+	 * Whether {@code reg} ends up as {@code reg >> 1} (logical) computed from its own entry value
+	 * ({@code LSR A}); the memory form writes no register and answers false, and {@code ROR}
+	 * (shift OR carry) is not a plain shift.
+	 */
+	static boolean shiftRightBy1(Instruction instr, Register reg) {
+		if (reg == null) {
+			return false;
+		}
+		Walk w = new Walk(instr);
+		Varnode rv = varnodeOf(reg);
+		Val v = w.finalValue(rv);
+		if (v == null || v.kind != Val.OPAQUE || v.partial) {
+			return false;
+		}
+		PcodeOp op = w.ops[v.op];
+		return op.getOpcode() == PcodeOp.INT_RIGHT && w.isEntry(v.op, op.getInput(0), rv) &&
+			isConst(op.getInput(1), 1);
+	}
+
+	/**
+	 * The p-code opcode ({@link PcodeOp#INT_AND}, {@link PcodeOp#INT_OR} or {@link PcodeOp#INT_XOR})
+	 * when {@code reg} ends up as {@code reg <op> x} computed from its own entry value ({@code AND},
+	 * {@code ORA}, {@code EOR}), else -1. The other operand is not inspected: immediate or memory.
+	 */
+	static int bitOpOn(Instruction instr, Register reg) {
+		if (reg == null) {
+			return -1;
+		}
+		Walk w = new Walk(instr);
+		Varnode rv = varnodeOf(reg);
+		Val v = w.finalValue(rv);
+		if (v == null || v.kind != Val.OPAQUE || v.partial) {
+			return -1;
+		}
+		PcodeOp op = w.ops[v.op];
+		int opc = op.getOpcode();
+		if (opc != PcodeOp.INT_AND && opc != PcodeOp.INT_OR && opc != PcodeOp.INT_XOR) {
+			return -1;
+		}
+		return w.isEntry(v.op, op.getInput(0), rv) || w.isEntry(v.op, op.getInput(1), rv) ? opc
+			: -1;
+	}
+
+	/**
+	 * {@code k} when the instruction read-modify-writes one memory cell as {@code cell + k}
+	 * ({@code INC abs} = +1, {@code DEC zp,X} = -1), else null. The cell is either a fixed address
+	 * (ram-space input and output) or a computed {@code LOAD}/{@code STORE} pair. Registers
+	 * ({@code INX}) and plain stores answer null.
+	 */
+	static Integer rmwIncrement(Instruction instr) {
+		Walk w = new Walk(instr);
+		w.stackWalk();
+		for (int j = 0; j < w.ops.length; j++) {
+			PcodeOp op = w.ops[j];
+			Varnode dst = null;
+			Val v = null;
+			if (op.getOpcode() == PcodeOp.STORE && !w.stackAccess[j]) {
+				v = w.trace(j, op.getInput(2));
+			}
+			else if (op.getOutput() != null && w.isMemoryLike(op.getOutput()) && w.isCopyLike(op)) {
+				dst = op.getOutput();
+				v = w.eval(j);
+			}
+			if (v == null || v.kind != Val.OPAQUE || v.partial || v.op < 0) {
+				continue;
+			}
+			PcodeOp add = w.ops[v.op];
+			int opc = add.getOpcode();
+			if (opc != PcodeOp.INT_ADD && opc != PcodeOp.INT_SUB) {
+				continue;
+			}
+			Varnode a = add.getInput(0);
+			Varnode b = add.getInput(1);
+			if (a.isConstant() && opc == PcodeOp.INT_ADD) {
+				Varnode t = a;
+				a = b;
+				b = t;
+			}
+			if (!b.isConstant()) {
+				continue;
+			}
+			Val cell = w.trace(v.op, a);
+			boolean fromCell = cell.kind == Val.LIVE && w.isMemoryLike(cell.vn) &&
+				(dst == null || sameStorage(cell.vn, dst));
+			if (cell.kind == Val.OPAQUE && !cell.partial && cell.op >= 0 &&
+				w.ops[cell.op].getOpcode() == PcodeOp.LOAD && !w.stackAccess[cell.op]) {
+				fromCell = dst == null;
+			}
+			if (fromCell) {
+				long k = signed(b.getOffset(), b.getSize());
+				return (int) (opc == PcodeOp.INT_ADD ? k : -k);
+			}
+		}
+		return null;
+	}
+
 	// ------------------------------------------------------------------
 	// Plumbing
 	// ------------------------------------------------------------------

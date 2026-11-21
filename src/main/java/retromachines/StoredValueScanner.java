@@ -600,8 +600,7 @@ final class StoredValueScanner {
 	 * per-instruction detector for a push's target is possible without tracking {@code S}, so
 	 * the guard has to key on the address the walk cares about instead.
 	 */
-	static final Set<String> MEMORY_WRITERS =
-		Set.of("STA", "STX", "STY", "INC", "DEC", "ASL", "LSR", "ROL", "ROR");
+
 
 	private StoredValueScanner() {
 	}
@@ -804,8 +803,6 @@ final class StoredValueScanner {
 			MechanismState inStateAtStore, int mask, Hooks hooks, RegisterEnv env, Budget budget,
 			int depth, int startStep) {
 		Listing listing = program.getListing();
-		Set<String> modifiers = MosOperands.registerModifiers(reg);
-		String loadMnemonic = "LD" + reg;
 
 		// The in-state is a LOCAL from here on, because crossing a mechanism write WITHDRAWS it
 		// (bead grm-4bgh.7): everything reached beyond that point is evaluated as though the
@@ -891,14 +888,13 @@ final class StoredValueScanner {
 			// additionally consume several more steps from this same budget in one go.
 			i++;
 
-			String mnem = prev.getMnemonicString().toUpperCase(Locale.ROOT);
-
-			if (stateBlind && (mnem.equals("AND") || mnem.equals("ORA") || mnem.equals(loadMnemonic))
+			if (stateBlind && (MosOperands.isAndOnAccumulator(prev) ||
+				MosOperands.isOrOnAccumulator(prev) || MosOperands.loadsInto(prev, reg))
 					&& !MosOperands.isImmediate(prev)) {
 				return stopped(aAcc, oAcc, mask, PartialByte.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 			}
 
-			if (reg == 'A' && mnem.equals("AND")) {
+			if (reg == 'A' && MosOperands.isAndOnAccumulator(prev)) {
 				Integer imm = operandByte(program, prev, inState, hooks, env, budget, depth);
 				if (imm == null) {
 					// an operand we couldn't pull a scalar out of, and couldn't forward a store
@@ -913,7 +909,7 @@ final class StoredValueScanner {
 				continue;
 			}
 
-			if (reg == 'A' && mnem.equals("ORA")) {
+			if (reg == 'A' && MosOperands.isOrOnAccumulator(prev)) {
 				Integer imm = operandByte(program, prev, inState, hooks, env, budget, depth);
 				if (imm == null) {
 					return stopped(aAcc, oAcc, mask, PartialByte.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
@@ -926,7 +922,7 @@ final class StoredValueScanner {
 				continue;
 			}
 
-			if (mnem.equals(loadMnemonic) && MosOperands.isImmediate(prev)) {
+			if (MosOperands.loadsInto(prev, reg) && MosOperands.isImmediate(prev)) {
 				Integer imm = MosOperands.immediateOperandValue(prev);
 				if (imm != null) {
 					// x is now fully known -- fold it through the accumulated transform.
@@ -935,8 +931,8 @@ final class StoredValueScanner {
 				// Scalar extraction failed; fall through and treat like any other modifier.
 			}
 
-			if ((reg == 'X' || reg == 'Y') && mnem.equals("DE" + reg) && cur != null &&
-					cur.getMnemonicString().equalsIgnoreCase("BEQ")) {
+			if ((reg == 'X' || reg == 'Y') && MosOperands.incrementsBy(prev, reg, -1) && cur != null &&
+					MosOperands.isBeq(cur)) {
 				// grm-hsv.5: reg is read on the fall-through exit of a DEX/BEQ (or DEY/BEQ) wait
 				// loop. Its exit value is derivable when the entry value is a known constant.
 				PartialByte exit = decBeqExitValue(program, prev, cur, reg, budget);
@@ -945,7 +941,7 @@ final class StoredValueScanner {
 				}
 			}
 
-			if (mnem.equals(loadMnemonic)) {
+			if (MosOperands.loadsInto(prev, reg)) {
 				// The target is resolved here, not in the hook: an absolute-indexed load's
 				// target needs the whole constant-index evaluator, and doing it once keeps
 				// every strategy's hook a pure "do I understand this address" question.
@@ -1136,7 +1132,7 @@ final class StoredValueScanner {
 				}
 			}
 
-			if (reg == 'A' && mnem.equals("PLA")) {
+			if (reg == 'A' && MosOperands.popsAccumulator(prev)) {
 				// grm-mej.3 increment 2: rather than surrender to the generic clobber below, find
 				// the PHA this PLA pairs with (by stack DEPTH, not address -- see
 				// findMatchingPush) and keep resolving from the value A held right before it. The
@@ -1200,16 +1196,14 @@ final class StoredValueScanner {
 			// the source -- only TAX (reg == 'X') and TAY (reg == 'Y') do -- so the `== 'A'` test
 			// below excludes TXA/TYA automatically without a second mnemonic check; renaming on
 			// TXA/TYA would move a direct A-site scan onto X/Y, which is out of scope here.
-			Character transferredFrom = transferSource(mnem, reg);
+			Character transferredFrom = MosOperands.transferSource(prev, reg);
 			if (transferredFrom != null && transferredFrom == 'A') {
 				reg = transferredFrom;
-				modifiers = MosOperands.registerModifiers(reg);
-				loadMnemonic = "LD" + reg;
 				cur = prev;
 				continue;
 			}
 
-			if (MosOperands.modifiesRegister(modifiers, mnem, prev)) {
+			if (MosOperands.modifiesRegister(prev, reg)) {
 				// The mask algebra has met something it cannot decompose per bit -- an
 				// ASL/LSR/ROL/ROR, an ADC/SBC, a transfer, or a load whose base nothing above
 				// could resolve. Before declining, ask the OTHER evaluator whether the register
@@ -1248,7 +1242,7 @@ final class StoredValueScanner {
 				// and it returns null on every failure so this line's answer is exactly today's.
 				// Its own node/join/census caps bound it; the enclosing walk ends here either way, so
 				// (unlike X1's resumed pairing) there is no remaining step budget to charge.
-				if (mnem.equals(loadMnemonic) && !MosOperands.isImmediate(prev) && hooks.hasStateOracle() &&
+				if (MosOperands.loadsInto(prev, reg) && !MosOperands.isImmediate(prev) && hooks.hasStateOracle() &&
 					!env.hasArms()) {
 					Scan viaSlot = saveSlotForwarded(program, prev, aAcc, oAcc, mask, hooks, env,
 						budget, depth);
@@ -1321,8 +1315,7 @@ final class StoredValueScanner {
 	 * BEQ $EC34} is always taken.
 	 */
 	static Boolean knownBranchOutcome(Program program, Instruction branch) {
-		String br = branch.getMnemonicString().toUpperCase(Locale.ROOT);
-		if (!br.equals("BEQ") && !br.equals("BNE") && !br.equals("BMI") && !br.equals("BPL")) {
+		if (!MosOperands.isZnBranch(branch)) {
 			return null;
 		}
 		Listing listing = program.getListing();
@@ -1349,12 +1342,8 @@ final class StoredValueScanner {
 			}
 			boolean z = (v & 0xFF) == 0;
 			boolean n = (v & 0x80) != 0;
-			return switch (br) {
-				case "BEQ" -> z;
-				case "BNE" -> !z;
-				case "BMI" -> n;
-				default -> !n; // BPL
-			};
+			return MosOperands.znBranchTaken(branch, z, n);
+
 		}
 		return null;
 	}
@@ -1425,13 +1414,12 @@ final class StoredValueScanner {
 				prev.getFlowType().isCall() || prev.getFlows().length > 0) {
 				return false;
 			}
-			String m = prev.getMnemonicString().toUpperCase(Locale.ROOT);
-			if (m.equals("PHA") || m.equals("PHP")) {
+			if (MosOperands.pushesByte(prev)) {
 				if (++balance > 0) {
 					return true;
 				}
 			}
-			else if (m.equals("PLA") || m.equals("PLP")) {
+			else if (MosOperands.popsByte(prev)) {
 				balance--;
 			}
 			cur = prev;
@@ -1446,7 +1434,7 @@ final class StoredValueScanner {
 	 * <ul>
 	 * <li>a write reference to the slot, from anything: {@code STORES_SLOT} if the instruction is
 	 * a plain {@code ST<r>} whose operand is the slot, else {@code WRITES_SLOT};</li>
-	 * <li>otherwise only the memory-writing mnemonics ({@link #MEMORY_WRITERS}, plus the 65C02
+	 * <li>otherwise only instructions that write non-stack memory ({@link MosOperands#writesMemory}: stores, read-modify-write, the 65C02
 	 * {@code STZ}/{@code TSB}/{@code TRB}) are considered -- stack pushes and calls write only the
 	 * stack page, which {@link StackFloor} keeps out of scope;</li>
 	 * <li>a plain operand: {@code STORES_SLOT}/{@code WRITES_SLOT} on the slot (by store vs.
@@ -1477,10 +1465,7 @@ final class StoredValueScanner {
 						? SlotWrite.STORES_SLOT : SlotWrite.WRITES_SLOT;
 			}
 		}
-		String mnem = instr.getMnemonicString().toUpperCase(Locale.ROOT);
-		boolean writer = (MEMORY_WRITERS.contains(mnem) && !MosOperands.isAccumulatorForm(instr)) ||
-			mnem.equals("STZ") || mnem.equals("TSB") || mnem.equals("TRB");
-		if (!writer) {
+		if (!MosOperands.writesMemory(instr)) {
 			return SlotWrite.NONE;
 		}
 		if (plain != null) {
@@ -1892,8 +1877,7 @@ final class StoredValueScanner {
 				span.crossedMechanismWrite = true;
 			}
 			steps++;
-			String mnem = prev.getMnemonicString().toUpperCase(Locale.ROOT);
-			if (mnem.equals("TSX")) {
+			if (MosOperands.copiesStackPointerInto(prev, 'X')) {
 				// The terminator: hand off to findMatchingPush, entered AT the TSX, for the
 				// n-th push back from the top of stack it establishes.
 				Span pushSpan = new Span();
@@ -1903,7 +1887,7 @@ final class StoredValueScanner {
 				span.crossedMechanismWrite |= pushSpan.crossedMechanismWrite;
 				return pha;
 			}
-			if (mnem.equals("PHA") || mnem.equals("PHP") || mnem.equals("PLA") || mnem.equals("PLP")) {
+			if (MosOperands.pushesByte(prev) || MosOperands.popsByte(prev)) {
 				span.steps = steps;
 				return null; // could overwrite the reloaded slot -- see javadoc
 			}
@@ -2126,9 +2110,7 @@ final class StoredValueScanner {
 			boolean unresolved = false;
 			List<Address> absIndexedBases = new ArrayList<>();
 			for (Instruction instr : program.getListing().getInstructions(true)) {
-				String mnem = instr.getMnemonicString().toUpperCase(Locale.ROOT);
-				if (!(MEMORY_WRITERS.contains(mnem) || mnem.equals("STZ") ||
-					mnem.equals("TSB") || mnem.equals("TRB")) || MosOperands.isAccumulatorForm(instr)) {
+				if (!MosOperands.writesMemory(instr)) {
 					continue;
 				}
 				for (Reference ref : instr.getReferencesFrom()) {
@@ -2506,21 +2488,6 @@ final class StoredValueScanner {
 		}
 	}
 
-	/**
-	 * The source register of a transfer that writes {@code reg} ({@code TAX}/{@code TAY} write
-	 * X/Y from A; {@code TXA}/{@code TYA} write A from X/Y), or {@code null} when {@code mnem}
-	 * is not such a transfer. {@code TSX} is deliberately absent: the stack pointer is not
-	 * tracked.
-	 */
-	private static Character transferSource(String mnem, char reg) {
-		return switch (mnem) {
-			case "TAX" -> reg == 'X' ? 'A' : null;
-			case "TAY" -> reg == 'Y' ? 'A' : null;
-			case "TXA" -> reg == 'A' ? 'X' : null;
-			case "TYA" -> reg == 'A' ? 'Y' : null;
-			default -> null;
-		};
-	}
 
 	/**
 	 * Whether operand 0 uses an <em>absolute</em>-indexed addressing mode ({@code abs,X} /

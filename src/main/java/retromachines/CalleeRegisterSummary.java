@@ -521,7 +521,8 @@ final class CalleeRegisterSummary {
 
 		private void execute(Instruction instr, St start) {
 			String mnemonic = instr.getMnemonicString();
-			if ("RTI".equalsIgnoreCase(mnemonic)) {
+			if (MosOperands.isInterruptReturn(instr)) {
+
 				throw new Abandon(AbandonReason.RTI, "RTI at " + instr.getAddress());
 			}
 			if ("BRK".equalsIgnoreCase(mnemonic)) {
