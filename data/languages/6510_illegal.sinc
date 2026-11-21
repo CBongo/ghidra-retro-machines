@@ -40,6 +40,9 @@
 # The "magic constant" for the unstable ANE/LXA group is chip-/temperature-
 # dependent (NMS lists $00/$FF/$EE); $EE matches the validated oracle. Override
 # at build time with sleigh -DMAGIC=0x00 etc.
+# NO_DECIMAL (grm-yvmw, defined by 2a03undoc.slaspec): compiles the decimal-mode branch of
+# illegalAdcNmos, illegalSbcNmos and ARR out, as 6502core.sinc does for adcNmos/sbcNmos. The
+# 2A03's ALU has no decimal mode, so RRA/ISC/$EB/ARR are always binary there.
 @ifdef MAGIC
 @else
 @define MAGIC "0xee"
@@ -62,13 +65,16 @@ macro illegalAdcNmos(op1) {
     local oldA:1 = A;
     local sum:2;
 
+@ifndef NO_DECIMAL
     if (D) goto <decimal>;
+@endif
     C = carry(A, operand);
     A = A + operand;
     C = C || carry(A, tmpC);
     A = A + tmpC;
     resultFlags(A);
     V = ((oldA ^ A) & (operand ^ A) & 0x80) != 0;
+@ifndef NO_DECIMAL
     goto <done>;
 
     <decimal>
@@ -88,6 +94,7 @@ macro illegalAdcNmos(op1) {
     C = (sum >= 0x100);
     A = sum:1;
     <done>
+@endif
 }
 
 # NMOS SBC. Decimal mode adjusts A, while N/V/Z/C retain the binary result's
@@ -99,8 +106,11 @@ macro illegalSbcNmos(op1) {
     local result:1 = oldA - operand - tmpBorrow;
     subtraction_flags1(oldA, operand, result);
 
+@ifndef NO_DECIMAL
     if (D) goto <decimal>;
+@endif
     A = result;
+@ifndef NO_DECIMAL
     goto <done>;
 
     <decimal>
@@ -114,6 +124,7 @@ macro illegalSbcNmos(op1) {
     <tens_ok>
     A = diff:1;
     <done>
+@endif
 }
 
 # ---- RMW illegals: read-modify-write, LDA-family bbb indexing (cc=3) ----------
@@ -230,11 +241,14 @@ OP3: imm16,X   is bbb=7 & X; imm16  { tmp:2 = imm16 + zext(X); export *:1 tmp; }
     local oldC:1 = C;
     local r:1 = (t >> 1) | (oldC << 7);
 
+@ifndef NO_DECIMAL
     if (D) goto <decimal>;
+@endif
     A = r;
     resultFlags(A);
     C = (A >> 6) & 1;
     V = ((A >> 6) & 1) ^ ((A >> 5) & 1);
+@ifndef NO_DECIMAL
     goto <done>;
 
     <decimal>
@@ -253,6 +267,7 @@ OP3: imm16,X   is bbb=7 & X; imm16  { tmp:2 = imm16 + zext(X); export *:1 tmp; }
     <tens_ok>
     A = r;
     <done>
+@endif
 }
 
 # SBX (AXS, SAX imm): X = (A & X) - #imm, C from the compare (NMS p.32)

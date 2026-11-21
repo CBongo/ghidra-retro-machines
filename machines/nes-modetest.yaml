@@ -33,7 +33,7 @@ system:
   board:
     ines_mappers: [100]      # NESdev-reserved test mapper number; not a real board
   cpu:
-    language: "6502:LE:16:default"
+    language: "6502:LE:16:2a03"
 
 physical:
   - { name: PRG, image: prg_rom }

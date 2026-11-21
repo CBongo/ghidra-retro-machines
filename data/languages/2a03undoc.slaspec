@@ -1,0 +1,14 @@
+# Sleigh specification for the Ricoh 2A03 (the NES/Famicom CPU) with the undocumented opcodes
+# enabled, language id 6502:LE:16:2a03undoc (grm-yvmw). It is 2a03.slaspec (decimal mode
+# disconnected: ADC/SBC always binary) plus the vendored undocumented-opcode semantics, whose
+# own RRA/ISC/$EB add/subtract macros also honour NO_DECIMAL.
+#
+# Opt-in on purpose, like 6502:LE:16:undoc: with all 256 opcode bytes decodable the
+# disassembler will run through data regions instead of stopping on an invalid instruction.
+# ARR in 6510_illegal.sinc keeps a decimal branch; on the 2A03 that branch is compiled out
+# too (see the NO_DECIMAL guard there).
+
+@define NO_DECIMAL "1"
+
+@include "6502core.sinc"
+@include "6510_illegal.sinc"

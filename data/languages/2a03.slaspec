@@ -1,0 +1,12 @@
+# Sleigh specification for the Ricoh 2A03 (the NES/Famicom CPU), language id 6502:LE:16:2a03
+# (grm-yvmw). The 2A03 is a 6502 core with the decimal mode disconnected: SED/CLD still
+# set and clear D, but ADC/SBC always take the binary path. Only the documented opcode set is
+# decoded, so decoding is identical to stock Ghidra's 6502:LE:16:default; what differs is
+# the corrected ADC/SBC p-code of 6502core.sinc (grm-o9k, grm-ef46).
+#
+# NO_DECIMAL compiles the D branch of adcNmos/sbcNmos out of 6502core.sinc, rather than
+# keeping a copied core.
+
+@define NO_DECIMAL "1"
+
+@include "6502core.sinc"

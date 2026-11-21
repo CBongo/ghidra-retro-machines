@@ -89,7 +89,7 @@ system:
     ines_mappers: [1]        # board registry key: iNES mapper numbers this board serves
   cpu:
     # Stock 6502 language -- the 2A03 core is a 6502 minus decimal mode, invisible here.
-    language: "6502:LE:16:default"
+    language: "6502:LE:16:2a03"
 
 physical:
   # PRG ROM laid out once, in file order. No size: — it comes from the iNES header

@@ -100,7 +100,11 @@ final class DescriptorResources {
 		if (lastColon < 0) {
 			return null;
 		}
-		String sibling = languageId.substring(0, lastColon + 1) + UNDOC_VARIANT;
+		// The 2A03 has its own undocumented sibling (no decimal mode, grm-yvmw), not the
+		// decimal-capable generic one.
+		String variant = languageId.substring(lastColon + 1);
+		String sibling = languageId.substring(0, lastColon + 1) +
+			(variant.equals("2a03") ? "2a03undoc" : UNDOC_VARIANT);
 		if (sibling.equals(languageId) || !languageAvailable(sibling)) {
 			return null;
 		}

@@ -25,7 +25,7 @@ REALROM block W8000_B9 8000-bfff overlay=true
 REALROM block WC000 c000-ffff overlay=false
 REALROM count blocks.total 21
 REALROM count blocks.overlay 15
-REALROM count refs.intoOverlay.retargeted 75
+REALROM count refs.intoOverlay.retargeted 84
 REALROM count refs.intoOverlay.intraOverlay 1117
 REALROM count instrs.inOverlay 5310
 REALROM count bankComments 73
@@ -132,7 +132,7 @@ REALROM sample.ref 801e -> W8000_B11::8047 DATA primary=true
 REALROM sample.ref 8022 -> W8000_B12::802f CONDITIONAL_JUMP primary=true
 REALROM sample.ref 8023 -> W8000_B11::8055 DATA primary=true
 REALROM sample.ref 8023 -> W8000_B13::847e UNCONDITIONAL_CALL primary=true
-REALROM sample.ref.truncated 25 of 1192
+REALROM sample.ref.truncated 25 of 1201
 REALROM sample.warn c498 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c000 whose bank argument could not be recovered at this call site
 REALROM sample.warn c537 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c000 whose bank argument could not be recovered at this call site
 REALROM sample.warn c66a [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c000 whose bank argument could not be recovered at this call site

@@ -116,7 +116,8 @@ import ghidra.program.model.pcode.Varnode;
  * <b>Known blockers to this being the default</b> (recorded on grm-4wqd, not fixed here; see
  * {@code PcodeConstantSemanticsDifferentialTest} for the fixtures that pin each one):
  * <ul>
- * <li>NES's stock {@code 6502:LE:16:default} language computes {@code ADC}'s carry-out as a
+ * <li>(Fixed for NES by {@code 6502:LE:16:2a03} since grm-yvmw; kept here because the workaround
+ * stays until grm-w7no.) Stock {@code 6502:LE:16:default} computes {@code ADC}'s carry-out as a
  * single {@code carry(A, op1)} that drops a carry-out arising solely from the carry-in
  * (grm-o9k) -- under PCODE the resulting {@code A} is right but any DERIVED carry is wrong in
  * that edge case, where {@link Mos6502ConstantSemantics}'s two-step chain is correct.</li>
@@ -598,9 +599,9 @@ final class PcodeConstantSemantics implements ConstantSemantics {
 		 * establish it (owner ruling 2026-09-26, grm-4wqd) -- currently always {@code 0}
 		 * (binary mode) for every program, regardless of platform.
 		 * <p>
-		 * On NES the 2A03 has no decimal mode at all (and the stock {@code 6502:LE:16:default}
-		 * language never reads {@code D} in the first place, so this seam is never consulted
-		 * there). On the C64 languages, where {@code D} is a real, settable flag, {@code 0} is
+		 * On NES the 2A03 has no decimal mode at all (the NES language {@code 6502:LE:16:2a03}
+		 * compiles the D branch out, and stock {@code 6502:LE:16:default} never read {@code D},
+		 * so this seam is never consulted there). On the C64 languages, where {@code D} is a real, settable flag, {@code 0} is
 		 * the same assumption {@link Mos6502ConstantSemantics}'s {@code ADC}/{@code SBC}
 		 * already make unconditionally: decimal mode in banking-relevant code is rare, and
 		 * assuming binary is what let the TABLE evaluator resolve these at all before this

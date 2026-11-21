@@ -22,7 +22,7 @@ system:
   cpu:
     # Stock 6502 language. The NES 2A03 core is a 6502 with decimal mode disabled — the
     # difference is invisible to a schema sketch; a dedicated 2A03 language is a grm-9ux call.
-    language: "6502:LE:16:default"
+    language: "6502:LE:16:2a03"
 
 physical:
   # PRG ROM laid out once, in file order. No size: — it comes from the iNES header

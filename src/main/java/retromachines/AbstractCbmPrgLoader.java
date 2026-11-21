@@ -78,9 +78,9 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 	public AbstractCbmPrgLoader() {
 	}
 
-	// Safety fallback only: each descriptor names its preferred language. Stock 6502 is
+	// Safety fallback only: each descriptor names its preferred language. Our generic NMOS 6502 (grm-yvmw) is
 	// used solely if that language is unavailable.
-	private static final String FALLBACK_LANGUAGE_ID = "6502:LE:16:default";
+	private static final String FALLBACK_LANGUAGE_ID = "6502:LE:16:nmos";
 	private static final String COMPILER_SPEC_ID = "default";
 	// The ONE persisted fact about PRG placement. Load address, payload length and the
 	// wrap flag used to be persisted alongside it as three more Program-Info properties

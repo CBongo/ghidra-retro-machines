@@ -349,4 +349,57 @@ public class MosConstantReferenceAnalyzerTest extends AbstractBundledLanguageTes
 		Instruction lda = program.getListing().getInstructionAt(builder.addr("0xc000"));
 		assertEquals(Set.of(), nonFlowTargets(lda));
 	}
+
+	/**
+	 * grm-yvmw: the bundled languages fetch a {@code (zp),Y} pointer with two 1-byte loads, so
+	 * the pointer fetch must be recognised by address, not by size 2. Same fixture as
+	 * {@link #indirectIndexedYRetargetsToPointerTarget} on the 2A03 language: the table base and
+	 * the pointer slot's own reference, never $2015.
+	 */
+	@Test
+	public void indirectIndexedYRetargetsOnSplitPointerLanguage() throws Exception {
+		ProgramBuilder builder = newMemoryBuilder("6502:LE:16:2a03");
+		builder.setBytes("0x0080", "10 20");
+		builder.setBytes("0x8000", "a0 05", true); // LDY #$05
+		builder.setBytes("0x8002", "b1 80", true); // LDA ($80),Y
+		ProgramDB program = builder.getProgram();
+
+		analyze(program, new Mos6502ConstantReferenceAnalyzer(), builder.addr("0x8000"));
+
+		Set<Address> targets = nonFlowTargets(
+			program.getListing().getInstructionAt(builder.addr("0x8002")));
+		assertEquals(Set.of(builder.addr("0x0080"), builder.addr("0x0081"), builder.addr("0x2010")),
+			targets);
+	}
+
+	/**
+	 * grm-yvmw: {@code LDA ($00),Y} at Y=2 on the split-pointer 2A03 language. The pointer-byte
+	 * loads at $0000/$0001 must not be taken for the data access and "retargeted" to
+	 * cell-minus-Y, which wraps to $FFFE/$FFFF. Neither those nor any other zero-page
+	 * slot-minus-Y address may appear; the real table base $2010 and the slot references do.
+	 */
+	@Test
+	public void splitPointerFetchIsNotRetargetedToSlotMinusY() throws Exception {
+		ProgramBuilder builder = newMemoryBuilder("6502:LE:16:2a03");
+		builder.createMemory(".rom", "0xf000", 0x1000); // maps $FFFE/$FFFF, so a wrong ref survives
+		builder.setBytes("0x0001", "10 20");
+		builder.setBytes("0x8000", "a0 02", true); // LDY #$02
+		builder.setBytes("0x8002", "b1 01", true); // LDA ($01),Y
+		ProgramDB program = builder.getProgram();
+
+		analyze(program, new Mos6502ConstantReferenceAnalyzer(), builder.addr("0x8000"));
+
+		Set<Address> targets = nonFlowTargets(
+			program.getListing().getInstructionAt(builder.addr("0x8002")));
+		assertFalse("pointer cell 1 minus Y wrapped to $FFFF",
+			targets.contains(builder.addr("0xffff")));
+		assertFalse("pointer cell 2 minus Y wrapped to $0000",
+			targets.contains(builder.addr("0x0000")));
+		assertTrue("the real table base is kept, got " + targets, targets.contains(builder.addr("0x2010")));
+		for (Address t : targets) {
+			assertTrue("unexpected reference " + t,
+				Set.of(builder.addr("0x0001"), builder.addr("0x0002"), builder.addr("0x2010"))
+						.contains(t));
+		}
+	}
 }

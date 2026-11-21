@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- See Relax specification: Ghidra/Framework/SoftwareModeling/data/languages/language_definitions.rxg -->
+
+<language_definitions>
+
+  <language processor="6502"
+            endian="little"
+            size="16"
+            variant="nmos"
+            version="1.0"
+            slafile="6502nmos.sla"
+            processorspec="6502nmos.pspec"
+            id="6502:LE:16:nmos">
+    <description>NMOS 6502, documented opcodes, decimal mode ON, corrected ADC/SBC flags; VIC-20/PET and other non-6510 machines</description>
+    <compiler name="default" spec="6502nmos.cspec" id="default"/>
+    <external_name tool="IDA-PRO" name="m6502"/>
+  </language>
+
+  <language processor="6502"
+            endian="little"
+            size="16"
+            variant="2a03"
+            version="1.0"
+            slafile="2a03.sla"
+            processorspec="6502nmos.pspec"
+            id="6502:LE:16:2a03">
+    <description>Ricoh 2A03 (NES/Famicom): 6502 with no decimal mode, documented opcodes only, corrected ADC/SBC flags</description>
+    <compiler name="default" spec="6502nmos.cspec" id="default"/>
+    <external_name tool="IDA-PRO" name="m6502"/>
+  </language>
+
+  <language processor="6502"
+            endian="little"
+            size="16"
+            variant="2a03undoc"
+            version="1.0"
+            slafile="2a03undoc.sla"
+            processorspec="6502nmos.pspec"
+            id="6502:LE:16:2a03undoc">
+    <description>Ricoh 2A03 (NES/Famicom) with undocumented opcodes enabled (SLO/RLA/LAX/SAX/...), no decimal mode; opt-in, because with all 256 opcodes decodable the disassembler will run through data regions instead of stopping on an invalid instruction</description>
+    <compiler name="default" spec="6502nmos.cspec" id="default"/>
+    <external_name tool="IDA-PRO" name="m6502"/>
+  </language>
+
+</language_definitions>

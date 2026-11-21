@@ -61,7 +61,7 @@ system:
   board:
     ines_mappers: [222]      # synthetic/unassigned test mapper number; see note above
   cpu:
-    language: "6502:LE:16:default"
+    language: "6502:LE:16:2a03"
 
 physical:
   - { name: PRG, image: prg_rom }

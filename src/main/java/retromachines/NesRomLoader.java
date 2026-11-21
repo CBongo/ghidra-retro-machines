@@ -109,7 +109,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 	/** Preferences key remembering the last text-table path chosen in the GUI (grm-pqk). */
 	private static final String TBL_PREF_KEY = "retromachines.nes.tblFile";
 
-	private static final String LANGUAGE_ID = "6502:LE:16:default";
+	private static final String LANGUAGE_ID = "6502:LE:16:2a03";
 	private static final String COMPILER_SPEC_ID = "default";
 
 	/** {@code LDA #imm} -- the only select-write value form {@link #scanImageMode} reads. */

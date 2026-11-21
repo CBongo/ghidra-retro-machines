@@ -9,6 +9,9 @@
 #   6510.slaspec       -> this + 6510port.sinc                        (6510:LE:16:default)
 #   6510undoc.slaspec  -> this + 6510port.sinc + 6510_illegal.sinc    (6510:LE:16:undoc)
 #   6502undoc.slaspec  -> this + 6510_illegal.sinc                    (6502:LE:16:undoc)
+#   6502nmos.slaspec   -> this                                        (6502:LE:16:nmos)
+#   2a03.slaspec       -> this, NO_DECIMAL defined                    (6502:LE:16:2a03)
+#   2a03undoc.slaspec  -> this + 6510_illegal.sinc, NO_DECIMAL defined (6502:LE:16:2a03undoc)
 #
 # Nothing 6510-specific belongs here: the on-die I/O port and its operand routing live in
 # 6510port.sinc, and the undocumented opcodes live in the vendored 6510_illegal.sinc.
@@ -23,8 +26,9 @@
 #     decompile as binary arithmetic. The adcNmos/sbcNmos macros below branch on D with the
 #     NMOS (not 65C02/65816) decimal semantics; ADC and SBC go through them. The vendored
 #     6510_illegal.sinc carries its own equivalent illegalAdcNmos/illegalSbcNmos for
-#     RRA/ISC/$EB (upstream's form of the same fixes, deity-informant PR #359, grm-gtmp). The NES's 2A03 has no decimal mode, but the NES boards use stock
-#     Ghidra's 6502, not this file, so nothing here reaches the NES corpus.
+#     RRA/ISC/$EB (upstream's form of the same fixes, deity-informant PR #359, grm-gtmp). The NES's 2A03 has no decimal mode: 2a03.slaspec defines NO_DECIMAL,
+#     which compiles the D branch of adcNmos/sbcNmos out (grm-yvmw), so the NES language
+#     reuses this file's corrected binary ADC/SBC.
 #   - grm-m9nu: hardware JSR/RTS convention (push inst_next-1, return pulled+1), BRK pushes
 #     PC+2, PHP/BRK push B=1, JMP ($xxFF) page wrap. Stack arithmetic stays stock-linear on SP
 #     on purpose; see the note above popSR.
@@ -142,7 +146,9 @@ macro adcNmos(op1) {
 	local oldA:1 = A;
 	local sum:2;
 
+@ifndef NO_DECIMAL
 	if (D) goto <decimal>;
+@endif
 
 	# <binary> -- two-step carry chain (grm-o9k): carry() only tests one addition, so folding
 	# tmpC into a single A + op1 + tmpC (as stock Ghidra's 6502.slaspec does) drops a carry-out
@@ -156,6 +162,7 @@ macro adcNmos(op1) {
 	# and stock Ghidra's 6502.slaspec conflates them (grm-o9k). Set when both operands share a
 	# sign that differs from the result's.
 	V = ((oldA ^ A) & (operand ^ A) & 0x80) != 0;
+@ifndef NO_DECIMAL
 	goto <done>;
 
 	<decimal>
@@ -179,6 +186,7 @@ macro adcNmos(op1) {
 	C = (sum >= 0x100);
 	A = sum:1;
 	<done>
+@endif
 }
 
 # NMOS 6502 subtract-with-borrow, D-aware (bead grm-hzv8). Used by SBC; 6510_illegal.sinc's
@@ -192,8 +200,11 @@ macro sbcNmos(op1) {
 	local result:1 = oldA - operand - borrow;
 	subtraction_flags1(oldA, operand, result);
 
+@ifndef NO_DECIMAL
 	if (D) goto <decimal>;
+@endif
 	A = result;
+@ifndef NO_DECIMAL
 	goto <done>;
 
 	<decimal>
@@ -208,6 +219,7 @@ macro sbcNmos(op1) {
 	<tens_ok>
 	A = diff:1;
 	<done>
+@endif
 }
 
 

@@ -16,7 +16,7 @@ system:
   board:
     ines_mappers: [0]        # board registry key: iNES mapper numbers this board serves
   cpu:
-    language: "6502:LE:16:default"   # 2A03 = 6502 minus decimal mode; stock language suffices
+    language: "6502:LE:16:2a03"   # Ricoh 2A03: 6502 minus decimal mode (grm-yvmw)
 
 physical:
   # PRG ROM laid out once, in file order. No size: — it comes from the iNES header

@@ -1,0 +1,7 @@
+# Sleigh specification for a generic NMOS 6502 with the documented opcode set and decimal mode
+# ON, language id 6502:LE:16:nmos (grm-yvmw). Decoding is identical to stock Ghidra's
+# 6502:LE:16:default; what differs is 6502core.sinc's corrected ADC/SBC (grm-o9k, grm-ef46,
+# D-aware per grm-hzv8) and the grm-m9nu stack conventions. Meant for non-6510 CBM machines
+# (VIC-20, PET) and other NMOS 6502 systems; see 2a03.slaspec for the no-decimal variant.
+
+@include "6502core.sinc"

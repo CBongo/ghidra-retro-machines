@@ -33,9 +33,9 @@ pointer-wrap bugs on its first run. Since bead `grm-m9nu` its baseline has no FA
 behaviour deliberately left unmodelled is excluded per case and counted in the open as
 `(N unmodelled)`: the `S` page-1 wrap, a `JSR` that overwrites its own operand, and `SH*`/`TAS`
 page crossings. A new FAIL row, a changed ratio, or a changed unmodelled count is a regression
-to explain. The NES boards run on stock Ghidra's `6502:LE:16:default`, so
-nothing this tier checks reaches the NES corpus, and nothing that moves the NES corpus can be
-attributed to these languages.
+to explain. Since grm-yvmw the NES boards load as `6502:LE:16:2a03`
+(same `6502core.sinc`, `NO_DECIMAL` defined) and VIC-20/PET as `6502:LE:16:nmos`, so this tier's
+findings about the shared core reach them; the vectors themselves still run only the `undoc` language.
 
 **The SPC700 disassembly-text corpus differential (`spc700-dis-corpus` chunk) is a REPORTING
 tier, not a gate** — the third opt-in tier, and the one with the weakest claim on you. It needs

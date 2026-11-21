@@ -220,6 +220,32 @@ public abstract class MosConstantReferenceAnalyzer extends ConstantPropagationAn
 	}
 
 	/**
+	 * Whether {@code address} is one of the two zero-page bytes the {@code (zp),Y} operand's
+	 * pointer is fetched from: the operand's cell or cell+1, the latter wrapped within page zero.
+	 * The pointer fetch is recognised by ADDRESS, not by access size: stock's single 2-byte load
+	 * and the bundled languages' two 1-byte loads (grm-yvmw; the high byte wraps at $FF) both
+	 * qualify, and a 1-byte pointer-byte load must never be mistaken for the data access, whose
+	 * "base = address - Y" would then land at cell-Y (wrapping to $FFFE/$FFFF for cell 0, Y=2).
+	 * Known limit: a data access that really lands on the operand's own cell or cell+1 (a pointer
+	 * into its own slot) is also left to stock handling.
+	 *
+	 * @param instr the {@code (zp),Y} instruction
+	 * @param address the address the propagator is reporting an access to
+	 * @return true when the access is the pointer fetch (or the operand byte is unreadable)
+	 */
+	private static boolean isZeroPagePointerFetch(Instruction instr, Address address) {
+		int cell;
+		try {
+			cell = instr.getByte(1) & 0xff;
+		}
+		catch (MemoryAccessException e) {
+			return true; // cannot tell: leave to stock
+		}
+		long off = address.getOffset();
+		return off == cell || off == ((cell + 1) & 0xff);
+	}
+
+	/**
 	 * Whether {@code base} is a resolved base worth retargeting to, given the computed
 	 * {@code address} it would replace.
 	 *
@@ -363,7 +389,7 @@ public abstract class MosConstantReferenceAnalyzer extends ConstantPropagationAn
 						// (zp),Y compiles to TWO distinct memory accesses per the sinc
 						// definition (addr:2 = imm8; tmp:2 = *:2 addr; tmp = tmp + zext(Y);
 						// export *:1 tmp;), and the propagator calls evaluateReference once
-						// for EACH: first a 2-byte pointer fetch from the fixed zero-page
+						// for EACH: first the pointer fetch (one 2-byte load, or two 1-byte loads) from the fixed zero-page
 						// slot the operand names (address here is that zp slot, NOT indexed
 						// by Y at all), then separately the real 1-byte data access through
 						// the dereferenced-and-indexed pointer -- the one this analyzer
@@ -381,7 +407,7 @@ public abstract class MosConstantReferenceAnalyzer extends ConstantPropagationAn
 							return super.evaluateReference(context, instr, pcodeop, address,
 								size, dataType, refType);
 						}
-						if (size != 1) {
+						if (isZeroPagePointerFetch(instr, address)) {
 							// The pointer-fetch access, whose `address` is the zero-page slot
 							// itself and carries no Y term -- so it must NOT be retargeted
 							// (subtracting Y here would invent a garbage base $007B for a

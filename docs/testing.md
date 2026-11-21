@@ -516,7 +516,9 @@ cases/opcode, 2,560,000 cases total). Targets this module's bundled `6502:LE:16:
 (`data/languages/6502undoc.slaspec` = `6502core.sinc` + `6510_illegal.sinc`) — NMOS 6502 with
 decimal mode and the documented illegal/undocumented opcodes. The sibling `nes6502/` directory
 (no decimal mode — the NES's 2A03) and the 65c02 variants are out of scope: the NES corpus in
-this repo already uses stock Ghidra's `6502:LE:16:default`, which this bead does not touch.
+this repo used stock Ghidra's `6502:LE:16:default` when this bead was written; since grm-yvmw it
+loads as `6502:LE:16:2a03`, built from the same `6502core.sinc` with `NO_DECIMAL`, so this tier
+reaches it too (decimal off).
 
 Unlike SPC700/W65816, `6502:LE:16:undoc` is bundled and has shipped since before this bead, so
 neither test class Assume-skips on a missing language — a resolution failure is a real problem.
@@ -580,7 +582,8 @@ same change because they blocked the ADC/SBC verdicts:
 1. **`subtraction_flags1` assigned BORROW to `C`.** The 6502's carry after a subtraction is
    NOT-borrow, so every `SBC`/`ISC` case failed on `P_C` alone with an exact polarity flip, in
    binary and decimal mode alike (decimal SBC recomputes only `A`). Stock Ghidra has the same
-   bug; the NES boards run on stock `6502:LE:16:default` and still have it.
+   bug; the NES boards now load as `6502:LE:16:2a03` (grm-yvmw), built from this core with
+   `NO_DECIMAL`, and no longer have it.
 2. **Zero-page indirect pointers did not wrap within page zero.** `(zp,X)`/`(zp),Y` fetched the
    pointer with one `*:2` read, so a pointer at `$FF` took its high byte from `$0100` instead of
    `$00` -- ~1/256 of cases for every opcode using either mode. Now `readZpPointer` in
