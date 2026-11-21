@@ -50,7 +50,7 @@
 // USAGE -- rides along on a routine check, costing no second import (~7s median per row,
 // worst ~52s; see docs/testing.md "How long the gates actually take", bead grm-yfma):
 //   REALROM_EXTRA_POSTSCRIPT=DeterminismProbe.java \
-//     bash tools/banktest/realrom-test.sh check --only megaman H:/emulators/nes/roms
+//     bash tools/banktest/realrom-test.sh check --only megaman
 // then diff two runs' carved blocks. Note realrom_cache_key() does not key the extra postScript, so
 // a `bless` may reuse a cached dump and never run this at all -- give it its own invocation.
 //@category RetroMachines.Test

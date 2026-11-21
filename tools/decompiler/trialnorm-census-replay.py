@@ -16,7 +16,8 @@ forward by --extend bytes (default 0x400).
 usage: python -I tools/decompiler/trialnorm-census-replay.py --capdir D --workdir W --outdir O
          --ctl-bin ~/hf5h14/c15/cpp/decomp_dbg --new-bin ~/hf5h34/c16/cpp/decomp_dbg
          --sleighhome-65816 ~/hf5h31/ctl/sh [--sleighhome-nes <ghidra install>] [--rows a,b]
-ROM dirs come from GRM_ROM_DIR / GRM_SNES_ROM_DIR (';'-separated), pins from the realrom manifests.
+ROM dirs come from GRM_ROM_DIR / GRM_SNES_ROM_DIR (split like realrom-test.sh: on ';' with
+whitespace trimmed if the value contains one, else on any whitespace), pins from the realrom manifests.
 WSL paths are given as seen from WSL; the bins and sleigh homes are WSL paths. The SNES language
 needs a .sla compiled by the replay tree's own sleigh (see the 65816-replay-sla bd memory).
 """
@@ -29,7 +30,14 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
-MANIFESTS = ['manifest.tsv', 'manifest-gme.tsv', 'manifest-snes-analysis.tsv', 'manifest-goodnes.tsv']
+MANIFESTS = ['manifest.tsv', 'manifest-gme.tsv', 'manifest-snes-analysis.tsv']
+
+
+def split_dirs(value):
+    """Split a ROM-dir list the way realrom-test.sh does: a value containing ';' splits on ';'
+    only (dirs may hold spaces), each part whitespace-trimmed; otherwise on any whitespace."""
+    parts = value.split(';') if ';' in value else value.split()
+    return [p.strip() for p in parts if p.strip()]
 
 
 def manifest_rows():
@@ -154,8 +162,8 @@ def main():
     a = ap.parse_args()
     os.makedirs(a.outdir, exist_ok=True)
     mf = manifest_rows()
-    nes_dirs = os.environ.get('GRM_ROM_DIR', '').split(';')
-    snes_dirs = os.environ.get('GRM_SNES_ROM_DIR', '').split(';')
+    nes_dirs = split_dirs(os.environ.get('GRM_ROM_DIR', ''))
+    snes_dirs = split_dirs(os.environ.get('GRM_SNES_ROM_DIR', ''))
     rows = a.rows.split(',') if a.rows else sorted(os.listdir(a.capdir))
     print('row\tsite\tfn\tctl_kinds\tnew_kinds\ttrace\tctl_labels\tnew_labels')
     for row in rows:

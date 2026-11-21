@@ -343,7 +343,8 @@ Run `ruff check <file>` on any `.py` you edit (`ruff check .` must exit 0; rules
 ## Analysis scripts: look in `tools/` first, and keep what you write
 
 **Before writing a one-off script, check `tools/` for one that already does the job, and extend it
-if one does.** Run `git ls-files 'tools/*.py' 'tools/*.sh'` and read the docstrings. The usual
+if one does.** Read `tools/README.md` first: it indexes every tool, with a "which tool answers my
+question" table. Then run `git ls-files 'tools/*.py' 'tools/*.sh'` and read the docstrings. The usual
 duplicates are a 6502 disassembler (`tools/banktest/dis6502.py` decodes any pinned row's bytes:
 `--find <row-id>`, any bank window, word tables) and ROM-corpus scanners under `tools/recon/`.
 Two agents in one session have each written their own scratchpad disassembler, and a third
