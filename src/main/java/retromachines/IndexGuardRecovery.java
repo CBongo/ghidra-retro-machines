@@ -28,8 +28,6 @@ import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryAccessException;
 import ghidra.program.model.mem.MemoryBlock;
-import ghidra.program.model.pcode.PcodeOp;
-import ghidra.program.model.pcode.Varnode;
 import ghidra.program.model.scalar.Scalar;
 import ghidra.program.model.symbol.Reference;
 
@@ -387,19 +385,7 @@ final class IndexGuardRecovery {
 
 	/** Whether any p-code output of {@code instr} overlaps register {@code reg}. */
 	private static boolean writes(Instruction instr, Register reg) {
-		long lo = reg.getAddress().getOffset();
-		long hi = lo + reg.getMinimumByteSize() - 1;
-		for (PcodeOp op : instr.getPcode()) {
-			Varnode out = op.getOutput();
-			if (out == null || !out.isRegister()) {
-				continue;
-			}
-			long o = out.getOffset();
-			if (o <= hi && o + out.getSize() - 1 >= lo) {
-				return true;
-			}
-		}
-		return false;
+		return PcodeShapes.writesRegister(instr, reg);
 	}
 
 	private static boolean sameRegister(Register a, Register b) {

@@ -15,7 +15,6 @@
  */
 package retromachines;
 
-import java.util.Locale;
 import java.util.Set;
 
 import ghidra.program.model.address.Address;
@@ -62,17 +61,24 @@ final class MosOperands {
 
 	/**
 	 * The register a 6502 store targets -- {@code 'A'}, {@code 'X'}, or {@code 'Y'} for
-	 * {@code STA}/{@code STX}/{@code STY} -- or {@code null} for any other mnemonic. In
-	 * particular the read-modify-write stores ({@code INC}/{@code DEC}/{@code ASL}/
-	 * {@code LSR}/{@code ROL}/{@code ROR}) return {@code null}: they mutate the target in
-	 * place and this scanner does not model the resulting value.
+	 * {@code STA}/{@code STX}/{@code STY} -- or {@code null} when the instruction stores no
+	 * register's value to non-stack memory ({@link PcodeShapes#storeSource}). The read-modify-write
+	 * opcodes ({@code INC}/{@code DEC}/{@code ASL}/...) and the stack pushes return {@code null}:
+	 * they mutate the target in place and this scanner does not model the resulting value.
 	 */
 	static Character storeRegister(Instruction instr) {
-		String mnem = instr.getMnemonicString().toUpperCase(Locale.ROOT);
-		if (mnem.equals("STA") || mnem.equals("STX") || mnem.equals("STY")) {
-			return mnem.charAt(2); // 'A' | 'X' | 'Y'
+		CpuRegs regs = CpuRegs.of(instr.getProgram().getLanguage());
+		Register stored = PcodeShapes.storeSource(instr);
+		if (stored == null) {
+			return null;
 		}
-		return null;
+		if (stored.equals(regs.acc())) {
+			return 'A';
+		}
+		if (stored.equals(regs.x())) {
+			return 'X';
+		}
+		return stored.equals(regs.y()) ? 'Y' : null;
 	}
 
 	static boolean writesAddress(Instruction instr, Address addr) {
@@ -119,18 +125,24 @@ final class MosOperands {
 	}
 
 	/**
-	 * Whether {@code instr} writes {@code reg}, by the same mnemonic sets this scanner's own
-	 * backward walks stop on. Exposed for {@link BankMirrors}' discovery walks (grm-mej.2), which
-	 * are structurally the same walk asking a different question and must agree with these on
-	 * what clobbers a register -- a discovery pass that walked past a modifier this scanner stops
-	 * at would nominate a cell the scanner can then never resolve through.
+	 * Whether {@code instr} writes the accumulator/index register {@code reg} ({@code 'A'},
+	 * {@code 'X'}, {@code 'Y'}), read off its p-code ({@link PcodeShapes#writesRegister}) rather than
+	 * a mnemonic set (grm-jjuc W0). Exposed for {@link BankMirrors}' discovery walks (grm-mej.2),
+	 * which are structurally the same walk as this scanner's own backward walks and must agree
+	 * with them on what clobbers a register. Undocumented read-modify-write opcodes that also write
+	 * A ({@code SLO}, {@code ISC}, {@code LAX}...) now count; the mnemonic sets never listed them.
 	 * <p>
-	 * A call is deliberately NOT covered: {@code JSR} modifies every register but is not in any
-	 * modifier set, so every walk tests {@code getFlowType().isCall()} separately.
+	 * A call is deliberately NOT covered: {@code JSR} modifies every register but its p-code writes
+	 * none of them, so every walk tests {@code getFlowType().isCall()} separately.
 	 */
 	static boolean modifiesRegister(Instruction instr, char reg) {
-		return modifiesRegister(registerModifiers(reg), instr.getMnemonicString().toUpperCase(Locale.ROOT),
-			instr);
+		CpuRegs regs = CpuRegs.of(instr.getProgram().getLanguage());
+		return PcodeShapes.writesRegister(instr, switch (reg) {
+			case 'A' -> regs.acc();
+			case 'X' -> regs.x();
+			case 'Y' -> regs.y();
+			default -> null;
+		});
 	}
 
 	/**

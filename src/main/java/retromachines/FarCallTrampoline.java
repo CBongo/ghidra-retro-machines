@@ -33,8 +33,6 @@ import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryAccessException;
 import ghidra.program.model.mem.MemoryBlock;
-import ghidra.program.model.pcode.PcodeOp;
-import ghidra.program.model.pcode.Varnode;
 import ghidra.program.model.symbol.FlowType;
 import ghidra.program.model.symbol.Reference;
 import ghidra.program.model.symbol.ReferenceIterator;
@@ -421,31 +419,25 @@ final class FarCallTrampoline {
 		return new ArrayList<>(callers);
 	}
 
-	/** Whether {@code instr}'s p-code writes register {@code reg} ('A', 'X' or 'Y'). */
+	/**
+	 * Whether {@code instr}'s p-code writes register {@code reg} ('A', 'X' or 'Y'); an instruction
+	 * with no obtainable p-code is assumed to write it. Delegates to
+	 * {@link PcodeShapes#writesRegister} (grm-jjuc W0).
+	 */
 	static boolean writesRegister(Program program, Instruction instr, char reg) {
-		PcodeOp[] ops;
 		try {
-			ops = instr.getPcode();
+			instr.getPcode();
 		}
 		catch (RuntimeException e) {
 			return true; // cannot tell: assume it does
 		}
-		for (PcodeOp op : ops) {
-			Varnode out = op.getOutput();
-			if (out == null) {
-				continue;
-			}
-			Register r;
-			try {
-				r = program.getRegister(out);
-			}
-			catch (RuntimeException e) {
-				continue;
-			}
-			if (r != null && r.getName().equalsIgnoreCase(String.valueOf(reg))) {
-				return true;
-			}
-		}
-		return false;
+		CpuRegs regs = CpuRegs.of(program.getLanguage());
+		Register r = switch (Character.toUpperCase(reg)) {
+			case 'A' -> regs.acc();
+			case 'X' -> regs.x();
+			case 'Y' -> regs.y();
+			default -> null;
+		};
+		return PcodeShapes.writesRegister(instr, r);
 	}
 }

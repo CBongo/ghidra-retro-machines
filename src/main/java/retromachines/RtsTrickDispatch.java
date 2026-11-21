@@ -206,16 +206,10 @@ final class RtsTrickDispatch {
 					: MOS6502;
 		}
 
+		/** Hoisted onto {@link PcodeShapes#writesRegister} (grm-jjuc W0); equivalent to the old
+		 * result-object test for all 256 SPC700 opcodes (X, Y, SP). */
 		private static boolean writesRegister(Instruction instr, Register reg) {
-			if (reg == null) {
-				return false;
-			}
-			for (Object o : instr.getResultObjects()) {
-				if (o instanceof Register r && (r.equals(reg) || r.contains(reg))) {
-					return true;
-				}
-			}
-			return false;
+			return PcodeShapes.writesRegister(instr, reg);
 		}
 	}
 
