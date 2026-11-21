@@ -43,7 +43,25 @@ bash tools/banktest/realrom-test.sh nominate <romdir>   # board-gap survey
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
-_(None open.)_
+- [ ] **FF3 `$EE:74A4` (1.20): does vehicle event command `$E1`-`$F2` ever run, and does its
+  `JSR` to an `RTL` routine come back?** (`grm-9nxj.49` P3). The handler is `PHP / PHB /
+  JSR $0DBC / PLB / PLP / SEP #$20 / JMP $7093` (everything8215/ff6 `src/world/event.asm`
+  `VehicleCmd_e1`, "ending airship scene"). `$EE:0DBC` is `FalconEndingMain`, which ends
+  `JSR PopMode7Vars / RTL`. Its other entry is right: `EndingAirshipScene2` (`$EE:8ED4`, entered
+  by `JSL` through `EndingAirshipScene_ext`) tail-jumps to it with `JMP $0DBC` at `$EE:8FAC`. From
+  the `JSR` in the handler, though, the `RTL` pulls the handler's `PHB` byte as the program bank,
+  so it returns to `ee74a9` only if DBR is `$EE` there. The world-map code sets DBR to `$00` or
+  `$7E` (`src/world/init.asm`); no code found sets `$EE`. The disassembly calls the command
+  "ending airship scene", not "unused" (it does say "unused ???" for `$F6` and `$F9`).
+  Is `$E1`-`$F2` used by any vehicle script, and if it runs, what DBR does it have? An emulator
+  breakpoint at `$EE:74A4` during the ending would settle it.
+  - **Why it matters:** the DBR analyzer models `JSR` into an `RTL`-only routine as popping the
+    caller's pushed bank (FZero's `PHK / JSR` thunk). Here that pops the `PHB` byte, the handler's
+    `PLB` / `PLP` then pull one byte too many, and the interpreter loop `$EE:7084` comes back one
+    byte short. That poisons the stack at its head `$EE:7093` and loses DBR for the whole routine
+    (w_ff3: ~115 operands behind it). If the command never runs (or never comes back), the agent
+    plan is a narrow rule: a `JSR` into an `RTL`-only routine whose popped byte is not a provable
+    `PHK` of the current bank does not return to the fall-through.
 
 ---
 
