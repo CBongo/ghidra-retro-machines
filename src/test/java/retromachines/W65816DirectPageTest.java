@@ -381,6 +381,31 @@ public class W65816DirectPageTest extends AbstractProgramTest {
 		assertNull(dpWarning(0x8300));
 	}
 
+	/**
+	 * grm-9nxj.50 (FF3 {@code $C2:5864}): F pushes two argument words and calls P, which moves its
+	 * return address over them ({@code LDA $01,S ; STA $05,S}), pulls four bytes and returns. F's
+	 * stack is empty again, so its {@code PEA #$0700 ; PLD ; RTS} hands $0700 back to H.
+	 */
+	@Test
+	public void calleeThatDropsItsArgumentsBalancesTheCaller() throws Exception {
+		lay("0x8100", "a3 01 83 05 68 68 60", "P");
+		lay("0x8000", "f4 11 11 f4 22 22 20 00 81 f4 00 07 2b 60", "F");
+		lay("0x8200", "20 00 80 a5 10 60", "H");
+		analyzeAll();
+		assertEquals(Integer.valueOf(0x700), dpAt(0x8203));
+		assertRef(0x8203, 0x0710, RefType.READ);
+	}
+
+	/** The same tail storing to $03,S is no argument drop: F's exit stack is not balanced. */
+	@Test
+	public void aMisplacedReturnAddressCopyIsNotAnArgumentDrop() throws Exception {
+		lay("0x8100", "a3 01 83 03 68 68 60", "P");
+		lay("0x8000", "f4 11 11 f4 22 22 20 00 81 f4 00 07 2b 60", "F");
+		lay("0x8200", "20 00 80 a5 10 60", "H");
+		analyzeAll();
+		assertNull(dpAt(0x8203));
+	}
+
 	/** Re-analysis does not stack a second warning on the same entry. */
 	@Test
 	public void reanalysisReplacesTheWarning() throws Exception {

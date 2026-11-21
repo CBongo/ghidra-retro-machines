@@ -445,6 +445,13 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 		 * tail target still in progress). Recorded only for a walk that judged every exit.
 		 */
 		private final Map<Address, Set<String>> exitKinds = new HashMap<>();
+		/**
+		 * Bytes of its caller's stack a summarized routine drops ({@link W65816CalleePop},
+		 * grm-9nxj.50): 0 or more when its walk succeeded, absent when it did not.
+		 */
+		private final Map<Address, Integer> exitPurge = new HashMap<>();
+		/** Whether a function's body has an argument-dropping tail ({@link W65816CalleePop}). */
+		private final Map<Address, Boolean> popTail = new HashMap<>();
 		/** {@link #isEpilogue} decisions: a shared epilogue pulls what its jumper pushed. */
 		private final Map<Address, Boolean> epilogues = new HashMap<>();
 		/** Trace only (GRM_DP_SUMMARY_TRACE): where DP turned UNKNOWN in the walk in progress. */
@@ -1005,7 +1012,63 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				notes.add("call at " + ins.getAddress() + " to " + flows[0] +
 					" lost DP (callee summary UNKNOWN)");
 			}
-			return new State(dp, UNKNOWN, UNKNOWN, UNKNOWN, rtlConsumesPushedBank(ins, s));
+			return new State(dp, UNKNOWN, UNKNOWN, UNKNOWN, droppedArguments(ins,
+				new State(s.dp, s.a, s.x, s.y, rtlConsumesPushedBank(ins, s))));
+		}
+
+		/**
+		 * The caller's stack after a call to a routine that drops its caller's arguments
+		 * ({@link W65816CalleePop}, grm-9nxj.50; FF3 {@code PEA / PEA / JSR $C2:5864}): the
+		 * pushed bytes are gone. Poisoned when the callee has such a tail but its summary walk
+		 * could not confirm how many bytes it drops, or when the drop splits a pushed item or
+		 * reaches below this routine's own pushes. Other calls leave the stack alone.
+		 */
+		private List<Pushed> droppedArguments(Instruction ins, State s) {
+			Address[] flows = ins.getFlows();
+			if (flows.length != 1 || !hasPopTail(flows[0])) {
+				return s.stack;
+			}
+			exitDp(flows[0]);
+			Integer n = exitPurge.get(flows[0]);
+			if (n == null) {
+				return null;
+			}
+			Object[] r = dropBytes(s, n);
+			return (Integer) r[1] == 0 ? ((State) r[0]).stack : null;
+		}
+
+		private boolean hasPopTail(Address target) {
+			return popTail.computeIfAbsent(target, t -> {
+				Function f = program.getFunctionManager().getFunctionAt(t);
+				if (f == null) {
+					return false;
+				}
+				for (Instruction i : program.getListing().getInstructions(f.getBody(), true)) {
+					if (W65816CalleePop.tailAt(program, i) != null) {
+						return true;
+					}
+				}
+				return false;
+			});
+		}
+
+		/**
+		 * Drops {@code n} bytes of pushed items off the top: the new state, and the bytes still to
+		 * drop past the bottom of this routine's own pushes. The stack is poisoned when an item
+		 * would be split or the top is a {@link #FLOOR}/{@link #UNDER}.
+		 */
+		private static Object[] dropBytes(State s, int n) {
+			List<Pushed> st = s.stack;
+			while (n > 0 && st != null && !st.isEmpty()) {
+				Pushed top = st.get(st.size() - 1);
+				if (top.width <= 0 || top.width > n) {
+					st = null;
+					break;
+				}
+				n -= top.width;
+				st = List.copyOf(st.subList(0, st.size() - 1));
+			}
+			return new Object[] { new State(s.dp, s.a, s.x, s.y, st), st == null ? 0 : n };
 		}
 
 		/**
@@ -1236,6 +1299,7 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 			boolean ok = true;
 			String why = null;
 			Address whyAt = null;
+			Integer purge = null;
 			Map<Address, State> states =
 				walk(target, callee, new State(ENTRY_DP, UNKNOWN, UNKNOWN, UNKNOWN, List.of()), true);
 			Set<String> wnotes = lastNotes;
@@ -1255,9 +1319,18 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				Address[] fl = i.getFlows();
 				int out = UNKNOWN;
 				boolean exit = false;
+				int drops = 0;
 				if (mn.equals("RTS") || mn.equals("RTL")) {
 					exit = true;
 					out = st.dp;
+					// A tail that drops the caller's arguments pulls below the entry on purpose
+					// and still returns to the caller (W65816CalleePop, grm-9nxj.50).
+					W65816CalleePop.Tail tail = W65816CalleePop.tailAt(program, i);
+					State at = tail == null ? null : states.get(tail.store());
+					if (at != null && at.stack != null && at.stack.isEmpty()) {
+						drops = tail.bytes();
+						st = new State(st.dp, st.a, st.x, st.y, List.of());
+					}
 				}
 				else if (!ft.isComputed() && fl.length == 1 &&
 					((!ft.isCall() && ft.isJump() && !inline(target, callee, fl[0])) ||
@@ -1277,6 +1350,16 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 					exit = true;
 					int te = exitDp(fl[0]);
 					out = te == ENTRY_DP ? st.dp : te;
+					Integer tp = hasPopTail(fl[0]) ? exitPurge.get(fl[0]) : Integer.valueOf(0);
+					if (tp == null) {
+						st = new State(st.dp, st.a, st.x, st.y, null);
+					}
+					else if (tp > 0 && !UNWOUND.equals(st.stack)) {
+						// The target drops this routine's own pushes first, then its caller's.
+						Object[] r = dropBytes(st, tp);
+						st = (State) r[0];
+						drops = (Integer) r[1];
+					}
 					if (tr && te == UNKNOWN) {
 						System.out.println("DPS   tail call at " + i.getAddress() + " to " + fl[0] +
 							" has summary UNKNOWN");
@@ -1296,6 +1379,15 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				// the call's fall-through, so its DP is beside the point (see UNDER).
 				if (exit && UNWOUND.equals(st.stack)) {
 					continue;
+				}
+				if (exit) {
+					if (purge != null && purge != drops && ok) {
+						ok = false;
+						why = "exits drop different numbers of caller bytes (" + purge + " vs " +
+							drops + ")";
+						whyAt = i.getAddress();
+					}
+					purge = drops;
 				}
 				if (exit) {
 					if (ok) {
@@ -1354,6 +1446,12 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				}
 			}
 			int result = ok ? d : UNKNOWN;
+			if (ok) {
+				exitPurge.put(target, purge == null ? 0 : purge);
+			}
+			else {
+				exitPurge.remove(target);
+			}
 			if (!states.isEmpty()) {
 				exitKinds.put(target, exitKindsOf(target, callee, states));
 			}
