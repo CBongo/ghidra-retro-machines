@@ -11,6 +11,7 @@ Platform is taken from the SUMMARY line's language id. For each case the table p
 callee evidence, caller evidence and both (confirmed), as counts and as % of analyzed functions.
 callee-only = callee - both; caller-only = caller - both.
 """
+import os
 import re
 import sys
 from collections import defaultdict
@@ -41,6 +42,8 @@ def main():
     plat = defaultdict(lambda: defaultdict(int))
     cases = defaultdict(lambda: defaultdict(lambda: [0, 0, 0]))
     rows = defaultdict(int)
+    props = defaultdict(lambda: defaultdict(int))
+    psamples = defaultdict(list)
     for p in sorted(Path(sys.argv[1]).glob("*.prc")):
         pl = None
         for line in p.read_text().splitlines():
@@ -51,6 +54,11 @@ def main():
                 for k in ("fns", "analyzed", "skippedCap", "noCallers", "callSites",
                           "indirectJumps", "tailExit", "noReturnPath", "jumpRefsIn"):
                     plat[pl][k] += int(d[k])
+            elif " PROP " in line and pl:
+                d = kv(line)
+                props[pl][d["key"]] += int(d["count"])
+            elif " PSAMPLE " in line and pl:
+                psamples[pl].append((p.stem, line.split(" PSAMPLE ", 1)[1]))
             elif " CASE " in line and pl:
                 d = kv(line)
                 c = cases[pl][d["case"]]
@@ -79,6 +87,13 @@ def main():
             else:
                 print(f"{name:28s}" + "".join(f"{c:>12s}" for c in cells))
     _ = sep
+    # Evidence-engine output (ParamReturnEvidenceDump.java): proposal counts per platform.
+    for pl in sorted(props):
+        print(f"\n== {pl}: proposals (ParamReturnEvidence)")
+        for k, v in sorted(props[pl].items(), key=lambda kv_: (not kv_[0].startswith("#"), -kv_[1])):
+            print(f"  {k:28s}{v:8d}")
+        for row, text in psamples[pl][:int(os.environ.get("GRM_PRC_PSAMPLES", "0"))]:
+            print(f"  sample {row}: {text}")
     return 0
 
 
