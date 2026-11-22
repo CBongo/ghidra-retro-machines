@@ -35,17 +35,17 @@ import ghidra.program.model.pcode.Varnode;
 /**
  * {@link ConstantSemantics} that answers by interpreting an instruction's OWN p-code (bead
  * grm-4wqd, design (b) of grm-as0m) rather than by a table of recognized mnemonics -- so a
- * CPU family {@link Mos6502ConstantSemantics} has never been taught about still folds, as long
- * as its language's p-code is straight-line enough for {@link #after} to follow.
+ * CPU family still folds, as long as its language's p-code is straight-line enough for
+ * {@link #after} to follow. Since grm-w7no this is the only {@link ConstantSemantics}.
  * <p>
  * <b>Scope: one instruction, not a window.</b> The backward walk that calls this lives in
  * {@link StoredValueScanner#constantValue} and is unchanged by this class -- every guard it
  * applies (fall-through linkage, {@code isControlFlowJoin}, the step budget, the call abort,
- * the {@link RegisterEnv} entry stop) fires exactly as it does for {@link Mos6502ConstantSemantics}.
+ * the {@link RegisterEnv} entry stop) fires there.
  * This class only answers "what does THIS instruction's p-code leave in {@code loc}, given its
  * inputs" -- each input asked of {@link Inputs}, which is the walk asking itself the same
  * question one level back. That split is what makes interpreting real p-code cheap to bolt onto
- * the existing walk instead of a second, parallel evaluator.
+ * the existing walk instead of a parallel evaluator.
  * <p>
  * <b>Demand-driven, on purpose.</b> An instruction's p-code routinely computes several outputs
  * (a result, N, Z, C, V, ...) from a shared prefix and then diverges. Asking for one of them
@@ -55,7 +55,7 @@ import ghidra.program.model.pcode.Varnode;
  * final value is forced. In particular a register read that happens before that register is
  * written within the instruction becomes a thunk over {@link Inputs#before}, which is expensive
  * (it recurses the whole walk one level deeper) and is invoked at all only if forced. The stock
- * {@code adcNmos}/{@code sbcNmos} in the class javadoc example: asking for {@code A} forces the
+ * {@code adcNmos}/{@code sbcNmos}: asking for {@code A} forces the
  * carry-in ({@code tmpC}, via {@code Inputs.before(C)}) because {@code A}'s own value depends on
  * it, but never forces anything {@code V} alone would need beyond what {@code A} already
  * required.
@@ -109,36 +109,25 @@ import ghidra.program.model.pcode.Varnode;
  * rather than declined. A writer the walk DOES resolve -- {@code SED}, {@code CLD}, or any
  * p-code that pins {@code D} -- still wins over the assumption; only a genuinely unestablished
  * read falls back. The assumption lives ONLY in this class's read of {@code D} -- never in
- * {@link StoredValueScanner#constantValue}'s walk itself and never in
- * {@link Mos6502ConstantSemantics} (whose {@code ADC}/{@code SBC} make the same binary-mode
- * assumption unconditionally, for a different reason: it never reads {@code D} at all).
+ * {@link StoredValueScanner#constantValue}'s walk itself.
  * <p>
- * <b>Known blockers to this being the default</b> (recorded on grm-4wqd, not fixed here; see
- * {@code PcodeConstantSemanticsDifferentialTest} for the fixtures that pin each one):
+ * <b>Exactness is the language's.</b> The carry-in carry-out (grm-o9k) and SBC carry polarity
+ * (grm-ef46) bugs are fixed in the bundled languages every loader here uses; stock
+ * {@code 6502:LE:16:default} still has them, so this evaluator is only as exact as the p-code
+ * of the language the program is in.
+ * <p>
+ * <b>Known limitation:</b>
  * <ul>
- * <li>(Fixed for NES by {@code 6502:LE:16:2a03} since grm-yvmw; kept here because the workaround
- * stays until grm-w7no.) Stock {@code 6502:LE:16:default} computes {@code ADC}'s carry-out as a
- * single {@code carry(A, op1)} that drops a carry-out arising solely from the carry-in
- * (grm-o9k) -- under PCODE the resulting {@code A} is right but any DERIVED carry is wrong in
- * that edge case, where {@link Mos6502ConstantSemantics}'s two-step chain is correct.</li>
- * <li>The SAME stock language's {@code SBC} computes the carry (not-borrow) flag via a bit-7
- * trick in {@code subtraction_flags1} that comes out wrong on at least one measured input
- * ({@code A=$01, SBC #$02} with carry-in 1: real/TABLE answer carry {@code =0}, stock p-code
- * says {@code 1}) -- the flag POLARITY is inverted: the trick is the textbook borrow-out, and
- * the 6502's C is not-borrow. Already known (grm-ef46 defect (2), found by the 6502-vectors tier)
- * and already fixed in both the bundled {@code 6502core.sinc} and upstream PR
- * NationalSecurityAgency/ghidra#9656; PCODE inherits it on stock until that PR lands.</li>
  * <li>An undocumented opcode whose addressing bypasses the shared {@code OP1}/{@code OP2}
- * subtables -- {@code LAX} is the example -- never resolves a memory operand, under EITHER
- * evaluator, even though this class's own interpreter handles {@code LAX}'s p-code fine in
- * isolation: {@code instr.getOpObjects(0)} yields no {@code Address} for it, so
+ * subtables -- {@code LAX} is the example -- never resolves a memory operand, even though this
+ * class's own interpreter handles {@code LAX}'s p-code fine in isolation:
+ * {@code instr.getOpObjects(0)} yields no {@code Address} for it, so
  * {@link MosOperands#plainAbsoluteTarget} always declines, and {@code
- * WalkInputs.memoryOperand()} -- the one implementation either evaluator's
- * {@link Inputs#memoryOperand} ever calls -- uses that same resolution to decide what address
- * to hand a strategy's hook, so the hook is never even asked about the real address. Not
- * specific to PCODE (see the previous stack-relative-reload note's resolution, once a fix
- * grounded in that shared plumbing landed) -- a limit of the SHARED {@code memoryOperand}
- * machinery on non-standard addressing, not of this class's own {@code LOAD} handling.</li>
+ * WalkInputs.memoryOperand()} -- the one implementation {@link Inputs#memoryOperand} ever
+ * calls -- uses that same resolution to decide what address
+ * to hand a strategy's hook, so the hook is never even asked about the real address. A
+ * limit of the shared {@code memoryOperand} machinery on non-standard addressing, not of this
+ * class's own {@code LOAD} handling.</li>
  * </ul>
  * <p>
  * <b>The stack-relative-reload idiom is NOT a blocker</b> ({@code PHA / TXA / PHA / TSX / LDA
@@ -559,7 +548,7 @@ final class PcodeConstantSemantics implements ConstantSemantics {
 			// Our own address is forced ONLY when there is a target to disagree with (bead
 			// grm-om3i): with no target, a disagreement is impossible and memoryOperand() is the
 			// answer either way, so forcing it would only spend budget on the index register's
-			// walk that TABLE never spends. The target itself is memoized by the Inputs, so the
+			// walk. The target itself is memoized by the Inputs, so the
 			// memoryOperand() below does not recompute it.
 			if (target != null) {
 				Integer addrVal = addressThunk.get();
@@ -602,10 +591,8 @@ final class PcodeConstantSemantics implements ConstantSemantics {
 		 * On NES the 2A03 has no decimal mode at all (the NES language {@code 6502:LE:16:2a03}
 		 * compiles the D branch out, and stock {@code 6502:LE:16:default} never read {@code D},
 		 * so this seam is never consulted there). On the C64 languages, where {@code D} is a real, settable flag, {@code 0} is
-		 * the same assumption {@link Mos6502ConstantSemantics}'s {@code ADC}/{@code SBC}
-		 * already make unconditionally: decimal mode in banking-relevant code is rare, and
-		 * assuming binary is what let the TABLE evaluator resolve these at all before this
-		 * class existed.
+		 * the assumption that decimal mode in banking-relevant code is rare, and
+		 * assuming binary is what lets {@code ADC}/{@code SBC} resolve at all.
 		 * <p>
 		 * This is a single, per-program seam and nothing else: a future per-game or per-region
 		 * override (a program that is KNOWN to run in decimal mode at a query site) plugs in

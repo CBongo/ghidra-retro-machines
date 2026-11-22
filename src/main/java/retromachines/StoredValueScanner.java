@@ -610,15 +610,6 @@ final class StoredValueScanner {
 
 		private int steps;
 
-		/** Cached by {@link #constantValue} the first time it is asked, within THIS one query
-		 * tree -- {@link BoardBankAnalyzer#constantSemanticsMode} reads a program option via
-		 * two {@link ghidra.framework.options.Options} lookups, and a single walk can call
-		 * into {@link #constantValue} recursively many times over the SAME program, so caching
-		 * it once per {@link Budget} instance (freshly created per top-level entry, see every
-		 * {@code new Budget(...)} call site) avoids repeating that lookup without introducing
-		 * any state that outlives one query or is shared across programs. */
-		private ConstantSemantics semantics;
-
 		Budget(int steps) {
 			this.steps = steps;
 		}
@@ -626,14 +617,6 @@ final class StoredValueScanner {
 		/** Spends one step; false once the budget is exhausted. */
 		boolean spend() {
 			return steps-- > 0;
-		}
-
-		/** {@link #semanticsFor}, cached for the lifetime of this {@link Budget}. */
-		private ConstantSemantics semanticsFor(Program program) {
-			if (semantics == null) {
-				semantics = StoredValueScanner.semanticsFor(program);
-			}
-			return semantics;
 		}
 	}
 
@@ -1352,10 +1335,10 @@ final class StoredValueScanner {
 	 * Whether {@code setter}'s N/Z are the flags of the value {@link #constantRegisterValue}
 	 * evaluates for it. Always, except for {@code ADC}/{@code SBC}: in NMOS decimal mode they set
 	 * N/Z from the BINARY result while A receives the BCD one. So they qualify when D is provably
-	 * clear before {@code setter}, or -- D unknown -- under the TABLE evaluator, which computes A
-	 * as the binary sum by its own named assumption ({@link Mos6502ConstantSemantics}' "binary
-	 * mode is assumed", the hardware on NES's 2A03), so the flags and the value agree. A provably
-	 * SET D, or an unknown D under the PCODE evaluator (whose {@code ADC} honours D), declines.
+	 * clear before {@code setter}, or when D is unestablished, which
+	 * {@link PcodeConstantSemantics} treats as clear (its {@code assumedDecimalFlag}, bead
+	 * grm-4wqd; the hardware on NES's 2A03) so the flags and the value agree. A provably SET D
+	 * declines.
 	 */
 	private static boolean binaryModeFlags(Program program, Instruction setter, String mnem) {
 		if (!mnem.equals("ADC") && !mnem.equals("SBC")) {
@@ -1363,11 +1346,7 @@ final class StoredValueScanner {
 		}
 		Integer d = constantLocValue(program, setter, ConstantSemantics.Loc.D, Hooks.INERT,
 			RegisterEnv.NONE, new Budget(MAX_RESOLVE_STEPS));
-		if (d != null) {
-			return d == 0;
-		}
-		return BoardBankAnalyzer.constantSemanticsMode(program) ==
-			BoardBankAnalyzer.ConstantSemanticsMode.TABLE;
+		return d == null || d == 0;
 	}
 
 	/**
@@ -1614,7 +1593,7 @@ final class StoredValueScanner {
 			return null;
 		}
 		ConstantSemantics.Loc loc = ConstantSemantics.Loc.ofRegister(reg);
-		ConstantSemantics semantics = budget.semanticsFor(program);
+		ConstantSemantics semantics = PcodeConstantSemantics.INSTANCE;
 		List<Instruction> body = new ArrayList<>();
 		Set<Address> bodyAddrs = new HashSet<>();
 		Instruction in = head;
@@ -2272,7 +2251,7 @@ final class StoredValueScanner {
 	 * semantics what that instruction leaves there, answering each input the instruction reads
 	 * with another walk of this same method. So the carry an {@code ADC} adds in is an ordinary
 	 * query (it used to be a second, guard-for-guard duplicate walk), and every operation folds
-	 * exactly when all of its inputs do. See {@link Mos6502ConstantSemantics} for the table.
+	 * exactly when all of its inputs do. See {@link PcodeConstantSemantics} for the evaluator.
 	 * <p>
 	 * Every guard {@link #resolveStoredValue} applies is reused verbatim: fall-through block
 	 * linkage, {@link FlowEdges#isControlFlowJoin}, and {@link #MAX_BACKWARD_SCAN}; a call ends the walk.
@@ -2320,18 +2299,6 @@ final class StoredValueScanner {
 	}
 
 	/**
-	 * The semantics {@link #constantValue} evaluates with, for {@code program} -- selected per
-	 * program by the {@code Constant Evaluator} analyzer option
-	 * ({@link BoardBankAnalyzer#constantSemanticsMode}, bead grm-4wqd), defaulting to
-	 * {@link Mos6502ConstantSemantics}.
-	 */
-	private static ConstantSemantics semanticsFor(Program program) {
-		return BoardBankAnalyzer.constantSemanticsMode(program) ==
-			BoardBankAnalyzer.ConstantSemanticsMode.PCODE ? PcodeConstantSemantics.INSTANCE
-					: Mos6502ConstantSemantics.INSTANCE;
-	}
-
-	/**
 	 * Whether the routine {@code call} ({@code JSR}) invokes provably returns register {@code reg}
 	 * unchanged (bead grm-mej.13), so a backward walk resolving {@code reg} may step over it
 	 * instead of declaring it clobbered. Answers {@code false} -- today's behaviour -- for anything
@@ -2363,7 +2330,7 @@ final class StoredValueScanner {
 		if (depth > MAX_RESOLVE_DEPTH) {
 			return null;
 		}
-		ConstantSemantics semantics = budget.semanticsFor(program);
+		ConstantSemantics semantics = PcodeConstantSemantics.INSTANCE;
 		Listing listing = program.getListing();
 
 		Instruction cur = at;
@@ -2422,7 +2389,7 @@ final class StoredValueScanner {
 	 * {@link #effectiveTarget} and {@link #memoryOperand} need it, and an implementation may ask
 	 * for both -- {@link PcodeConstantSemantics} checks its own address against the target and
 	 * then reads the operand -- so without the memo every such read walked for the index
-	 * register twice, spending budget {@link Mos6502ConstantSemantics} never spent. Caching is
+	 * register twice, spending budget on the repeat. Caching is
 	 * sound because nothing the computation depends on (instruction, env, depth) varies within
 	 * one instance; only the shared {@link Budget} does, and a repeat would merely spend more
 	 * of it for the same answer or a budget-exhausted {@code null}.

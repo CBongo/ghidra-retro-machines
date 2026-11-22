@@ -17,10 +17,10 @@
 // closely on SetAnalyzerEnabled.java's shape and failure discipline -- see that file's header
 // for the general rationale (why this must run as a -preScript, why every failure mode is
 // checked explicitly rather than trusted to Ghidra's own setAnalysisOption). This script exists
-// specifically so the real-ROM tier can force StoredValueScanner's Constant Evaluator option to
-// PCODE for a report-only A/B run, without adding a retromachines-specific compile dependency
-// here: the option's enum TYPE is discovered from its own CURRENT value via reflection
-// (Enum.valueOf against that runtime class), not imported.
+// so the real-ROM tier can force an enum analyzer option for a report-only A/B run (it was
+// written for the Constant Evaluator option, retired in grm-w7no), without adding a
+// retromachines-specific compile dependency here: the option's enum TYPE is discovered from its
+// own CURRENT value via reflection (Enum.valueOf against that runtime class), not imported.
 //
 // MUST RUN AS A -preScript, for the same reason as SetAnalyzerEnabled: headless applies
 // -preScript before auto-analysis and -postScript after, and the option has to be set before
@@ -28,7 +28,7 @@
 //
 // Pass whitespace-free key:value tokens:
 //
-//   -preScript SetAnalyzerOption.java analyzer:NES_Bank_State option:Constant_Evaluator value:PCODE
+//   -preScript SetAnalyzerOption.java analyzer:<Analyzer_Name> option:<Option_Name> value:<CONSTANT>
 //
 //   analyzer   the analyzer's display name, with SPACES REPLACED BY UNDERSCORES (see
 //              SetAnalyzerEnabled.java's header for why -- script arguments are space-separated
@@ -38,7 +38,7 @@
 //              actually registered for this program
 //              (program.getOptions(Program.ANALYSIS_PROPERTIES).getOptionNames()): first an
 //              exact match, else a unique case-insensitive substring match.
-//   value      the enum CONSTANT NAME to set, e.g. PCODE or TABLE -- matched by
+//   value      the enum CONSTANT NAME to set, matched by
 //              Enum.valueOf(...) against the option's OWN current value's runtime class, so
 //              this script never needs to import the enum type itself.
 //

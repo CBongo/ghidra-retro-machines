@@ -26,9 +26,7 @@ import org.junit.Test;
 
 import ghidra.program.model.address.Address;
 import ghidra.program.model.listing.Instruction;
-import ghidra.program.model.listing.Program;
 
-import retromachines.BoardBankAnalyzer.ConstantSemanticsMode;
 import retromachines.ConstantSemantics.Inputs;
 import retromachines.ConstantSemantics.Loc;
 
@@ -299,42 +297,5 @@ public class PcodeConstantSemanticsProgramTest extends AbstractProgramTest {
 		};
 
 		assertEquals(Integer.valueOf(0x06), PcodeConstantSemantics.INSTANCE.after(adc, Loc.A, in));
-	}
-
-	// ------------------------------------------------------------------
-	// The analyzer option: selects the implementation, defaults to TABLE.
-	// ------------------------------------------------------------------
-
-	@Test
-	public void optionDefaultsToTable() throws Exception {
-		build("6502:LE:16:default");
-		assertEquals(ConstantSemanticsMode.TABLE, BoardBankAnalyzer.constantSemanticsMode(program));
-	}
-
-	@Test
-	public void optionSelectsPcodeUnderEitherAnalyzerName() throws Exception {
-		build("6502:LE:16:default");
-		inTx(program, "set option", () -> {
-			program.getOptions(Program.ANALYSIS_PROPERTIES)
-					.getOptions(C64BankingAnalyzer.NAME)
-					.setEnum(BoardBankAnalyzer.CONSTANT_SEMANTICS_OPTION, ConstantSemanticsMode.PCODE);
-		});
-		assertEquals(ConstantSemanticsMode.PCODE, BoardBankAnalyzer.constantSemanticsMode(program));
-	}
-
-	/** {@link BoardBankAnalyzer#registerOptions} actually registers the option under
-	 *  {@code TABLE} default, on either concrete subclass. */
-	@Test
-	public void registerOptionsRegistersTableDefault() throws Exception {
-		build("6502:LE:16:default");
-		ghidra.framework.options.Options options =
-			program.getOptions(Program.ANALYSIS_PROPERTIES).getOptions(NesBankingAnalyzer.NAME);
-		inTx(program, "register options", () -> {
-			new NesBankingAnalyzer().registerOptions(options, program);
-		});
-		// Passing PCODE as getEnum's own fallback here: if registerOptions had NOT seeded
-		// TABLE as the option's actual default/current value, this would come back PCODE.
-		assertEquals(ConstantSemanticsMode.TABLE,
-			options.getEnum(BoardBankAnalyzer.CONSTANT_SEMANTICS_OPTION, ConstantSemanticsMode.PCODE));
 	}
 }

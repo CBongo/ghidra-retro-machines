@@ -495,8 +495,7 @@ final class LoopIdioms {
 	 * </ul>
 	 * Then every iteration sees {@code R} = {@code n}, {@code n+d}, ... in order, stopping where
 	 * the branch first falls through, which is the range above. "Writes {@code R}" is
-	 * {@link Mos6502ConstantSemantics#writes}, which unions the mnemonic table with the
-	 * instruction's p-code, so it is conservative under either constant-evaluator mode.
+	 * {@link PcodeConstantSemantics#writes}: whether the instruction's p-code writes it.
 	 *
 	 * @param valueBefore {@code R}'s provable constant on entry to an instruction, or null
 	 */
@@ -603,7 +602,7 @@ final class LoopIdioms {
 					return null; // a second way into the body
 				}
 			}
-			if (Mos6502ConstantSemantics.INSTANCE.writes(in, loc)) {
+			if (PcodeConstantSemantics.INSTANCE.writes(in, loc)) {
 				if (writer != null) {
 					return null;
 				}
@@ -648,7 +647,7 @@ final class LoopIdioms {
 		if (MosOperands.isImmediateLoadInto(p, rn.charAt(0))) {
 			n = MosOperands.immediateOperandValue(p);
 		}
-		else if (Mos6502ConstantSemantics.INSTANCE.writes(p, loc)) {
+		else if (PcodeConstantSemantics.INSTANCE.writes(p, loc)) {
 			return null;
 		}
 		else {

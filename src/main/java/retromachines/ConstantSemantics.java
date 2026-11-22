@@ -111,8 +111,7 @@ interface ConstantSemantics {
 
 	/**
 	 * Whether {@code instr}'s p-code writes any part of the register named {@code name} (or a
-	 * register containing it). Shared by {@link Mos6502ConstantSemantics} (as one half of its
-	 * writes-union) and {@link PcodeConstantSemantics} (as its entire {@link #writes} answer).
+	 * register containing it). Used by {@link PcodeConstantSemantics} as its entire {@link #writes} answer.
 	 * The 6502 languages define each flag as its own byte register, so {@code C}/{@code D} are
 	 * not slices of a status register here, but containment either way is the safe test.
 	 */

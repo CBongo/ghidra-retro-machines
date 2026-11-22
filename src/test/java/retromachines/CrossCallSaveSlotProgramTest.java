@@ -418,7 +418,7 @@ public class CrossCallSaveSlotProgramTest extends AbstractProgramTest {
 		assertEquals(Boolean.FALSE, outcome("0xc10c"));
 	}
 
-	/** ADC with D unknown: admitted under the TABLE evaluator's binary-mode assumption (the
+	/** ADC with D unknown: admitted under the evaluator's binary-mode assumption (the
 	 *  default), so {@code CLC / LDA #0 / ADC #0} sets Z. A carry branch is not modeled. */
 	@Test
 	public void adcFlagsUnderTheBinaryModeAssumption() throws Exception {

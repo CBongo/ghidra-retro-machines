@@ -29,9 +29,7 @@ import ghidra.program.model.listing.Program;
  */
 public class C64BankingAnalyzer extends BoardBankAnalyzer {
 
-	/** Package-visible (not just for {@link #getName}) so {@link BoardBankAnalyzer}'s
-	 * {@code constantSemanticsMode} can find this analyzer's option namespace without an
-	 * analyzer instance in hand (bead grm-4wqd). */
+	/** Package-visible so tests can name this analyzer's option namespace. */
 	static final String NAME = "C64 Bank State";
 	private static final String DESCRIPTION =
 		"Tracks the C64 CPU port ($01) banking state along control flow and retargets " +

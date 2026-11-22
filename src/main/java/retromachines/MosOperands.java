@@ -19,7 +19,6 @@ package retromachines;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.lang.Register;
 import ghidra.program.model.listing.Instruction;
-import ghidra.program.model.mem.MemoryAccessException;
 import ghidra.program.model.pcode.PcodeOp;
 import ghidra.program.model.scalar.Scalar;
 import ghidra.program.model.symbol.Reference;
@@ -33,21 +32,6 @@ import ghidra.program.model.symbol.Reference;
 final class MosOperands {
 
 	private MosOperands() {
-	}
-
-	/**
-	 * Whether {@code instr} uses the accumulator addressing mode ({@code ASL A} and friends)
-	 * rather than a memory operand -- the {@code bbb = 2}, {@code cc = 2} column, i.e.
-	 * {@code (op & 0x1f) == 0x0A}. Callers gate on the mnemonic first, so the other
-	 * instructions in that column (e.g. {@code TAX}, {@code NOP}) never reach here.
-	 */
-	static boolean isAccumulatorForm(Instruction instr) {
-		try {
-			return (instr.getByte(0) & 0x1F) == 0x0A;
-		}
-		catch (MemoryAccessException e) {
-			return false;
-		}
 	}
 
 	// ------------------------------------------------------------------

@@ -29,11 +29,13 @@ import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.mem.MemoryBlock;
 
 /**
- * Pins the operations {@link Mos6502ConstantSemantics} added when grm-as0m turned
- * {@link StoredValueScanner#constantRegisterValue} into a location-and-operation evaluator:
- * {@code SBC}, {@code ROL}/{@code ROR}, the memory-operand forms of the logical and arithmetic
- * operations, and the p-code half of {@link Mos6502ConstantSemantics#writes}. The
- * carry-through-{@code ADC} cases live in {@link AdcCarryConstantValueProgramTest}.
+ * Pins what {@link PcodeConstantSemantics} answers through
+ * {@link StoredValueScanner#constantRegisterValue}, on the bundled {@code 6502:LE:16:nmos}
+ * language (decimal-capable, with the corrected {@code ADC}/{@code SBC} carries): {@code SBC},
+ * {@code ROL}/{@code ROR}, the memory-operand forms of the logical and arithmetic operations,
+ * the carry the p-code derives for {@code ADC}/{@code SBC}, the decimal flag, and the p-code
+ * {@link PcodeConstantSemantics#writes}. The carry-through-{@code ADC} cases live in
+ * {@link AdcCarryConstantValueProgramTest}.
  */
 public class ConstantSemanticsProgramTest extends AbstractBundledLanguageTest {
 
@@ -80,7 +82,7 @@ public class ConstantSemanticsProgramTest extends AbstractBundledLanguageTest {
 	/** {@code SEC / SBC} is a plain subtraction: {@code $10 - $03 = $0D}. */
 	@Test
 	public void secSbcSubtracts() throws Exception {
-		build("6502:LE:16:default");
+		build("6502:LE:16:nmos");
 		builder.setBytes("0x8000", "a9 10", true); // LDA #$10
 		builder.setBytes("0x8002", "38", true); // SEC
 		builder.setBytes("0x8003", "e9 03", true); // SBC #$03
@@ -92,7 +94,7 @@ public class ConstantSemanticsProgramTest extends AbstractBundledLanguageTest {
 	/** {@code CLC} is a borrow: {@code $10 - $03 - 1 = $0C}. */
 	@Test
 	public void clcSbcBorrows() throws Exception {
-		build("6502:LE:16:default");
+		build("6502:LE:16:nmos");
 		builder.setBytes("0x8000", "a9 10", true); // LDA #$10
 		builder.setBytes("0x8002", "18", true); // CLC
 		builder.setBytes("0x8003", "e9 03", true); // SBC #$03
@@ -105,7 +107,7 @@ public class ConstantSemanticsProgramTest extends AbstractBundledLanguageTest {
 	 *  then adds in as 0: {@code $01 - $02 = $FF}, C = 0; {@code $FF + $05 + 0 = $04}. */
 	@Test
 	public void sbcBorrowOutFeedsTheNextAdc() throws Exception {
-		build("6502:LE:16:default");
+		build("6502:LE:16:nmos");
 		builder.setBytes("0x8000", "a9 01", true); // LDA #$01
 		builder.setBytes("0x8002", "38", true); // SEC
 		builder.setBytes("0x8003", "e9 02", true); // SBC #$02  -- A = $FF, C = 0
@@ -122,7 +124,7 @@ public class ConstantSemanticsProgramTest extends AbstractBundledLanguageTest {
 	/** {@code SEC / ROL A} rotates the carry into bit 0: {@code $40 -> $81}. */
 	@Test
 	public void rolRotatesTheCarryIn() throws Exception {
-		build("6502:LE:16:default");
+		build("6502:LE:16:nmos");
 		builder.setBytes("0x8000", "a9 40", true); // LDA #$40
 		builder.setBytes("0x8002", "38", true); // SEC
 		builder.setBytes("0x8003", "2a", true); // ROL A
@@ -135,7 +137,7 @@ public class ConstantSemanticsProgramTest extends AbstractBundledLanguageTest {
 	 *  rotates it into bit 7: {@code $80}. The carry comes from the shift, not a flag op. */
 	@Test
 	public void rorRotatesTheShiftedOutBitIn() throws Exception {
-		build("6502:LE:16:default");
+		build("6502:LE:16:nmos");
 		builder.setBytes("0x8000", "a9 03", true); // LDA #$03
 		builder.setBytes("0x8002", "4a", true); // LSR A     -- A = $01, C = 1
 		builder.setBytes("0x8003", "6a", true); // ROR A     -- A = $80
@@ -147,7 +149,7 @@ public class ConstantSemanticsProgramTest extends AbstractBundledLanguageTest {
 	/** Nothing establishes the carry before this {@code ROL}, so it declines. */
 	@Test
 	public void rolWithUnknownCarryDeclines() throws Exception {
-		build("6502:LE:16:default");
+		build("6502:LE:16:nmos");
 		builder.setBytes("0x8000", "a9 40", true); // LDA #$40
 		builder.setBytes("0x8002", "2a", true); // ROL A
 		builder.setBytes("0x8003", "8d 01 80", true); // STA $8001
@@ -163,7 +165,7 @@ public class ConstantSemanticsProgramTest extends AbstractBundledLanguageTest {
 	 *  {@code $F0 & $3C = $30}. */
 	@Test
 	public void andOverResolvedMemoryFolds() throws Exception {
-		build("6502:LE:16:default");
+		build("6502:LE:16:nmos");
 		builder.setBytes("0x8000", "a9 f0", true); // LDA #$F0
 		builder.setBytes("0x8002", "2d 00 90", true); // AND $9000 -- reads $3C
 		builder.setBytes("0x8005", "8d 01 80", true); // STA $8001
@@ -174,7 +176,7 @@ public class ConstantSemanticsProgramTest extends AbstractBundledLanguageTest {
 	/** The same {@code AND} declines when nothing pins the byte. */
 	@Test
 	public void andOverUnresolvedMemoryDeclines() throws Exception {
-		build("6502:LE:16:default");
+		build("6502:LE:16:nmos");
 		builder.setBytes("0x8000", "a9 f0", true); // LDA #$F0
 		builder.setBytes("0x8002", "2d 00 90", true); // AND $9000
 		builder.setBytes("0x8005", "8d 01 80", true); // STA $8001
@@ -185,7 +187,7 @@ public class ConstantSemanticsProgramTest extends AbstractBundledLanguageTest {
 	/** {@code CPX $9000} decides the carry from a resolved memory byte: {@code $3C >= $3C}. */
 	@Test
 	public void compareOverResolvedMemoryDecidesTheCarry() throws Exception {
-		build("6502:LE:16:default");
+		build("6502:LE:16:nmos");
 		builder.setBytes("0x8000", "a2 3c", true); // LDX #$3C
 		builder.setBytes("0x8002", "a9 00", true); // LDA #$00
 		builder.setBytes("0x8004", "ec 00 90", true); // CPX $9000 -- C = 1
@@ -202,7 +204,7 @@ public class ConstantSemanticsProgramTest extends AbstractBundledLanguageTest {
 	/** The undocumented {@code LAX} writes A and X but is in no mnemonic modifier table, so
 	 *  before grm-as0m the X query stepped straight over it to the {@code LDX #$05} and answered
 	 *  5 -- a confident wrong value. Its p-code result objects now stop the walk there, and
-	 *  since this table does not evaluate {@code LAX} the query declines. */
+	 *  and the shared memory-operand limit (see below) makes the query decline. */
 	@Test
 	public void undocumentedWriterIsNotSteppedOver() throws Exception {
 		build("6502:LE:16:undoc");
@@ -211,5 +213,96 @@ public class ConstantSemanticsProgramTest extends AbstractBundledLanguageTest {
 		builder.setBytes("0x8004", "8e 01 80", true); // STX $8001
 
 		assertNull(before("0x8004", 'X', NO_HOOKS));
+	}
+
+	// ------------------------------------------------------------------
+	// Carry/borrow exactness and the decimal flag (the bundled language is exact)
+	// ------------------------------------------------------------------
+
+	/** grm-o9k: a carry that arises SOLELY from the carry-in is a real carry-out:
+	 *  {@code $FF + $00 + 1 = $100}. */
+	@Test
+	public void carryFromCarryInAloneIsACarry() throws Exception {
+		build("6502:LE:16:nmos");
+		builder.setBytes("0x8000", "a9 ff", true); // LDA #$FF
+		builder.setBytes("0x8002", "38", true); // SEC
+		builder.setBytes("0x8003", "69 00", true); // ADC #$00
+		builder.setBytes("0x8005", "8d 01 80", true); // STA $8001
+
+		Instruction instr = program.getListing().getInstructionAt(builder.addr("0x8005"));
+		assertEquals(Integer.valueOf(1), StoredValueScanner.constantLocValue(program, instr,
+			ConstantSemantics.Loc.C, NO_HOOKS, RegisterEnv.NONE, new StoredValueScanner.Budget(64)));
+	}
+
+	/** grm-ef46: {@code $01 - $02} with no incoming borrow borrows out (C = 0), so the next
+	 *  {@code ADC #$05} adds 0: {@code $FF + 5 = $04}. */
+	@Test
+	public void sbcBorrowFlagIsNotBorrow() throws Exception {
+		build("6502:LE:16:nmos");
+		builder.setBytes("0x8000", "a9 01", true); // LDA #$01
+		builder.setBytes("0x8002", "38", true); // SEC
+		builder.setBytes("0x8003", "e9 02", true); // SBC #$02
+		builder.setBytes("0x8005", "69 05", true); // ADC #$05
+		builder.setBytes("0x8007", "8d 01 80", true); // STA $8001
+
+		assertEquals(Integer.valueOf(0x04), before("0x8007", 'A', NO_HOOKS));
+	}
+
+	/** A {@code SED} the walk finds wins over the binary assumption: BCD {@code $15 + $27 = $42}. */
+	@Test
+	public void sedInWindowMakesAdcDecimal() throws Exception {
+		build("6502:LE:16:nmos");
+		builder.setBytes("0x8000", "f8", true); // SED
+		builder.setBytes("0x8001", "a9 15", true); // LDA #$15
+		builder.setBytes("0x8003", "18", true); // CLC
+		builder.setBytes("0x8004", "69 27", true); // ADC #$27
+		builder.setBytes("0x8006", "8d 01 80", true); // STA $8001
+
+		assertEquals(Integer.valueOf(0x42), before("0x8006", 'A', NO_HOOKS));
+	}
+
+	/** With no {@code SED}/{@code CLD} in the window D is unestablished, assumed binary
+	 *  ({@code assumedDecimalFlag}): {@code $15 + $27 = $3C}. */
+	@Test
+	public void unestablishedDIsAssumedBinary() throws Exception {
+		build("6502:LE:16:nmos");
+		builder.setBytes("0x8000", "a9 15", true); // LDA #$15
+		builder.setBytes("0x8002", "18", true); // CLC
+		builder.setBytes("0x8003", "69 27", true); // ADC #$27
+		builder.setBytes("0x8005", "8d 01 80", true); // STA $8001
+
+		assertEquals(Integer.valueOf(0x3C), before("0x8005", 'A', NO_HOOKS));
+	}
+
+	/**
+	 * {@code LAX $10} with a hook that would resolve a load of {@code $0010}: still declines.
+	 * {@code LAX} hand-rolls its addressing instead of using the shared {@code OP1}/{@code OP2}
+	 * subtables, so {@code instr.getOpObjects(0)} yields no {@code Address},
+	 * {@link MosOperands#plainAbsoluteTarget} declines, and the shared
+	 * {@code WalkInputs.memoryOperand()} never asks the hook about {@code $10}. A known limit of
+	 * that shared machinery, not of the p-code interpretation
+	 * ({@code PcodeConstantSemanticsProgramTest.undocumentedOpcodeEvaluatesViaPcode}).
+	 */
+	@Test
+	public void laxMemoryOperandIsNotResolvedEvenWithAHook() throws Exception {
+		build("6502:LE:16:undoc");
+		builder.setBytes("0x8000", "a7 10", true); // LAX $10
+		builder.setBytes("0x8002", "8e 01 80", true); // STX $8001
+
+		StoredValueScanner.Hooks rom0010 = new StoredValueScanner.Hooks() {
+			@Override
+			public boolean isMechanismWrite(Instruction instr) {
+				return false;
+			}
+
+			@Override
+			public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
+					MechanismState inStateAtStore) {
+				return resolvedTarget != null && resolvedTarget.getOffset() == 0x0010
+						? PartialByte.fullyKnown(0x7A)
+						: null;
+			}
+		};
+		assertNull(before("0x8002", 'X', rom0010));
 	}
 }

@@ -443,8 +443,8 @@ are the ones MCP does worst. They produce one diffable listing per run, which is
 two builds needs. Run them through `ab-test.sh` or twice by hand, and diff the outputs.
 
 `SetAnalyzerOption.java` is a **pre**Script for `REALROM_EXTRA_PRESCRIPT`, not a probe. It
-forces one enum analyzer option before analysis (e.g. StoredValueScanner's Constant Evaluator
-to `PCODE`) for a report-only A/B. Read its header for the token syntax. A prescript changes
+forces one enum analyzer option before analysis for a report-only A/B (the Constant Evaluator
+option it was written for was retired in grm-w7no). Read its header for the token syntax. A prescript changes
 the analysis, so `bless` refuses to run with one set.
 
 `CodeUnitWatchProbe.java` is the other prescript. It answers **which analyzer** created or
