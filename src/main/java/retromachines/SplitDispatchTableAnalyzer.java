@@ -189,7 +189,8 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 	 *  the {@code LDA} that loads the low bytes. In the inline form (grm-cqwn) {@code call} and
 	 *  {@code stub} are the same {@code JMP (P)}. */
 	record Site(Instruction call, Instruction stub, Address table, Address hiTable,
-			Instruction loLoad, int gap, boolean viaJump) {
+			Instruction loLoad, int gap, boolean viaJump, Address switchEntry,
+				Address bankTable) {
 
 		/** Whether instructions were walked between the second store and the inline
 		 *  {@code JMP (P)} (grm-gipk.34.1); {@code viaJump} says a {@code JMP abs} was followed
@@ -325,12 +326,12 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 		}
 		AddressSpace space = call.getMinAddress().getAddressSpace();
 		return new Site(call, stub, space.getAddress(quad.lo()), space.getAddress(quad.hi()),
-			quad.loLoad(), 0, false);
+			quad.loLoad(), 0, false, null, null);
 	}
 
 	/** A recognized {@code LDA lo,r / STA P / LDA hi,r / STA P+1} quad (either load order):
 	 *  the pointer cell {@code P}, and the two table bases. */
-	private record Quad(long cell, long lo, long hi, Instruction loLoad) {}
+	private record Quad(long cell, long lo, long hi, Instruction loLoad, Instruction first) {}
 
 	/** The quad whose second store is {@code st2}, or null. */
 	private static Quad parseQuad(Listing listing, Instruction st2) {
@@ -355,10 +356,10 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 			return null;
 		}
 		if (c1 + 1 == c2) {
-			return t1.equals(t2) ? null : new Quad(c1, t1, t2, ld1);
+			return t1.equals(t2) ? null : new Quad(c1, t1, t2, ld1, ld1);
 		}
 		if (c2 + 1 == c1) {
-			return t1.equals(t2) ? null : new Quad(c2, t2, t1, ld2);
+			return t1.equals(t2) ? null : new Quad(c2, t2, t1, ld2, ld1);
 		}
 		return null;
 	}
@@ -389,6 +390,9 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 		long cell = quad.cell();
 		Instruction cur = FlowEdges.nextFallThrough(listing, st2);
 		boolean viaJump = false;
+		Address helper = null; // the FIRST JSR walked, with no X write before it (grm-gipk.36)
+		boolean xWritten = false;
+		boolean sawJsr = false;
 		for (int walked = 0; cur != null; walked++) {
 			if (IndirectJumpConstantPointer.isIndirectJumpSite(cur)) {
 				if (IndirectJumpConstantPointer.pointerCell(cur).getOffset() != cell) {
@@ -403,7 +407,8 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 				}
 				AddressSpace space = cur.getMinAddress().getAddressSpace();
 				return new Site(cur, cur, space.getAddress(quad.lo()), space.getAddress(quad.hi()),
-					quad.loLoad(), walked, viaJump);
+					quad.loLoad(), walked, viaJump, helper,
+					helper == null ? null : bankTableOf(listing, quad));
 			}
 			if (walked == FORWARD_LIMIT) {
 				return null;
@@ -427,9 +432,16 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 				if (flows.length != 1 || !isPointerSafeCallee(listing, flows[0], cell)) {
 					return null;
 				}
+				if (!sawJsr && !xWritten) {
+					helper = flows[0];
+				}
+				sawJsr = true;
 				cur = FlowEdges.nextFallThrough(listing, cur);
 			}
 			else if (in(op, HARMLESS_OPS) || writeMissesPointer(cur, op, cell)) {
+				if (in(op, WRITES_X)) {
+					xWritten = true;
+				}
 				cur = FlowEdges.nextFallThrough(listing, cur);
 			}
 			else {
@@ -437,6 +449,29 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 			}
 		}
 		return null;
+	}
+
+	/** Opcodes that change X: LDX (four modes), INX, DEX, TAX, TSX. */
+	private static final int[] WRITES_X = { 0xa2, 0xa6, 0xb6, 0xae, 0xbe, 0xe8, 0xca, 0xaa, 0xba };
+
+	/**
+	 * The byte table a switch helper's bank argument is read from (grm-gipk.36): the quad is
+	 * preceded by {@code LDX tbl,Y / TYA / ASL A / TAY}, so X is {@code tbl[i]} for the entry whose
+	 * (pre-doubling) index is Y, and a helper called before the {@code JMP (P)} switches to that
+	 * bank. Returns {@code tbl}, or null when the quad does not follow that shape.
+	 */
+	private static Address bankTableOf(Listing listing, Quad quad) {
+		Instruction tay = fallingInto(listing, quad.first());
+		Instruction asl = fallingInto(listing, tay);
+		Instruction tya = fallingInto(listing, asl);
+		Instruction ldx = fallingInto(listing, tya);
+		if (opcode(tay) != 0xa8 || opcode(asl) != 0x0a || opcode(tya) != 0x98 ||
+			opcode(ldx) != 0xbe || opcode(quad.first()) != 0xb9) {
+			return null;
+		}
+		Long tbl = operand16(ldx);
+		return tbl == null ? null
+				: ldx.getMinAddress().getAddressSpace().getAddress(tbl);
 	}
 
 	/** Whether this analyzer already commented {@code instr} (an earlier quad or round). */
@@ -685,10 +720,20 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 				break; // RAM, I/O or unmapped: not a handler
 			}
 			if (!block.equals(home) && isBanked(program, block)) {
-				if (skipLeading) {
-					continue;
+				// Which bank is not established by the walk itself; a switch helper fed a
+				// per-entry bank byte can establish it (grm-gipk.36), else the entry is declined.
+				Address placed =
+					resolveSwitchedTarget(program, site, planar, i, tableStart, target);
+				MemoryBlock placedBlock = placed == null ? null : memory.getBlock(placed);
+				if (placedBlock == null || !placedBlock.isInitialized() ||
+					placedBlock.isVolatile()) {
+					if (skipLeading) {
+						continue;
+					}
+					break; // a handler in another banked window: which bank is not established
 				}
-				break; // a handler in another banked window: which bank is not established here
+				target = placed;
+				block = placedBlock;
 			}
 			Instruction at = listing.getInstructionContaining(target);
 			if (at != null && !at.getMinAddress().equals(target)) {
@@ -711,6 +756,45 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 			targets.add(target);
 		}
 		return targets;
+	}
+
+	/**
+	 * The overlay address {@code target} reaches for entry {@code i}, when the site calls a switch
+	 * helper fed by a per-entry bank byte ({@link #bankTableOf}), or null (grm-gipk.36). The bank
+	 * byte is read from the caller's own block at {@code bankTable + i}, which must lie below the
+	 * pointer tables (so it is not one of their bytes) and not be code; {@link BankContext}
+	 * evaluates what the helper switches in for that byte ({@link BankContext#switchedByEntry}) and
+	 * where {@code target} then lands. The result is only ever a REFERENCE target, never a flow
+	 * override (the decompiler cannot follow a branch into another address space).
+	 */
+	private static Address resolveSwitchedTarget(Program program, Site site, boolean planar,
+			int i, long tableStart, Address target) {
+		BankContext ctx = BankContext.forProgram(program);
+		if (ctx == null) {
+			return null;
+		}
+		if (planar || site.switchEntry() == null || site.bankTable() == null) {
+			// No per-entry bank: only a bank the local walk PROVES live at the dispatch applies
+			// to every entry alike.
+			return ctx.resolveUnder(ctx.stateBefore(site.call()), target);
+		}
+		Memory memory = program.getMemory();
+		MemoryBlock home = memory.getBlock(site.call().getMinAddress());
+		try {
+			Address bankAddr = site.bankTable().addNoWrap(i);
+			if (bankAddr.getOffset() >= tableStart || home == null ||
+				!home.equals(memory.getBlock(bankAddr)) ||
+				program.getListing().getInstructionContaining(bankAddr) != null) {
+				return null;
+			}
+			int bank = memory.getByte(bankAddr) & 0xff;
+			BankContext.EntrySwitch sw = ctx.switchedByEntry(site.switchEntry(),
+				PartialByte.unknown(), PartialByte.fullyKnown(bank), PartialByte.unknown());
+			return sw == null ? null : ctx.resolveUnder(sw.state(), target);
+		}
+		catch (MemoryAccessException | ghidra.program.model.address.AddressOverflowException e) {
+			return null;
+		}
 	}
 
 	/** Whether a {@code switch} label sits on {@code instr}: what a {@link
