@@ -306,4 +306,88 @@ public class SplitDispatchTableAnalyzerTest extends AbstractBundledLanguageTest 
 			program.getListing().getInstructionAt(addr(stub)).getReferencesFrom().length);
 		assertNull(program.getListing().getInstructionAt(addr(HANDLERS[0])));
 	}
+
+	/** grm-gipk.33: a PLANAR split table, the megaman2 {@code 82d5} shape. {@code LDY $a9} (a RAM
+	 *  variable, so no recoverable index) then {@code LDA lo,Y / STA $08 / LDA hi,Y / STA $09 /
+	 *  JMP ($0008)}. The high bytes start {@code loBytes.length} after the low ones, which is the
+	 *  only statement of the table's extent. With {@code guard}, {@code CPY #2 / BCS} sits between. */
+	private ProgramDB buildPlanar(String loHex, String hiHex, int distance, boolean guard)
+			throws Exception {
+		builder = newBuilder("Test", LANG);
+		uninitializedRam(builder, ".ram", "0x0", 0x800);
+		builder.createMemory(".text", "0x8000", 0x8000);
+		String loads = "b9 " + word(TABLE) + " 85 08 b9 " + word(TABLE + distance) + " 85 09 6c 08 00";
+		String code = "a4 a9 " + (guard ? "c0 02 b0 0d " : "") + loads + " 60";
+		builder.setBytes(String.format("0x%x", CALLER), code, true);
+		builder.setBytes(String.format("0x%x", TABLE), loHex, false);
+		builder.setBytes(String.format("0x%x", TABLE + distance), hiHex, false);
+		for (long h : HANDLERS) {
+			builder.setBytes(String.format("0x%x", h), "60", false);
+		}
+		return builder.getProgram();
+	}
+
+	private long jmpOf(boolean guard) {
+		return CALLER + (guard ? 4 : 0) + 12;
+	}
+
+	/** Lo and hi tables 4 apart: the base distance is the count, all four handlers are followed. */
+	@Test
+	public void planarTableCountComesFromTheBaseDistance() throws Exception {
+		ProgramDB program = buildPlanar("00 10 20 30", "92 92 92 92", 4, false);
+		run(program);
+		assertEquals(List.of(HANDLERS[0], HANDLERS[1], HANDLERS[2], HANDLERS[3]),
+			computedTargets(program, jmpOf(false)));
+		String eol = program.getListing().getComment(CommentType.EOL, addr(jmpOf(false)));
+		assertNotNull(eol);
+		assertTrue(eol, eol.startsWith("split dispatch: 4-entry table at 9100 (high bytes at 9104)"));
+	}
+
+	/** The mirror order, high bytes first: the distance still bounds the low table. */
+	@Test
+	public void planarTableWithTheHighBytesFirst() throws Exception {
+		builder = newBuilder("Test", LANG);
+		uninitializedRam(builder, ".ram", "0x0", 0x800);
+		builder.createMemory(".text", "0x8000", 0x8000);
+		builder.setBytes(String.format("0x%x", CALLER), "a4 a9 b9 " + word(TABLE + 3) +
+			" 85 08 b9 " + word(TABLE) + " 85 09 6c 08 00 60", true);
+		builder.setBytes(String.format("0x%x", TABLE), "92 92 92", false);
+		builder.setBytes(String.format("0x%x", TABLE + 3), "00 10 20", false);
+		for (long h : HANDLERS) {
+			builder.setBytes(String.format("0x%x", h), "60", false);
+		}
+		ProgramDB program = builder.getProgram();
+		run(program);
+		assertEquals(List.of(HANDLERS[0], HANDLERS[1], HANDLERS[2]),
+			computedTargets(program, jmpOf(false)));
+	}
+
+	/** Trimmed at both ends: a leading entry that is RAM, and a trailing one that is RAM, are
+	 *  not targets; the valid middle is. */
+	@Test
+	public void planarTableIsTrimmedAtBothEnds() throws Exception {
+		ProgramDB program = buildPlanar("00 00 10 20 00", "03 92 92 92 03", 5, false);
+		run(program);
+		assertEquals(List.of(HANDLERS[0], HANDLERS[1], HANDLERS[2]),
+			computedTargets(program, jmpOf(false)));
+		assertNull(program.getListing().getInstructionAt(addr(HANDLERS[3])));
+	}
+
+	/** A recovered index guard ({@code CPY #2 / BCS}) beats the base distance: only 2 of the 4
+	 *  slots are reached, and the other two handlers are not followed. */
+	@Test
+	public void planarIndexGuardBeatsTheBaseDistance() throws Exception {
+		ProgramDB program = buildPlanar("00 10 20 30", "92 92 92 92", 4, true);
+		run(program);
+		assertEquals(List.of(HANDLERS[0], HANDLERS[1]), computedTargets(program, jmpOf(true)));
+		assertNull(program.getListing().getInstructionAt(addr(HANDLERS[2])));
+	}
+
+	/** Bases further apart than a byte index can span are not one table: decline. */
+	@Test
+	public void planarBasesTooFarApartAreDeclined() throws Exception {
+		ProgramDB program = buildPlanar("00 10 20 30", "92 92 92 92", 0x200, false);
+		run(program);
+		assertEquals(List.of(), computedTargets(program, jmpOf(false)));
+	}
 }

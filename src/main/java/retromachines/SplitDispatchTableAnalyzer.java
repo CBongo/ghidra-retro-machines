@@ -119,6 +119,20 @@ import ghidra.util.task.TaskMonitor;
  * a scheduled function, and an EOL comment at the call site naming the table. The stub is shared,
  * so its references are the union over its callers, exactly as a hand-written override would be.
  *
+ * <p><b>The planar form</b> (grm-gipk.33): the low and high bytes are two separate tables whose
+ * bases are not adjacent ({@code LDA lo,Y / STA P / LDA hi,Y / STA P+1 / JMP (P)}, megaman2
+ * {@code 82d5}: {@code $84dc} / {@code $84e5}), with the index a RAM variable no guard bounds. The
+ * two tables cannot overlap, so the base distance (either order, at most
+ * {@link #MAX_PLANAR_DISTANCE}) is the entry count. A recovered {@code CMP}/{@code BCC} index
+ * guard ({@link IndexGuardRecovery#guardedIndexedLoad}) wins over the distance, setting both the
+ * first and the last slot. The estimate is then trimmed at BOTH ends (owner ruling grm-c9d.8):
+ * the usual stop rules end the walk at the first bad entry (the tail), and a bad entry before the
+ * first good one (RAM, unmapped, mid-instruction, code, a table of this analyzer) is skipped
+ * instead (the head). Each planar target must also decode as code
+ * ({@link InlineJumpTableDispatch#decodesAsCode}), since the distance is only an estimate. The
+ * head skip is not applied to the interleaved form, whose extent has never been an estimate of
+ * this kind, nor to a guarded table, whose first slot is stated.
+ *
  * <p><b>Priority</b>: {@code CODE_ANALYSIS.after()}, deliberately after
  * {@link IndirectJumpConstantPointerAnalyzer}, which skips a {@code JMP (P)} that already carries a
  * computed reference; running first would hide that stub from it.
@@ -133,6 +147,10 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 	/** A doubled byte index (ASL A / TAY) addresses at most 128 two-byte entries. */
 	static final int MAX_ENTRIES = 128;
 
+	/** The most a planar table's base distance may be to count as its extent (grm-gipk.33): a
+	 *  byte index reaches 256 entries, so a wider gap means the two bases are not one table. */
+	static final int MAX_PLANAR_DISTANCE = 256;
+
 	public SplitDispatchTableAnalyzer() {
 		super(NAME, DESCRIPTION, AnalyzerType.INSTRUCTION_ANALYZER);
 		setPriority(AnalysisPriority.CODE_ANALYSIS.after());
@@ -145,13 +163,26 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 		return AnalyzerGates.is8BitPcode(program);
 	}
 
-	/** One recognized call site: the call, the stub's {@code JMP (P)}, and the table's low byte
-	 *  of entry 0 (the high byte follows it). In the inline form (grm-cqwn) {@code call} and
+	/** One recognized call site: the call, the stub's {@code JMP (P)}, the table's low byte
+	 *  of entry 0 (the high byte follows it, or, for a planar table, sits at {@code hiTable}) and
+	 *  the {@code LDA} that loads the low bytes. In the inline form (grm-cqwn) {@code call} and
 	 *  {@code stub} are the same {@code JMP (P)}. */
-	record Site(Instruction call, Instruction stub, Address table) {
+	record Site(Instruction call, Instruction stub, Address table, Address hiTable,
+			Instruction loLoad) {
 
 		boolean inline() {
 			return Objects.equals(call, stub);
+		}
+
+		/** Whether the high bytes are a separate table (grm-gipk.33), not interleaved at
+		 *  {@code table + 1}: entry {@code i} is then {@code table[i]} / {@code hiTable[i]}. */
+		boolean planar() {
+			return hiTable.getOffset() != table.getOffset() + 1;
+		}
+
+		/** The table bases other tables must not start inside. */
+		List<Address> bases() {
+			return planar() ? List.of(table, hiTable) : List.of(table);
 		}
 	}
 
@@ -192,7 +223,7 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 		}
 		Set<Address> tableStarts = new LinkedHashSet<>();
 		for (Site s : sites) {
-			tableStarts.add(s.table());
+			tableStarts.addAll(s.bases());
 		}
 		int resolvedSites = 0;
 		int resolvedTargets = 0;
@@ -212,9 +243,10 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 				}
 			}
 			String comment = "split dispatch: " + targets.size() + "-entry table at " +
-				site.table() + " via JMP (" + IndirectJumpConstantPointer.pointerCell(site.stub()) +
+				site.table() + (site.planar() ? " (high bytes at " + site.hiTable() + ")" : "") +
+				" via JMP (" + IndirectJumpConstantPointer.pointerCell(site.stub()) +
 				") at " + site.stub().getMinAddress() +
-				(site.inline() ? " (grm-cqwn)" : " (grm-3er5)");
+				(site.planar() ? " (grm-gipk.33)" : site.inline() ? " (grm-cqwn)" : " (grm-3er5)");
 			AnalyzerCommentRecord.append(program, site.call().getMinAddress(), CommentType.EOL,
 				comment, "split dispatch:");
 		}
@@ -277,16 +309,26 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 			return null;
 		}
 		long lo;
-		if (c1 == cell && c2 == cell + 1 && t2 == t1 + 1) {
+		long hi;
+		Instruction loLoad;
+		if (c1 == cell && c2 == cell + 1) {
 			lo = t1;
+			hi = t2;
+			loLoad = ld1;
 		}
-		else if (c2 == cell && c1 == cell + 1 && t1 == t2 + 1) {
+		else if (c2 == cell && c1 == cell + 1) {
 			lo = t2;
+			hi = t1;
+			loLoad = ld2;
 		}
 		else {
 			return null;
 		}
-		return new Site(call, stub, call.getMinAddress().getAddressSpace().getAddress(lo));
+		if (lo == hi) {
+			return null;
+		}
+		AddressSpace space = call.getMinAddress().getAddressSpace();
+		return new Site(call, stub, space.getAddress(lo), space.getAddress(hi), loLoad);
 	}
 
 	/**
@@ -307,26 +349,65 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 		if (home == null || !home.equals(memory.getBlock(site.table()))) {
 			return targets;
 		}
+		boolean planar = site.planar();
+		if (planar && !home.equals(memory.getBlock(site.hiTable()))) {
+			return targets;
+		}
+		int first = 0;
+		int end = MAX_ENTRIES;
+		boolean guarded = false;
+		if (planar) {
+			// grm-gipk.33: a planar table's extent is the distance between its two bases (the
+			// tables cannot overlap), unless an index guard in front of the load states it.
+			IndexGuardRecovery.LoadGuard guard =
+				IndexGuardRecovery.guardedIndexedLoad(program, site.loLoad());
+			if (guard != null && guard.range().step() == 1) {
+				guarded = true;
+				first = guard.range().lo();
+				end = guard.range().hi() + 1;
+			}
+			else {
+				long distance = Math.abs(site.hiTable().getOffset() - site.table().getOffset());
+				if (distance > MAX_PLANAR_DISTANCE) {
+					return targets; // unrelated bases: no count to derive
+				}
+				end = (int) distance;
+			}
+		}
+		long tableStart = Math.min(site.table().getOffset(), site.hiTable().getOffset());
 		// Lowest target in the table's own block above the table, so far (grm-cqwn).
 		long minTarget = Long.MAX_VALUE;
-		for (int i = 0; i < MAX_ENTRIES; i++) {
+		for (int i = first; i < end; i++) {
 			Address lo;
 			Address hi;
 			try {
-				lo = site.table().addNoWrap(2L * i);
-				hi = lo.addNoWrap(1);
+				if (planar) {
+					lo = site.table().addNoWrap(i);
+					hi = site.hiTable().addNoWrap(i);
+				}
+				else {
+					lo = site.table().addNoWrap(2L * i);
+					hi = lo.addNoWrap(1);
+				}
 			}
 			catch (Exception e) {
 				break;
 			}
-			if (i > 0 && tableStarts.contains(lo)) {
+			// Leading invalid entries of an unguarded planar table are skipped, not fatal: the
+			// start end of every stop rule below (table trim rules apply to both ends, owner
+			// ruling grm-c9d.8). Once an entry is taken, the first invalid one ends the walk.
+			boolean skipLeading = planar && !guarded && targets.isEmpty();
+			if (i > first && (tableStarts.contains(lo) || tableStarts.contains(hi))) {
 				break; // the next table begins here
 			}
-			if (hi.getOffset() >= minTarget) {
+			if (Math.max(lo.getOffset(), hi.getOffset()) >= minTarget) {
 				break; // the table ran into one of its own handlers, disassembled or not
 			}
 			if (listing.getInstructionContaining(lo) != null ||
 				listing.getInstructionContaining(hi) != null) {
+				if (skipLeading) {
+					continue;
+				}
 				break; // the table ran into code
 			}
 			int value;
@@ -339,16 +420,33 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 			Address target = targetSpace.getAddress(value);
 			MemoryBlock block = memory.getBlock(target);
 			if (block == null || !block.isInitialized() || block.isVolatile()) {
+				if (skipLeading) {
+					continue;
+				}
 				break; // RAM, I/O or unmapped: not a handler
 			}
 			if (!block.equals(home) && isBanked(program, block)) {
+				if (skipLeading) {
+					continue;
+				}
 				break; // a handler in another banked window: which bank is not established here
 			}
 			Instruction at = listing.getInstructionContaining(target);
 			if (at != null && !at.getMinAddress().equals(target)) {
+				if (skipLeading) {
+					continue;
+				}
 				break; // mid-instruction
 			}
-			if (block.equals(home) && value > site.table().getOffset()) {
+			if (planar && !InlineJumpTableDispatch.decodesAsCode(program, target, true)) {
+				// The extent is only an estimate, so each entry must also read as a handler
+				// (megaman2 92d5's 128th slot is $ff filler).
+				if (skipLeading) {
+					continue;
+				}
+				break;
+			}
+			if (block.equals(home) && value > tableStart) {
 				minTarget = Math.min(minTarget, value);
 			}
 			targets.add(target);
