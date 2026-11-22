@@ -43,26 +43,6 @@ bash tools/banktest/realrom-test.sh nominate <romdir>   # board-gap survey
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
-- [ ] **FF3 `$EE:74A4` (1.20): does vehicle event command `$E1`-`$F2` ever run, and does its
-  `JSR` to an `RTL` routine come back?** (`grm-9nxj.49` P3). The handler is `PHP / PHB /
-  JSR $0DBC / PLB / PLP / SEP #$20 / JMP $7093` (everything8215/ff6 `src/world/event.asm`
-  `VehicleCmd_e1`, "ending airship scene"). `$EE:0DBC` is `FalconEndingMain`, which ends
-  `JSR PopMode7Vars / RTL`. Its other entry is right: `EndingAirshipScene2` (`$EE:8ED4`, entered
-  by `JSL` through `EndingAirshipScene_ext`) tail-jumps to it with `JMP $0DBC` at `$EE:8FAC`. From
-  the `JSR` in the handler, though, the `RTL` pulls the handler's `PHB` byte as the program bank,
-  so it returns to `ee74a9` only if DBR is `$EE` there. The world-map code sets DBR to `$00` or
-  `$7E` (`src/world/init.asm`); no code found sets `$EE`. The disassembly calls the command
-  "ending airship scene", not "unused" (it does say "unused ???" for `$F6` and `$F9`).
-  Is `$E1`-`$F2` used by any vehicle script, and if it runs, what DBR does it have? An emulator
-  breakpoint at `$EE:74A4` during the ending would settle it.
-  - **Why it matters:** the DBR analyzer models `JSR` into an `RTL`-only routine as popping the
-    caller's pushed bank (FZero's `PHK / JSR` thunk). Here that pops the `PHB` byte, the handler's
-    `PLB` / `PLP` then pull one byte too many, and the interpreter loop `$EE:7084` comes back one
-    byte short. That poisons the stack at its head `$EE:7093` and loses DBR for the whole routine
-    (w_ff3: ~115 operands behind it). If the command never runs (or never comes back), the agent
-    plan is a narrow rule: a `JSR` into an `RTL`-only routine whose popped byte is not a provable
-    `PHK` of the current bank does not return to the fall-through.
-
 - [ ] **NES `JMP (zp)` / `JMP (abs)` through a RAM vector (1.21): callback, or a table indexed in
   the callers?** (`grm-gipk.29` P3). 31 computed jumps with no recovered table jump through a RAM
   cell that code elsewhere writes. Static analysis cannot tell a callback pointer (correct as is,
@@ -266,6 +246,7 @@ Agents don't write into your ROM library or other personal directories.
 
 | question | answer | bead |
 |---|---|---|
+| FF3 `$EE:74A4` (1.20): does vehicle event command `$E1`-`$F2` ever run, and does its `JSR $0DBC` into an `RTL` routine come back? | **It never runs: nothing calls `ee74a4`, so that vehicle script command is effectively unused and probably vestigial (owner, 2026-11-22).** `$EE:0DBC` is reached instead from event command `$BF` at `$C0:B9E7`, by `JSL` to the thunk at `$EE:8ED4`, which tail-jumps into it, so its `RTL` pairs with a real `JSL`. **Do not look for the DBR at `ee74a4`, and do not model the handler's `JSR`/`RTL` mismatch as returning.** The agent's narrow rule from the item applies: a `JSR` into an `RTL`-only routine whose popped byte is not a provable `PHK` of the current bank does not fall through. | `grm-9nxj.49` |
 | FF3 `$EE:0EAB` (1.1): how does it return? The no-return flagger flags it, but caller `ee7574` (`PHP / PHB / JSR $0EAB / PLB / PLP / ...`) looks like it expects it back. | **It does not appear to exit, and it does not matter: it is a cutscene handler cut from the game, so it never runs (owner, 2026-11-19).** By the item's own rule the flag is right in effect and `W65816NoReturnFlagAnalyzer` can be turned on as is; losing the dead fall-through after `ee7574`'s call (w_ff3 -4 at `ee7576`) is acceptable. **Do not harden `W65816NoReturnProof` to step over only `W65816ReturnProof`-proven callees on this evidence, and do not hunt for `ee0eab`'s exit.** | `grm-hf5h.27` |
 | metroid_u fixed bank `ffd8` `JMP $B3E4` (asked in session, 2026-11-15): code or dead bytes? And is "known bank 0" enough for the unexpanded `c118`/`c1b8`/`c1d1` live-bank sites? | **Both fine as is (owner, 2026-11-15).** `ffd8` sits in `$ff` padding between the reset handler (ends `JMP $c01a` at `ffd2`) and the "METROID" tag; nothing in the 128K PRG reaches it, and `$B3E4` is a routine tail, not an entry. **Leave it as raw bytes, like `e5e0`; do not disassemble it or hunt for a reference.** The `c118`/`c1b8`/`c1d1` sites carry no live-bank-set comment because their state is the known in-set bank 0; **do not re-probe their dataflow state.** The bank-3 decode at `9f54` is real mid-routine code and stays. | `grm-gipk.27` |
 | WeaponLord `$E9:51C6`/`$51C8` (1.17): is the overlap-merged 3-entry table `37ce 51b7 5198` right? | **Right in effect; keep the overlap rule as is (owner, 2026-11-14).** Index 0 is never dispatched through `$51C6`: the branch at `$E9:6EAC` skips the `JMP ($51C6,X)` at `$E9:6EAF` when the index (loaded from `$5465`) is zero. So entry 0 is dead for that site, but `$E9:37CE` happens to be the start of a real function, so laying it as a target does no harm. **Do not add a stricter overlap test for this pair.** A zero-index guard that excludes entry 0 is a possible refinement, but only worth building if another title shows a dead entry 0 that is not code. | `grm-gipk.16.11` |
