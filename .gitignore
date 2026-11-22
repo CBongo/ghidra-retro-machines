@@ -106,3 +106,7 @@ docs/drafts/
 # JVM crash dumps (hs_err_pid*.log, replay_pid*.log)
 hs_err_pid*.log
 replay_pid*.log
+
+# Stale bd JSONL export: auto-export is opt-in since bd 1.3.x and nothing reads it;
+# Dolt sync (refs/dolt/data) and bd backup are the record. `bd export` on demand (grm-2a2a.13).
+.beads/issues.jsonl
