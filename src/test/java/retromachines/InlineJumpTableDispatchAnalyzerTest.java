@@ -226,6 +226,38 @@ public class InlineJumpTableDispatchAnalyzerTest extends AbstractBundledLanguage
 		assertEquals(Boolean.TRUE, InlineJumpTableDispatch.recognizeDispatcher(program, addr(0xc27c)));
 	}
 
+	/** The megaman 9562 shape (grm-gipk.31; also megaman2/bionic 8556, lwings 9556): the index
+	 *  arrives in X and a leading TXA moves it to A, then the TAX-parked vector as above. */
+	@Test
+	public void recognizesIndexInXShape() throws Exception {
+		ProgramDB program = freshProgram();
+		// TXA; ASL A; TAY; INY; PLA; STA $f4; PLA; STA $f5; LDA ($f4),Y; TAX; INY; LDA ($f4),Y;
+		// STA $f5; STX $f4; JMP ($00f4)  -- bytes from the pinned megaman image
+		builder.setBytes("0x9562",
+			"8a 0a a8 c8 68 85 f4 68 85 f5 b1 f4 aa c8 b1 f4 85 f5 86 f4 6c f4 00", true);
+
+		assertEquals(Boolean.TRUE, InlineJumpTableDispatch.recognizeDispatcher(program, addr(0x9562)));
+	}
+
+	/** TXA after the ASL would replace the doubled index with raw X: not this shape. */
+	@Test
+	public void declinesTxaAfterAsl() throws Exception {
+		ProgramDB program = freshProgram();
+		builder.setBytes("0x9600",
+			"0a 8a a8 c8 68 85 f4 68 85 f5 b1 f4 aa c8 b1 f4 85 f5 86 f4 6c f4 00", true);
+
+		assertEquals(Boolean.FALSE, InlineJumpTableDispatch.recognizeDispatcher(program, addr(0x9600)));
+	}
+
+	@Test
+	public void declinesDoubleTxa() throws Exception {
+		ProgramDB program = freshProgram();
+		builder.setBytes("0x9640",
+			"8a 8a 0a a8 c8 68 85 f4 68 85 f5 b1 f4 aa c8 b1 f4 85 f5 86 f4 6c f4 00", true);
+
+		assertEquals(Boolean.FALSE, InlineJumpTableDispatch.recognizeDispatcher(program, addr(0x9640)));
+	}
+
 	/** A JMP abs trampoline in front of the dispatcher (metroid_u's banked $8024: JMP $C27C). */
 	@Test
 	public void recognizesDispatcherBehindJmpTrampoline() throws Exception {

@@ -44,7 +44,9 @@ import ghidra.program.model.symbol.ReferenceManager;
  * branch-free instruction run that
  * <ol>
  * <li>doubles the dispatch index in {@code A} with a single {@code ASL A} and captures it in
- * {@code Y} with {@code TAY} -- BEFORE it is clobbered by the {@code PLA}s below;</li>
+ * {@code Y} with {@code TAY} -- BEFORE it is clobbered by the {@code PLA}s below (the index may
+ * also arrive in {@code X} and be copied over by a leading {@code TXA}, as in megaman's 9562,
+ * grm-gipk.31);</li>
  * <li>pops the just-pushed return address with {@code PLA / STA zp} (low byte) then
  * {@code PLA / STA zp+1} (high byte) -- the two bytes of a pointer {@code loAddr}/{@code loAddr+1}
  * that, at the call site, equals {@code JSR+2};</li>
@@ -91,6 +93,8 @@ final class InlineJumpTableDispatch {
 		Listing listing = program.getListing();
 
 		int aslCount = 0;
+		// The index arrived in X and was copied to A (megaman 9562 and kin, grm-gipk.31).
+		boolean indexFromX = false;
 		boolean ySet = false;
 		int yOffset = 0;
 		int plaCount = 0;
@@ -230,6 +234,13 @@ final class InlineJumpTableDispatch {
 			}
 
 			switch (shape) {
+				case TXA:
+					// The index in X (TXA / ASL A / TAY, grm-gipk.31): only once, before the ASL.
+					if (indexFromX || aslCount != 0 || ySet || plaCount != 0) {
+						return Boolean.FALSE;
+					}
+					indexFromX = true;
+					break;
 				case ASL:
 					if (!isAccumulatorMode(instr) || ySet) {
 						return Boolean.FALSE;
@@ -708,7 +719,7 @@ final class InlineJumpTableDispatch {
 
 	/** What the dispatcher walk takes an instruction for, read off its p-code. */
 	private enum Shape {
-		ASL, TAY, TAX, INY, DEY, PLA, PHA, LDA, LDX, LDY, STA, STX, STY, OTHER
+		ASL, TAY, TAX, TXA, INY, DEY, PLA, PHA, LDA, LDX, LDY, STA, STX, STY, OTHER
 	}
 
 	private static Shape shapeOf(Instruction instr) {
@@ -737,6 +748,10 @@ final class InlineJumpTableDispatch {
 		from = MosOperands.transferSource(instr, 'X');
 		if (from != null && from == 'A') {
 			return Shape.TAX;
+		}
+		from = MosOperands.transferSource(instr, 'A');
+		if (from != null && from == 'X') {
+			return Shape.TXA;
 		}
 		if (MosOperands.incrementsBy(instr, 'Y', 1)) {
 			return Shape.INY;
