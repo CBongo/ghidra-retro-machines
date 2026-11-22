@@ -258,13 +258,24 @@ final class BankContext {
 			return null;
 		}
 		Address entry = flows[0];
-		// The callee's run: entry to RTS, straight line, at most one mechanism write.
+		// The callee's run: entry to RTS, straight line, at most one DEPOSITING mechanism write.
+		// A write that deposits nothing by design (NO_DEPOSIT: an MMC1 serial run's writes 1-4,
+		// whose commit is write 5) is a link of that one commit, not a second switch (grm-gipk.38).
 		Address writeSite = null;
+		boolean links = false;
+		List<Instruction> body = new ArrayList<>();
 		Instruction cur = listing.getInstructionAt(entry);
 		boolean returns = false;
 		for (int i = 0; cur != null && i < MAX_WALK; i++) {
+			body.add(cur);
 			for (ConfiguredMechanism cm : mechanisms) {
-				if (cm.strategy().computeSwitchOutcome(program, cur, MechanismState.unknown()) != null) {
+				BankSwitchStrategy.SwitchOutcome outcome =
+					cm.strategy().computeSwitchOutcome(program, cur, MechanismState.unknown());
+				if (outcome != null) {
+					if (outcome.stop() == BankSwitchStrategy.ValueStop.NO_DEPOSIT) {
+						links = true;
+						break;
+					}
 					if (writeSite != null) {
 						return null; // a second write: not a plain switch helper
 					}
@@ -287,6 +298,18 @@ final class BankContext {
 			return null;
 		}
 		BankState before = stateBefore(call, callSteps);
+		if (links) {
+			// A serial commit: its value is reassembled across the run, so evaluate the callee's
+			// own instructions in order from the caller's state, exactly as a straight-line walk
+			// would (ultimaav f313: LDA #0 / ... / STA $ffff x5 / ... / RTS commits PRG bank 0).
+			// A value the callee does not define stays unknown; the caller's registers are not
+			// threaded in here.
+			BankState state = before;
+			for (Instruction step : body) {
+				state = BankDataflowEngine.applyDirectSwitch(program, step, state, mechanisms);
+			}
+			return state;
+		}
 		if (writeSite == null) {
 			return before;
 		}
