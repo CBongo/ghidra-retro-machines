@@ -11,18 +11,50 @@ REALROM block PRG_ALL_B3 8000-ffff overlay=true
 REALROM block RAM 0000-07ff overlay=false
 REALROM count blocks.total 7
 REALROM count blocks.overlay 3
-REALROM count refs.intoOverlay.retargeted 0
-REALROM count refs.intoOverlay.intraOverlay 0
-REALROM count instrs.inOverlay 0
+REALROM count refs.intoOverlay.retargeted 30
+REALROM count refs.intoOverlay.intraOverlay 1333
+REALROM count instrs.inOverlay 5765
 REALROM count bankComments 0
-REALROM count warnings 1
-REALROM count notes 3
-REALROM count symbols 178
-REALROM count jumptable.wordArrays 7
+REALROM count warnings 6
+REALROM count notes 4
+REALROM count symbols 248
+REALROM count jumptable.wordArrays 14
 REALROM count jumptable.planarArrays 0
+REALROM sample.ref 8000 -> PRG_ALL_B1::80a7 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8000 -> PRG_ALL_B2::8fad UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8000 -> PRG_ALL_B3::99e9 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8003 -> PRG_ALL_B1::82b6 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8003 -> PRG_ALL_B2::839c UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8003 -> PRG_ALL_B3::8f62 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8006 -> PRG_ALL_B1::8baf UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8006 -> PRG_ALL_B2::835e UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8006 -> PRG_ALL_B3::98cf UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8009 -> PRG_ALL_B1::8199 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8009 -> PRG_ALL_B2::8341 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8009 -> PRG_ALL_B3::ac0b UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 800c -> PRG_ALL_B1::8046 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 800c -> PRG_ALL_B2::838c UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 800c -> PRG_ALL_B3::ac17 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 800f -> PRG_ALL_B1::8040 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 800f -> PRG_ALL_B2::8394 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 800f -> PRG_ALL_B3::ac1d UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8012 -> PRG_ALL_B2::8315 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8012 -> PRG_ALL_B3::9861 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8015 -> PRG_ALL_B3::9867 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8018 -> PRG_ALL_B3::9870 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 801b -> PRG_ALL_B3::9854 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 801e -> PRG_ALL_B3::f040 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8021 -> PRG_ALL_B3::9422 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref.truncated 25 of 1363
 REALROM sample.warn ffc8 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn ffc8 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn ffc8 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn ffc8 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn ffea [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_PRG_ALL_B1__ffbe, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
+REALROM sample.warn ffea [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_PRG_ALL_B2__ffbe, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
 REALROM sample.note 82ba [CopyLoopAnalyzer] copy-shaped loop RAM:ffcc -> RAM:014b (4 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note e420 [CopyLoopAnalyzer] copy-shaped loop RAM:0000 -> RAM:0432 (10 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note ffea [NesBankingAnalyzer] Bank value is the inbound argument of FUN_PRG_ALL_B3__ffe8: the shadow cell $00F2 is stored from register A, which this function never defines; each caller supplies it (a far-call / relay), so it is resolved at the callers, not here.
 REALROM sample.note ffea [NesBankingAnalyzer] Bank value is the inbound argument of FUN_ffe8: the shadow cell $00F2 is stored from register A, which this function never defines; each caller supplies it (a far-call / relay), so it is resolved at the callers, not here.
 REALROM sample.symbol 800b NMI IMPORTED primary=true
 REALROM sample.symbol 803b switch USER_DEFINED primary=true
@@ -49,12 +81,14 @@ REALROM sample.symbol 86cd case_10 USER_DEFINED primary=true
 REALROM sample.symbol 86d1 case_15 USER_DEFINED primary=true
 REALROM sample.symbol 86d5 case_11 USER_DEFINED primary=true
 REALROM sample.symbol 86d9 case_27 USER_DEFINED primary=true
-REALROM sample.symbol.truncated 25 of 166
+REALROM sample.symbol.truncated 25 of 236
 REALROM sample.jumptable 803e word[9]
 REALROM sample.jumptable 8658 word[35]
 REALROM sample.jumptable 88f4 word[54]
 REALROM sample.jumptable 8f00 word[31]
 REALROM sample.jumptable 9079 word[4]
 REALROM sample.jumptable 91b2 word[5]
-REALROM sample.jumptable a549 word[15]
+REALROM sample.jumptable PRG_ALL_B3::94ca word[8]
+REALROM sample.jumptable PRG_ALL_B3::97f2 word[9]
+REALROM sample.jumptable.truncated 8 of 14
 === REALROM END ===

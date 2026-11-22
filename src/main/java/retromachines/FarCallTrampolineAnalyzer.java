@@ -89,6 +89,10 @@ public class FarCallTrampolineAnalyzer extends AbstractAnalyzer {
 			monitor.checkCancelled();
 			FarCallTrampoline.Outcome outcome =
 				FarCallTrampoline.resolve(program, ctx, index, site, monitor);
+			FarCallTrampoline.Outcome callerSet =
+				FarCallCallerPointer.resolve(program, ctx, index, site, monitor);
+			outcome.placed().addAll(callerSet.placed());
+			outcome.declined().addAll(callerSet.declined());
 			Set<Address> targets = new LinkedHashSet<>();
 			for (FarCallTrampoline.Placement p : outcome.placed()) {
 				targets.add(p.target());

@@ -348,7 +348,7 @@ final class FarCallTrampoline {
 	 * fall-through into it) -- wizwarr's BIT-skip stubs ({@code LDA #n / JMP ff69}). Candidates
 	 * only: the constant walk decides which actually carry known arguments.
 	 */
-	private static List<Instruction> callSites(Program program, Address entry) {
+	static List<Instruction> callSites(Program program, Address entry) {
 		Listing listing = program.getListing();
 		Set<Address> members = new LinkedHashSet<>();
 		Set<Instruction> callers = new LinkedHashSet<>();

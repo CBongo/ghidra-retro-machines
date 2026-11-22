@@ -648,6 +648,53 @@ final class BankContext {
 		return null;
 	}
 
+	/**
+	 * The bank state in which the board's SINGLE bank field holds {@code bank}, or {@code null}
+	 * when the board has more than one mechanism or {@code bank} does not fit the field
+	 * (grm-gipk.2: a caller-set-pointer far call passes the bank NUMBER in A; see
+	 * {@link FarCallCallerPointer} for why that, not the latch value, is what is used).
+	 */
+	BankState stateForBankValue(int bank) {
+		if (mechanisms.size() != 1) {
+			return null;
+		}
+		BankStrategyRegistry.ConfiguredMechanism cm = mechanisms.get(0);
+		int width = cm.effectMask() >>> cm.lsb();
+		if (bank < 0 || (bank & ~width) != 0) {
+			return null;
+		}
+		return new BankState(cm.effectMask(), (bank << cm.lsb()) & cm.effectMask());
+	}
+
+	/**
+	 * Whether {@code entry} is a LEAF helper -- a straight-line run to {@code RTS} with no branch,
+	 * jump or call -- that contains a bank-mechanism write (a write the mechanism recognises,
+	 * whether or not its value is pinned). Used to confirm a trampoline's {@code JSR} really is
+	 * the bank switch (grm-gipk.2).
+	 */
+	boolean isLeafBankSwitchHelper(Address entry) {
+		Listing listing = program.getListing();
+		boolean writes = false;
+		Instruction cur = listing.getInstructionAt(entry);
+		for (int i = 0; cur != null && i < MAX_WALK; i++) {
+			for (ConfiguredMechanism cm : mechanisms) {
+				if (cm.strategy().computeSwitchOutcome(program, cur, MechanismState.unknown()) != null) {
+					writes = true;
+				}
+			}
+			var ft = cur.getFlowType();
+			if (ft.isTerminal()) {
+				return writes && "RTS".equals(cur.getMnemonicString());
+			}
+			if (ft.isJump() || ft.isCall() || ft.isConditional() || ft.isComputed()) {
+				return false;
+			}
+			Address next = cur.getFallThrough();
+			cur = next == null ? null : listing.getInstructionAt(next);
+		}
+		return false;
+	}
+
 	/** Which analyzer (if any) would claim the program: a pure gate probe for tests. */
 	static boolean isBankedImport(Program program) {
 		return forProgram(program) != null;
