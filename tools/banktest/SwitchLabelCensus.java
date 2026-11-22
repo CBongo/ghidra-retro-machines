@@ -19,7 +19,11 @@
 //   index         labels are a contiguous integer run (normally 0..n-1) = the index was recovered
 //   composite     anything else (sparse / combined labels, e.g. grm-gipk.25's (type<<4)|state)
 //   none          a computed jump with no recovered JumpTable in the decompile (msg= carries the
-//                 decompiler's warning text when it printed one)
+//                 decompiler's warning text when it printed one) and no computed references
+//   refs          as none, but an analyzer (SplitDispatchTable, IndirectJumpConstantPointer,
+//                 JumpTableBound, ...) already gave the jump computed references: resolved for
+//                 disassembly, only the decompiler's switch is missing (targets= counts the refs;
+//                 grm-gipk.37)
 //   unreached     a computed jump inside a function body that the decompile never reached (dead
 //                 or bad-data flow; no BRANCHIND for it, no warning)
 //   return        the site is a return (RTI/RTS/RTL/RET/RETI) that p-code models as a computed
@@ -266,6 +270,15 @@ public class SwitchLabelCensus extends GhidraScript {
 
 	private void emit(Address site, String fn, Function f, boolean override, String analyzer, int cases,
 			int labels, String kind, String min, String max, boolean def, String tail) {
+		if (kind.equals("none")) {
+			// grm-gipk.37: an analyzer already resolved this jump by references; only the
+			// decompiler's switch is missing, so it is not a gap.
+			int n = computedRefCount(site);
+			if (n > 0) {
+				kind = "refs";
+				tail = " targets=" + n + tail;
+			}
+		}
 		sites++;
 		kindCounts.merge(kind, 1, Integer::sum);
 		println("SLC " + lang + " " + prog + " " + site.getAddressSpace().getName() + "::" +
@@ -333,6 +346,20 @@ public class SwitchLabelCensus extends GhidraScript {
 		}
 		engineCache.put(f.getEntryPoint(), engine);
 		return engine;
+	}
+
+	/** Computed (jump or call) references from the instruction at {@code site}; 0 if none. */
+	private int computedRefCount(Address site) {
+		Instruction in = currentProgram.getListing().getInstructionAt(site);
+		int n = 0;
+		if (in != null) {
+			for (Reference r : in.getReferencesFrom()) {
+				if (r.getReferenceType().isComputed()) {
+					n++;
+				}
+			}
+		}
+		return n;
 	}
 
 	private static boolean hasComputedRef(Instruction in) {
