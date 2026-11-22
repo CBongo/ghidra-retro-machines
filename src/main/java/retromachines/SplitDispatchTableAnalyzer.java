@@ -90,6 +90,27 @@ import ghidra.util.task.TaskMonitor;
  * analyzer) recovered nothing there; the references and functions are the same as for a stub,
  * CALL-typed as the decompiler itself already treats the jump.
  *
+ * <p><b>The gap and merged forms</b> (grm-gipk.34.1, grm-gipk.34.3): the inline form is found
+ * from the load/store quad, walking FORWARD to the {@code JMP (P)} (see {@link #matchQuad}), so
+ * instructions may sit between the second store and the jump, which the decompiler cannot see
+ * through because a {@code JSR} there may write the pointer. ultimaav {@code 88f4}:
+ * <pre>
+ *   88e7: LDA $8903,Y / STA $02 / LDA $8904,Y / STA $03
+ *   88f1: JSR $88f7                 ; a store-free helper
+ *   88f4: JMP ($0002)
+ * </pre>
+ * and {@code 8a3f}, whose gap is {@code PLA / TAX / JSR $88f7}. dragonpower {@code f59a}/{@code
+ * f5af}/{@code f5c8} are three quads, one per table, whose paths merge ({@code JMP $f5a6}) into
+ * one {@code INY / STY $83 / INC $80 / JMP ($0000)}. Each quad is its own site and table; the
+ * walk may pass loads, ALU ops, stores that cannot reach the pointer, calls that cannot write it,
+ * and {@code JMP abs}. The quad's targets are reachable along its own path, and other paths
+ * merging in can only add targets of other quads, so no other-entry check is needed.
+ *
+ * <p><b>Leading null slots</b> (grm-gipk.34.2): an interleaved table may begin with up to
+ * {@link #MAX_LEADING_NULLS} {@code $0000} slots (dragonpower {@code a8a2}, dodge {@code 8571}),
+ * an unused index. They are skipped, not stops, count toward the extent and add no target; a
+ * {@code $0000} anywhere later still ends the walk.
+ *
  * <p><b>The table's extent</b> is not written anywhere in the code: the index is a doubled RAM
  * byte. Entries are therefore walked from the table start, interleaved low/high, and the walk
  * stops at the FIRST entry that:
@@ -168,7 +189,14 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 	 *  the {@code LDA} that loads the low bytes. In the inline form (grm-cqwn) {@code call} and
 	 *  {@code stub} are the same {@code JMP (P)}. */
 	record Site(Instruction call, Instruction stub, Address table, Address hiTable,
-			Instruction loLoad) {
+			Instruction loLoad, int gap, boolean viaJump) {
+
+		/** Whether instructions were walked between the second store and the inline
+		 *  {@code JMP (P)} (grm-gipk.34.1); {@code viaJump} says a {@code JMP abs} was followed
+		 *  on the way (grm-gipk.34.3). */
+		boolean gapped() {
+			return gap > 0;
+		}
 
 		boolean inline() {
 			return Objects.equals(call, stub);
@@ -213,7 +241,11 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 		InstructionIterator it = listing.getInstructions(set, true);
 		while (it.hasNext()) {
 			monitor.checkCancelled();
-			Site site = match(listing, it.next());
+			Instruction instr = it.next();
+			Site site = match(listing, instr);
+			if (site == null) {
+				site = matchQuad(listing, instr);
+			}
 			if (site != null) {
 				sites.add(site);
 			}
@@ -225,30 +257,40 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 		for (Site s : sites) {
 			tableStarts.addAll(s.bases());
 		}
+		// decided up front: the first upgraded pin would otherwise make the rest look resolved
+		Set<Address> orphanStubs = new LinkedHashSet<>();
+		for (Site s : sites) {
+			if (s.inline() && isOrphanPin(s.stub())) {
+				orphanStubs.add(s.stub().getMinAddress());
+			}
+		}
 		int resolvedSites = 0;
 		int resolvedTargets = 0;
 		for (Site site : sites) {
 			monitor.checkCancelled();
-			List<Address> targets = walkTable(program, site, tableStarts);
+			Walk walk = walkTable(program, site, tableStarts);
+			List<Address> targets = walk.targets();
 			if (targets.size() < 2) {
 				continue;
 			}
 			resolvedSites++;
 			Set<Address> distinct = new LinkedHashSet<>(targets);
-			// decided once: the first upgraded pin would otherwise make the rest look resolved
-			boolean orphanPin = site.inline() && isOrphanPin(site.stub());
+			boolean orphanPin = orphanStubs.contains(site.stub().getMinAddress());
 			for (Address target : distinct) {
 				if (applyTarget(program, listing, site.stub(), target, orphanPin)) {
 					resolvedTargets++;
 				}
 			}
-			String comment = "split dispatch: " + targets.size() + "-entry table at " +
-				site.table() + (site.planar() ? " (high bytes at " + site.hiTable() + ")" : "") +
+			int nulls = walk.leadingNulls();
+			String comment = "split dispatch: " + (targets.size() + nulls) + "-entry table at " +
+				site.table() + (nulls > 0 ? " (" + nulls + " leading null" + (nulls > 1 ? "s" : "") + ")" : "") +
+				(site.planar() ? " (high bytes at " + site.hiTable() + ")" : "") +
 				" via JMP (" + IndirectJumpConstantPointer.pointerCell(site.stub()) +
 				") at " + site.stub().getMinAddress() +
-				(site.planar() ? " (grm-gipk.33)" : site.inline() ? " (grm-cqwn)" : " (grm-3er5)");
+				(site.gapped() ? (site.viaJump() ? " (grm-gipk.34.3)" : " (grm-gipk.34.1)") : site.planar() ? " (grm-gipk.33)" :
+					site.inline() ? " (grm-cqwn)" : " (grm-3er5)");
 			AnalyzerCommentRecord.append(program, site.call().getMinAddress(), CommentType.EOL,
-				comment, "split dispatch:");
+				comment, "table at " + site.table());
 		}
 		if (resolvedSites > 0) {
 			AnalyzerLog.info(this, "followed " + resolvedSites + " split dispatch table(s), " +
@@ -258,39 +300,43 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 	}
 
 	/**
-	 * The site {@code call} completes, or null: {@code call} is a {@code JSR}/{@code JMP} to a
-	 * {@code JMP (P)} stub, and the four instructions falling through into it are
-	 * {@code LDA L,r / STA P / LDA L+1,r / STA P+1} in either load order, one index register.
-	 * Or (grm-cqwn) {@code call} is itself a {@code JMP (P)} with no computed reference yet, and
-	 * those four instructions fall through into it.
+	 * The stub-form site {@code call} completes, or null: {@code call} is a {@code JSR}/{@code JMP}
+	 * to a {@code JMP (P)} stub, and the four instructions falling through into it are
+	 * {@code LDA L,r / STA P / LDA L+1,r / STA P+1} in either load order, one index register. The
+	 * inline form is found from the quad instead, by {@link #matchQuad}.
 	 */
 	static Site match(Listing listing, Instruction call) {
-		Instruction stub;
-		if (IndirectJumpConstantPointer.isIndirectJumpSite(call)) {
-			if ((hasComputedReference(call) && !isOrphanPin(call)) || isDeclaredSwitch(call)) {
-				// Switch analysis (or an earlier round) already resolved it, or a jump-table
-				// override awaits stock switch analysis there (shenlong 8655, bounded by
-				// JumpTableBoundAnalyzer): that switch has an owner.
-				return null;
-			}
-			stub = call;
+		int op = opcode(call);
+		if (op != 0x20 && op != 0x4c) {
+			return null;
 		}
-		else {
-			int op = opcode(call);
-			if (op != 0x20 && op != 0x4c) {
-				return null;
-			}
-			Address[] flows = call.getFlows();
-			if (flows.length != 1) {
-				return null;
-			}
-			stub = listing.getInstructionAt(flows[0]);
-			if (stub == null || !IndirectJumpConstantPointer.isIndirectJumpSite(stub)) {
-				return null;
-			}
+		Address[] flows = call.getFlows();
+		if (flows.length != 1) {
+			return null;
 		}
-		long cell = IndirectJumpConstantPointer.pointerCell(stub).getOffset();
-		Instruction st2 = fallingInto(listing, call);
+		Instruction stub = listing.getInstructionAt(flows[0]);
+		if (stub == null || !IndirectJumpConstantPointer.isIndirectJumpSite(stub)) {
+			return null;
+		}
+		Quad quad = parseQuad(listing, fallingInto(listing, call));
+		if (quad == null ||
+			quad.cell() != IndirectJumpConstantPointer.pointerCell(stub).getOffset()) {
+			return null;
+		}
+		AddressSpace space = call.getMinAddress().getAddressSpace();
+		return new Site(call, stub, space.getAddress(quad.lo()), space.getAddress(quad.hi()),
+			quad.loLoad(), 0, false);
+	}
+
+	/** A recognized {@code LDA lo,r / STA P / LDA hi,r / STA P+1} quad (either load order):
+	 *  the pointer cell {@code P}, and the two table bases. */
+	private record Quad(long cell, long lo, long hi, Instruction loLoad) {}
+
+	/** The quad whose second store is {@code st2}, or null. */
+	private static Quad parseQuad(Listing listing, Instruction st2) {
+		if (st2 == null) {
+			return null;
+		}
 		Instruction ld2 = fallingInto(listing, st2);
 		Instruction st1 = fallingInto(listing, ld2);
 		Instruction ld1 = fallingInto(listing, st1);
@@ -308,27 +354,224 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 		if (c1 == null || c2 == null || t1 == null || t2 == null) {
 			return null;
 		}
-		long lo;
-		long hi;
-		Instruction loLoad;
-		if (c1 == cell && c2 == cell + 1) {
-			lo = t1;
-			hi = t2;
-			loLoad = ld1;
+		if (c1 + 1 == c2) {
+			return t1.equals(t2) ? null : new Quad(c1, t1, t2, ld1);
 		}
-		else if (c2 == cell && c1 == cell + 1) {
-			lo = t2;
-			hi = t1;
-			loLoad = ld2;
+		if (c2 + 1 == c1) {
+			return t1.equals(t2) ? null : new Quad(c2, t2, t1, ld2);
 		}
-		else {
+		return null;
+	}
+
+	/**
+	 * The inline-form site whose quad ends at {@code st2}, or null (grm-cqwn, grm-gipk.34.1,
+	 * grm-gipk.34.3): walk FORWARD from the instruction after the second store, along fall-through
+	 * and {@code JMP abs}, at most {@link #FORWARD_LIMIT} instructions, to a {@code JMP (P)} on the
+	 * same {@code P}. Each walked instruction must be unable to change {@code P}: it writes no
+	 * memory and is not control flow (loads, register/flag/stack ops, ALU, compares), or it stores
+	 * or read-modify-writes a cell that provably is neither {@code P} nor {@code P+1}, or it is a
+	 * {@code JSR} to a {@link #isPointerSafeCallee} routine, or a {@code JMP abs} (followed). A
+	 * conditional branch, {@code RTS}/{@code RTI}/{@code BRK}, a {@code JMP (ind)} on another cell
+	 * or an undecoded address ends the walk with no match.
+	 *
+	 * <p>Soundness: the quad's targets are reachable along its OWN walked path, because nothing on
+	 * that path can change {@code P}; other paths merging into the walk (a shared tail, a branch
+	 * into the gap) can only ADD targets of other quads, never invalidate these. So no check is
+	 * made for other entries, and several quads may reach one {@code JMP (P)}, each contributing
+	 * its own table. A {@code JMP (P)} that already carries computed references is left alone
+	 * unless this analyzer wrote its comment there (an earlier quad or round).
+	 */
+	static Site matchQuad(Listing listing, Instruction st2) {
+		Quad quad = parseQuad(listing, st2);
+		if (quad == null) {
 			return null;
 		}
-		if (lo == hi) {
-			return null;
+		long cell = quad.cell();
+		Instruction cur = FlowEdges.nextFallThrough(listing, st2);
+		boolean viaJump = false;
+		for (int walked = 0; cur != null; walked++) {
+			if (IndirectJumpConstantPointer.isIndirectJumpSite(cur)) {
+				if (IndirectJumpConstantPointer.pointerCell(cur).getOffset() != cell) {
+					return null;
+				}
+				if ((hasComputedReference(cur) && !isOrphanPin(cur) && !hasOwnComment(cur)) ||
+					isDeclaredSwitch(cur)) {
+					// Switch analysis (or an earlier round) already resolved it, or a jump-table
+					// override awaits stock switch analysis there (shenlong 8655, bounded by
+					// JumpTableBoundAnalyzer): that switch has an owner.
+					return null;
+				}
+				AddressSpace space = cur.getMinAddress().getAddressSpace();
+				return new Site(cur, cur, space.getAddress(quad.lo()), space.getAddress(quad.hi()),
+					quad.loLoad(), walked, viaJump);
+			}
+			if (walked == FORWARD_LIMIT) {
+				return null;
+			}
+			int op = opcode(cur);
+			if (op == 0x4c) {
+				Address[] flows = cur.getFlows();
+				if (flows.length != 1) {
+					return null;
+				}
+				Instruction target = listing.getInstructionAt(flows[0]);
+				if (walked == 0 && target != null &&
+					IndirectJumpConstantPointer.isIndirectJumpSite(target)) {
+					return null; // a call to a stub: that is the stub form
+				}
+				viaJump = true;
+				cur = target;
+			}
+			else if (op == 0x20) {
+				Address[] flows = cur.getFlows();
+				if (flows.length != 1 || !isPointerSafeCallee(listing, flows[0], cell)) {
+					return null;
+				}
+				cur = FlowEdges.nextFallThrough(listing, cur);
+			}
+			else if (in(op, HARMLESS_OPS) || writeMissesPointer(cur, op, cell)) {
+				cur = FlowEdges.nextFallThrough(listing, cur);
+			}
+			else {
+				return null;
+			}
 		}
-		AddressSpace space = call.getMinAddress().getAddressSpace();
-		return new Site(call, stub, space.getAddress(lo), space.getAddress(hi), loLoad);
+		return null;
+	}
+
+	/** Whether this analyzer already commented {@code instr} (an earlier quad or round). */
+	private static boolean hasOwnComment(Instruction instr) {
+		String eol = instr.getProgram().getListing().getComment(CommentType.EOL,
+			instr.getMinAddress());
+		return eol != null && eol.contains("split dispatch:");
+	}
+
+	/** Most instructions {@link #matchQuad} walks between the second store and the jump. */
+	static final int FORWARD_LIMIT = 16;
+
+	/** Deepest nesting of calls {@link #isPointerSafeCallee} follows. */
+	static final int MAX_CALL_DEPTH = 3;
+
+	/** Most instructions {@link #isPointerSafeCallee} visits before giving up. */
+	static final int MAX_CALLEE_INSTRUCTIONS = 256;
+
+	/** Longest leading run of {@code $0000} entries an interleaved table may skip (grm-gipk.34.2). */
+	static final int MAX_LEADING_NULLS = 4;
+
+	private static boolean in(int op, int[] set) {
+		for (int o : set) {
+			if (o == op) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static final int[] STORE_ZP = { 0x85, 0x86, 0x84, 0xe6, 0xc6, 0x06, 0x46, 0x26, 0x66 };
+	private static final int[] STORE_ABS = { 0x8d, 0x8e, 0x8c, 0xee, 0xce, 0x0e, 0x4e, 0x2e, 0x6e };
+	private static final int[] STORE_ZP_IDX = { 0x95, 0x94, 0x96, 0xf6, 0xd6, 0x16, 0x56, 0x36,
+		0x76 };
+	private static final int[] STORE_ABS_IDX = { 0x9d, 0x99, 0xfe, 0xde, 0x1e, 0x5e, 0x3e, 0x7e };
+
+	/** Documented opcodes that write no memory and are not a flow break (loads, ALU, compares,
+	 *  register/flag/stack ops, accumulator shifts); branches, JSR, JMP abs and RTS are handled
+	 *  by the walk itself. */
+	private static final int[] HARMLESS_OPS = { 0x69, 0x65, 0x75, 0x6d, 0x7d, 0x79, 0x61, 0x71,
+		0x29, 0x25, 0x35, 0x2d, 0x3d, 0x39, 0x21, 0x31, 0xc9, 0xc5, 0xd5, 0xcd, 0xdd, 0xd9, 0xc1,
+		0xd1, 0x49, 0x45, 0x55, 0x4d, 0x5d, 0x59, 0x41, 0x51, 0x09, 0x05, 0x15, 0x0d, 0x1d, 0x19,
+		0x01, 0x11, 0xe9, 0xe5, 0xf5, 0xed, 0xfd, 0xf9, 0xe1, 0xf1, 0x24, 0x2c, 0xe0, 0xe4, 0xec,
+		0xc0, 0xc4, 0xcc, 0x0a, 0x4a, 0x2a, 0x6a, 0xba, 0x9a, 0xe8, 0xc8, 0xca, 0x88, 0xa9, 0xa5,
+		0xb5, 0xad, 0xbd, 0xb9, 0xa1, 0xb1, 0xa2, 0xa6, 0xb6, 0xae, 0xbe, 0xa0, 0xa4, 0xb4, 0xac,
+		0xbc, 0xaa, 0xa8, 0x8a, 0x98, 0x68, 0x48, 0x08, 0x28, 0x18, 0x38, 0xd8, 0xf8, 0x58, 0x78,
+		0xb8, 0xea };
+
+	private static final int[] BRANCH_OPS = { 0x10, 0x30, 0x50, 0x70, 0x90, 0xb0, 0xd0, 0xf0 };
+
+	/**
+	 * Whether calling the routine at {@code entry} cannot change the pointer cells
+	 * {@code pointer} and {@code pointer + 1} (grm-gipk.34.1). The callee is walked by flow:
+	 * fall-through, both arms of a branch, {@code JMP abs}, and nested {@code JSR abs} up to
+	 * {@link #MAX_CALL_DEPTH}; an {@code RTS} ends a path. Unsafe: a store or read-modify-write
+	 * whose target could be either cell (an indexed zero-page store could be any zero-page cell, an
+	 * absolute-indexed one any of 256 from its base, an indirect one anywhere), {@code JMP (ind)},
+	 * {@code RTI}, {@code BRK}, any opcode not known to be harmless, bytes that are not decoded
+	 * code, or more than {@link #MAX_CALLEE_INSTRUCTIONS} instructions.
+	 */
+	static boolean isPointerSafeCallee(Listing listing, Address entry, long pointer) {
+		return walkCallee(listing, entry, pointer, 1, new java.util.HashSet<>(), new int[1]);
+	}
+
+	private static boolean walkCallee(Listing listing, Address entry, long pointer, int depth,
+			Set<Address> visited, int[] budget) {
+		java.util.ArrayDeque<Address> work = new java.util.ArrayDeque<>();
+		work.add(entry);
+		while (!work.isEmpty()) {
+			Address at = work.poll();
+			if (!visited.add(at)) {
+				continue;
+			}
+			Instruction instr = listing.getInstructionAt(at);
+			if (instr == null || ++budget[0] > MAX_CALLEE_INSTRUCTIONS) {
+				return false;
+			}
+			int op = opcode(instr);
+			if (op == 0x60) {
+				continue; // RTS ends the path
+			}
+			if (op == 0x4c) {
+				Address[] flows = instr.getFlows();
+				if (flows.length != 1) {
+					return false;
+				}
+				work.add(flows[0]);
+				continue;
+			}
+			if (op == 0x20) {
+				Address[] flows = instr.getFlows();
+				if (flows.length != 1 || depth >= MAX_CALL_DEPTH ||
+					!walkCallee(listing, flows[0], pointer, depth + 1, visited, budget)) {
+					return false;
+				}
+			}
+			else if (in(op, BRANCH_OPS)) {
+				for (Address f : instr.getFlows()) {
+					work.add(f);
+				}
+			}
+			else if (!in(op, HARMLESS_OPS) && !writeMissesPointer(instr, op, pointer)) {
+				return false;
+			}
+			Address ft = instr.getFallThrough();
+			if (ft != null) {
+				work.add(ft);
+			}
+		}
+		return true;
+	}
+
+	/** Whether {@code instr} is a store/RMW opcode whose target cannot be either pointer cell. */
+	private static boolean writeMissesPointer(Instruction instr, int op, long pointer) {
+		try {
+			if (in(op, STORE_ZP)) {
+				long t = instr.getByte(1) & 0xff;
+				return t != pointer && t != pointer + 1;
+			}
+			if (in(op, STORE_ABS)) {
+				Long t = operand16(instr);
+				return t != null && t != pointer && t != pointer + 1;
+			}
+			if (in(op, STORE_ZP_IDX)) {
+				return pointer > 0xff; // wraps within page zero: any cell there is possible
+			}
+			if (in(op, STORE_ABS_IDX)) {
+				Long base = operand16(instr);
+				return base != null && !(base <= pointer + 1 && pointer <= base + 255);
+			}
+		}
+		catch (MemoryAccessException e) {
+			return false;
+		}
+		return false; // indirect stores, JMP (ind), RTI, BRK, unknown opcodes
 	}
 
 	/**
@@ -336,7 +579,18 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 	 * (see the class javadoc). Targets are placed in the stub's own space, as a direct
 	 * {@code JMP} there would be.
 	 */
-	static List<Address> walkTable(Program program, Site site, Set<Address> tableStarts) {
+	static Walk walkTable(Program program, Site site, Set<Address> tableStarts) {
+		int[] nulls = new int[1];
+		List<Address> targets = walkTargets(program, site, tableStarts, nulls);
+		return new Walk(targets, nulls[0]);
+	}
+
+	/** A table walk's result: the targets, and how many leading {@code $0000} slots were skipped
+	 *  (grm-gipk.34.2), which belong to the table's extent but contribute no target. */
+	record Walk(List<Address> targets, int leadingNulls) {}
+
+	private static List<Address> walkTargets(Program program, Site site,
+			Set<Address> tableStarts, int[] leadingNulls) {
 		Memory memory = program.getMemory();
 		Listing listing = program.getListing();
 		AddressSpace targetSpace = site.stub().getMinAddress().getAddressSpace();
@@ -416,6 +670,11 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 			}
 			catch (MemoryAccessException e) {
 				break;
+			}
+			if (value == 0 && !planar && targets.isEmpty() &&
+				leadingNulls[0] < MAX_LEADING_NULLS) {
+				leadingNulls[0]++; // a null slot ahead of the first handler (grm-gipk.34.2)
+				continue;
 			}
 			Address target = targetSpace.getAddress(value);
 			MemoryBlock block = memory.getBlock(target);

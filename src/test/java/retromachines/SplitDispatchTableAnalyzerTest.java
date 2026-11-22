@@ -226,6 +226,272 @@ public class SplitDispatchTableAnalyzerTest extends AbstractBundledLanguageTest 
 		assertTrue(eol, eol.endsWith("(grm-cqwn)"));
 	}
 
+	private static final long HELPER = 0x9300;
+	private static final long OTHER = 0x9040;
+
+	/** grm-gipk.34.1: the inline form with a gap, the ultimaav {@code 88f4} / {@code 8a3f} shapes.
+	 *  {@code LDX $03 / LDA tbl,X / STA $02 / LDA tbl+1,X / STA $03 / <gapHex> / JMP ($0002)}; the
+	 *  table (three handlers, then a RAM entry) sits at {@code $9100}, the helper at {@code $9300}.
+	 *  {@code otherHex}, when given, is a second block at {@code $9040}. */
+	private ProgramDB buildGap(String gapHex, String helperHex, String otherHex) throws Exception {
+		builder = newBuilder("Test", LANG);
+		uninitializedRam(builder, ".ram", "0x0", 0x800);
+		builder.createMemory(".text", "0x8000", 0x8000);
+		builder.setBytes(String.format("0x%x", CALLER), "a6 03 bd " + word(TABLE) + " 85 02 bd " +
+			word(TABLE + 1) + " 85 03 " + gapHex + " 6c 02 00", true);
+		builder.setBytes(String.format("0x%x", TABLE), word(HANDLERS[0]) + " " + word(HANDLERS[1]) +
+			" " + word(HANDLERS[2]) + " " + word(0x0300), false);
+		for (long h : HANDLERS) {
+			builder.setBytes(String.format("0x%x", h), "60", false);
+		}
+		builder.setBytes(String.format("0x%x", HELPER), helperHex, true);
+		if (otherHex != null) {
+			builder.setBytes(String.format("0x%x", OTHER), otherHex, true);
+		}
+		return builder.getProgram();
+	}
+
+	private static long gapJmp(String gapHex) {
+		return CALLER + 12 + (gapHex.isEmpty() ? 0 : gapHex.split(" ").length);
+	}
+
+	private static final String JSR_HELPER = "20 " + "00 93";
+	/** {@code LDY $20 / LDA $8bb3,Y / TAY / TXA / SEC / SBC $8bc5,Y / RTS}: no stores at all. */
+	private static final String CLEAN_HELPER = "a4 20 b9 b3 8b a8 8a 38 f9 c5 8b 60";
+
+	private void assertFollowed(ProgramDB program, String gapHex) {
+		long jmp = gapJmp(gapHex);
+		assertEquals(List.of(HANDLERS[0], HANDLERS[1], HANDLERS[2]), computedTargets(program, jmp));
+		String eol = program.getListing().getComment(CommentType.EOL, addr(jmp));
+		assertNotNull(eol);
+		assertTrue(eol, eol.startsWith("split dispatch: 3-entry table at 9100"));
+		assertTrue(eol, eol.endsWith("(grm-gipk.34.1)"));
+	}
+
+	private void assertDeclined(ProgramDB program, String gapHex) {
+		assertEquals(List.of(), computedTargets(program, gapJmp(gapHex)));
+		assertNull(program.getListing().getInstructionAt(addr(HANDLERS[0])));
+	}
+
+	@Test
+	public void followsInlineDispatchAcrossAStoreFreeHelperCall() throws Exception {
+		ProgramDB program = buildGap(JSR_HELPER, CLEAN_HELPER, null);
+		run(program);
+		assertFollowed(program, JSR_HELPER);
+	}
+
+	@Test
+	public void followsInlineDispatchAcrossPlaTaxAndHelperCall() throws Exception {
+		String gap = "68 aa " + JSR_HELPER;
+		ProgramDB program = buildGap(gap, CLEAN_HELPER, null);
+		run(program);
+		assertFollowed(program, gap);
+	}
+
+	@Test
+	public void declinesWhenTheHelperStoresToThePointer() throws Exception {
+		ProgramDB program = buildGap(JSR_HELPER, "a9 00 85 02 60", null);
+		run(program);
+		assertDeclined(program, JSR_HELPER);
+	}
+
+	@Test
+	public void declinesWhenTheHelperStoresToThePointerHighByteViaAbsolute() throws Exception {
+		ProgramDB program = buildGap(JSR_HELPER, "a9 00 8d 03 00 60", null);
+		run(program);
+		assertDeclined(program, JSR_HELPER);
+	}
+
+	@Test
+	public void declinesWhenTheHelperStoresThroughAnIndirectPointer() throws Exception {
+		ProgramDB program = buildGap(JSR_HELPER, "a9 00 91 10 60", null);
+		run(program);
+		assertDeclined(program, JSR_HELPER);
+	}
+
+	@Test
+	public void declinesWhenTheHelperStoresIndexedInZeroPage() throws Exception {
+		ProgramDB program = buildGap(JSR_HELPER, "a9 00 95 40 60", null);
+		run(program);
+		assertDeclined(program, JSR_HELPER);
+	}
+
+	@Test
+	public void acceptsAHelperThatStoresElsewhere() throws Exception {
+		ProgramDB program = buildGap(JSR_HELPER, "a9 00 85 40 8d 00 03 60", null);
+		run(program);
+		assertFollowed(program, JSR_HELPER);
+	}
+
+	@Test
+	public void declinesWhenTheHelperCallsAnUnsafeNestedHelper() throws Exception {
+		// 9300: JSR 9304 / RTS;  9304: STA $03 / RTS
+		ProgramDB program = buildGap(JSR_HELPER, "20 04 93 60 85 03 60", null);
+		run(program);
+		assertDeclined(program, JSR_HELPER);
+	}
+
+	@Test
+	public void followsAGapWithAStoreAndAReadModifyWriteElsewhere() throws Exception {
+		String gap = "85 40 e6 41 " + JSR_HELPER;
+		ProgramDB program = buildGap(gap, CLEAN_HELPER, null);
+		run(program);
+		assertFollowed(program, gap);
+	}
+
+	@Test
+	public void declinesAGapWithAStoreToThePointer() throws Exception {
+		String gap = "85 02 " + JSR_HELPER;
+		ProgramDB program = buildGap(gap, CLEAN_HELPER, null);
+		run(program);
+		assertDeclined(program, gap);
+	}
+
+	@Test
+	public void declinesAGapWithAReadModifyWriteOfThePointerHighByte() throws Exception {
+		String gap = "e6 03 " + JSR_HELPER;
+		ProgramDB program = buildGap(gap, CLEAN_HELPER, null);
+		run(program);
+		assertDeclined(program, gap);
+	}
+
+	@Test
+	public void declinesWhenTheWalkHitsAConditionalBranch() throws Exception {
+		String gap = "d0 00 " + JSR_HELPER;
+		ProgramDB program = buildGap(gap, CLEAN_HELPER, null);
+		run(program);
+		assertDeclined(program, gap);
+	}
+
+	@Test
+	public void declinesAWalkLongerThanSixteenInstructions() throws Exception {
+		String gap = "ea ea ea ea ea ea ea ea ea ea ea ea ea ea ea ea ea";
+		ProgramDB program = buildGap(gap, CLEAN_HELPER, null);
+		run(program);
+		assertDeclined(program, gap);
+	}
+
+	@Test
+	public void followsAWalkOfExactlySixteenInstructions() throws Exception {
+		String gap = "ea ea ea ea ea ea ea ea ea ea ea ea ea ea ea ea";
+		ProgramDB program = buildGap(gap, CLEAN_HELPER, null);
+		run(program);
+		assertFollowed(program, gap);
+	}
+
+	@Test
+	public void stillFollowsTheQuadWhenAnotherPathJumpsIntoTheIndirectJump() throws Exception {
+		String gap = JSR_HELPER;
+		ProgramDB program = buildGap(gap, CLEAN_HELPER, "4c " + word(gapJmp(gap)));
+		run(program);
+		assertFollowed(program, gap);
+	}
+
+	@Test
+	public void stillFollowsTheQuadWhenAnotherPathJumpsIntoTheGap() throws Exception {
+		String gap = "68 aa " + JSR_HELPER;
+		ProgramDB program = buildGap(gap, CLEAN_HELPER, "4c " + word(CALLER + 13));
+		run(program);
+		assertFollowed(program, gap);
+	}
+
+	/** dragonpower {@code f59a}/{@code f5af}/{@code f5c8}: three quads, one table each, merging
+	 *  into one tail {@code INY / STY $83 / INC $80 / JMP ($0000)}. Quad 1 falls into the tail;
+	 *  quads 2 and 3 run some more code and {@code JMP} to it. */
+	@Test
+	public void followsThreeQuadsMergingIntoOneIndirectJump() throws Exception {
+		builder = newBuilder("Test", LANG);
+		uninitializedRam(builder, ".ram", "0x0", 0x800);
+		builder.createMemory(".text", "0x8000", 0x8000);
+		long t1 = 0x9100;
+		long t2 = 0x9106;
+		long t3 = 0x910a;
+		builder.setBytes("0x9000", "b9 " + word(t1) + " 85 00 b9 " + word(t1 + 1) + " 85 01 " +
+			"a4 83 c8 84 83 e6 80 6c 00 00", true);
+		String tail = "a4 83 c8 b1 81 85 02 4c " + word(0x900c);
+		builder.setBytes("0x9040", "b9 " + word(t2) + " 85 00 b9 " + word(t2 + 1) + " 85 01 " + tail,
+			true);
+		builder.setBytes("0x9080", "b9 " + word(t3) + " 85 00 b9 " + word(t3 + 1) + " 85 01 " + tail,
+			true);
+		builder.setBytes("0x9100", word(HANDLERS[0]) + " " + word(HANDLERS[1]) + " " +
+			word(HANDLERS[2]) + " " + word(HANDLERS[3]) + " " + word(HANDLERS[0]) + " " +
+			word(HANDLERS[1]) + " " + word(HANDLERS[2]) + " " + word(0x0300), false);
+		for (long h : HANDLERS) {
+			builder.setBytes(String.format("0x%x", h), "60", false);
+		}
+		ProgramDB program = builder.getProgram();
+		run(program);
+		long jmp = 0x9011;
+		assertEquals(List.of(HANDLERS[0], HANDLERS[1], HANDLERS[2], HANDLERS[3]),
+			computedTargets(program, jmp));
+		String eol = program.getListing().getComment(CommentType.EOL, addr(jmp));
+		assertNotNull(eol);
+		assertTrue(eol, eol.contains("3-entry table at 9100"));
+		assertTrue(eol, eol.contains("(grm-gipk.34.1)"));
+		assertTrue(eol, eol.contains("table at 9106"));
+		assertTrue(eol, eol.contains("table at 910a"));
+		assertTrue(eol, eol.contains("(grm-gipk.34.3)"));
+	}
+
+	private ProgramDB buildLeading(String tableHex) throws Exception {
+		builder = newBuilder("Test", LANG);
+		uninitializedRam(builder, ".ram", "0x0", 0x800);
+		builder.createMemory(".text", "0x8000", 0x8000);
+		builder.setBytes(String.format("0x%x", CALLER), "a6 03 bd " + word(TABLE) + " 85 02 bd " +
+			word(TABLE + 1) + " 85 03 6c 02 00", true);
+		builder.setBytes(String.format("0x%x", TABLE), tableHex, false);
+		for (long h : HANDLERS) {
+			builder.setBytes(String.format("0x%x", h), "60", false);
+		}
+		return builder.getProgram();
+	}
+
+	private String leadingEol(ProgramDB program) {
+		return program.getListing().getComment(CommentType.EOL, addr(CALLER + 12));
+	}
+
+	@Test
+	public void skipsOneLeadingNullEntry() throws Exception {
+		ProgramDB program = buildLeading(word(0) + " " + word(HANDLERS[0]) + " " +
+			word(HANDLERS[1]) + " " + word(HANDLERS[2]) + " " + word(0x0300));
+		run(program);
+		assertEquals(List.of(HANDLERS[0], HANDLERS[1], HANDLERS[2]),
+			computedTargets(program, CALLER + 12));
+		String eol = leadingEol(program);
+		assertNotNull(eol);
+		assertTrue(eol, eol.startsWith("split dispatch: 4-entry table at 9100 (1 leading null)"));
+	}
+
+	@Test
+	public void skipsTwoLeadingNullEntries() throws Exception {
+		ProgramDB program = buildLeading(word(0) + " " + word(0) + " " + word(HANDLERS[1]) + " " +
+			word(HANDLERS[2]) + " " + word(0x0300));
+		run(program);
+		assertEquals(List.of(HANDLERS[1], HANDLERS[2]), computedTargets(program, CALLER + 12));
+		String eol = leadingEol(program);
+		assertNotNull(eol);
+		assertTrue(eol, eol.startsWith("split dispatch: 4-entry table at 9100 (2 leading nulls)"));
+	}
+
+	@Test
+	public void declinesAnAllNullTable() throws Exception {
+		ProgramDB program = buildLeading(word(0) + " " + word(0) + " " + word(0) + " " + word(0) +
+			" " + word(0) + " " + word(0));
+		run(program);
+		assertEquals(List.of(), computedTargets(program, CALLER + 12));
+	}
+
+	@Test
+	public void aNullInTheMiddleStillEndsTheWalk() throws Exception {
+		ProgramDB program = buildLeading(word(HANDLERS[0]) + " " + word(HANDLERS[1]) + " " +
+			word(0) + " " + word(HANDLERS[2]));
+		run(program);
+		assertEquals(List.of(HANDLERS[0], HANDLERS[1]), computedTargets(program, CALLER + 12));
+		String eol = leadingEol(program);
+		assertNotNull(eol);
+		assertTrue(eol, eol.startsWith("split dispatch: 2-entry table at 9100 via"));
+	}
+
 	/** Switch analysis already resolved the inline jump: leave it alone. */
 	@Test
 	public void leavesAnAlreadyResolvedInlineJumpAlone() throws Exception {
