@@ -43,6 +43,10 @@ def table(sites, title):
     print("== %s: %d sites ==" % (title, len(sites)))
     for (lang, an, kind), n in sorted(cnt.items()):
         print("%-24s %-28s %-13s %5d" % (lang, an, kind, n))
+    # Per-kind totals: return/engine (grm-gipk.30) are sites that can never carry a table, so
+    # kind=none here is the count of real dispatch gaps.
+    tot = collections.Counter(kv["kind"] for kv in sites.values())
+    print("totals: " + "  ".join("%s=%d" % kv for kv in sorted(tot.items())))
 
 
 def main():

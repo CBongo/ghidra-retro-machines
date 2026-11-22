@@ -22,6 +22,12 @@
 //                 decompiler's warning text when it printed one)
 //   unreached     a computed jump inside a function body that the decompile never reached (dead
 //                 or bad-data flow; no BRANCHIND for it, no warning)
+//   return        the site is a return (RTI/RTS/RTL/RET/RETI) that p-code models as a computed
+//                 jump -- e.g. the w_ct/w_ff3 NMI/IRQ epilogue RTIs ("Too many branches"); it can
+//                 never have a table (grm-gipk.30)
+//   engine        a computed jump inside a JumpEngine body InlineJumpTableDispatchAnalyzer resolved
+//                 (a CALL_RETURN JSR to its entry with pointer data after it); the tables belong to the
+//                 callers, not to this jump (grm-gipk.30)
 //   no-branchind  RTS-trick / push-return dispatch: a return the extension gave computed-jump
 //                 refs to; there is no BRANCHIND to switch on (targets= counts the refs)
 // analyzer= is a best guess from the EOL comment, the override namespace and the instruction;
@@ -33,6 +39,8 @@ import ghidra.app.decompiler.DecompileResults;
 import ghidra.app.script.GhidraScript;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.listing.CommentType;
+import ghidra.program.model.listing.Data;
+import ghidra.program.model.listing.FlowOverride;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.FunctionIterator;
 import ghidra.program.model.listing.Instruction;
@@ -47,6 +55,7 @@ import ghidra.program.model.symbol.Reference;
 import ghidra.program.model.symbol.Symbol;
 import ghidra.program.model.symbol.SymbolTable;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -59,7 +68,10 @@ import java.util.TreeSet;
 public class SwitchLabelCensus extends GhidraScript {
 	private static final long DEFAULT_CASE_VALUE = 0xbad1abe1L;
 
+	private static final Set<String> RETURNS = Set.of("RTI", "RTS", "RTL", "RET", "RETI");
+
 	private final Map<String, Integer> kindCounts = new TreeMap<>();
+	private final Map<Address, Boolean> engineCache = new HashMap<>();
 	private int sites;
 	private String lang;
 	private String prog;
@@ -158,7 +170,9 @@ public class SwitchLabelCensus extends GhidraScript {
 						continue;
 					}
 					String warn = jumpWarning(c, a);
-					String kind = bi.contains(a) || !warn.isEmpty() ? "none" : "unreached";
+					String kind = isReturn(a) ? "return"
+						: isResolvedEngine(f) ? "engine"
+						: bi.contains(a) || !warn.isEmpty() ? "none" : "unreached";
 					String why = bi.contains(a) ? "branchind-without-table"
 						: warn.isEmpty() ? "not-in-decompile" : "branchind-dropped";
 					emit(a, f.getName(), f, ovSites.contains(a), guess(f, a, ovSites.contains(a)), 0, 0,
@@ -273,6 +287,52 @@ public class SwitchLabelCensus extends GhidraScript {
 			: eol != null && eol.startsWith("65816 RTL trick") ? "W65816RtlTrick" : "RtsTrickDispatch?";
 		emit(in.getMinAddress(), f == null ? "-" : f.getName(), f, false, an, n, n, "no-branchind", "-", "-",
 			false, " targets=" + n);
+	}
+
+	/** The site is a return (RTI/RTS/RTL, SPC700 RET/RETI) that p-code models as a BRANCHIND. */
+	private boolean isReturn(Address site) {
+		Instruction in = currentProgram.getListing().getInstructionAt(site);
+		if (in == null) {
+			return false;
+		}
+		String m = in.getMnemonicString().toUpperCase();
+		return RETURNS.contains(m);
+	}
+
+	/**
+	 * The function is a JumpEngine body InlineJumpTableDispatchAnalyzer resolved: some JSR to its
+	 * entry carries the CALL_RETURN flow override that analyzer sets on every call site whose
+	 * inline table it laid down, and that table follows the JSR as pointer data. The engine's own computed jump has no table of its own -- each
+	 * caller's table follows the caller's JSR.
+	 */
+	private boolean isResolvedEngine(Function f) {
+		if (f == null) {
+			return false;
+		}
+		Boolean cached = engineCache.get(f.getEntryPoint());
+		if (cached != null) {
+			return cached;
+		}
+		boolean engine = false;
+		for (Reference r : currentProgram.getReferenceManager().getReferencesTo(f.getEntryPoint())) {
+			if (!r.getReferenceType().isCall()) {
+				continue;
+			}
+			Instruction from = currentProgram.getListing().getInstructionAt(r.getFromAddress());
+			if (from == null || from.getFlowOverride() != FlowOverride.CALL_RETURN) {
+				continue;
+			}
+			// CALL_RETURN alone is not enough: PopReturnHelperAnalyzer and
+			// W65816NoReturnFlagAnalyzer set it too. Only the inline-table analyzer lays its table
+			// down as pointer data immediately after the JSR.
+			Data after = currentProgram.getListing().getDataAt(from.getMaxAddress().next());
+			if (after != null && after.isPointer()) {
+				engine = true;
+				break;
+			}
+		}
+		engineCache.put(f.getEntryPoint(), engine);
+		return engine;
 	}
 
 	private static boolean hasComputedRef(Instruction in) {
