@@ -111,9 +111,20 @@ final class InlineJumpTableDispatch {
 		// the lo byte waiting in X (TAX) and landing in the vector's low cell by STX, not PLA/STA.
 		boolean parkedInX = false;
 		Address hiVectorAddr = null;
-		// An ABSOLUTE register save (punchout aea3: STY $04c9 ... LDY $04c9, grm-4kgk): the RAM
-		// cell it wrote, which the restore must read back.
-		Address absoluteSave = null;
+		// ABSOLUTE register saves (punchout aea3: STY $04c9 ... LDY $04c9, grm-4kgk; cv2 9e7e saves
+		// both X and Y, grm-gipk.32): the RAM cells written, which a restore must read back.
+		List<Address> absoluteSaves = new ArrayList<>(2);
+		// lifeforce ef1a (grm-gipk.32): the lo byte parked in a zero-page TEMP cell (STA $03), the
+		// hi byte stored into the vector, then LDA $03 / STA $00 completes it.
+		boolean parkedInCell = false;
+		Address parkedCell = null;
+		// bionic d7e1 (grm-gipk.32): the X-parked lo byte stored (STX p) BEFORE the hi (STA p+1).
+		Address xStoredLo = null;
+		// dbz_datach c9f0 (grm-gipk.32): the popped pointer bumped by CLC / ADC #1 ... ADC #0 in place
+		// of an INY, so the first entry load runs at Y = 2*index, not 2*index + 1.
+		boolean carryCleared = false;
+		int pointerBias = 0;
+		boolean hiCarryAdded = false;
 
 		// What the NEXT instruction is required to be, set by PLA / the indirect-Y load.
 		final int PENDING_NONE = 0;
@@ -163,6 +174,28 @@ final class InlineJumpTableDispatch {
 			}
 
 			if (pending == PENDING_PLA_STORE) {
+				if (parkState == 0 && plaCount == 1 && !carryCleared &&
+					Integer.valueOf(0).equals(MosOperands.constantCarry(instr))) {
+					carryCleared = true;
+					pc = instr.getFallThrough();
+					continue;
+				}
+				if (parkState == 0 && plaCount == 1 && carryCleared && pointerBias == 0 &&
+					isAdcImmediate(instr, 1)) {
+					pointerBias = 1;
+					pc = instr.getFallThrough();
+					continue;
+				}
+				if (parkState == 0 && plaCount == 2 && pointerBias == 1 && !hiCarryAdded &&
+					isAdcImmediate(instr, 0)) {
+					hiCarryAdded = true;
+					pc = instr.getFallThrough();
+					continue;
+				}
+				if (parkState == 0 && ((carryCleared && pointerBias == 0) ||
+					(plaCount == 2 && pointerBias == 1 && !hiCarryAdded))) {
+					return Boolean.FALSE; // a half-done pointer bump
+				}
 				Address zp = directZeroPageStoreAddress(instr);
 				if (shape != Shape.STA || zp == null) {
 					return Boolean.FALSE;
@@ -196,7 +229,7 @@ final class InlineJumpTableDispatch {
 				// The Y restore may also sit BETWEEN the high-byte load and its store (tmnt's
 				// c702: LDA ($00),Y; LDY $03; STA $03; JMP ($0002), grm-qa5z) -- harmless there
 				// too, since LDY leaves A alone and Y is not read again.
-				if (loadCount == 1 && isYRestore(instr, absoluteSave)) {
+				if (loadCount == 1 && isYRestore(instr, absoluteSaves)) {
 					pc = instr.getFallThrough();
 					continue;
 				}
@@ -208,9 +241,29 @@ final class InlineJumpTableDispatch {
 					pc = instr.getFallThrough();
 					continue;
 				}
+				if (parkState == 1 && parkedInX && xStoredLo == null && shape == Shape.STX) {
+					xStoredLo = directZeroPageStoreAddress(instr);
+					if (xStoredLo == null) {
+						return Boolean.FALSE;
+					}
+					pc = instr.getFallThrough();
+					continue;
+				}
 				Address zp = directZeroPageStoreAddress(instr);
 				if (shape != Shape.STA || zp == null) {
 					return Boolean.FALSE;
+				}
+				if (parkState == 1 && xStoredLo != null) {
+					// the hi byte lands just above the already-stored lo byte: vector complete
+					if (!zp.equals(xStoredLo.add(1))) {
+						return Boolean.FALSE;
+					}
+					pAddr = xStoredLo;
+					parkState = 3;
+					loadCount = 2;
+					pending = PENDING_NONE;
+					pc = instr.getFallThrough();
+					continue;
 				}
 				if (parkState == 1) {
 					// hi byte stored; the balancing PLA must now pop the lo byte into zp-1.
@@ -221,8 +274,22 @@ final class InlineJumpTableDispatch {
 					pAddr = zp;
 				}
 				else { // loadCount == 1, second (high) byte
-					if (pAddr == null || !zp.equals(pAddr.add(1))) {
+					if (pAddr == null) {
 						return Boolean.FALSE;
+					}
+					if (!zp.equals(pAddr.add(1))) {
+						// lifeforce: the first store went to a temp cell; the vector's lo byte is
+						// copied in from it after this hi store (LDA temp / STA zp-1).
+						if (parkState != 0 || zp.getOffset() == 0) {
+							return Boolean.FALSE;
+						}
+						parkedInCell = true;
+						parkedCell = pAddr;
+						hiVectorAddr = zp;
+						parkState = 2;
+						pending = PENDING_NONE;
+						pc = instr.getFallThrough();
+						continue;
 					}
 				}
 				if (parkState != 2) {
@@ -256,7 +323,15 @@ final class InlineJumpTableDispatch {
 					break;
 				case INY:
 					if (!ySet) {
-						return Boolean.FALSE;
+						// cv3 e886 (grm-gipk.32): a second entry whose callers load the doubled
+						// index into Y themselves (LDY $0565 / JSR $e886), so the walk opens with
+						// the INY. Only as the very first instruction.
+						if (step != 0 || aslCount != 0 || indexFromX || plaCount != 0 ||
+							!absoluteSaves.isEmpty()) {
+							return Boolean.FALSE;
+						}
+						ySet = true;
+						yOffset = 0;
 					}
 					yOffset++;
 					break;
@@ -271,7 +346,7 @@ final class InlineJumpTableDispatch {
 						return Boolean.FALSE; // PLA before the hi load, or a second one
 					}
 					if (parkState == 2) {
-						if (parkedInX) {
+						if (parkedInX || parkedInCell) {
 							return Boolean.FALSE; // nothing was pushed to balance
 						}
 						pending = PENDING_PLA_STORE; // balances the parked PHA
@@ -287,6 +362,14 @@ final class InlineJumpTableDispatch {
 					pending = PENDING_PLA_STORE;
 					break;
 				case LDA: {
+					if (parkedInCell && parkState == 2) {
+						Address from = directZeroPageLoadA(instr);
+						if (from == null || !from.equals(parkedCell)) {
+							return Boolean.FALSE;
+						}
+						pending = PENDING_PLA_STORE; // the same STA zp-1 completion as the PHA form
+						break;
+					}
 					Address indirectBase = indirectIndexedYOperand(instr);
 					if (indirectBase == null || hiAddr == null || !indirectBase.equals(loAddr) ||
 						!ySet || loadCount >= 2 || parkState >= 2) {
@@ -298,7 +381,7 @@ final class InlineJumpTableDispatch {
 						}
 					}
 					else if (loadCount == 0) {
-						if (yOffset != 1) {
+						if (yOffset + pointerBias != 1) {
 							return Boolean.FALSE;
 						}
 						firstLoadYOffset = yOffset;
@@ -331,23 +414,23 @@ final class InlineJumpTableDispatch {
 					}
 					if (directZeroPageStoreAddress(instr) == null) {
 						Address cell = absoluteRamRegisterSave(program, instr);
-						if (cell == null || absoluteSave != null) {
+						if (cell == null || absoluteSaves.size() >= 2 || absoluteSaves.contains(cell)) {
 							return Boolean.FALSE;
 						}
-						absoluteSave = cell;
+						absoluteSaves.add(cell);
 					}
 					break;
 				}
 				case LDY: {
 					// Harmless restore, only after both loads are done.
-					if (loadCount != 2 || !isYRestore(instr, absoluteSave)) {
+					if (loadCount != 2 || !isYRestore(instr, absoluteSaves)) {
 						return Boolean.FALSE;
 					}
 					break;
 				}
 				case LDX: {
 					// Harmless X restore (metroid_u c27c: LDX $69), only after both loads are done.
-					if (loadCount != 2 || !isXRestore(instr, absoluteSave)) {
+					if (loadCount != 2 || !isXRestore(instr, absoluteSaves)) {
 						return Boolean.FALSE;
 					}
 					break;
@@ -478,8 +561,11 @@ final class InlineJumpTableDispatch {
 
 		List<Address> trimmed = new ArrayList<>();
 		List<EntryReferences.Extent> extents =
-			List.of(new EntryReferences.Extent(tableStart, 2L * MAX_TABLE_ENTRIES));
-		TableScorer.Result<Address, Cut> walked = TableScorer.walk(MAX_TABLE_ENTRIES, (i, before) -> {
+			List.of(new EntryReferences.Extent(tableStart, 2L * (MAX_TABLE_ENTRIES + 1)));
+		// One position PAST the cap is read, so a table of exactly MAX_TABLE_ENTRIES still sees the
+		// cut that ends it (dbz_datach cd73: 128 words, then its lowest target, grm-gipk.32);
+		// anything longer ends by the cap with no reason, and is declined below.
+		TableScorer.Result<Address, Cut> walked = TableScorer.walk(MAX_TABLE_ENTRIES + 1, (i, before) -> {
 			long entryOffset = tableStart.getOffset() + 2L * i;
 			if (entryOffset >= lowestAbove(tableStart, before)) {
 				return TableScorer.Entry.rejected(Cut.ABOVE_TABLE_TARGET);
@@ -501,7 +587,8 @@ final class InlineJumpTableDispatch {
 					: List.of(new TableScorer.Term<>(Cut.ENTRY_REFERENCED, W65816JumpTables.LABEL_P)));
 		}, TableScorer.HARD_ONLY);
 		List<Address> kept = new ArrayList<>(walked.targets());
-		Cut cut = walked.endedBy() == null ? Cut.DECLINED : walked.endedBy();
+		Cut cut = walked.endedBy() == null || kept.size() > MAX_TABLE_ENTRIES ? Cut.DECLINED
+				: walked.endedBy();
 		if (cut == Cut.DECLINED) {
 			kept.clear();
 		}
@@ -831,24 +918,40 @@ final class InlineJumpTableDispatch {
 		return cell;
 	}
 
-	/** {@code LDX $nn} (zero page, {@code 0xa6}), or {@code LDX} of the absolute save cell. */
-	private static boolean isXRestore(Instruction instr, Address absoluteSave) {
+	/** {@code LDX $nn} (zero page, {@code 0xa6}), or {@code LDX} of an absolute save cell. */
+	private static boolean isXRestore(Instruction instr, List<Address> absoluteSaves) {
 		if (MosOperands.loadedRegister(instr) != 'X') {
 			return false;
 		}
 		int op = opcodeByte(instr);
-		return op == 0xa6 ||
-			(op == 0xae && absoluteSave != null && absoluteSave.equals(absoluteOperand(instr)));
+		return op == 0xa6 || (op == 0xae && absoluteSaves.contains(absoluteOperand(instr)));
 	}
 
-	/** The Y restore: {@code LDY $nn}, or {@code LDY $nnnn} (opcode {@code 0xac}) reading back the
-	 *  cell an absolute save wrote ({@code absoluteSave}, null when there was none). */
-	private static boolean isYRestore(Instruction instr, Address absoluteSave) {
+	/** {@code LDA $nn} (direct zero page, opcode {@code 0xa5}) -- the load address, or null. */
+	private static Address directZeroPageLoadA(Instruction instr) {
+		if (MosOperands.loadedRegister(instr) != 'A' || opcodeByte(instr) != 0xa5) {
+			return null;
+		}
+		return zeroPageOperand(instr);
+	}
+
+	/** {@code ADC #value} (immediate, opcode {@code 0x69}). */
+	private static boolean isAdcImmediate(Instruction instr, int value) {
+		if (opcodeByte(instr) != 0x69) {
+			return false;
+		}
+		Integer v = MosOperands.immediateOperandValue(instr);
+		return v != null && v == value;
+	}
+
+	/** The Y restore: {@code LDY $nn}, or {@code LDY $nnnn} (opcode {@code 0xac}) reading back a
+	 *  cell an absolute save wrote. */
+	private static boolean isYRestore(Instruction instr, List<Address> absoluteSaves) {
 		if (directZeroPageLoadAddress(instr) != null) {
 			return true;
 		}
-		return absoluteSave != null && MosOperands.loadedRegister(instr) == 'Y' &&
-			opcodeByte(instr) == 0xac && absoluteSave.equals(absoluteOperand(instr));
+		return MosOperands.loadedRegister(instr) == 'Y' && opcodeByte(instr) == 0xac &&
+			absoluteSaves.contains(absoluteOperand(instr));
 	}
 
 	/** {@code LDA ($nn),Y} (indirect indexed, opcode {@code 0xb1}) -- the zero-page base address

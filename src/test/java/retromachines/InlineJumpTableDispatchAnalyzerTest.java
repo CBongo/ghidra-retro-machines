@@ -258,6 +258,98 @@ public class InlineJumpTableDispatchAnalyzerTest extends AbstractBundledLanguage
 		assertEquals(Boolean.FALSE, InlineJumpTableDispatch.recognizeDispatcher(program, addr(0x9640)));
 	}
 
+	/** cv2 9e7e (grm-gipk.32): X AND Y both saved to absolute RAM cells, both restored. */
+	@Test
+	public void recognizesTwoAbsoluteSavesShape() throws Exception {
+		ProgramDB program = freshProgram();
+		uninitializedRam(builder, ".ram", "0x100", 0x700);
+		// ASL A; STX $015d; STY $015c; TAY; INY; PLA; STA $a7; PLA; STA $a8; LDA ($a7),Y; TAX; INY;
+		// LDA ($a7),Y; STA $a8; STX $a7; LDY $015c; LDX $015d; JMP ($00a7)
+		builder.setBytes("0x9e7e", "0a 8e 5d 01 8c 5c 01 a8 c8 68 85 a7 68 85 a8 b1 a7 aa c8 b1 a7 " +
+			"85 a8 86 a7 ac 5c 01 ae 5d 01 6c a7 00", true);
+
+		assertEquals(Boolean.TRUE, InlineJumpTableDispatch.recognizeDispatcher(program, addr(0x9e7e)));
+	}
+
+	/** lifeforce ef1a (grm-gipk.32): the lo byte parked in a zero-page temp, copied in last. */
+	@Test
+	public void recognizesTempCellParkedLoByteShape() throws Exception {
+		ProgramDB program = freshProgram();
+		// ASL A; STY $02; TAY; INY; PLA; STA $00; PLA; STA $01; LDA ($00),Y; STA $03; INY;
+		// LDA ($00),Y; STA $01; LDA $03; STA $00; LDY $02; JMP ($0000)
+		builder.setBytes("0xef1a", "0a 84 02 a8 c8 68 85 00 68 85 01 b1 00 85 03 c8 b1 00 85 01 " +
+			"a5 03 85 00 a4 02 6c 00 00", true);
+
+		assertEquals(Boolean.TRUE, InlineJumpTableDispatch.recognizeDispatcher(program, addr(0xef1a)));
+	}
+
+	/** The temp-cell form must copy back from the SAME temp cell. */
+	@Test
+	public void declinesTempCellReloadFromOtherCell() throws Exception {
+		ProgramDB program = freshProgram();
+		// ... STA $03 ... STA $01; LDA $04 (not $03); STA $00; JMP ($0000)
+		builder.setBytes("0xef80", "0a a8 c8 68 85 00 68 85 01 b1 00 85 03 c8 b1 00 85 01 " +
+			"a5 04 85 00 6c 00 00", true);
+
+		assertEquals(Boolean.FALSE, InlineJumpTableDispatch.recognizeDispatcher(program, addr(0xef80)));
+	}
+
+	/** dbz_datach c9f0 (grm-gipk.32): CLC / ADC #1 ... ADC #0 bumps the pointer instead of INY. */
+	@Test
+	public void recognizesPointerBumpShape() throws Exception {
+		ProgramDB program = freshProgram();
+		// STY $5c; ASL A; TAY; PLA; CLC; ADC #1; STA $5a; PLA; ADC #0; STA $5b; LDA ($5a),Y;
+		// STA $58; INY; LDA ($5a),Y; STA $59; LDY $5c; JMP ($0058)
+		builder.setBytes("0xc9f0", "84 5c 0a a8 68 18 69 01 85 5a 68 69 00 85 5b b1 5a 85 58 c8 " +
+			"b1 5a 85 59 a4 5c 6c 58 00", true);
+
+		assertEquals(Boolean.TRUE, InlineJumpTableDispatch.recognizeDispatcher(program, addr(0xc9f0)));
+	}
+
+	/** Without the hi byte's ADC #0 the bump is half done (a carry out of the lo byte is lost). */
+	@Test
+	public void declinesPointerBumpWithoutHiCarry() throws Exception {
+		ProgramDB program = freshProgram();
+		builder.setBytes("0xca40", "0a a8 68 18 69 01 85 5a 68 85 5b b1 5a 85 58 c8 " +
+			"b1 5a 85 59 6c 58 00", true);
+
+		assertEquals(Boolean.FALSE, InlineJumpTableDispatch.recognizeDispatcher(program, addr(0xca40)));
+	}
+
+	/** bionic d7e1 behind the d6a0 JMP thunk (grm-gipk.32): STX p comes before STA p+1. */
+	@Test
+	public void recognizesStxBeforeHiStoreBehindThunk() throws Exception {
+		ProgramDB program = freshProgram();
+		// STX $1b; ASL A; TAY; INY; PLA; STA $17; PLA; STA $18; LDA ($17),Y; TAX; INY;
+		// LDA ($17),Y; STX $19; STA $1a; LDX $1b; JMP ($0019)
+		builder.setBytes("0xd7e1", "86 1b 0a a8 c8 68 85 17 68 85 18 b1 17 aa c8 b1 17 86 19 85 1a " +
+			"a6 1b 6c 19 00", true);
+		builder.setBytes("0xd6a0", "4c e1 d7", true);
+
+		assertEquals(Boolean.TRUE, InlineJumpTableDispatch.recognizeDispatcher(program, addr(0xd6a0)));
+	}
+
+	/** cv3 e886 (grm-gipk.32): callers load the doubled index into Y; the entry opens with INY. */
+	@Test
+	public void recognizesCallerSuppliedYEntry() throws Exception {
+		ProgramDB program = freshProgram();
+		// INY; PLA; STA $00; PLA; STA $01; LDA ($00),Y; STA $02; INY; LDA ($00),Y; STA $03;
+		// JMP ($0002)
+		builder.setBytes("0xe886", "c8 68 85 00 68 85 01 b1 00 85 02 c8 b1 00 85 03 6c 02 00", true);
+
+		assertEquals(Boolean.TRUE, InlineJumpTableDispatch.recognizeDispatcher(program, addr(0xe886)));
+	}
+
+	/** An INY that is not the first instruction cannot stand in for the caller's Y. */
+	@Test
+	public void declinesCallerSuppliedYAfterSave() throws Exception {
+		ProgramDB program = freshProgram();
+		builder.setBytes("0xe8c0", "84 04 c8 68 85 00 68 85 01 b1 00 85 02 c8 b1 00 85 03 6c 02 00",
+			true);
+
+		assertEquals(Boolean.FALSE, InlineJumpTableDispatch.recognizeDispatcher(program, addr(0xe8c0)));
+	}
+
 	/** A JMP abs trampoline in front of the dispatcher (metroid_u's banked $8024: JMP $C27C). */
 	@Test
 	public void recognizesDispatcherBehindJmpTrampoline() throws Exception {
@@ -530,6 +622,32 @@ public class InlineJumpTableDispatchAnalyzerTest extends AbstractBundledLanguage
 			InlineJumpTableDispatch.scanTable(program, addr(tableStart));
 		assertEquals(InlineJumpTableDispatch.Cut.DECLINED, scan.cut);
 		assertTrue(scan.kept.isEmpty());
+	}
+
+	/**
+	 * A table of EXACTLY {@link InlineJumpTableDispatch#MAX_TABLE_ENTRIES} entries whose lowest
+	 * target sits right after it (dbz_datach cd73, grm-gipk.32): the cut is seen and the table kept,
+	 * not declined for reaching the cap.
+	 */
+	@Test
+	public void keepsTableOfExactlyMaxEntries() throws Exception {
+		ProgramDB program = freshProgram();
+		long tableStart = 0x9500;
+		int n = InlineJumpTableDispatch.MAX_TABLE_ENTRIES;
+		long end = tableStart + 2L * n;
+		inTx(program, "build table", () -> {
+			builder.setBytes(String.format("0x%x", tableStart), String.format("%02x %02x",
+				end & 0xff, end >> 8), false);
+			for (int i = 1; i < n + 4; i++) {
+				builder.setBytes(String.format("0x%x", tableStart + 2L * i), String.format("%02x %02x",
+					(end + 1) & 0xff, (end + 1) >> 8), false);
+			}
+		});
+
+		InlineJumpTableDispatch.CallSiteScan scan =
+			InlineJumpTableDispatch.scanTable(program, addr(tableStart));
+		assertEquals(InlineJumpTableDispatch.Cut.ABOVE_TABLE_TARGET, scan.cut);
+		assertEquals(n, scan.kept.size());
 	}
 
 	/**

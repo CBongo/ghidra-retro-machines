@@ -25,52 +25,169 @@ REALROM block W8000_B9 8000-bfff overlay=true
 REALROM block WC000 c000-ffff overlay=false
 REALROM count blocks.total 21
 REALROM count blocks.overlay 15
-REALROM count refs.intoOverlay.retargeted 1
-REALROM count refs.intoOverlay.intraOverlay 187
-REALROM count instrs.inOverlay 964
-REALROM count bankComments 6
-REALROM count warnings 0
-REALROM count notes 5
+REALROM count refs.intoOverlay.retargeted 70
+REALROM count refs.intoOverlay.intraOverlay 2284
+REALROM count instrs.inOverlay 13293
+REALROM count bankComments 74
+REALROM count warnings 8
+REALROM count notes 46
 REALROM count symbols 18
 REALROM count jumptable.wordArrays 0
 REALROM count jumptable.planarArrays 0
 REALROM sample.bankcomment c04b bank -> mirroring=2,prg_mode=3,prg_bank=0? via FUN_dcc3 [known: mirroring.0=0,mirroring.1=1,prg_mode.0=1,prg_mode.1=1; assumed from initial: prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
-REALROM sample.bankcomment c13f bank -> mirroring=2,prg_mode=3,prg_bank=12 via LAB_dcaa (mid-body entry in FUN_dca8) [switch-value flow]
-REALROM sample.bankcomment c14a bank -> mirroring=2,prg_mode=3,prg_bank=12 via LAB_dcaa (mid-body entry in FUN_dca8) [switch-value flow]
+REALROM sample.bankcomment c13f bank -> mirroring=2,prg_mode=3,prg_bank=12 via FUN_dcaa [switch-value flow]
+REALROM sample.bankcomment c14a bank -> mirroring=2,prg_mode=3,prg_bank=12 via FUN_dcaa [switch-value flow]
 REALROM sample.bankcomment c2e2 bank -> mirroring=2,prg_mode=3,prg_bank=11 via FUN_dcbe [switch-value flow]
-REALROM sample.bankcomment c5e0 bank -> mirroring=2,prg_mode=3,prg_bank=12 via LAB_dcaa (mid-body entry in FUN_dca8) [switch-value flow]
+REALROM sample.bankcomment c477 bank -> mirroring=0,prg_mode=3,prg_bank=11 via FUN_dcaa [switch-value flow]
+REALROM sample.bankcomment c5e0 bank -> mirroring=2,prg_mode=3,prg_bank=12 via FUN_dcaa [switch-value flow]
+REALROM sample.bankcomment c6df bank -> mirroring=0,prg_mode=3,prg_bank=13 via FUN_dcbe [switch-value flow]
+REALROM sample.bankcomment c6f8 bank -> mirroring=0,prg_mode=3,prg_bank=13 via FUN_dcbe [switch-value flow]
+REALROM sample.bankcomment c700 bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_dcbe [switch-value flow]
+REALROM sample.bankcomment c70b bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_dcbe [switch-value flow]
+REALROM sample.bankcomment c711 bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_dcbe [switch-value flow]
+REALROM sample.bankcomment ca15 bank -> mirroring=0,prg_mode=3,prg_bank=10 via FUN_dcbe [switch-value flow]
+REALROM sample.bankcomment ca1d bank -> mirroring=0,prg_mode=3,prg_bank=13 via FUN_dcbe [switch-value flow]
+REALROM sample.bankcomment ca5f bank -> mirroring=0,prg_mode=3,prg_bank=13 via FUN_dcbe [switch-value flow]
+REALROM sample.bankcomment ca67 bank -> mirroring=0,prg_mode=3,prg_bank=13 via FUN_dcbe [switch-value flow]
+REALROM sample.bankcomment ca6f bank -> mirroring=0,prg_mode=3,prg_bank=13 via FUN_dcbe [switch-value flow]
+REALROM sample.bankcomment caa7 bank -> mirroring=0,prg_mode=3,prg_bank=13 via FUN_dcbe [switch-value flow]
+REALROM sample.bankcomment caaf bank -> mirroring=0,prg_mode=3,prg_bank=13 via FUN_dcbe [switch-value flow]
+REALROM sample.bankcomment cb34 bank -> mirroring=0,prg_mode=3,prg_bank=3 via FUN_dcaa [switch-value flow]
+REALROM sample.bankcomment cba1 bank -> mirroring=0,prg_mode=3,prg_bank=11 via FUN_dcaa [switch-value flow]
+REALROM sample.bankcomment cbca bank -> mirroring=0,prg_mode=3,prg_bank=13 via FUN_dcbe [switch-value flow]
+REALROM sample.bankcomment cbd5 bank -> mirroring=0,prg_mode=3,prg_bank=14 via FUN_dcbe [switch-value flow]
+REALROM sample.bankcomment cbe0 bank -> mirroring=0,prg_mode=3,prg_bank=3 via FUN_dcaa [switch-value flow]
+REALROM sample.bankcomment cc24 bank -> mirroring=0,prg_mode=3,prg_bank=13 via FUN_dcbe [switch-value flow]
+REALROM sample.bankcomment cd0a bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_dcaa [switch-value flow]
+REALROM sample.bankcomment ce11 bank -> mirroring=0,prg_mode=3,prg_bank=2 via FUN_dcaa [switch-value flow]
+REALROM sample.bankcomment ce1c bank -> mirroring=0,prg_mode=3,prg_bank=0 via FUN_dcaa [switch-value flow]
+REALROM sample.bankcomment ce35 bank -> mirroring=0,prg_mode=3,prg_bank=0? via FUN_dcaa [known: mirroring.0=0,mirroring.1=0,prg_mode.0=1,prg_mode.1=1,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: prg_bank.0] [switch-value flow]
+REALROM sample.bankcomment cf65 bank -> mirroring=0,prg_mode=3,prg_bank=2 via FUN_dcaa [switch-value flow]
+REALROM sample.bankcomment cf70 bank -> mirroring=0,prg_mode=3,prg_bank=0 via FUN_dcaa [switch-value flow]
+REALROM sample.bankcomment cf8b bank -> mirroring=0,prg_mode=3,prg_bank=0? via FUN_dcaa [known: mirroring.0=0,mirroring.1=0,prg_mode.0=1,prg_mode.1=1,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: prg_bank.0] [switch-value flow]
+REALROM sample.bankcomment d1d7 bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_dcaa [switch-value flow]
+REALROM sample.bankcomment d1ff bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_dcaa [switch-value flow]
+REALROM sample.bankcomment d291 bank -> mirroring=0,prg_mode=3,prg_bank=3 via FUN_dcaa [switch-value flow]
+REALROM sample.bankcomment d2ae bank -> mirroring=0,prg_mode=3,prg_bank=3 via FUN_dcaa [switch-value flow]
+REALROM sample.bankcomment d347 bank -> mirroring=0,prg_mode=3,prg_bank=0 via FUN_dcaa [switch-value flow]
+REALROM sample.bankcomment d35a bank -> mirroring=0,prg_mode=3,prg_bank=2 via FUN_dcaa [switch-value flow]
+REALROM sample.bankcomment d383 bank -> mirroring=0,prg_mode=3,prg_bank=2 via FUN_dcaa [switch-value flow]
+REALROM sample.bankcomment d3c4 bank -> mirroring=0,prg_mode=3,prg_bank=11 via FUN_dcaa [switch-value flow]
+REALROM sample.bankcomment d527 bank -> mirroring=0,prg_mode=3,prg_bank=10 via FUN_dcaa [switch-value flow]
+REALROM sample.bankcomment d561 bank -> mirroring=0,prg_mode=3,prg_bank=10 via FUN_dcaa [switch-value flow]
+REALROM sample.bankcomment d5e8 bank -> mirroring=0,prg_mode=3,prg_bank=11 via FUN_dcaa [switch-value flow]
+REALROM sample.bankcomment d5f4 bank -> mirroring=0,prg_mode=3,prg_bank=3 via FUN_dcaa [switch-value flow]
+REALROM sample.bankcomment d85a bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_dcaa [switch-value flow]
+REALROM sample.bankcomment da3c bank -> mirroring=0,prg_mode=3,prg_bank=10 via FUN_dcaa [switch-value flow]
+REALROM sample.bankcomment da9f bank -> mirroring=0,prg_mode=3,prg_bank=10 via FUN_dcaa [switch-value flow]
+REALROM sample.bankcomment daf4 bank -> mirroring=0,prg_mode=3,prg_bank=11 via FUN_dcaa [switch-value flow]
+REALROM sample.bankcomment db85 bank -> mirroring=0,prg_mode=3,prg_bank=2 via FUN_dcaa [switch-value flow]
+REALROM sample.bankcomment db8e bank -> mirroring=0,prg_mode=3,prg_bank=0 via FUN_dcaa [switch-value flow]
+REALROM sample.bankcomment db9e bank -> mirroring=0,prg_mode=3,prg_bank=0? via FUN_dcaa [known: mirroring.0=0,mirroring.1=0,prg_mode.0=1,prg_mode.1=1,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: prg_bank.0] [switch-value flow]
+REALROM sample.bankcomment e0a1 bank -> mirroring=0,prg_mode=3,prg_bank=11 via FUN_dcaa [switch-value flow]
+REALROM sample.bankcomment e5a8 bank -> mirroring=0,prg_mode=3,prg_bank=12 via FUN_dcaa [switch-value flow]
+REALROM sample.bankcomment e5b6 bank -> mirroring=0,prg_mode=3,prg_bank=11 via FUN_dcaa [switch-value flow]
+REALROM sample.bankcomment e784 bank -> mirroring=0,prg_mode=3,prg_bank=10 via FUN_dcaa [switch-value flow]
+REALROM sample.bankcomment e800 bank -> mirroring=0,prg_mode=3,prg_bank=13 via FUN_dcaa [switch-value flow]
+REALROM sample.bankcomment e88c bank -> mirroring=0,prg_mode=3,prg_bank=11 via FUN_dcbe [switch-value flow]
+REALROM sample.bankcomment e894 bank -> mirroring=0,prg_mode=3,prg_bank=13 via FUN_dcbe [switch-value flow]
+REALROM sample.bankcomment e899 bank -> mirroring=0,prg_mode=3,prg_bank=11 via FUN_dcbe [switch-value flow]
+REALROM sample.bankcomment e8b7 bank -> mirroring=0,prg_mode=3,prg_bank=11 via FUN_dcbe [switch-value flow]
+REALROM sample.bankcomment e964 bank -> mirroring=0,prg_mode=3,prg_bank=11 via FUN_dcaa [switch-value flow]
+REALROM sample.bankcomment e997 bank -> mirroring=0,prg_mode=3,prg_bank=3 via FUN_dcaa [switch-value flow]
+REALROM sample.bankcomment e9f7 bank -> mirroring=0,prg_mode=3,prg_bank=10 via FUN_dcaa [switch-value flow]
+REALROM sample.bankcomment eac7 bank -> mirroring=0,prg_mode=3,prg_bank=10 via FUN_dcbe [switch-value flow]
+REALROM sample.bankcomment eacf bank -> mirroring=0,prg_mode=3,prg_bank=14 via FUN_dcbe [switch-value flow]
+REALROM sample.bankcomment ead4 bank -> mirroring=0,prg_mode=3,prg_bank=10 via FUN_dcbe [switch-value flow]
+REALROM sample.bankcomment eadc bank -> mirroring=0,prg_mode=3,prg_bank=14 via FUN_dcbe [switch-value flow]
+REALROM sample.bankcomment eae1 bank -> mirroring=0,prg_mode=3,prg_bank=10 via FUN_dcbe [switch-value flow]
+REALROM sample.bankcomment eae9 bank -> mirroring=0,prg_mode=3,prg_bank=14 via FUN_dcbe [switch-value flow]
+REALROM sample.bankcomment eaee bank -> mirroring=0,prg_mode=3,prg_bank=10 via FUN_dcbe [switch-value flow]
+REALROM sample.bankcomment eaf6 bank -> mirroring=0,prg_mode=3,prg_bank=14 via FUN_dcbe [switch-value flow]
+REALROM sample.bankcomment eafb bank -> mirroring=0,prg_mode=3,prg_bank=10 via FUN_dcbe [switch-value flow]
+REALROM sample.bankcomment eb03 bank -> mirroring=0,prg_mode=3,prg_bank=14 via FUN_dcbe [switch-value flow]
+REALROM sample.bankcomment fa0f bank -> mirroring=0,prg_mode=3,prg_bank=3 via FUN_dcaa [switch-value flow]
 REALROM sample.bankcomment ffe1 bank -> mirroring=0,prg_mode=3,prg_bank=0 [switch-value flow]
 REALROM sample.ref 8000 -> W8000_B12::8235 UNCONDITIONAL_JUMP primary=true
-REALROM sample.ref 8224 -> W8000_B12::822f CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8239 -> W8000_B12::823c CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8261 -> W8000_B12::8266 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8263 -> W8000_B12::856d UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 8269 -> W8000_B12::826e CONDITIONAL_JUMP primary=true
-REALROM sample.ref 826b -> W8000_B12::8286 UNCONDITIONAL_JUMP primary=true
-REALROM sample.ref 8275 -> W8000_B12::8286 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8280 -> W8000_B12::86b4 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 8283 -> W8000_B12::8294 UNCONDITIONAL_JUMP primary=true
-REALROM sample.ref 8289 -> W8000_B12::8294 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8291 -> W8000_B12::8222 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 8296 -> W8000_B12::829e CONDITIONAL_JUMP primary=true
-REALROM sample.ref 82a0 -> W8000_B12::82b9 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 82b6 -> W8000_B12::824c UNCONDITIONAL_JUMP primary=true
-REALROM sample.ref 82bd -> W8000_B12::82dd CONDITIONAL_JUMP primary=true
-REALROM sample.ref 82c1 -> W8000_B12::82dd CONDITIONAL_JUMP primary=true
-REALROM sample.ref 82cf -> W8000_B12::82dd CONDITIONAL_JUMP primary=true
-REALROM sample.ref 82d3 -> W8000_B12::82d9 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 82df -> W8000_B12::82e3 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 82f4 -> W8000_B12::82f8 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 82fe -> W8000_B12::832b CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8306 -> W8000_B12::8310 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 830e -> W8000_B12::830a CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8313 -> W8000_B12::8324 CONDITIONAL_JUMP primary=true
-REALROM sample.ref.truncated 25 of 188
+REALROM sample.ref 8000 -> W8000_B13::841f UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8003 -> W8000_B13::854d UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8005 -> W8000_B12::800a CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8006 -> W8000_B13::928e UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8007 -> W8000_B12::8129 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8009 -> W8000_B13::92f0 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8009 -> W8000_B14::8027 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 800c -> W8000_B12::8011 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 800e -> W8000_B12::812d UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8012 -> W8000_B14::8017 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8013 -> W8000_B12::8020 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8013 -> W8000_B13::8019 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8016 -> W8000_B13::8bbe UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 801a -> W8000_B14::8030 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 801d -> W8000_B12::813a UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8022 -> W8000_B12::802f CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8022 -> W8000_B14::8027 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 802a -> W8000_B14::8006 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 802c -> W8000_B12::818c UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 802d -> W8000_B14::8138 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8031 -> W8000_B12::8a50 DATA primary=true
+REALROM sample.ref 8035 -> W8000_B14::802d CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8036 -> W8000_B12::8a51 DATA primary=true
+REALROM sample.ref 8042 -> W8000_B12::80bb CONDITIONAL_JUMP primary=true
+REALROM sample.ref.truncated 25 of 2354
+REALROM sample.warn c5ac [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_dcaa whose bank argument could not be recovered at this call site
+REALROM sample.warn ce3f [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_dcaa whose bank argument could not be recovered at this call site
+REALROM sample.warn cfba [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_dcaa whose bank argument could not be recovered at this call site
+REALROM sample.warn d227 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_dcaa whose bank argument could not be recovered at this call site
+REALROM sample.warn d305 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_dcaa whose bank argument could not be recovered at this call site
+REALROM sample.warn dbe2 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_dcaa whose bank argument could not be recovered at this call site
+REALROM sample.warn dcc0 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_dcaa whose bank argument could not be recovered at this call site
+REALROM sample.warn e65c [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_dcaa whose bank argument could not be recovered at this call site
+REALROM sample.note 83ed [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
+REALROM sample.note ab45 [CopyLoopAnalyzer] copy-shaped loop RAM:00d0 -> RAM:0516 (32 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note ab89 [CopyLoopAnalyzer] copy-shaped loop RAM:0516 -> RAM:00d0 (32 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note acbb [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_dca8 is a proven no-argument restore entry -- its own prologue reloads the bank directly from 0065, a writable RAM cell nothing between that load and the switch touches, and commits it unchanged. The bank after this call is therefore whatever was last saved at 0065, not a fresh value this analyzer failed to pin down -- a property of the game, not a gap in analysis.
+REALROM sample.note ad88 [CopyLoopAnalyzer] copy-shaped loop W8000_B13:adae -> RAM:00e1 (7 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note b99f [CopyLoopAnalyzer] copy-shaped loop RAM:0522 -> RAM:0516 (4 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note bb8c [CopyLoopAnalyzer] copy-shaped loop RAM:00b6 -> RAM:00be (8 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note bbcf [CopyLoopAnalyzer] copy-shaped loop RAM:00b6 -> RAM:00be (8 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note bcd3 [CopyLoopAnalyzer] copy-shaped loop RAM:00c1 -> RAM:00b9 (5 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note bcda [CopyLoopAnalyzer] copy-shaped loop RAM:0516 -> RAM:00d0 (32 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note bcdf [CopyLoopAnalyzer] copy-shaped loop RAM:00be -> RAM:00b6 (3 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note bea1 [CopyLoopAnalyzer] copy-shaped loop RAM:0522 -> RAM:0516 (4 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note c043 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_dca8 is a proven no-argument restore entry -- its own prologue reloads the bank directly from 0065, a writable RAM cell nothing between that load and the switch touches, and commits it unchanged. The bank after this call is therefore whatever was last saved at 0065, not a fresh value this analyzer failed to pin down -- a property of the game, not a gap in analysis.
-REALROM sample.note dcaa [NesBankingAnalyzer] Bank value is supplied at each ENTRY: this code is reached from several entries into the helper, and on every path the value is fixed at the entry -- either the caller's argument, or a bank the entry's own prologue restores from RAM -- so the bank cannot be known from inside the helper body. Each entry's CALL SITES are judged separately; see their own annotations.
-REALROM sample.note dcba [NesBankingAnalyzer] Bank value is supplied at each ENTRY: this code is reached from several entries into the helper, and on every path the value is fixed at the entry -- either the caller's argument, or a bank the entry's own prologue restores from RAM -- so the bank cannot be known from inside the helper body. Each entry's CALL SITES are judged separately; see their own annotations.
+REALROM sample.note c47a [CopyLoopAnalyzer] copy-shaped loop RAM:0017 -> RAM:03fb (16 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note c5ba [CopyLoopAnalyzer] copy-shaped loop RAM:0017 -> RAM:03fb (64 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note c6b8 [CopyLoopAnalyzer] copy-shaped loop RAM:0090 -> RAM:0100 (59 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note c6c3 [CopyLoopAnalyzer] copy-shaped loop RAM:0100 -> RAM:0090 (59 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note c717 [CopyLoopAnalyzer] copy-shaped loop RAM:04ca -> RAM:0100 (33 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note c8ab [CopyLoopAnalyzer] copy-shaped loop RAM:0100 -> RAM:04ca (33 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note cb3f [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_dca8 is a proven no-argument restore entry -- its own prologue reloads the bank directly from 0065, a writable RAM cell nothing between that load and the switch touches, and commits it unchanged. The bank after this call is therefore whatever was last saved at 0065, not a fresh value this analyzer failed to pin down -- a property of the game, not a gap in analysis.
+REALROM sample.note cb8d [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_dca8 is a proven no-argument restore entry -- its own prologue reloads the bank directly from 0065, a writable RAM cell nothing between that load and the switch touches, and commits it unchanged. The bank after this call is therefore whatever was last saved at 0065, not a fresh value this analyzer failed to pin down -- a property of the game, not a gap in analysis.
+REALROM sample.note cb98 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_dca8 is a proven no-argument restore entry -- its own prologue reloads the bank directly from 0065, a writable RAM cell nothing between that load and the switch touches, and commits it unchanged. The bank after this call is therefore whatever was last saved at 0065, not a fresh value this analyzer failed to pin down -- a property of the game, not a gap in analysis.
+REALROM sample.note d271 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_dca8 is a proven no-argument restore entry -- its own prologue reloads the bank directly from 0065, a writable RAM cell nothing between that load and the switch touches, and commits it unchanged. The bank after this call is therefore whatever was last saved at 0065, not a fresh value this analyzer failed to pin down -- a property of the game, not a gap in analysis.
+REALROM sample.note d41e [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_dca8 is a proven no-argument restore entry -- its own prologue reloads the bank directly from 0065, a writable RAM cell nothing between that load and the switch touches, and commits it unchanged. The bank after this call is therefore whatever was last saved at 0065, not a fresh value this analyzer failed to pin down -- a property of the game, not a gap in analysis.
+REALROM sample.note d4b8 [CopyLoopAnalyzer] copy-shaped loop RAM:00b6 -> RAM:00a9 (3 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note d5db [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_dca8 is a proven no-argument restore entry -- its own prologue reloads the bank directly from 0065, a writable RAM cell nothing between that load and the switch touches, and commits it unchanged. The bank after this call is therefore whatever was last saved at 0065, not a fresh value this analyzer failed to pin down -- a property of the game, not a gap in analysis.
+REALROM sample.note d874 [CopyLoopAnalyzer] copy-shaped loop RAM:0019 -> RAM:00d0 (32 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note d880 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_dca8 is a proven no-argument restore entry -- its own prologue reloads the bank directly from 0065, a writable RAM cell nothing between that load and the switch touches, and commits it unchanged. The bank after this call is therefore whatever was last saved at 0065, not a fresh value this analyzer failed to pin down -- a property of the game, not a gap in analysis.
+REALROM sample.note d883 [CopyLoopAnalyzer] copy-shaped loop RAM:d891 -> RAM:00e1 (7 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note d9a4 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_dca8 is a proven no-argument restore entry -- its own prologue reloads the bank directly from 0065, a writable RAM cell nothing between that load and the switch touches, and commits it unchanged. The bank after this call is therefore whatever was last saved at 0065, not a fresh value this analyzer failed to pin down -- a property of the game, not a gap in analysis.
+REALROM sample.note da6b [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_dca8 is a proven no-argument restore entry -- its own prologue reloads the bank directly from 0065, a writable RAM cell nothing between that load and the switch touches, and commits it unchanged. The bank after this call is therefore whatever was last saved at 0065, not a fresh value this analyzer failed to pin down -- a property of the game, not a gap in analysis.
+REALROM sample.note dab2 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_dca8 is a proven no-argument restore entry -- its own prologue reloads the bank directly from 0065, a writable RAM cell nothing between that load and the switch touches, and commits it unchanged. The bank after this call is therefore whatever was last saved at 0065, not a fresh value this analyzer failed to pin down -- a property of the game, not a gap in analysis.
+REALROM sample.note dc00 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_dca8 is a proven no-argument restore entry -- its own prologue reloads the bank directly from 0065, a writable RAM cell nothing between that load and the switch touches, and commits it unchanged. The bank after this call is therefore whatever was last saved at 0065, not a fresh value this analyzer failed to pin down -- a property of the game, not a gap in analysis.
+REALROM sample.note dcaa [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
+REALROM sample.note dcba [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
 REALROM sample.note dcc3 [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
 REALROM sample.note dcd3 [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
+REALROM sample.note e0d7 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_dca8 is a proven no-argument restore entry -- its own prologue reloads the bank directly from 0065, a writable RAM cell nothing between that load and the switch touches, and commits it unchanged. The bank after this call is therefore whatever was last saved at 0065, not a fresh value this analyzer failed to pin down -- a property of the game, not a gap in analysis.
+REALROM sample.note e5b1 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_dca8 is a proven no-argument restore entry -- its own prologue reloads the bank directly from 0065, a writable RAM cell nothing between that load and the switch touches, and commits it unchanged. The bank after this call is therefore whatever was last saved at 0065, not a fresh value this analyzer failed to pin down -- a property of the game, not a gap in analysis.
+REALROM sample.note e5ed [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_dca8 is a proven no-argument restore entry -- its own prologue reloads the bank directly from 0065, a writable RAM cell nothing between that load and the switch touches, and commits it unchanged. The bank after this call is therefore whatever was last saved at 0065, not a fresh value this analyzer failed to pin down -- a property of the game, not a gap in analysis.
+REALROM sample.note e67e [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_dca8 is a proven no-argument restore entry -- its own prologue reloads the bank directly from 0065, a writable RAM cell nothing between that load and the switch touches, and commits it unchanged. The bank after this call is therefore whatever was last saved at 0065, not a fresh value this analyzer failed to pin down -- a property of the game, not a gap in analysis.
+REALROM sample.note e809 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_dca8 is a proven no-argument restore entry -- its own prologue reloads the bank directly from 0065, a writable RAM cell nothing between that load and the switch touches, and commits it unchanged. The bank after this call is therefore whatever was last saved at 0065, not a fresh value this analyzer failed to pin down -- a property of the game, not a gap in analysis.
+REALROM sample.note e867 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_dca8 is a proven no-argument restore entry -- its own prologue reloads the bank directly from 0065, a writable RAM cell nothing between that load and the switch touches, and commits it unchanged. The bank after this call is therefore whatever was last saved at 0065, not a fresh value this analyzer failed to pin down -- a property of the game, not a gap in analysis.
+REALROM sample.note e96a [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_dca8 is a proven no-argument restore entry -- its own prologue reloads the bank directly from 0065, a writable RAM cell nothing between that load and the switch touches, and commits it unchanged. The bank after this call is therefore whatever was last saved at 0065, not a fresh value this analyzer failed to pin down -- a property of the game, not a gap in analysis.
+REALROM sample.note e99d [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_dca8 is a proven no-argument restore entry -- its own prologue reloads the bank directly from 0065, a writable RAM cell nothing between that load and the switch touches, and commits it unchanged. The bank after this call is therefore whatever was last saved at 0065, not a fresh value this analyzer failed to pin down -- a property of the game, not a gap in analysis.
+REALROM sample.note ea70 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call's helper FUN_dca8 is a proven no-argument restore entry -- its own prologue reloads the bank directly from 0065, a writable RAM cell nothing between that load and the switch touches, and commits it unchanged. The bank after this call is therefore whatever was last saved at 0065, not a fresh value this analyzer failed to pin down -- a property of the game, not a gap in analysis.
 REALROM sample.symbol c058 NMI IMPORTED primary=true
 REALROM sample.symbol c0b2 IRQ IMPORTED primary=true
 REALROM sample.symbol ffe0 RESET IMPORTED primary=true
