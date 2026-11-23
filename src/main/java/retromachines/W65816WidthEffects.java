@@ -234,7 +234,10 @@ final class W65816WidthEffects {
 				}
 				continue;
 			}
-			if (ft.isTerminal() || (ft.isComputed() && ft.isJump())) {
+			// A computed jump whose targets analysis resolved is followed into them like a direct
+			// one (grm-9nxj.53: F-Zero's far-call callees dispatch through JMP ($8077,X) into
+			// handlers that each return); unresolved, the path ends here.
+			if (ft.isTerminal() || (ft.isComputed() && ft.isJump() && in.getFlows().length == 0)) {
 				continue;
 			}
 			if (ft.isCall() && !ft.isComputed()) {

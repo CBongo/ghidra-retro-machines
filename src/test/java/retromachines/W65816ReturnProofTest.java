@@ -33,6 +33,8 @@ import ghidra.program.model.listing.BookmarkType;
 import ghidra.program.model.listing.FlowOverride;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Instruction;
+import ghidra.program.model.symbol.RefType;
+import ghidra.program.model.symbol.SourceType;
 import ghidra.util.task.TaskMonitor;
 
 /**
@@ -162,11 +164,120 @@ public class W65816ReturnProofTest extends AbstractProgramTest {
 		assertEquals("RTL", proof("4b 20 00 84 6b"));      // PHK ; JSR $8400 ; RTL
 	}
 
+	/** Resolved targets of the computed jump at {@code jmp}, as a jump-table analysis leaves them. */
+	private void resolve(int jmp, int... targets) throws Exception {
+		inTx(program, "refs", () -> {
+			for (int t : targets) {
+				program.getReferenceManager().addMemoryReference(addr(jmp), addr(t),
+					RefType.COMPUTED_JUMP, SourceType.ANALYSIS, 0);
+			}
+		});
+	}
+
+	/**
+	 * grm-9nxj.53, F-Zero {@code $03:8070}: {@code PHB / LDA $55 / ASL / TAX / JMP ($8077,X)}
+	 * into handlers that each pull the PHB and RTL. The resolved targets are walked at the
+	 * jump's depth.
+	 */
 	@Test
-	public void tailJumpIntoAnotherFunctionDeclines() throws Exception {
+	public void resolvedDispatchIntoReturningHandlersReturns() throws Exception {
+		builder.setBytes("0x8200", "ab 6b", true);        // PLB ; RTL
+		builder.setBytes("0x8210", "ea ab 6b", true);     // NOP ; PLB ; RTL
+		builder.setBytes(String.format("0x%x", CALLEE), "8b a5 55 0a aa 7c 00 83", true);
+		resolve(CALLEE + 5, 0x8200, 0x8210);
+		assertEquals("RTL", W65816ReturnProof.provenReturn(program, addr(CALLEE)));
+	}
+
+	/** One handler leaves the PHB byte behind: the dispatch does not prove a return. */
+	@Test
+	public void resolvedDispatchWithAnUnbalancedHandlerDeclines() throws Exception {
+		builder.setBytes("0x8200", "ab 6b", true);        // PLB ; RTL
+		builder.setBytes("0x8210", "6b", true);           // RTL, one byte deep
+		builder.setBytes(String.format("0x%x", CALLEE), "8b a5 55 0a aa 7c 00 83", true);
+		resolve(CALLEE + 5, 0x8200, 0x8210);
+		assertNull(W65816ReturnProof.provenReturn(program, addr(CALLEE)));
+	}
+
+	/** Nothing resolved the table: still declined. */
+	@Test
+	public void unresolvedDispatchDeclines() throws Exception {
+		assertNull(proof("a5 55 0a aa 7c 00 83")); // LDA $55 ; ASL ; TAX ; JMP ($8300,X)
+	}
+
+	/** A resolved {@code JSR (t,X)} is stepped over like a direct call. */
+	@Test
+	public void resolvedComputedCallIsSteppedOver() throws Exception {
+		builder.setBytes("0x8200", "60", true);
+		builder.setBytes(String.format("0x%x", CALLEE), "fc 00 83 60", true); // JSR ($8300,X) ; RTS
+		resolve(CALLEE, 0x8200);
+		assertEquals("RTS", W65816ReturnProof.provenReturn(program, addr(CALLEE)));
+	}
+
+	/** grm-9nxj.53: a tail jump returns however its target does. */
+	@Test
+	public void tailJumpIntoAReturningFunctionReturnsTheSameWay() throws Exception {
 		builder.setBytes("0x8200", "60", true);
 		inTx(program, "fn", () -> new CreateFunctionCmd(addr(0x8200)).applyTo(program));
+		assertEquals("RTS", proof("4c 00 82")); // JMP $8200
+	}
+
+	/** F-Zero's {@code $00:9EE8 JML} veneer, called {@code PHK / JSR}: a hand-rolled JSL. */
+	@Test
+	public void phkJsrIntoAJmlVeneerToAnRtlRoutineIsAHandRolledJsl() throws Exception {
+		builder.setBytes("0x8300", "6b", true);                  // RTL
+		builder.setBytes("0x8200", "5c 00 83 00", true);         // JML $00:8300
+		inTx(program, "fn", () -> new CreateFunctionCmd(addr(0x8300)).applyTo(program));
+		assertEquals("RTL", proof("4b 20 00 82 6b"));            // PHK ; JSR $8200 ; RTL
+	}
+
+	/**
+	 * F-Zero {@code $03:94CF PHP / ... / JMP $95D6}: the target is a function that ends
+	 * {@code PLP / RTL}, a shared epilogue pulling the jumper's PHP. Walked on at depth 1.
+	 */
+	@Test
+	public void tailJumpIntoASharedEpilogueReturns() throws Exception {
+		builder.setBytes("0x8200", "28 6b", true);               // PLP ; RTL
+		inTx(program, "fn", () -> new CreateFunctionCmd(addr(0x8200)).applyTo(program));
+		assertEquals("RTL", proof("08 e2 30 4c 00 82"));         // PHP ; SEP #$30 ; JMP $8200
+	}
+
+	@Test
+	public void tailJumpIntoANonReturningFunctionDeclines() throws Exception {
+		builder.setBytes("0x8200", "80 fe", true);               // BRA self
+		inTx(program, "fn", () -> new CreateFunctionCmd(addr(0x8200)).applyTo(program));
 		assertNull(proof("4c 00 82")); // JMP $8200
+	}
+
+	/** Bytes still pushed at the tail jump: the target's return lands in them. */
+	@Test
+	public void tailJumpWithBytesPushedDeclines() throws Exception {
+		builder.setBytes("0x8200", "60", true);
+		inTx(program, "fn", () -> new CreateFunctionCmd(addr(0x8200)).applyTo(program));
+		assertNull(proof("48 4c 00 82")); // PHA ; JMP $8200
+	}
+
+	/** A JMP a CALL_RETURN override made terminal is still a tail jump. */
+	@Test
+	public void callReturnOverriddenJmpIsATailJump() throws Exception {
+		builder.setBytes("0x8200", "60", true);
+		builder.setBytes(String.format("0x%x", CALLEE), "4c 00 82", true);
+		inTx(program, "fn", () -> {
+			new CreateFunctionCmd(addr(0x8200)).applyTo(program);
+			instructionAt(addr(CALLEE)).setFlowOverride(FlowOverride.CALL_RETURN);
+		});
+		assertEquals("RTS", W65816ReturnProof.provenReturn(program, addr(CALLEE)));
+	}
+
+	/** A JSR a CALL_RETURN override made terminal pushed its return address: declined. */
+	@Test
+	public void callReturnOverriddenJsrDeclines() throws Exception {
+		builder.setBytes("0x8200", "60", true);
+		builder.setBytes(String.format("0x%x", CALLEE), "20 00 82", true);
+		inTx(program, "fn", () -> {
+			new CreateFunctionCmd(addr(0x8200)).applyTo(program);
+			instructionAt(addr(CALLEE)).setFlowOverride(FlowOverride.CALL_RETURN);
+		});
+		assertNull(W65816ReturnProof.provenReturn(program, addr(CALLEE)));
 	}
 
 	// ---- the analyzer, on the state stock leaves behind --------------------------------------

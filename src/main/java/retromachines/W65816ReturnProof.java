@@ -19,6 +19,7 @@ import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.OptionalInt;
 import java.util.Set;
 
 import ghidra.program.model.address.Address;
@@ -46,9 +47,19 @@ import ghidra.program.model.symbol.FlowType;
  * {@code RTL} at depth 0; at least one leaf must exist. A direct call is stepped over (it
  * returns with the stack it found) unless its callee carries Ghidra's no-return flag; a
  * {@code PHK / JSR} into a routine proven to return by {@code RTL} is a hand-rolled {@code JSL}
- * and also pulls the PHK byte (grm-9nxj.52). It
- * declines on a width it cannot read, computed flow, a call that does not fall through, a jump
- * into another function's entry (a tail call), {@code RTI}, {@code BRK}, {@code COP},
+ * and also pulls the PHK byte (grm-9nxj.52). Computed flow whose targets analysis has resolved
+ * is followed like its direct form (grm-9nxj.53): a {@code JMP (t,X)} walks every resolved
+ * target at the jump's depth, a {@code JSR (t,X)} steps over every resolved callee. F-Zero's
+ * far-call callees dispatch on a state byte ({@code LDA $55 / ASL / TAX / JMP ($8077,X)}) into
+ * handlers that each end in the routine's RTL. It trusts the resolved target set to be whole,
+ * as the DP and DBR analyzers' dispatch walks do. A jump into another function's entry is walked
+ * on at its depth like any jump: the proof follows flow, not function bodies. F-Zero's bank-0
+ * veneers ({@code $00:9EE8 JML $03:94CF}, called {@code PHK / JSR}) are tail jumps at depth 0,
+ * and {@code $03:94CF PHP / ... / JMP $95D6} jumps with its {@code PHP} still pushed into a
+ * routine that ends {@code PLP / RTL}: a shared epilogue, which judged alone pulls below its
+ * entry. It
+ * declines on a width it cannot read, unresolved computed flow, a call that does not fall
+ * through (except a {@code JMP} a CALL_RETURN override made terminal), {@code RTI}, {@code BRK}, {@code COP},
  * {@code STP}, {@code TXS}, {@code TCS}, {@code XCE}, a missing instruction, or more than
  * {@link #MAX_WALK} instructions.
  */
@@ -155,8 +166,8 @@ final class W65816ReturnProof {
 				return fail(entry, at, "pulls below entry"); // pulls the caller's return address
 			}
 			FlowType ft = i.getFlowType();
-			if (ft.isComputed()) {
-				return fail(entry, at, "computed flow");
+			if (ft.isComputed() && i.getFlows().length == 0) {
+				return fail(entry, at, "computed flow"); // unresolved, or BRK / COP / STP
 			}
 			Resumed back = pushedReturn(program, listing, i, active);
 			if (back != null) {
@@ -167,7 +178,15 @@ final class W65816ReturnProof {
 			}
 			if (ft.isCall()) {
 				if (!ft.hasFallthrough()) {
-					return fail(entry, at, "call without fall-through");
+					// A JMP a CALL_RETURN override made terminal is still a jump: walk on.
+					if (i.getFlows().length == 0 || !pushesNothing(program, i)) {
+						return fail(entry, at, "call without fall-through");
+					}
+					for (Address t : i.getFlows()) {
+						work.push(t);
+						depths.push(d);
+					}
+					continue;
 				}
 				for (Address t : i.getFlows()) {
 					Function callee = fm.getFunctionAt(t);
@@ -181,9 +200,7 @@ final class W65816ReturnProof {
 			}
 			else if (ft.isJump()) {
 				for (Address t : i.getFlows()) {
-					if (!t.equals(entry) && fm.getFunctionAt(t) != null) {
-						return fail(entry, at, "tail jump to " + t); // a tail jump: returns wherever that function does
-					}
+					// Into another function's entry too: a tail jump, walked on at this depth.
 					work.push(t);
 					depths.push(d);
 				}
@@ -236,6 +253,16 @@ final class W65816ReturnProof {
 			return false;
 		}
 		return "RTL".equals(provenReturn(program, fl[0], active));
+	}
+
+	/**
+	 * Whether {@code ins} leaves the stack pointer as it found it, by its p-code: true for a
+	 * {@code JMP} a CALL_RETURN override made terminal, false for a {@code JSR} so overridden,
+	 * which still pushed its return address (grm-9nxj.53).
+	 */
+	private static boolean pushesNothing(Program program, Instruction ins) {
+		OptionalInt d = PcodeShapes.netStackDelta(ins, CpuRegs.of(program.getLanguage()));
+		return d.isPresent() && d.getAsInt() == 0;
 	}
 
 	/** Where a jump through a pushed return address comes back, and the bytes it pulled. */

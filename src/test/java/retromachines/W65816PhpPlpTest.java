@@ -101,6 +101,34 @@ public class W65816PhpPlpTest extends AbstractProgramTest {
 		assertEquals(W65816WidthEffects.INHERITED, e.m().exit());
 	}
 
+	/**
+	 * grm-9nxj.53, F-Zero {@code $03:8070}: {@code PHP ; JMP ($8100,X)} into handlers that
+	 * each {@code PLP ; RTL}. The resolved targets are followed with the PHP still saved, so M
+	 * is inherited on return; unresolved, the routine had no return at all.
+	 */
+	@Test
+	public void resolvedDispatchIsFollowedIntoItsHandlers() throws Exception {
+		builder.setBytes("0x8000", "08 e2 20 7c 00 81", false);   // PHP ; SEP #$20 ; JMP ($8100,X)
+		builder.setBytes("0x8200", "28 6b", false);               // PLP ; RTL
+		builder.setBytes("0x8210", "ea 28 6b", false);            // NOP ; PLP ; RTL
+		builder.disassemble("0x8000", 6, true);
+		builder.disassemble("0x8200", 2, true);
+		builder.disassemble("0x8210", 3, true);
+		W65816WidthEffects.Effect unresolved =
+			new W65816WidthEffects(program).effect(addr("0x8000"));
+		assertEquals(W65816WidthEffects.NO_RETURN, unresolved.m().exit());
+
+		inTx(program, "refs", () -> {
+			for (String t : new String[] { "0x8200", "0x8210" }) {
+				program.getReferenceManager().addMemoryReference(addr("0x8003"), addr(t),
+					ghidra.program.model.symbol.RefType.COMPUTED_JUMP,
+					ghidra.program.model.symbol.SourceType.ANALYSIS, 0);
+			}
+		});
+		W65816WidthEffects.Effect e = new W65816WidthEffects(program).effect(addr("0x8000"));
+		assertEquals(W65816WidthEffects.INHERITED, e.m().exit());
+	}
+
 	/** The pairing walks back over an inner bracket to the PHP the outer PLP pulls. */
 	@Test
 	public void pairingSkipsAnInnerBracket() throws Exception {
