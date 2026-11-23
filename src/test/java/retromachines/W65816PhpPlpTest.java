@@ -129,6 +129,53 @@ public class W65816PhpPlpTest extends AbstractProgramTest {
 		assertEquals(W65816WidthEffects.INHERITED, e.m().exit());
 	}
 
+	/**
+	 * grm-9nxj.54, F-Zero's far-call callees: some returns preserve M, the rest {@code SEP #$20}
+	 * first. Mixed as a summary, but one value (1) for a caller at M=1, and two for one at M=0.
+	 */
+	@Test
+	public void preservedOrSetExitResolvesAgainstTheCallersWidth() throws Exception {
+		builder.setBytes("0x8000", "d0 02 e2 20 6b", false);   // BNE +2 ; SEP #$20 ; RTL
+		builder.disassemble("0x8000", 5, true);
+
+		W65816WidthEffects.Flag m = new W65816WidthEffects(program).effect(addr("0x8000")).m();
+		assertEquals(W65816WidthEffects.UNKNOWN, m.exit());
+		assertEquals(1, m.knownAfter(1));
+		assertEquals(-1, m.knownAfter(0));
+	}
+
+	/** A caller of that routine forks at the call, so its own outcomes stay {inherited, 1}. */
+	@Test
+	public void callIntoAPreservedOrSetRoutineForksTheCallersPath() throws Exception {
+		builder.setBytes("0x8100", "d0 02 e2 20 60", false);   // BNE +2 ; SEP #$20 ; RTS
+		builder.setBytes("0x8000", "20 00 81 60", false);      // JSR $8100 ; RTS
+		builder.disassemble("0x8100", 5, true);
+		builder.disassemble("0x8000", 4, true);
+
+		W65816WidthEffects.Flag m = new W65816WidthEffects(program).effect(addr("0x8000")).m();
+		assertEquals(W65816WidthEffects.bit(W65816WidthEffects.INHERITED) |
+			W65816WidthEffects.bit(1), m.outcomes());
+		assertEquals(1, m.knownAfter(1));
+	}
+
+	/**
+	 * F-Zero {@code $03:94CF PHP / ... / JMP $95D6}, the JMP carrying a CALL_RETURN override,
+	 * into a {@code PLP / RTL} epilogue: walked on with the PHP still saved, so M is inherited.
+	 * Summarized alone, the epilogue's PLP pulled a status it never saw (UNKNOWN).
+	 */
+	@Test
+	public void callReturnOverriddenJmpIntoASharedEpilogueKeepsThePhpStack() throws Exception {
+		builder.setBytes("0x8000", "08 e2 20 4c 00 82", false);   // PHP ; SEP #$20 ; JMP $8200
+		builder.setBytes("0x8200", "28 6b", false);               // PLP ; RTL
+		builder.disassemble("0x8000", 6, true);
+		builder.disassemble("0x8200", 2, true);
+		inTx(program, "override", () -> program.getListing().getInstructionAt(addr("0x8003"))
+				.setFlowOverride(ghidra.program.model.listing.FlowOverride.CALL_RETURN));
+
+		W65816WidthEffects.Effect e = new W65816WidthEffects(program).effect(addr("0x8000"));
+		assertEquals(W65816WidthEffects.INHERITED, e.m().exit());
+	}
+
 	/** The pairing walks back over an inner bracket to the PHP the outer PLP pulls. */
 	@Test
 	public void pairingSkipsAnInnerBracket() throws Exception {

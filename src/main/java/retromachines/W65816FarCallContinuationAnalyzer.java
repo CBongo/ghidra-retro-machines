@@ -62,7 +62,8 @@ import ghidra.util.task.TaskMonitor;
  *
  * <p><b>Width.</b> The continuation runs with the flags the callee returns with, not the
  * caller's. {@link W65816WidthEffects} summarizes the callee: a flag it preserves is the jump's,
- * a flag it sets to one value on every return is that value, and anything else (mixed, unknown,
+ * a flag it sets to one value on every return is that value, a flag some returns preserve and
+ * the rest set to the jump's own value is that value, and anything else (mixed, unknown,
  * no return) declines the site -- a wrong width decodes wrong code, which is worse than none.
  * The call must be in native mode ({@code E=0}); {@link W65816ReturnProof} refuses {@code XCE},
  * so the callee cannot have changed it. The decimal-decode flag is carried from the jump, as for
@@ -192,8 +193,8 @@ public class W65816FarCallContinuationAnalyzer extends AbstractAnalyzer {
 			return decline(jmp, "not native mode at the jump");
 		}
 		W65816WidthEffects.Effect e = fx.effect(callee);
-		int m = after(fx.flag(jmp, fx.mRegister()), e.m().exit());
-		int x = after(fx.flag(jmp, fx.xRegister()), e.x().exit());
+		int m = after(fx.flag(jmp, fx.mRegister()), e.m());
+		int x = after(fx.flag(jmp, fx.xRegister()), e.x());
 		if (m < 0 || x < 0) {
 			return decline(jmp, "width after callee unknown: m=" + m + " x=" + x + " (" + e + ")");
 		}
@@ -227,12 +228,16 @@ public class W65816FarCallContinuationAnalyzer extends AbstractAnalyzer {
 		return null;
 	}
 
-	/** The flag after the callee: the caller's when preserved, the callee's constant, else -1. */
-	private static int after(int before, int exit) {
-		if (exit == W65816WidthEffects.INHERITED) {
-			return before == 0 || before == 1 ? before : -1;
+	/**
+	 * The flag after the callee, or -1: the one value its returns can leave given the caller's
+	 * known width at the jump (grm-9nxj.54: some returns preserving M and the rest setting it to
+	 * the caller's value is one value, not a mixed exit).
+	 */
+	private static int after(int before, W65816WidthEffects.Flag callee) {
+		if (before != 0 && before != 1) {
+			return -1;
 		}
-		return exit == 0 || exit == 1 ? exit : -1;
+		return callee.knownAfter(before);
 	}
 
 	private static Instruction adjacentBefore(Listing listing, Instruction in) {

@@ -19,7 +19,6 @@ import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
-import java.util.OptionalInt;
 import java.util.Set;
 
 import ghidra.program.model.address.Address;
@@ -179,7 +178,7 @@ final class W65816ReturnProof {
 			if (ft.isCall()) {
 				if (!ft.hasFallthrough()) {
 					// A JMP a CALL_RETURN override made terminal is still a jump: walk on.
-					if (i.getFlows().length == 0 || !pushesNothing(program, i)) {
+					if (i.getFlows().length == 0 || !W65816Shapes.pushesNothing(i)) {
 						return fail(entry, at, "call without fall-through");
 					}
 					for (Address t : i.getFlows()) {
@@ -253,16 +252,6 @@ final class W65816ReturnProof {
 			return false;
 		}
 		return "RTL".equals(provenReturn(program, fl[0], active));
-	}
-
-	/**
-	 * Whether {@code ins} leaves the stack pointer as it found it, by its p-code: true for a
-	 * {@code JMP} a CALL_RETURN override made terminal, false for a {@code JSR} so overridden,
-	 * which still pushed its return address (grm-9nxj.53).
-	 */
-	private static boolean pushesNothing(Program program, Instruction ins) {
-		OptionalInt d = PcodeShapes.netStackDelta(ins, CpuRegs.of(program.getLanguage()));
-		return d.isPresent() && d.getAsInt() == 0;
 	}
 
 	/** Where a jump through a pushed return address comes back, and the bytes it pulled. */

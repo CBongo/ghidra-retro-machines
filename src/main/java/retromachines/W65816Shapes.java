@@ -240,6 +240,16 @@ final class W65816Shapes {
 	}
 
 	/**
+	 * Whether {@code ins} leaves the stack pointer as it found it, by its p-code: true for a
+	 * {@code JMP} a CALL_RETURN override made a terminal call, which is still a jump, and false
+	 * for a {@code JSR} so overridden, which still pushed its return address (grm-9nxj.53/.54).
+	 */
+	static boolean pushesNothing(Instruction ins) {
+		OptionalInt d = delta(ins);
+		return d.isPresent() && d.getAsInt() == 0;
+	}
+
+	/**
 	 * The data-reference type of an instruction's memory operand, from its memory traffic: both a
 	 * load and a store is {@code READ_WRITE} ({@code INC}, {@code ASL}, {@code TSB}...), a store
 	 * alone {@code WRITE} ({@code STA}, {@code STZ}...), anything else {@code READ}.
