@@ -112,6 +112,9 @@ Detail and worked examples: `recon/README.md`.
   SNES ROM.
 - No 65816 or SPC700 disassembler lives in tools/: use the Ghidra listing (probes) or
   pyghidra-mcp.
+- `upstream/W65C02ZpVectorProbe.java` - runs SingleStepTests/65x02 vector files through a
+  Ghidra CHECKOUT's own 6502/65C02 language (for stock-vs-patched numbers on an upstream
+  language PR); copied into the checkout untracked, never committed there (`grm-0xl1`).
 
 ## Static queries on a kept real-ROM project (tools/ghidra-mcp/)
 
