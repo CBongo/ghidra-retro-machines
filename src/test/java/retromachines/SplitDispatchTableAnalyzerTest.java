@@ -536,6 +536,92 @@ public class SplitDispatchTableAnalyzerTest extends AbstractBundledLanguageTest 
 		assertEquals(List.of(HANDLERS[0]), computedTargets(program, jmp));
 	}
 
+	private static final long REC_JMP = 0x9021;
+	private static final long TEST_A = 0x9300;
+	private static final long TEST_B = 0x9310;
+
+	/** grm-gipk.34.6, rcproam {@code bf19}: a stride-6 record table (handler, test routine,
+	 *  parameters), the test routine run through the shared {@code JMP ($1e)} stub, then
+	 *  {@code JMP ($20)}. {@code zpAdc} is the cell {@code ADC} reads (the idiom needs the one
+	 *  {@code STA} wrote, {@code $16}); {@code h2} is record 2's handler body, {@code testB}
+	 *  the second test routine's. */
+	private ProgramDB buildRecords(String zpAdc, String h2, String testB) throws Exception {
+		builder = newBuilder("Test", LANG);
+		uninitializedRam(builder, ".ram", "0x0", 0x800);
+		builder.createMemory(".text", "0x8000", 0x8000);
+		builder.setBytes(String.format("0x%x", STUB), "6c 1e 00", true);
+		builder.setBytes(String.format("0x%x", CALLER),
+			"0a 85 16 0a 18 65 " + zpAdc + " aa " +
+				"bd " + word(TABLE) + " 85 20 bd " + word(TABLE + 1) + " 85 21 " +
+				"bd " + word(TABLE + 2) + " 85 1e bd " + word(TABLE + 3) + " 85 1f " +
+				"20 " + word(STUB) + " 90 03 6c 20 00 60",
+			true);
+		String[] hs = { word(HANDLERS[0]), word(HANDLERS[1]), word(HANDLERS[2]), word(HANDLERS[3]),
+			word(0x0300) };
+		String[] ts = { word(TEST_A), word(TEST_B), word(TEST_A), word(TEST_B), word(TEST_A) };
+		StringBuilder table = new StringBuilder();
+		for (int i = 0; i < hs.length; i++) {
+			table.append(hs[i]).append(' ').append(ts[i]).append(" 00 00 ");
+		}
+		builder.setBytes(String.format("0x%x", TABLE), table.toString(), false);
+		builder.setBytes(String.format("0x%x", HANDLERS[0]), "60", false);
+		builder.setBytes(String.format("0x%x", HANDLERS[1]), "60", false);
+		builder.setBytes(String.format("0x%x", HANDLERS[2]), h2, false);
+		builder.setBytes(String.format("0x%x", HANDLERS[3]), "60", false);
+		builder.setBytes(String.format("0x%x", TEST_A), "18 60", false);
+		builder.setBytes(String.format("0x%x", TEST_B), testB, false);
+		return builder.getProgram();
+	}
+
+	/** The times-six index, the joint record walk, the stub column and the pointer-safety rule:
+	 *  the handler column goes to {@code JMP ($20)}, the test column to the stub's {@code JMP ($1e)},
+	 *  and the first record whose handler column is RAM ends both. */
+	@Test
+	public void followsAStrideSixRecordTableThroughADispatchStub() throws Exception {
+		ProgramDB program = buildRecords("16", "60", "18 60");
+		run(program);
+		assertEquals(List.of(TEST_A, TEST_B), stubTargets(program));
+		assertEquals(List.of(HANDLERS[0], HANDLERS[1], HANDLERS[2], HANDLERS[3]),
+			computedTargets(program, REC_JMP));
+		String eol = program.getListing().getComment(CommentType.EOL, addr(REC_JMP));
+		assertNotNull(eol);
+		assertTrue(eol, eol.contains("4-entry table at 9100"));
+		assertTrue(eol, eol.contains("stride 6 record"));
+	}
+
+	/** Only the exact idiom is a stride of six: {@code ADC} of a different cell is an index nothing
+	 *  here models, so neither quad is a record site. */
+	@Test
+	public void declinesATimesSixIdiomThatAddsAnotherCell() throws Exception {
+		ProgramDB program = buildRecords("17", "60", "18 60");
+		run(program);
+		assertEquals(List.of(), computedTargets(program, REC_JMP));
+		assertEquals(List.of(), computedTargets(program, STUB));
+	}
+
+	/** The call through the stub is safe only if every routine of THAT column is: a test routine
+	 *  that stores to the handler pointer stops the outer site, not the stub's own. */
+	@Test
+	public void declinesTheOuterSiteWhenATestRoutineStoresToItsPointer() throws Exception {
+		ProgramDB program = buildRecords("16", "60", "85 20 60");
+		run(program);
+		assertEquals(List.of(TEST_A, TEST_B), stubTargets(program));
+		assertEquals(List.of(), computedTargets(program, REC_JMP));
+	}
+
+	/** The flow rule (owner ruling, grm-gipk.34.6): record 3 is a plausible record, but record
+	 *  2's handler jumps into its bytes, so they are code and the table ends before them. */
+	@Test
+	public void cutsARecordTableWhereAnAcceptedHandlersFlowRunsIntoIt() throws Exception {
+		ProgramDB program = buildRecords("16", "4c " + word(TABLE + 18), "18 60");
+		run(program);
+		assertEquals(List.of(HANDLERS[0], HANDLERS[1], HANDLERS[2]),
+			computedTargets(program, REC_JMP));
+		assertEquals(List.of(TEST_A, TEST_B), stubTargets(program));
+		assertNull("the cut-off record is not decoded as code by this analyzer",
+			program.getListing().getInstructionAt(addr(HANDLERS[3])));
+	}
+
 	/** A jump-table override (its {@code switch} label) already owns the inline jump, though stock
 	 *  switch analysis has not laid its references down yet: leave it alone. */
 	@Test

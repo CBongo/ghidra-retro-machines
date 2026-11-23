@@ -26,6 +26,7 @@ import ghidra.app.plugin.core.analysis.AutoAnalysisManager;
 import ghidra.app.services.AbstractAnalyzer;
 import ghidra.app.services.AnalysisPriority;
 import ghidra.app.services.AnalyzerType;
+import ghidra.app.util.PseudoDisassembler;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSet;
@@ -43,6 +44,7 @@ import ghidra.program.model.listing.ProgramContext;
 import ghidra.program.model.mem.Memory;
 import ghidra.program.model.mem.MemoryAccessException;
 import ghidra.program.model.mem.MemoryBlock;
+import ghidra.program.model.symbol.FlowType;
 import ghidra.program.model.symbol.RefType;
 import ghidra.program.model.symbol.Reference;
 import ghidra.program.model.symbol.SourceType;
@@ -129,6 +131,30 @@ import ghidra.util.task.TaskMonitor;
  *     when the walk runs);</li>
  * <li>or is past {@link #MAX_ENTRIES}.</li>
  * </ul>
+ * After the walk, one more rule only ever cuts it shorter (grm-gipk.34.6, owner ruling): the flow
+ * of every accepted target is followed without committing anything ({@link #cutByFlow}:
+ * fall-through, both branch arms, {@code JMP abs}, no calls' targets) and the table is cut before
+ * the first entry lying under code those handlers run, repeating until stable. It generalizes the
+ * lowest-target rule to code nothing has disassembled yet: rcproam {@code bf99}'s record 13 handler
+ * {@code c031} branches to {@code c017}, where the table ends.
+ *
+ * <p><b>Record tables</b> (grm-gipk.34.6): the index may be multiplied by 6 ({@code ASL A / STA z /
+ * ASL A / CLC / ADC z / TAX}, {@link #strideOf}; any other index is the doubled one above), and the
+ * quads reading different words of the same record with the same index are columns of one record
+ * table ({@link #recordColumns}), walked jointly: a record is taken only if every pointer column's
+ * entry passes the stop rules above. rcproam {@code bf19}:
+ * <pre>
+ *   bef4: LDA $bf99,X / STA $20 / LDA $bf9a,X / STA $21     ; word 0, the handler
+ *   befe: LDA $bf9b,X / STA $1e / LDA $bf9c,X / STA $1f     ; word 1, a test routine
+ *   bf08: (word 2, parameters: no pointer, not a site)
+ *   bf12: LDX $2c / JSR $8068 / BCC / JMP ($0020)
+ * </pre>
+ * The inner quad is a stub-form site ({@code JSR} to the shared {@code JMP ($1e)} stub, a branch in
+ * the gap allowed because only its fall-through reaches the jump). The outer {@code JMP ($20)} may
+ * pass that {@code JSR}: the callee set is exactly the stub's column of this record table over
+ * its accepted extent (not the union of the stub's callers), and each must be
+ * {@link #isPointerSafeCallee}; such a site is followed after the column's own site
+ * ({@link Site#deferred}).
  * Fewer than 2 surviving entries declines the site, and so does a table outside the block the
  * caller runs from: only that block's bytes are known to be mapped when the load executes
  * (dbz_datach's far-call reads a per-bank header at {@code $8001} straight after switching). Every rule only ever STOPS the walk earlier, so
@@ -210,7 +236,15 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 	 *  {@code stub} are the same {@code JMP (P)}. */
 	record Site(Instruction call, Instruction stub, Address table, Address hiTable,
 			Instruction loLoad, int gap, boolean viaJump, Address switchEntry,
+				Address bankTable, Instruction quadFirst, int stride, Address viaStubTable) {
+
+		/** A stride-2 site with no stub-callee obligation: every form but grm-gipk.34.6's. */
+		Site(Instruction call, Instruction stub, Address table, Address hiTable,
+				Instruction loLoad, int gap, boolean viaJump, Address switchEntry,
 				Address bankTable, Instruction quadFirst) {
+			this(call, stub, table, hiTable, loLoad, gap, viaJump, switchEntry, bankTable,
+				quadFirst, 2, null);
+		}
 
 		/** Whether instructions were walked between the second store and the inline
 		 *  {@code JMP (P)} (grm-gipk.34.1); {@code viaJump} says a {@code JMP abs} was followed
@@ -227,6 +261,13 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 		 *  {@code table + 1}: entry {@code i} is then {@code table[i]} / {@code hiTable[i]}. */
 		boolean planar() {
 			return hiTable.getOffset() != table.getOffset() + 1;
+		}
+
+		/** Whether the pointer cell is read through a dispatch stub the walk passed (grm-gipk.34.6):
+		 *  {@code viaStubTable} is the table of the quad that stored the stub's own pointer, and the
+		 *  site is followed only once that column's targets are known pointer-safe. */
+		boolean deferred() {
+			return viaStubTable != null;
 		}
 
 		/** The table bases other tables must not start inside. */
@@ -287,9 +328,25 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 		}
 		int resolvedSites = 0;
 		int resolvedTargets = 0;
+		// a site that dispatches through a stub (grm-gipk.34.6) needs its callee column's targets
+		// decoded, which following that column's own site does: so it goes last
+		List<Site> ordered = new ArrayList<>();
 		for (Site site : sites) {
+			if (!site.deferred()) {
+				ordered.add(site);
+			}
+		}
+		for (Site site : sites) {
+			if (site.deferred()) {
+				ordered.add(site);
+			}
+		}
+		for (Site site : ordered) {
 			monitor.checkCancelled();
-			Walk walk = walkTable(program, site, tableStarts);
+			if (site.deferred() && !stubColumnIsPointerSafe(program, site, sites, tableStarts)) {
+				continue;
+			}
+			Walk walk = walkTable(program, site, tableStarts, sites);
 			List<Address> targets = walk.targets();
 			if (targets.size() < 2) {
 				continue;
@@ -308,6 +365,7 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 				(walk.family() ? " (slots " + walk.familyLo() + ".." + walk.familyHi() +
 					", family extent grm-gipk.41.2)" : "") +
 				(site.planar() ? " (high bytes at " + site.hiTable() + ")" : "") +
+				(site.stride() > 2 ? " (stride " + site.stride() + " record, grm-gipk.34.6)" : "") +
 				" via JMP (" + IndirectJumpConstantPointer.pointerCell(site.stub()) +
 				") at " + site.stub().getMinAddress() +
 				(site.gapped() ? (site.viaJump() ? " (grm-gipk.34.3)" : " (grm-gipk.34.1)") : site.planar() ? " (grm-gipk.33)" :
@@ -348,7 +406,8 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 		}
 		AddressSpace space = call.getMinAddress().getAddressSpace();
 		return new Site(call, stub, space.getAddress(quad.lo()), space.getAddress(quad.hi()),
-			quad.loLoad(), 0, false, null, null, quad.first());
+			quad.loLoad(), 0, false, null, null, quad.first(), strideOf(listing, quad.first()),
+			null);
 	}
 
 	/** A recognized {@code LDA lo,r / STA P / LDA hi,r / STA P+1} quad (either load order):
@@ -410,6 +469,10 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 			return null;
 		}
 		long cell = quad.cell();
+		int stride = strideOf(listing, quad.first());
+		// quads walked on this path, by the cell they fill: a stub's own pointer (grm-gipk.34.6)
+		java.util.Map<Long, Quad> filled = new java.util.HashMap<>();
+		Address viaStubTable = null;
 		Instruction cur = FlowEdges.nextFallThrough(listing, st2);
 		boolean viaJump = false;
 		Address helper = null; // the FIRST JSR walked, with no X write before it (grm-gipk.36)
@@ -430,7 +493,8 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 				AddressSpace space = cur.getMinAddress().getAddressSpace();
 				return new Site(cur, cur, space.getAddress(quad.lo()), space.getAddress(quad.hi()),
 					quad.loLoad(), walked, viaJump, helper,
-					helper == null ? null : bankTableOf(listing, quad), quad.first());
+					helper == null ? null : bankTableOf(listing, quad), quad.first(), stride,
+						viaStubTable);
 			}
 			if (walked == FORWARD_LIMIT) {
 				return null;
@@ -451,16 +515,56 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 			}
 			else if (op == 0x20) {
 				Address[] flows = cur.getFlows();
-				if (flows.length != 1 || !isPointerSafeCallee(listing, flows[0], cell)) {
+				if (flows.length != 1) {
 					return null;
 				}
+				Instruction callee = stride > 2 ? listing.getInstructionAt(flows[0]) : null;
+				if (callee != null && IndirectJumpConstantPointer.isIndirectJumpSite(callee)) {
+					// a call to a dispatch stub (grm-gipk.34.6): on the stub's own pointer this is
+					// the stub form; on another cell it is safe iff every target of the column that
+					// filled that cell is (decided once the extent is known, see added())
+					long stubCell = IndirectJumpConstantPointer.pointerCell(callee).getOffset();
+					if (stubCell == cell) {
+						AddressSpace space = cur.getMinAddress().getAddressSpace();
+						return new Site(cur, callee, space.getAddress(quad.lo()),
+							space.getAddress(quad.hi()), quad.loLoad(), walked, viaJump, null, null,
+							quad.first(), stride, null);
+					}
+					Quad stubQuad = filled.get(stubCell);
+					if (stubQuad == null || viaStubTable != null) {
+						return null;
+					}
+					viaStubTable = cur.getMinAddress().getAddressSpace().getAddress(stubQuad.lo());
+					sawJsr = true;
+					cur = FlowEdges.nextFallThrough(listing, cur);
+					continue;
+				}
+				if (!isPointerSafeCallee(listing, flows[0], cell)) {
+					return null;
+				}
+				filled.clear(); // the callee may rewrite a cell a stub reads
 				if (!sawJsr && !xWritten) {
 					helper = flows[0];
 				}
 				sawJsr = true;
 				cur = FlowEdges.nextFallThrough(listing, cur);
 			}
+			else if (stride > 2 && in(op, BRANCH_OPS)) {
+				// only the fall-through reaches the jump; the taken arm leaves (grm-gipk.34.6)
+				cur = FlowEdges.nextFallThrough(listing, cur);
+			}
 			else if (in(op, HARMLESS_OPS) || writeMissesPointer(cur, op, cell)) {
+				if (!in(op, HARMLESS_OPS)) {
+					final Instruction at = cur;
+					final int fop = op;
+					filled.values().removeIf(q -> !writeMissesPointer(at, fop, q.cell()));
+					if (stride > 2 && op == 0x85) {
+						Quad q = parseQuad(listing, cur);
+						if (q != null) {
+							filled.put(q.cell(), q);
+						}
+					}
+				}
 				if (in(op, WRITES_X)) {
 					xWritten = true;
 				}
@@ -494,6 +598,136 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 		Long tbl = operand16(ldx);
 		return tbl == null ? null
 				: ldx.getMinAddress().getAddressSpace().getAddress(tbl);
+	}
+
+	private static final int[] WRITES_Y = { 0xa0, 0xa4, 0xb4, 0xac, 0xbc, 0xc8, 0x88, 0xa8 };
+
+	/**
+	 * The record stride of the index the quad at {@code first} reads with (grm-gipk.34.6): 6 when
+	 * the index register was last set by exactly {@code ASL A / STA z / ASL A / CLC / ADC z /
+	 * TAX|TAY} (the same zero-page cell), looking back over fall-through instructions that leave
+	 * the register alone (earlier quads of the same record); 2 otherwise, which is the doubled
+	 * index every interleaved table here already assumes. Deliberately not a multiplier evaluator.
+	 */
+	static int strideOf(Listing listing, Instruction first) {
+		int quadOp = opcode(first);
+		if (quadOp != 0xbd && quadOp != 0xb9) {
+			return 2;
+		}
+		int transfer = quadOp == 0xbd ? 0xaa : 0xa8;
+		Instruction cur = first;
+		for (int n = 0; n < FAMILY_BACK_LIMIT; n++) {
+			Instruction p = fallingInto(listing, cur);
+			if (p == null) {
+				return 2;
+			}
+			int op = opcode(p);
+			if (op == transfer) {
+				return isTimesSix(listing, p) ? 6 : 2;
+			}
+			if (op == 0x20 || in(op, quadOp == 0xbd ? WRITES_X : WRITES_Y)) {
+				return 2;
+			}
+			cur = p;
+		}
+		return 2;
+	}
+
+	/** Whether the register transfer {@code tr} ends {@code ASL A / STA z / ASL A / CLC / ADC z}. */
+	private static boolean isTimesSix(Listing listing, Instruction tr) {
+		Instruction adc = fallingInto(listing, tr);
+		Instruction clc = fallingInto(listing, adc);
+		Instruction asl2 = fallingInto(listing, clc);
+		Instruction sta = fallingInto(listing, asl2);
+		Instruction asl1 = fallingInto(listing, sta);
+		if (asl1 == null || opcode(adc) != 0x65 || opcode(clc) != 0x18 || opcode(asl2) != 0x0a ||
+			opcode(sta) != 0x85 || opcode(asl1) != 0x0a) {
+			return false;
+		}
+		try {
+			return adc.getByte(1) == sta.getByte(1);
+		}
+		catch (MemoryAccessException e) {
+			return false;
+		}
+	}
+
+	/** Whether the quad at {@code later} is reached from the one at {@code earlier} by fall-through
+	 *  alone with the index register (and every register a call could clobber) untouched. */
+	private static boolean indexUnchangedBetween(Listing listing, Instruction earlier,
+			Instruction later) {
+		int op = opcode(later);
+		Instruction cur = later;
+		for (int n = 0; n < FAMILY_BACK_LIMIT; n++) {
+			Instruction p = fallingInto(listing, cur);
+			if (p == null) {
+				return false;
+			}
+			if (p.equals(earlier)) {
+				return true;
+			}
+			int pop = opcode(p);
+			if (pop == 0x20 || in(pop, op == 0xbd ? WRITES_X : WRITES_Y)) {
+				return false;
+			}
+			cur = p;
+		}
+		return false;
+	}
+
+	/** Whether the two record sites read their columns with the same, unchanged index. */
+	private static boolean sharesIndex(Listing listing, Site a, Site b) {
+		return opcode(a.quadFirst()) == opcode(b.quadFirst()) &&
+			(indexUnchangedBetween(listing, a.quadFirst(), b.quadFirst()) ||
+				indexUnchangedBetween(listing, b.quadFirst(), a.quadFirst()));
+	}
+
+	/** The pointer columns of {@code site}'s record table (grm-gipk.34.6), by base address: its own
+	 *  table and the table of every other site of the same stride whose quad reads a different word
+	 *  of the same record with the same index. Just its own table when it is no record site. */
+	private static List<Address> recordColumns(Listing listing, Site site, List<Site> all) {
+		List<Address> cols = new ArrayList<>();
+		cols.add(site.table());
+		if (site.stride() <= 2 || site.planar()) {
+			return cols;
+		}
+		for (Site o : all) {
+			long d = Math.abs(o.table().getOffset() - site.table().getOffset());
+			if (!o.equals(site) && o.stride() == site.stride() && !o.planar() && d >= 2 &&
+				d < site.stride() && !cols.contains(o.table()) && sharesIndex(listing, site, o)) {
+				cols.add(o.table());
+			}
+		}
+		cols.sort((p, q) -> Long.compare(p.getOffset(), q.getOffset()));
+		return cols;
+	}
+
+	/**
+	 * Whether every target of the column that filled {@code site}'s stub's pointer, over that
+	 * column's accepted record extent, is {@link #isPointerSafeCallee} for the site's own pointer
+	 * (grm-gipk.34.6). Exactly that column: the stub's other callers' targets do not run on this
+	 * path. False when no site is that column.
+	 */
+	private static boolean stubColumnIsPointerSafe(Program program, Site site, List<Site> sites,
+			Set<Address> tableStarts) {
+		Listing listing = program.getListing();
+		long cell = IndirectJumpConstantPointer.pointerCell(site.stub()).getOffset();
+		for (Site b : sites) {
+			if (!b.equals(site) && !b.inline() && b.table().equals(site.viaStubTable()) &&
+				b.stride() == site.stride() && !b.planar() && sharesIndex(listing, site, b)) {
+				List<Address> targets = walkTable(program, b, tableStarts, sites).targets();
+				if (targets.isEmpty()) {
+					return false;
+				}
+				for (Address t : targets) {
+					if (!isPointerSafeCallee(listing, t, cell)) {
+						return false;
+					}
+				}
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** Whether this analyzer already commented {@code instr} (an earlier quad or round). */
@@ -637,6 +871,13 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 	 * {@code JMP} there would be.
 	 */
 	static Walk walkTable(Program program, Site site, Set<Address> tableStarts) {
+		return walkTable(program, site, tableStarts, List.of(site));
+	}
+
+	/** As above; {@code sites} are the other sites of the pass, whose tables may be further
+	 *  columns of this site's record (grm-gipk.34.6). */
+	static Walk walkTable(Program program, Site site, Set<Address> tableStarts,
+			List<Site> sites) {
 		int[] nulls = new int[1];
 		// a recovered index guard states the first and last slot of a planar table (grm-gipk.33)
 		int[] stated = null;
@@ -648,16 +889,17 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 			}
 		}
 		if (stated != null) {
-			return new Walk(walkTargets(program, site, tableStarts, nulls, stated[0], stated[1] + 1),
+			return new Walk(
+				walkTargets(program, site, tableStarts, sites, nulls, stated[0], stated[1] + 1),
 				nulls[0]);
 		}
-		int[] family = familyExtent(program, site, tableStarts);
+		int[] family = site.stride() == 2 ? familyExtent(program, site, tableStarts) : null;
 		if (family != null) {
 			List<Address> targets =
-				walkTargets(program, site, tableStarts, nulls, family[0], family[1] + 1);
+				walkTargets(program, site, tableStarts, sites, nulls, family[0], family[1] + 1);
 			return new Walk(targets, nulls[0], family[0], family[1]);
 		}
-		List<Address> targets = walkTargets(program, site, tableStarts, nulls, -1, -1);
+		List<Address> targets = walkTargets(program, site, tableStarts, sites, nulls, -1, -1);
 		return new Walk(targets, nulls[0]);
 	}
 
@@ -677,9 +919,13 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 	/** {@code forcedFirst}/{@code forcedEnd} (both -1 for none) fix the slot range to one the
 	 *  family model or an index guard states; the stop rules still apply inside it. With none, the
 	 *  range is an ESTIMATE: planar, the pair equation ({@link #pairEstimate}) trimmed at both ends;
-	 *  interleaved, the whole {@link #MAX_ENTRIES} cut by the first stop rule. */
+	 *  interleaved, the whole {@link #MAX_ENTRIES} cut by the first stop rule. A record table
+	 *  (grm-gipk.34.6) walks its pointer columns jointly: a slot is taken only if every column's
+	 *  entry passes the stop rules. Whatever range results is finally cut by
+	 *  {@link #cutByFlow}. */
 	private static List<Address> walkTargets(Program program, Site site,
-			Set<Address> tableStarts, int[] leadingNulls, int forcedFirst, int forcedEnd) {
+			Set<Address> tableStarts, List<Site> sites, int[] leadingNulls, int forcedFirst,
+			int forcedEnd) {
 		Memory memory = program.getMemory();
 		Listing listing = program.getListing();
 		AddressSpace targetSpace = site.stub().getMinAddress().getAddressSpace();
@@ -709,22 +955,35 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 				return targets; // unrelated bases: no count to derive
 			}
 		}
-		List<FamilyMember> ptrs = pointerMembers(site);
+		int stride = site.stride();
+		List<Address> cols = recordColumns(listing, site, sites);
+		boolean record = !planar && stride > 2;
+		long recBase = cols.get(0).getOffset();
+		List<FamilyMember> ptrs = pointerMembers(site, cols);
 		AddressSpace space = site.table().getAddressSpace();
-		long tableStart = Math.min(site.table().getOffset(), site.hiTable().getOffset());
+		long tableStart = planar ? Math.min(site.table().getOffset(), site.hiTable().getOffset())
+				: recBase;
+		// the accepted slots, and every column's target at each (for the flow cut)
+		List<Integer> slots = new ArrayList<>();
+		List<List<Address>> rows = new ArrayList<>();
 		// Lowest target in the table's own block above the table, so far (grm-cqwn).
 		long minTarget = Long.MAX_VALUE;
-		for (int i = first; i < end; i++) {
+		slotLoop: for (int i = first; i < end; i++) {
 			Address lo;
 			Address hi;
+			long reach;
 			try {
 				if (planar) {
 					lo = site.table().addNoWrap(i);
 					hi = site.hiTable().addNoWrap(i);
+					reach = Math.max(lo.getOffset(), hi.getOffset());
 				}
 				else {
-					lo = site.table().addNoWrap(2L * i);
+					lo = site.table().addNoWrap((long) stride * i);
 					hi = lo.addNoWrap(1);
+					reach = record
+							? cols.get(0).addNoWrap((long) stride * i + stride - 1).getOffset()
+							: hi.getOffset();
 				}
 			}
 			catch (Exception e) {
@@ -737,11 +996,13 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 			if (i > first && slotHitsBase(ptrs, i, space, tableStarts)) {
 				break; // the next table begins here
 			}
-			if (Math.max(lo.getOffset(), hi.getOffset()) >= minTarget) {
+			if (reach >= minTarget) {
 				break; // the table ran into one of its own handlers, disassembled or not
 			}
 			if (listing.getInstructionContaining(lo) != null ||
-				listing.getInstructionContaining(hi) != null) {
+				listing.getInstructionContaining(hi) != null ||
+				(record && extentHitsCode(listing, space, recBase + (long) stride * i,
+					recBase + (long) stride * (i + 1)))) {
 				if (skipLeading) {
 					continue;
 				}
@@ -754,7 +1015,7 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 			catch (MemoryAccessException e) {
 				break;
 			}
-			if (value == 0 && !planar && targets.isEmpty() &&
+			if (value == 0 && !planar && stride == 2 && targets.isEmpty() &&
 				leadingNulls[0] < MAX_LEADING_NULLS) {
 				leadingNulls[0]++; // a null slot ahead of the first handler (grm-gipk.34.2)
 				continue;
@@ -798,12 +1059,158 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 				}
 				break;
 			}
-			if (block.equals(home) && value > tableStart) {
-				minTarget = Math.min(minTarget, value);
+			List<Address> row = new ArrayList<>();
+			row.add(target);
+			for (Address col : cols) {
+				if (col.equals(site.table())) {
+					continue;
+				}
+				Address other = columnTarget(program, home, targetSpace, col, (long) stride * i);
+				if (other == null) {
+					break slotLoop; // another column's entry is bad: the record ends here
+				}
+				row.add(other);
+			}
+			for (Address t : row) {
+				if (home.contains(t) && t.getOffset() > tableStart) {
+					minTarget = Math.min(minTarget, t.getOffset());
+				}
 			}
 			targets.add(target);
+			slots.add(i);
+			rows.add(row);
 		}
+		cutByFlow(program, home, site, recBase, targets, slots, rows);
 		return targets;
+	}
+
+	/** Column {@code col}'s target at byte offset {@code delta} from its base, or null when that
+	 *  entry could not be a handler: unreadable, not in initialized non-volatile memory, in a
+	 *  banked window other than the caller's, or mid-instruction (the same stop rules as the
+	 *  primary column's, without a bank table). */
+	private static Address columnTarget(Program program, MemoryBlock home,
+			AddressSpace targetSpace, Address col, long delta) {
+		try {
+			Address lo = col.addNoWrap(delta);
+			Memory memory = program.getMemory();
+			int value = (memory.getByte(lo) & 0xff) | (memory.getByte(lo.addNoWrap(1)) & 0xff) << 8;
+			Address target = targetSpace.getAddress(value);
+			MemoryBlock block = memory.getBlock(target);
+			if (block == null || !block.isInitialized() || block.isVolatile() ||
+				(!block.equals(home) && isBanked(program, block))) {
+				return null;
+			}
+			Instruction at = program.getListing().getInstructionContaining(target);
+			return at != null && !at.getMinAddress().equals(target) ? null : target;
+		}
+		catch (Exception e) {
+			return null;
+		}
+	}
+
+	/** Most instructions {@link #flowFootprint} decodes. */
+	static final int FOLLOW_BUDGET = 2048;
+
+	/**
+	 * Cuts the walked slots at the first one whose bytes lie under code the accepted targets run
+	 * (owner ruling grm-gipk.34.6): a table cannot overlap the code its own handlers execute, which
+	 * generalizes the rule that it cannot overlap the lowest target above it. rcproam {@code bf99}:
+	 * record 13's handler {@code c031} branches to {@code c017}, where the 21-record table ends. The
+	 * flow is followed without committing anything ({@link #flowFootprint}); cutting removes
+	 * targets, which shrinks the footprint, so it repeats until stable. It only ever SHORTENS:
+	 * no slot is added and none before the cut is skipped.
+	 */
+	private static void cutByFlow(Program program, MemoryBlock home, Site site, long recBase,
+			List<Address> targets, List<Integer> slots, List<List<Address>> rows) {
+		int keep = targets.size();
+		while (keep > 0) {
+			List<Address> roots = new ArrayList<>();
+			for (List<Address> row : rows.subList(0, keep)) {
+				roots.addAll(row);
+			}
+			Set<Long> footprint = flowFootprint(program, home, roots);
+			int cut = -1;
+			for (int k = 0; k < keep && cut < 0; k++) {
+				int i = slots.get(k);
+				if (site.planar()) {
+					if (footprint.contains(site.table().getOffset() + i) ||
+						footprint.contains(site.hiTable().getOffset() + i)) {
+						cut = k;
+					}
+				}
+				else {
+					for (int b = 0; b < site.stride(); b++) {
+						if (footprint.contains(recBase + (long) site.stride() * i + b)) {
+							cut = k;
+							break;
+						}
+					}
+				}
+			}
+			if (cut < 0) {
+				break;
+			}
+			keep = cut;
+		}
+		targets.subList(keep, targets.size()).clear();
+		slots.subList(keep, slots.size()).clear();
+		rows.subList(keep, rows.size()).clear();
+	}
+
+	/**
+	 * The addresses of the instructions control flow reaches from {@code roots} inside
+	 * {@code home}, decoded from existing instructions or, where there are none, by a
+	 * {@link PseudoDisassembler}: fall-through, both arms of a branch, {@code JMP abs}. A call's
+	 * target is not followed (its fall-through is), and {@code RTS}/{@code RTI}/{@code BRK}/{@code
+	 * JMP (ind)}, an undecodable opcode or {@link #FOLLOW_BUDGET} instructions end a path. A
+	 * shortfall only under-cuts a table, which the shorten-only rules allow.
+	 */
+	private static Set<Long> flowFootprint(Program program, MemoryBlock home,
+			List<Address> roots) {
+		Listing listing = program.getListing();
+		PseudoDisassembler dis = new PseudoDisassembler(program);
+		Set<Long> bytes = new java.util.HashSet<>();
+		Set<Address> seen = new java.util.HashSet<>();
+		java.util.ArrayDeque<Address> work = new java.util.ArrayDeque<>(roots);
+		int budget = FOLLOW_BUDGET;
+		while (!work.isEmpty() && budget > 0) {
+			Address at = work.poll();
+			if (!home.contains(at) || !seen.add(at)) {
+				continue;
+			}
+			Instruction instr = listing.getInstructionAt(at);
+			if (instr == null) {
+				if (listing.getInstructionContaining(at) != null) {
+					continue;
+				}
+				try {
+					instr = dis.disassemble(at);
+				}
+				catch (Exception e) {
+					continue; // undefined opcode, or bytes run out mid-instruction
+				}
+			}
+			if (instr == null) {
+				continue;
+			}
+			budget--;
+			for (int b = 0; b < instr.getLength(); b++) {
+				bytes.add(at.getOffset() + b);
+			}
+			FlowType flow = instr.getFlowType();
+			if (flow.isTerminal() || flow.isComputed()) {
+				continue;
+			}
+			if (flow.isJump()) {
+				for (Address f : instr.getFlows()) {
+					work.add(f);
+				}
+			}
+			if (flow.hasFallthrough() && instr.getFallThrough() != null) {
+				work.add(instr.getFallThrough());
+			}
+		}
+		return bytes;
 	}
 
 	/** Smallest first slot the family search tries (an index base of 0..{@value}). */
@@ -905,7 +1312,7 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 				// the ordinary walk must accept every slot of the range
 				int[] nulls = new int[1];
 				List<Address> targets =
-					walkTargets(program, site, tableStarts, nulls, lo, hi + 1);
+					walkTargets(program, site, tableStarts, List.of(site), nulls, lo, hi + 1);
 				if (targets.size() < 2 || targets.size() + nulls[0] != hi - lo + 1) {
 					continue;
 				}
@@ -983,9 +1390,23 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 			return List.of(new FamilyMember(site.table().getOffset(), 1, true),
 				new FamilyMember(site.hiTable().getOffset(), 1, true));
 		}
-		FamilyMember m = new FamilyMember(site.table().getOffset(), 2, true);
+		FamilyMember m = new FamilyMember(site.table().getOffset(), site.stride(), true);
 		m.width = 2;
 		return List.of(m);
+	}
+
+	/** As above, for a record table (grm-gipk.34.6): one width-2 member per pointer column. */
+	private static List<FamilyMember> pointerMembers(Site site, List<Address> cols) {
+		if (site.planar() || cols.size() == 1) {
+			return pointerMembers(site);
+		}
+		List<FamilyMember> out = new ArrayList<>();
+		for (Address c : cols) {
+			FamilyMember m = new FamilyMember(c.getOffset(), site.stride(), true);
+			m.width = 2;
+			out.add(m);
+		}
+		return out;
 	}
 
 	/**
