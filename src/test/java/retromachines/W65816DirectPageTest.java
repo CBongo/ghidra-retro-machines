@@ -488,6 +488,47 @@ public class W65816DirectPageTest extends AbstractProgramTest {
 		assertRef(0x8008, 0x063d, RefType.WRITE);
 	}
 
+	/**
+	 * F-Zero {@code $00:D0AA} (grm-9nxj.52): {@code PHK / PER / JML} into an RTL routine is a far
+	 * call that comes back to the code after the JML, and the thunk returns by its own RTS. Before
+	 * pushedCall the thunk's exits read as its target's RTL with its own pushes still on the
+	 * stack, and the caller lost its DP.
+	 */
+	@Test
+	public void farCallThunkReturnsByItsOwnRtsWithCallersDp() throws Exception {
+		lay("0x8300", "6b", "FAR");   // RTL
+		// PHK ; PER +3 (pushes $8207) ; JML $00:8300 -- returns to $8208
+		lay("0x8200", "4b 62 03 00 5c 00 83 00", "FTHUNK");
+		builder.setBytes("0x8208", "60", false);   // the continuation's RTS, in no function
+		builder.disassemble("0x8208", 1, false);
+		lay("0x8000", SET_600_CALL_8200_STA, "C");
+		analyzeAll();
+		assertRef(0x8008, 0x063d, RefType.WRITE);
+	}
+
+	/** {@code PHK / JSR} into an RTL routine is a hand-rolled JSL: it comes back. */
+	@Test
+	public void phkJsrIntoRtlRoutineFallsThrough() throws Exception {
+		lay("0x8300", "6b", "L");   // RTL
+		// LDX #$0600 ; PHX ; PLD ; PHK ; JSR $8300 ; STA <$3d ; RTS
+		lay("0x8000", "a2 00 06 da 2b 4b 20 00 83 85 3d 60", "C");
+		analyzeAll();
+		assertRef(0x8009, 0x063d, RefType.WRITE);
+	}
+
+	/**
+	 * grm-9nxj.49's rule, now in the DP analyzer too: any byte but a PHK of the caller's bank
+	 * sends the callee's RTL elsewhere, so the JSR has no fall-through (FF3 {@code ee74a4}).
+	 */
+	@Test
+	public void phbJsrIntoRtlRoutineDoesNotFallThrough() throws Exception {
+		lay("0x8300", "6b", "L");   // RTL
+		// LDX #$0600 ; PHX ; PLD ; PHB ; JSR $8300 ; STA <$3d ; RTS
+		lay("0x8000", "a2 00 06 da 2b 8b 20 00 83 85 3d 60", "C");
+		analyzeAll();
+		assertNull(dpAt(0x8009));
+	}
+
 	/** Rule A (grm-9nxj.27): an untargeted JMP (abs) in a callee hands back the DP it was given. */
 	@Test
 	public void untargetedIndirectJmpKeepsEntryDp() throws Exception {

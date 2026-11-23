@@ -184,23 +184,25 @@ public class W65816FarCallContinuationAnalyzer extends AbstractAnalyzer {
 			return null;   // the jump ends on a bank boundary
 		}
 		String kind = far ? "RTL" : "RTS";
-		if (!kind.equals(W65816ReturnProof.provenReturn(program, callee))) {
-			return null;
+		String proven = W65816ReturnProof.provenReturn(program, callee);
+		if (!kind.equals(proven)) {
+			return decline(jmp, "callee " + callee + " proven " + proven + ", need " + kind);
 		}
 		if (fx.emulation(jmp) || fx.flag(jmp, fx.eRegister()) != 0) {
-			return null;
+			return decline(jmp, "not native mode at the jump");
 		}
 		W65816WidthEffects.Effect e = fx.effect(callee);
 		int m = after(fx.flag(jmp, fx.mRegister()), e.m().exit());
 		int x = after(fx.flag(jmp, fx.xRegister()), e.x().exit());
 		if (m < 0 || x < 0) {
-			return null;
+			return decline(jmp, "width after callee unknown: m=" + m + " x=" + x + " (" + e + ")");
 		}
 		MemoryBlock block = program.getMemory().getBlock(fall);
 		if (block == null || !block.isInitialized() || block.isWrite() ||
 			listing.getInstructionAt(fall) != null || listing.getDefinedDataContaining(fall) != null ||
 			program.getFunctionManager().getFunctionAt(fall) != null) {
-			return null;
+			return decline(jmp, "continuation " + fall + " not free ROM (block " + block +
+				", data " + listing.getDefinedDataContaining(fall) + ")");
 		}
 		Map<Register, Integer> ctx = new LinkedHashMap<>();
 		ctx.put(fx.eRegister(), 0);
@@ -210,6 +212,19 @@ public class W65816FarCallContinuationAnalyzer extends AbstractAnalyzer {
 			ctx.put(fx.dRegister(), fx.flag(jmp, fx.dRegister()));
 		}
 		return new Site(fall, ctx, kind, callee);
+	}
+
+	/**
+	 * Env-gated diagnostic (grm-9nxj.52): {@code GRM_FARCALL_TRACE=1} prints why a site with the
+	 * far-call shape was declined, so a missing continuation is attributed to its guard.
+	 */
+	private static final boolean TRACE = System.getenv("GRM_FARCALL_TRACE") != null;
+
+	private static Site decline(Instruction jmp, String why) {
+		if (TRACE) {
+			System.out.println("FARCALL declined at " + jmp.getMinAddress() + ": " + why);
+		}
+		return null;
 	}
 
 	/** The flag after the callee: the caller's when preserved, the callee's constant, else -1. */

@@ -127,6 +127,41 @@ public class W65816ReturnProofTest extends AbstractProgramTest {
 		assertEquals("RTS", proof("c2 20 48 68 e2 20 60")); // REP #$20 ; PHA ; PLA ; SEP ; RTS
 	}
 
+	/** grm-9nxj.52: {@code PHK / JSR} into an RTL routine pulls the PHK byte too. */
+	@Test
+	public void phkJsrIntoRtlRoutineIsAHandRolledJsl() throws Exception {
+		builder.setBytes("0x8200", "6b", true);   // RTL
+		assertEquals("RTL", proof("4b 20 00 82 6b")); // PHK ; JSR $8200 ; RTL
+	}
+
+	/** The same JSR into an RTS routine leaves the PHK byte: the RTL is one byte deep. */
+	@Test
+	public void phkJsrIntoRtsRoutineDeclines() throws Exception {
+		builder.setBytes("0x8200", "60", true);   // RTS
+		assertNull(proof("4b 20 00 82 6b")); // PHK ; JSR $8200 ; RTL
+	}
+
+	/**
+	 * F-Zero's RTL trampoline {@code $03:8015 PEA $86FB / JML $00:86A9}: the RTS routine returns
+	 * to the {@code RTL} byte after the pushed address, which nothing has decoded.
+	 */
+	@Test
+	public void peaJmpIntoRtsRoutineReturnsThroughATrampolineRtl() throws Exception {
+		builder.setBytes("0x82fa", "60 ea 6b", false);   // RTS ; NOP ; RTL (undecoded)
+		builder.setBytes("0x8300", "60", true);          // the RTS routine
+		assertEquals("RTL", proof("f4 fb 82 4c 00 83")); // PEA $82FB ; JMP $8300
+		assertNull(program.getListing().getInstructionAt(addr(0x82fc)));
+	}
+
+	/** The F-Zero shape whole: {@code PHK / JSR} into that trampoline, then the routine's RTL. */
+	@Test
+	public void phkJsrIntoATrampolineReturnsByRtl() throws Exception {
+		builder.setBytes("0x82fa", "60 ea 6b", false);
+		builder.setBytes("0x8300", "60", true);
+		builder.setBytes("0x8400", "f4 fb 82 4c 00 83", true);   // the trampoline
+		assertEquals("RTL", proof("4b 20 00 84 6b"));      // PHK ; JSR $8400 ; RTL
+	}
+
 	@Test
 	public void tailJumpIntoAnotherFunctionDeclines() throws Exception {
 		builder.setBytes("0x8200", "60", true);

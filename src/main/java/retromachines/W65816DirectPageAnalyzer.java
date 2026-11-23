@@ -679,12 +679,23 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				if (ins == null) {
 					continue;
 				}
-				State out = transfer(ins, in.get(at));
+				PushedCall pc = pushedCall(start, f, ins, in.get(at));
+				State out = pc != null ? pc.after() : transfer(ins, in.get(at));
+				if (out == null) {
+					continue;   // a call that does not come back to its fall-through
+				}
 				if (notes != null && in.get(at).dp != UNKNOWN && out.dp == UNKNOWN &&
 					!ins.getFlowType().isCall()) {
 					notes.add("DP written UNKNOWN at " + at + ": " + ins);
 				}
-				for (Address next : successors(start, f, ins, summary)) {
+				List<Address> nexts = new ArrayList<>();
+				if (pc != null) {
+					add(start, f, summary, nexts, pc.cont());
+				}
+				else {
+					nexts = successors(start, f, ins, summary);
+				}
+				for (Address next : nexts) {
 					State old = in.get(next);
 					State merged = old == null ? out : old.meet(out);
 					if (notes != null && old != null && old.dp != UNKNOWN && out.dp != UNKNOWN &&
@@ -740,6 +751,71 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 			if (a != null && (summary ? inline(start, f, a) : f.getBody().contains(a))) {
 				out.add(a);
 			}
+		}
+
+		/** A jump that is a call through a pushed return address: where it returns, and how. */
+		private record PushedCall(Address cont, State after) {
+		}
+
+		/**
+		 * A tail jump into another function reached with a known return address of this routine's
+		 * own on top of the stack, ported from the DBR analyzer (grm-9nxj.52): F-Zero's far call
+		 * {@code $00:D0AA PHK / PER $D0B1 / JML $03:99C5}, or {@code PEA ret-1 / JMP f} for an RTS
+		 * routine. When every exit of {@code f} is one RTL (bank byte under the return word) or
+		 * one RTS (the return word; the bank is {@code f}'s), control comes back to {@code ret}
+		 * with those items pulled and {@code f}'s summary applied: the jump is a call, not an
+		 * exit. Before this d0aa's exits read {@code {RTL}} (the JML's target's), so
+		 * {@code JSR $D0AA} looked like a hand-rolled JSL. Null otherwise.
+		 */
+		private PushedCall pushedCall(Address start, Function f, Instruction ins, State s) {
+			var ft = ins.getFlowType();
+			Address[] fl = ins.getFlows();
+			if (s == null || s.stack == null || s.stack.isEmpty() || ft.isComputed() ||
+				ft.isConditional() || fl.length != 1 ||
+				!((!ft.isCall() && ft.isJump()) || isTailCall(ft))) {
+				return null;
+			}
+			List<Pushed> stk = s.stack;
+			int n = stk.size();
+			Pushed top = stk.get(n - 1);
+			// Cheap shape test first: the summary questions below are costly at every jump.
+			if (top.width != 2 || top.value == UNKNOWN || inline(start, f, fl[0]) ||
+				neverReturns(fl[0]) || hasPopTail(fl[0])) {
+				return null;
+			}
+			int te = exitDp(fl[0]);
+			Set<String> kinds = exitKinds.get(fl[0]);
+			if (traced(ins.getAddress())) {
+				System.out.println("DPS   pushedCall? " + ins.getAddress() + " to " + fl[0] +
+					" kinds=" + kinds + " stack=" + stk);
+			}
+			boolean rtl = Set.of("RTL").equals(kinds);
+			if (!rtl && !Set.of("RTS").equals(kinds)) {
+				return null;
+			}
+			int items = rtl ? 2 : 1;
+			if (n < items) {
+				return null;
+			}
+			Pushed word = stk.get(n - 1);
+			Pushed bank = rtl ? stk.get(n - 2) : null;
+			if (word.width != 2 || word.value == UNKNOWN ||
+				(rtl && (bank.width != 1 || bank.value == UNKNOWN))) {
+				return null;
+			}
+			int b = rtl ? bank.value : (int) ((fl[0].getOffset() >> 16) & 0xff);
+			long ret = (long) b << 16 | ((word.value + 1) & 0xffff);
+			Address cont = ins.getAddress().getAddressSpace().getAddress(ret);
+			if (traced(ins.getAddress())) {
+				System.out.println("DPS   pushedCall " + ins.getAddress() + " cont=" + cont +
+					" ins=" + program.getListing().getInstructionAt(cont));
+			}
+			if (program.getListing().getInstructionAt(cont) == null) {
+				return null;
+			}
+			int dp = preserves(fl[0]) ? s.dp : te == ENTRY_DP ? s.dp : te;
+			return new PushedCall(cont, new State(dp, UNKNOWN, UNKNOWN, UNKNOWN,
+				List.copyOf(stk.subList(0, n - items))));
 		}
 
 		/**
@@ -946,13 +1022,13 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 					case DP:
 						return push(s, new Pushed(2, s.dp, true));   // tagged: see unwoundFrameDp
 					default:
-						// A constant word (PEA) keeps its value; every other push (PEI, PER, PHP,
-						// PHB, PHK) is unknown bytes. PER's return address folds to a constant in
-						// p-code too, but the old model left it unknown: kept (W4 candidate).
-						return push(s, new Pushed(push.bytes(),
-							push.bytes() == 2 && push.constant() != null &&
-								!"PER".equalsIgnoreCase(ins.getMnemonicString())
-									? (int) (push.constant() & 0xffff) : UNKNOWN));
+						// A push that folds to a constant keeps its value: PEA's word, PER's
+						// return address, PHK's bank (grm-9nxj.52: a far-call thunk's
+						// PHK / PER / JML is recognised from them, see pushedCall). Every other
+						// push (PEI, PHP, PHB) is unknown bytes.
+						Long c = push.constant();
+						return push(s, new Pushed(push.bytes(), c == null ? UNKNOWN :
+							(int) (c & (push.bytes() == 2 ? 0xffff : 0xff))));
 				}
 			}
 			W65816Shapes.Pull pl = W65816Shapes.pull(ins);
@@ -1022,8 +1098,11 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				notes.add("call at " + ins.getAddress() + " to " + flows[0] +
 					" lost DP (callee summary UNKNOWN)");
 			}
-			return new State(dp, UNKNOWN, UNKNOWN, UNKNOWN, droppedArguments(ins,
-				new State(s.dp, s.a, s.x, s.y, rtlConsumesPushedBank(ins, s))));
+			if (flows.length == 1 && hasPopTail(flows[0])) {
+				return new State(dp, UNKNOWN, UNKNOWN, UNKNOWN, droppedArguments(ins, s));
+			}
+			State back = rtlConsumesPushedBank(ins, s);
+			return back == null ? null : new State(dp, UNKNOWN, UNKNOWN, UNKNOWN, back.stack);
 		}
 
 		/**
@@ -1085,22 +1164,33 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 		 * The caller's stack after a call returns (grm-hf5h.26). A {@code JSR} into a routine that
 		 * leaves only by {@code RTL} -- FZero's {@code PHK / JSR thunk} with the thunk a
 		 * {@code JML} to a far routine, a hand-rolled {@code JSL} -- returns having pulled one
-		 * byte more than the JSR pushed: the bank the caller pushed before it. Drop that 1-byte
-		 * item. Otherwise the stack is as it was. Asked only when the top is a 1-byte item, so
-		 * other calls cost no exit-kind walk.
+		 * byte more than the JSR pushed: the bank the caller pushed before it. Only a known
+		 * {@code PHK} of the caller's own bank brings that RTL back here, and then the 1-byte item
+		 * is dropped; any other byte sends it elsewhere, so the call has no fall-through and this
+		 * returns null (grm-9nxj.49's rule, as the DBR analyzer; sound only since
+		 * {@link #pushedCall} keeps {@code PHK / PER / JML} thunks such as F-Zero's d0aa out of
+		 * "RTL-only", grm-9nxj.52). A routine that returns both ways leaves the depth unknown
+		 * (poisoned). Otherwise the stack is as it was.
 		 */
-		private List<Pushed> rtlConsumesPushedBank(Instruction ins, State s) {
+		private State rtlConsumesPushedBank(Instruction ins, State s) {
 			Address[] flows = ins.getFlows();
-			if (s.stack == null || s.stack.isEmpty() || flows.length != 1 ||
-				W65816Shapes.callPushBytes(ins) != 2 ||
-				s.stack.get(s.stack.size() - 1).width != 1) {
-				return s.stack;
+			if (flows.length != 1 || W65816Shapes.callPushBytes(ins) != 2) {
+				return s;
 			}
 			exitDp(flows[0]);
-			if (!Set.of("RTL").equals(exitKinds.get(flows[0]))) {
-				return s.stack;
+			Set<String> kinds = exitKinds.get(flows[0]);
+			if (kinds == null || !kinds.contains("RTL")) {
+				return s;
 			}
-			return ((State) pop(s, 1)[1]).stack;
+			if (kinds.size() > 1) {
+				return kinds.contains("?") ? s : new State(s.dp, s.a, s.x, s.y, null);
+			}
+			if (s.stack == null || s.stack.isEmpty() ||
+				!s.stack.get(s.stack.size() - 1).equals(
+					new Pushed(1, (int) ((ins.getAddress().getOffset() >> 16) & 0xff)))) {
+				return null;
+			}
+			return (State) pop(s, 1)[1];
 		}
 
 		/**
@@ -1210,7 +1300,7 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				else if (!ft.isComputed() && fl.length == 1 &&
 					((!ft.isCall() && ft.isJump() && !inline(target, callee, fl[0])) ||
 						(isTailCall(ft) && !inline(target, callee, fl[0])))) {
-					if (neverReturns(fl[0])) {
+					if (neverReturns(fl[0]) || pushedCall(target, callee, i, e.getValue()) != null) {
 						continue;
 					}
 					Set<String> t = exitKinds.get(fl[0]);
@@ -1349,6 +1439,9 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 					// its target returns, with the DP at the jump standing in for its entry DP. A
 					// conditional branch to another function's entry is one too (grm-9nxj.31, FF2
 					// $00:e66b BNE); its fall-through is walked as usual.
+					if (pushedCall(target, callee, i, st) != null) {
+						continue;   // a far call: it comes back into this routine (grm-9nxj.52)
+					}
 					if (neverReturns(fl[0])) {
 						if (tr) {
 							System.out.println("DPS   tail at " + i.getAddress() + " to " + fl[0] +
