@@ -118,7 +118,8 @@ import ghidra.util.task.TaskMonitor;
  * <li>overlaps an existing instruction -- the table ran into code (rcproam {@code bb89}'s 21
  *     entries end at {@code FUN_bbb3} itself);</li>
  * <li>starts another split-dispatch table found in the same pass -- tables laid end to end, the
- *     grm-2m07 signal (rcproam {@code bb5f} ends exactly where {@code bb89} begins);</li>
+ *     grm-2m07 signal (rcproam {@code bb5f} ends exactly where {@code bb89} begins); in family
+ *     terms, a pointer member's extent is disjoint from every other site's table base;</li>
  * <li>points outside initialized, non-volatile memory (RAM, I/O, unmapped), or into a banked
  *     window other than the caller's own block;</li>
  * <li>points into the middle of an existing instruction;</li>
@@ -140,33 +141,38 @@ import ghidra.util.task.TaskMonitor;
  * a scheduled function, and an EOL comment at the call site naming the table. The stub is shared,
  * so its references are the union over its callers, exactly as a hand-written override would be.
  *
- * <p><b>The planar form</b> (grm-gipk.33): the low and high bytes are two separate tables whose
- * bases are not adjacent ({@code LDA lo,Y / STA P / LDA hi,Y / STA P+1 / JMP (P)}, megaman2
- * {@code 82d5}: {@code $84dc} / {@code $84e5}), with the index a RAM variable no guard bounds. The
- * two tables cannot overlap, so the base distance (either order, at most
- * {@link #MAX_PLANAR_DISTANCE}) is the entry count. A recovered {@code CMP}/{@code BCC} index
- * guard ({@link IndexGuardRecovery#guardedIndexedLoad}) wins over the distance, setting both the
- * first and the last slot. The estimate is then trimmed at BOTH ends (owner ruling grm-c9d.8):
- * the usual stop rules end the walk at the first bad entry (the tail), and a bad entry before the
- * first good one (RAM, unmapped, mid-instruction, code, a table of this analyzer) is skipped
- * instead (the head). Each planar target must also decode as code
- * ({@link InlineJumpTableDispatch#decodesAsCode}), since the distance is only an estimate. The
- * head skip is not applied to the interleaved form, whose extent has never been an estimate of
- * this kind, nor to a guarded table, whose first slot is stated.
- *
- * <p><b>The same-index family</b> (grm-gipk.41.2): a routine that indexes the pointer table
+ * <p><b>The same-index family</b> (grm-gipk.41): a routine that indexes the pointer table
  * with a value often indexes companion tables with the SAME value, raw or doubled, and an
  * assembler lays such a family back to back. {@link #familyExtent} collects, from the
- * fall-through region before an interleaved quad, every {@code abs,X}/{@code abs,Y} read whose
- * index carries the quad's value (the pointer table is a stride-2, width-2 member), and accepts a
- * live range {@code [lo, hi]} only when (a) no member's extent overlaps another's or a decoded
- * instruction and all lie in the caller's block, (b) at least two independent tiling equations
- * hold (a member's end is another member's start, or is a decoded instruction's start or one of
- * the family's own targets), (c) the ordinary walk accepts every slot in the range (so slots
- * are never invented), and (d) exactly one {@code (lo, hi)} qualifies. That evidence, and only
- * that, permits skipping a non-null bad head (ultimaav {@code 8a3f}: slot 0 is RAM, slots 1..8
- * are handlers); anything less keeps the walk above, shorten-only. Planar tables keep their own
- * rule.
+ * fall-through region before the quad, every {@code abs,X}/{@code abs,Y} read whose index
+ * carries the quad's value as a member (stride 2 width 2 for an interleaved pointer table; two
+ * stride-1 members, the low-byte and high-byte tables, for a planar one), and accepts a live
+ * range {@code [lo, hi]} only when (a) no member's extent overlaps another's or a decoded
+ * instruction, all lie in the caller's block, and no pointer member runs over another site's
+ * table base, (b) at least two independent tiling equations hold (a member's end is another
+ * member's start, or is a decoded instruction's start or one of the family's own targets), (c)
+ * the ordinary walk accepts every slot in the range (so slots are never invented), and (d)
+ * exactly one {@code (lo, hi)} qualifies. That evidence, and only that, permits skipping a
+ * non-null bad head (ultimaav {@code 8a3f}: slot 0 is RAM, slots 1..8 are handlers); anything
+ * less keeps the walk above, shorten-only. The older rules are instances of it:
+ * <ul>
+ * <li><b>Planar</b> (grm-gipk.33; the low and high bytes are two tables whose bases are not
+ *     adjacent, megaman2 {@code 82d5}: {@code $84dc} / {@code $84e5}). When the family cannot pin
+ *     a range, the member>member tiling equation with {@code lo = 0} is the ESTIMATE: the base
+ *     distance ({@link #pairEstimate}, at most {@link #MAX_PLANAR_DISTANCE}) is the entry count.
+ *     A recovered {@code CMP}/{@code BCC} index guard ({@link IndexGuardRecovery#guardedIndexedLoad})
+ *     states {@code lo} and {@code hi} and wins over both. An estimate is trimmed at BOTH ends
+ *     (owner ruling grm-c9d.8): a bad entry before the first good one is skipped (the head), the
+ *     usual stop rules end the walk at the first bad one after (the tail), and each target must
+ *     decode as code ({@link InlineJumpTableDispatch#decodesAsCode}). The head skip applies to
+ *     neither the interleaved form nor a stated (guarded or family) range.</li>
+ * <li><b>End to end</b> (grm-2m07): another site's table base is a boundary no pointer member
+ *     may cover, in the walk and in the family's disjointness alike.</li>
+ * <li><b>Bank table</b> (grm-gipk.36): the per-entry bank byte table of a switch helper is a
+ *     stride-1 member; a slot's bank is trusted only if the bank table's extent over the
+ *     walked slots is in the caller's block, disjoint from the pointer table and holds no
+ *     code.</li>
+ * </ul>
  *
  * <p><b>Priority</b>: {@code CODE_ANALYSIS.after()}, deliberately after
  * {@link IndirectJumpConstantPointerAnalyzer}, which skips a {@code JMP (P)} that already carries a
@@ -632,7 +638,20 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 	 */
 	static Walk walkTable(Program program, Site site, Set<Address> tableStarts) {
 		int[] nulls = new int[1];
-		int[] family = site.planar() ? null : familyExtent(program, site, tableStarts);
+		// a recovered index guard states the first and last slot of a planar table (grm-gipk.33)
+		int[] stated = null;
+		if (site.planar()) {
+			IndexGuardRecovery.LoadGuard guard =
+				IndexGuardRecovery.guardedIndexedLoad(program, site.loLoad());
+			if (guard != null && guard.range().step() == 1) {
+				stated = new int[] { guard.range().lo(), guard.range().hi() };
+			}
+		}
+		if (stated != null) {
+			return new Walk(walkTargets(program, site, tableStarts, nulls, stated[0], stated[1] + 1),
+				nulls[0]);
+		}
+		int[] family = familyExtent(program, site, tableStarts);
 		if (family != null) {
 			List<Address> targets =
 				walkTargets(program, site, tableStarts, nulls, family[0], family[1] + 1);
@@ -655,8 +674,10 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 		}
 	}
 	
-	/** {@code forcedFirst}/{@code forcedEnd} (both -1 for none) fix the slot range of an interleaved
-	 *  walk to the family's (grm-gipk.41.2); the stop rules still apply inside it. */
+	/** {@code forcedFirst}/{@code forcedEnd} (both -1 for none) fix the slot range to one the
+	 *  family model or an index guard states; the stop rules still apply inside it. With none, the
+	 *  range is an ESTIMATE: planar, the pair equation ({@link #pairEstimate}) trimmed at both ends;
+	 *  interleaved, the whole {@link #MAX_ENTRIES} cut by the first stop rule. */
 	private static List<Address> walkTargets(Program program, Site site,
 			Set<Address> tableStarts, int[] leadingNulls, int forcedFirst, int forcedEnd) {
 		Memory memory = program.getMemory();
@@ -677,29 +698,19 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 		}
 		int first = 0;
 		int end = MAX_ENTRIES;
-		boolean guarded = false;
-		if (forcedFirst >= 0 && !planar) {
+		boolean stated = forcedFirst >= 0;
+		if (stated) {
 			first = forcedFirst;
 			end = forcedEnd;
 		}
-		if (planar) {
-			// grm-gipk.33: a planar table's extent is the distance between its two bases (the
-			// tables cannot overlap), unless an index guard in front of the load states it.
-			IndexGuardRecovery.LoadGuard guard =
-				IndexGuardRecovery.guardedIndexedLoad(program, site.loLoad());
-			if (guard != null && guard.range().step() == 1) {
-				guarded = true;
-				first = guard.range().lo();
-				end = guard.range().hi() + 1;
-			}
-			else {
-				long distance = Math.abs(site.hiTable().getOffset() - site.table().getOffset());
-				if (distance > MAX_PLANAR_DISTANCE) {
-					return targets; // unrelated bases: no count to derive
-				}
-				end = (int) distance;
+		else if (planar) {
+			end = pairEstimate(site);
+			if (end < 0) {
+				return targets; // unrelated bases: no count to derive
 			}
 		}
+		List<FamilyMember> ptrs = pointerMembers(site);
+		AddressSpace space = site.table().getAddressSpace();
 		long tableStart = Math.min(site.table().getOffset(), site.hiTable().getOffset());
 		// Lowest target in the table's own block above the table, so far (grm-cqwn).
 		long minTarget = Long.MAX_VALUE;
@@ -722,8 +733,8 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 			// Leading invalid entries of an unguarded planar table are skipped, not fatal: the
 			// start end of every stop rule below (table trim rules apply to both ends, owner
 			// ruling grm-c9d.8). Once an entry is taken, the first invalid one ends the walk.
-			boolean skipLeading = planar && !guarded && targets.isEmpty();
-			if (i > first && (tableStarts.contains(lo) || tableStarts.contains(hi))) {
+			boolean skipLeading = planar && !stated && targets.isEmpty();
+			if (i > first && slotHitsBase(ptrs, i, space, tableStarts)) {
 				break; // the next table begins here
 			}
 			if (Math.max(lo.getOffset(), hi.getOffset()) >= minTarget) {
@@ -760,7 +771,7 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 				// Which bank is not established by the walk itself; a switch helper fed a
 				// per-entry bank byte can establish it (grm-gipk.36), else the entry is declined.
 				Address placed =
-					resolveSwitchedTarget(program, site, planar, i, tableStart, target);
+					resolveSwitchedTarget(program, site, planar, first, i, target);
 				MemoryBlock placedBlock = placed == null ? null : memory.getBlock(placed);
 				if (placedBlock == null || !placedBlock.isInitialized() ||
 					placedBlock.isVolatile()) {
@@ -812,6 +823,11 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 		int width = 1;
 		boolean ptr;
 
+		/** The offset of slot {@code k}'s first byte. */
+		long start(int k) {
+			return base + (long) stride * k;
+		}
+
 		FamilyMember(long base, int stride, boolean ptr) {
 			this.base = base;
 			this.stride = stride;
@@ -846,6 +862,7 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 	 * slot of.
 	 */
 	static int[] familyExtent(Program program, Site site, Set<Address> tableStarts) {
+		boolean planar = site.planar();
 		Listing listing = program.getListing();
 		Memory memory = program.getMemory();
 		MemoryBlock home = memory.getBlock(site.call().getMinAddress());
@@ -861,12 +878,14 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 		long homeStart = home.getStart().getOffset();
 		long homeEnd = home.getEnd().getOffset();
 		// the value each pointer slot holds, -1 where unreadable
-		int[] slotValue = new int[MAX_ENTRIES];
-		for (int k = 0; k < MAX_ENTRIES; k++) {
+		int limit = planar ? MAX_PLANAR_DISTANCE : MAX_ENTRIES;
+		int[] slotValue = new int[limit];
+		for (int k = 0; k < limit; k++) {
 			slotValue[k] = -1;
 			try {
-				Address lo = site.table().addNoWrap(2L * k);
-				slotValue[k] = (memory.getByte(lo) & 0xff) | (memory.getByte(lo.addNoWrap(1)) & 0xff) << 8;
+				Address lo = site.table().addNoWrap(planar ? k : 2L * k);
+				Address hi = planar ? site.hiTable().addNoWrap(k) : lo.addNoWrap(1);
+				slotValue[k] = (memory.getByte(lo) & 0xff) | (memory.getByte(hi) & 0xff) << 8;
 			}
 			catch (Exception e) {
 				break;
@@ -874,10 +893,10 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 		}
 		int[] found = null;
 		for (int lo = 0; lo <= MAX_FAMILY_LO; lo++) {
-			for (int hi = lo + 1; hi < MAX_ENTRIES; hi++) {
+			for (int hi = lo + 1; hi < limit; hi++) {
 				long h = hi + 1;
 				// extents only grow with hi, so the first disjointness failure ends this lo
-				if (!familyDisjoint(listing, members, space, homeStart, homeEnd, lo, h)) {
+				if (!familyDisjoint(listing, members, space, tableStarts, homeStart, homeEnd, lo, h)) {
 					break;
 				}
 				if (familyEquations(listing, members, space, slotValue, lo, hi) < 2) {
@@ -900,34 +919,84 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 	}
 
 	/** Whether no member's extent for slots {@code lo .. h-1} overlaps another's or an instruction,
-	 *  and all lie inside {@code home}. */
+	 *  all lie inside {@code home}, and no pointer member runs over another site's table base (tables
+	 *  laid end to end, grm-2m07: a base is a boundary, and a tiling point). */
 	private static boolean familyDisjoint(Listing listing, List<FamilyMember> members,
-			AddressSpace space, long homeStart, long homeEnd, int lo, long h) {
+			AddressSpace space, Set<Address> tableStarts, long homeStart, long homeEnd, int lo,
+			long h) {
 		for (int i = 0; i < members.size(); i++) {
 			FamilyMember a = members.get(i);
-			long s = a.base + (long) a.stride * lo;
-			long e = a.base + (long) a.stride * h; // exclusive
-			if (s < homeStart || e - 1 > homeEnd) {
-				return false;
-			}
-			Address sa = space.getAddress(s);
-			if (listing.getInstructionContaining(sa) != null) {
-				return false;
-			}
-			Instruction after = listing.getInstructionAfter(sa);
-			if (after != null && after.getMinAddress().getOffset() < e) {
+			long s = a.start(lo);
+			long e = a.start((int) h); // exclusive
+			if (s < homeStart || e - 1 > homeEnd || extentHitsCode(listing, space, s, e)) {
 				return false;
 			}
 			for (int j = i + 1; j < members.size(); j++) {
-				FamilyMember b = members.get(j);
-				long s2 = b.base + (long) b.stride * lo;
-				long e2 = b.base + (long) b.stride * h;
-				if (s < e2 && s2 < e) {
+				if (overlaps(a, members.get(j), lo, h)) {
 					return false;
+				}
+			}
+			if (a.ptr) {
+				for (int k = lo + 1; k < h; k++) {
+					if (slotHitsBase(List.of(a), k, space, tableStarts)) {
+						return false;
+					}
 				}
 			}
 		}
 		return true;
+	}
+
+	/** Whether members {@code a} and {@code b} overlap over slots {@code lo .. h-1}. */
+	private static boolean overlaps(FamilyMember a, FamilyMember b, int lo, long h) {
+		return a.start(lo) < b.start((int) h) && b.start(lo) < a.start((int) h);
+	}
+
+	/** Whether an instruction lies in {@code [s, e)}. */
+	private static boolean extentHitsCode(Listing listing, AddressSpace space, long s, long e) {
+		Address sa = space.getAddress(s);
+		if (listing.getInstructionContaining(sa) != null) {
+			return true;
+		}
+		Instruction after = listing.getInstructionAfter(sa);
+		return after != null && after.getMinAddress().getOffset() < e;
+	}
+
+	/** Whether slot {@code k} of any member in {@code ptrs} covers a table base in {@code starts}. */
+	private static boolean slotHitsBase(List<FamilyMember> ptrs, int k, AddressSpace space,
+			Set<Address> starts) {
+		for (FamilyMember m : ptrs) {
+			for (int b = 0; b < m.width; b++) {
+				long o = m.start(k) + b;
+				if (o >= 0 && o <= 0xffff && starts.contains(space.getAddress(o))) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	/** The site's pointer table(s) as members: one stride-2 width-2 table, or, for a planar site,
+	 *  its low-byte and high-byte tables (two stride-1 members). */
+	private static List<FamilyMember> pointerMembers(Site site) {
+		if (site.planar()) {
+			return List.of(new FamilyMember(site.table().getOffset(), 1, true),
+				new FamilyMember(site.hiTable().getOffset(), 1, true));
+		}
+		FamilyMember m = new FamilyMember(site.table().getOffset(), 2, true);
+		m.width = 2;
+		return List.of(m);
+	}
+
+	/**
+	 * A planar table's extent when the family cannot pin one: the member>member tiling equation
+	 * with the first slot 0 (the two tables cannot overlap, so the base distance is the count), or
+	 * -1 when the bases are further apart than {@link #MAX_PLANAR_DISTANCE} (grm-gipk.33). Only an
+	 * estimate; the walk trims it at both ends.
+	 */
+	private static int pairEstimate(Site site) {
+		long distance = Math.abs(site.hiTable().getOffset() - site.table().getOffset());
+		return distance > MAX_PLANAR_DISTANCE ? -1 : (int) distance;
 	}
 
 	/** The number of independent tiling equations the range {@code lo..hi} satisfies: a member's
@@ -967,7 +1036,7 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 	 * style adjustment. Registers are tracked through transfers, {@code ASL A}, {@code PHA/PLA},
 	 * constant {@code ADC}/{@code SBC} and cell loads; anything unknown makes a register fresh, so
 	 * it never matches. Reads in another block than the caller's are not members. Returns null
-	 * unless the quad's own index is a doubled, unadjusted value (the stride-2 pointer table).
+	 * unless the quad's own index is an unadjusted value, doubled for an interleaved table (stride 2) or raw for a planar one (two stride-1 members).
 	 */
 	private static List<FamilyMember> collectFamily(Listing listing, Site site, MemoryBlock home) {
 		Instruction first = site.quadFirst();
@@ -1113,15 +1182,12 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 			carry = newCarry;
 		}
 		IdxVal idx = quadOp == 0xbd ? x : y;
-		if (idx.scale() != 2 || idx.off() != 0) {
+		if (idx.scale() != (site.planar() ? 1 : 2) || idx.off() != 0) {
 			return null;
 		}
 		AddressSpace space = first.getMinAddress().getAddressSpace();
-		long tableOff = site.table().getOffset();
-		List<FamilyMember> raw = new ArrayList<>();
-		FamilyMember ptr = new FamilyMember(tableOff, 2, true);
-		ptr.width = 2;
-		raw.add(ptr);
+		List<FamilyMember> ptrs = pointerMembers(site);
+		List<FamilyMember> raw = new ArrayList<>(ptrs);
 		for (long[] r : reads) {
 			if (r[1] != idx.tok() || (r[2] != 1 && r[2] != 2)) {
 				continue;
@@ -1146,7 +1212,7 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 			members.add(m);
 		}
 		for (FamilyMember m : members) {
-			if (m.ptr && m.base != tableOff) {
+			if (m.ptr && ptrs.stream().noneMatch(p -> p.base == m.base)) {
 				return null; // a field read below the table base: the extent is not modelled
 			}
 		}
@@ -1156,14 +1222,15 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 	/**
 	 * The overlay address {@code target} reaches for entry {@code i}, when the site calls a switch
 	 * helper fed by a per-entry bank byte ({@link #bankTableOf}), or null (grm-gipk.36). The bank
-	 * byte is read from the caller's own block at {@code bankTable + i}, which must lie below the
-	 * pointer tables (so it is not one of their bytes) and not be code; {@link BankContext}
+	 * table is a stride-1 family member read at {@code bankTable + slot}; its extent over the walked
+	 * slots {@code first .. i} must lie in the caller's block, be disjoint from the pointer table
+	 * (so it is not one of their bytes) and hold no code. {@link BankContext}
 	 * evaluates what the helper switches in for that byte ({@link BankContext#switchedByEntry}) and
 	 * where {@code target} then lands. The result is only ever a REFERENCE target, never a flow
 	 * override (the decompiler cannot follow a branch into another address space).
 	 */
 	private static Address resolveSwitchedTarget(Program program, Site site, boolean planar,
-			int i, long tableStart, Address target) {
+			int first, int i, Address target) {
 		BankContext ctx = BankContext.forProgram(program);
 		if (ctx == null) {
 			return null;
@@ -1175,19 +1242,26 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 		}
 		Memory memory = program.getMemory();
 		MemoryBlock home = memory.getBlock(site.call().getMinAddress());
+		FamilyMember bank = new FamilyMember(site.bankTable().getOffset(), 1, false);
+		long s = bank.start(first);
+		long e = bank.start(i + 1);
+		if (home == null || s < 0 || e - 1 > 0xffff || overlaps(bank, pointerMembers(site).get(0), first, i + 1L)) {
+			return null;
+		}
+		AddressSpace space = site.table().getAddressSpace();
 		try {
 			Address bankAddr = site.bankTable().addNoWrap(i);
-			if (bankAddr.getOffset() >= tableStart || home == null ||
+			if (!home.equals(memory.getBlock(space.getAddress(s))) ||
 				!home.equals(memory.getBlock(bankAddr)) ||
-				program.getListing().getInstructionContaining(bankAddr) != null) {
+				extentHitsCode(program.getListing(), space, s, e)) {
 				return null;
 			}
-			int bank = memory.getByte(bankAddr) & 0xff;
+			int bank0 = memory.getByte(bankAddr) & 0xff;
 			BankContext.EntrySwitch sw = ctx.switchedByEntry(site.switchEntry(),
-				PartialByte.unknown(), PartialByte.fullyKnown(bank), PartialByte.unknown());
+				PartialByte.unknown(), PartialByte.fullyKnown(bank0), PartialByte.unknown());
 			return sw == null ? null : ctx.resolveUnder(sw.state(), target);
 		}
-		catch (MemoryAccessException | ghidra.program.model.address.AddressOverflowException e) {
+		catch (MemoryAccessException | ghidra.program.model.address.AddressOverflowException e2) {
 			return null;
 		}
 	}
