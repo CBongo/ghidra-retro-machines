@@ -444,6 +444,27 @@ public class W65816DataBankTest extends AbstractProgramTest {
 	}
 
 	@Test
+	public void phkJsrIntoAnRtlRoutineComesBack() throws Exception {
+		lay("0x8100", "6b", "G");   // RTL
+		// C: PEA #$7e7e ; PLB ; PLB ; PHK ; JSR G ; LDA $1234 ; RTS
+		lay("0x8200", "f4 7e 7e ab ab 4b 20 00 81 " + LDA_1234 + " 60", "C");
+		analyze();
+		assertEquals("G's RTL pulls the PHK byte and returns to the fall-through",
+			Integer.valueOf(0x7e), dbrAt(0x8209));
+	}
+
+	@Test
+	public void phbJsrIntoAnRtlRoutineHasNoFallThrough() throws Exception {
+		// grm-9nxj.49 (FF3 ee74a4 PHB / JSR $0DBC): the RTL pulls the PHB byte as a bank, so it
+		// does not come back here; walking on would leave the caller one byte short.
+		lay("0x8100", "6b", "G");   // RTL
+		// C: PEA #$7e7e ; PLB ; PLB ; PHB ; JSR G ; LDA $1234 ; RTS
+		lay("0x8200", "f4 7e 7e ab ab 8b 20 00 81 " + LDA_1234 + " 60", "C");
+		analyze();
+		assertNull("no DBR flows past a JSR whose RTL cannot return to it", dbrAt(0x8209));
+	}
+
+	@Test
 	public void phkPerJmlIsAFarCallThatComesBack() throws Exception {
 		lay("0x8100", "4b ab 6b", "G");   // PHK ; PLB ; RTL : returns bank $00
 		// F: PHK ; PER +3 (pushes $8007) ; JML G ; [$8008] LDA $1234 ; RTS

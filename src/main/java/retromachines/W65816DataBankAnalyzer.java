@@ -816,6 +816,9 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 				}
 				PushedCall pc = pushedCall(root, ins, in.get(at));
 				State out = pc != null ? pc.after() : transfer(ins, in.get(at));
+				if (out == null) {
+					continue;   // a call that does not come back to its fall-through
+				}
 				for (Address next : pc != null ? List.of(pc.cont()) :
 					successors(root, ins, dispatch)) {
 					State old = in.get(next);
@@ -1210,7 +1213,15 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 				else if (W65816Shapes.callPushBytes(ins) == 2 && sm.kinds.contains("RTL")) {
 					if (sm.kinds.size() == 1) {
 						// A JSR into a routine that returns by RTL also pulls the bank the caller
-						// pushed (FZero's PHK / JSR thunk), as the DP analyzer models.
+						// pushed (FZero's PHK / JSR thunk). Only a provable PHK of this routine's
+						// own bank brings the RTL back here; any other byte sends it elsewhere,
+						// so the call has no fall-through (grm-9nxj.49: FF3 ee74a4 PHB / JSR
+						// $0DBC, a dead vehicle command). Sound here because pushedCall already
+						// keeps PHK / PER / JML thunks out of "RTL-only"; the DP analyzer, which
+						// lacks it, still pops unconditionally (grm-9nxj.52).
+						if (!topIsOwnBank(ins, s)) {
+							return null;
+						}
 						stack = ((State) pop(s)[1]).stack;
 					}
 					else if (!sm.kinds.contains("?")) {
@@ -1223,6 +1234,16 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 			}
 			return new State(dbr, UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN, stack,
 				s.under, s.viaCall || (flows.length >= 1 && dbr != s.dbr));
+		}
+
+		/** Whether the byte on top of {@code s}'s stack is a known {@code PHK} of {@code ins}'s bank. */
+		private static boolean topIsOwnBank(Instruction ins, State s) {
+			if (s.stack.isEmpty()) {
+				return false;
+			}
+			int top = s.stack.get(s.stack.size() - 1);
+			return top != FLOOR && top != UNKNOWN &&
+				top == (int) ((ins.getAddress().getOffset() >> 16) & 0xff);
 		}
 
 		/** Anything unrecognized: forget what its p-code writes. */
@@ -1428,8 +1449,8 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 				return null;
 			}
 			State out = transfer(ins, st);
-			if (out.dbr != UNKNOWN) {
-				return null;
+			if (out == null || out.dbr != UNKNOWN) {
+				return null;   // null: a call with no fall-through (grm-9nxj.49) loses nothing
 			}
 			if (W65816Shapes.isCall(ins)) {
 				Address[] fl = ins.getFlows();
