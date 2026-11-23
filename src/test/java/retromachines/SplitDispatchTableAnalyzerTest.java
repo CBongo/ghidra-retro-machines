@@ -656,4 +656,75 @@ public class SplitDispatchTableAnalyzerTest extends AbstractBundledLanguageTest 
 		run(program);
 		assertEquals(List.of(), computedTargets(program, jmpOf(false)));
 	}
+
+	/**
+	 * grm-gipk.41.2: the ultimaav {@code 8a3f} family shape. An undoubled index reads a companion
+	 * byte table at {@code F = $9109}, then (after a clobbering call) the SAME index, doubled, reads
+	 * the pointer table at {@code $9100}:
+	 * <pre>
+	 *   PHA / TAX / SEC / LDA $9109,X / JSR $9300 / PLA / ASL A / TAX
+	 *   LDA $9100,X / STA $02 / LDA $9101,X / STA $03 / JMP ($0002)
+	 * </pre>
+	 * {@code tableHex} is laid from {@code $9100}: pointer slots (slot 0 is RAM, the table is
+	 * 1-based) overlapping, at its last byte, the companion table that starts at {@code F}.
+	 */
+	private ProgramDB buildFamily(String tableHex) throws Exception {
+		builder = newBuilder("Test", LANG);
+		uninitializedRam(builder, ".ram", "0x0", 0x800);
+		builder.createMemory(".text", "0x8000", 0x8000);
+		builder.setBytes(String.format("0x%x", CALLER), "48 aa 38 bd " + word(0x9109) + " 20 " +
+			word(HELPER) + " 68 0a aa bd " + word(TABLE) + " 85 02 bd " + word(TABLE + 1) +
+			" 85 03 6c 02 00", true);
+		builder.setBytes(String.format("0x%x", HELPER), "60", true);
+		builder.setBytes(String.format("0x%x", TABLE), tableHex, false);
+		for (long h : HANDLERS) {
+			builder.setBytes(String.format("0x%x", h), "60", false);
+		}
+		return builder.getProgram();
+	}
+
+	private static final long FAMILY_JMP = CALLER + 22;
+
+	/** Pointers {@code $9100..$9109} (slot 0 = RAM), companion bytes {@code $910a..$910d}, and
+	 *  slot 1's handler {@code $910e}, right after the companion table: two equations, one range. */
+	@Test
+	public void familyExtentSkipsTheBadHeadOfAOneBasedTable() throws Exception {
+		ProgramDB program = buildFamily("00 03 0e 91 10 92 20 92 30 92 0d 0d 0d 09 60");
+		run(program);
+		assertEquals(List.of(0x910eL, HANDLERS[1], HANDLERS[2], HANDLERS[3]),
+			computedTargets(program, FAMILY_JMP));
+		String eol = program.getListing().getComment(CommentType.EOL, addr(FAMILY_JMP));
+		assertNotNull(eol);
+		assertTrue(eol, eol.startsWith("split dispatch: 4-entry table at 9100 " +
+			"(slots 1..4, family extent grm-gipk.41.2) via JMP"));
+	}
+
+	/** Only the pointer-end == companion-start equation holds (nothing tiles the companion's end):
+	 *  not enough to skip the RAM head, so today's walk applies and follows nothing. */
+	@Test
+	public void familyWithOneEquationFallsBackToTheWalk() throws Exception {
+		ProgramDB program = buildFamily("00 03 00 92 10 92 20 92 30 92 0d 0d 0d 09 ea");
+		run(program);
+		assertEquals(List.of(), computedTargets(program, FAMILY_JMP));
+		assertNull(program.getListing().getInstructionAt(addr(HANDLERS[0])));
+	}
+
+	/** Both equations hold for slots 1..4, but slot 2 is RAM: the range is not a table. */
+	@Test
+	public void familyWithAnInvalidSlotInRangeIsDeclined() throws Exception {
+		ProgramDB program = buildFamily("00 03 0e 91 00 03 20 92 30 92 0d 0d 0d 09 60");
+		run(program);
+		assertEquals(List.of(), computedTargets(program, FAMILY_JMP));
+		assertNull(program.getListing().getInstructionAt(addr(0x910e)));
+	}
+
+	/** Two ranges, slots 1..4 and 3..5, each satisfy two equations and have valid slots: with no
+	 *  unique answer the family declines and the walk, stopping at the RAM head, follows nothing. */
+	@Test
+	public void familyWithTwoSurvivingRangesIsDeclined() throws Exception {
+		ProgramDB program = buildFamily("00 03 0e 91 00 92 0f 91 30 92 10 92 0d 09 60 60");
+		run(program);
+		assertEquals(List.of(), computedTargets(program, FAMILY_JMP));
+		assertNull(program.getListing().getInstructionAt(addr(0x910e)));
+	}
 }

@@ -154,6 +154,20 @@ import ghidra.util.task.TaskMonitor;
  * head skip is not applied to the interleaved form, whose extent has never been an estimate of
  * this kind, nor to a guarded table, whose first slot is stated.
  *
+ * <p><b>The same-index family</b> (grm-gipk.41.2): a routine that indexes the pointer table
+ * with a value often indexes companion tables with the SAME value, raw or doubled, and an
+ * assembler lays such a family back to back. {@link #familyExtent} collects, from the
+ * fall-through region before an interleaved quad, every {@code abs,X}/{@code abs,Y} read whose
+ * index carries the quad's value (the pointer table is a stride-2, width-2 member), and accepts a
+ * live range {@code [lo, hi]} only when (a) no member's extent overlaps another's or a decoded
+ * instruction and all lie in the caller's block, (b) at least two independent tiling equations
+ * hold (a member's end is another member's start, or is a decoded instruction's start or one of
+ * the family's own targets), (c) the ordinary walk accepts every slot in the range (so slots
+ * are never invented), and (d) exactly one {@code (lo, hi)} qualifies. That evidence, and only
+ * that, permits skipping a non-null bad head (ultimaav {@code 8a3f}: slot 0 is RAM, slots 1..8
+ * are handlers); anything less keeps the walk above, shorten-only. Planar tables keep their own
+ * rule.
+ *
  * <p><b>Priority</b>: {@code CODE_ANALYSIS.after()}, deliberately after
  * {@link IndirectJumpConstantPointerAnalyzer}, which skips a {@code JMP (P)} that already carries a
  * computed reference; running first would hide that stub from it.
@@ -190,7 +204,7 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 	 *  {@code stub} are the same {@code JMP (P)}. */
 	record Site(Instruction call, Instruction stub, Address table, Address hiTable,
 			Instruction loLoad, int gap, boolean viaJump, Address switchEntry,
-				Address bankTable) {
+				Address bankTable, Instruction quadFirst) {
 
 		/** Whether instructions were walked between the second store and the inline
 		 *  {@code JMP (P)} (grm-gipk.34.1); {@code viaJump} says a {@code JMP abs} was followed
@@ -285,6 +299,8 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 			int nulls = walk.leadingNulls();
 			String comment = "split dispatch: " + (targets.size() + nulls) + "-entry table at " +
 				site.table() + (nulls > 0 ? " (" + nulls + " leading null" + (nulls > 1 ? "s" : "") + ")" : "") +
+				(walk.family() ? " (slots " + walk.familyLo() + ".." + walk.familyHi() +
+					", family extent grm-gipk.41.2)" : "") +
 				(site.planar() ? " (high bytes at " + site.hiTable() + ")" : "") +
 				" via JMP (" + IndirectJumpConstantPointer.pointerCell(site.stub()) +
 				") at " + site.stub().getMinAddress() +
@@ -326,7 +342,7 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 		}
 		AddressSpace space = call.getMinAddress().getAddressSpace();
 		return new Site(call, stub, space.getAddress(quad.lo()), space.getAddress(quad.hi()),
-			quad.loLoad(), 0, false, null, null);
+			quad.loLoad(), 0, false, null, null, quad.first());
 	}
 
 	/** A recognized {@code LDA lo,r / STA P / LDA hi,r / STA P+1} quad (either load order):
@@ -408,7 +424,7 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 				AddressSpace space = cur.getMinAddress().getAddressSpace();
 				return new Site(cur, cur, space.getAddress(quad.lo()), space.getAddress(quad.hi()),
 					quad.loLoad(), walked, viaJump, helper,
-					helper == null ? null : bankTableOf(listing, quad));
+					helper == null ? null : bankTableOf(listing, quad), quad.first());
 			}
 			if (walked == FORWARD_LIMIT) {
 				return null;
@@ -616,16 +632,33 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 	 */
 	static Walk walkTable(Program program, Site site, Set<Address> tableStarts) {
 		int[] nulls = new int[1];
-		List<Address> targets = walkTargets(program, site, tableStarts, nulls);
+		int[] family = site.planar() ? null : familyExtent(program, site, tableStarts);
+		if (family != null) {
+			List<Address> targets =
+				walkTargets(program, site, tableStarts, nulls, family[0], family[1] + 1);
+			return new Walk(targets, nulls[0], family[0], family[1]);
+		}
+		List<Address> targets = walkTargets(program, site, tableStarts, nulls, -1, -1);
 		return new Walk(targets, nulls[0]);
 	}
 
 	/** A table walk's result: the targets, and how many leading {@code $0000} slots were skipped
 	 *  (grm-gipk.34.2), which belong to the table's extent but contribute no target. */
-	record Walk(List<Address> targets, int leadingNulls) {}
-
+	record Walk(List<Address> targets, int leadingNulls, int familyLo, int familyHi) {
+		Walk(List<Address> targets, int leadingNulls) {
+			this(targets, leadingNulls, -1, -1);
+		}
+	
+		/** Whether the extent is the same-index family's (grm-gipk.41.2), not the stop-rule walk's. */
+		boolean family() {
+			return familyLo >= 0;
+		}
+	}
+	
+	/** {@code forcedFirst}/{@code forcedEnd} (both -1 for none) fix the slot range of an interleaved
+	 *  walk to the family's (grm-gipk.41.2); the stop rules still apply inside it. */
 	private static List<Address> walkTargets(Program program, Site site,
-			Set<Address> tableStarts, int[] leadingNulls) {
+			Set<Address> tableStarts, int[] leadingNulls, int forcedFirst, int forcedEnd) {
 		Memory memory = program.getMemory();
 		Listing listing = program.getListing();
 		AddressSpace targetSpace = site.stub().getMinAddress().getAddressSpace();
@@ -645,6 +678,10 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 		int first = 0;
 		int end = MAX_ENTRIES;
 		boolean guarded = false;
+		if (forcedFirst >= 0 && !planar) {
+			first = forcedFirst;
+			end = forcedEnd;
+		}
 		if (planar) {
 			// grm-gipk.33: a planar table's extent is the distance between its two bases (the
 			// tables cannot overlap), unless an index guard in front of the load states it.
@@ -756,6 +793,364 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 			targets.add(target);
 		}
 		return targets;
+	}
+
+	/** Smallest first slot the family search tries (an index base of 0..{@value}). */
+	static final int MAX_FAMILY_LO = 6;
+
+	/** Most fall-through predecessors of the quad the family collection scans. */
+	static final int FAMILY_BACK_LIMIT = 24;
+
+	/** An index value as tracked backwards from the quad: {@code tok * scale + off}. */
+	private record IdxVal(int tok, int scale, int off) {}
+
+	/** One table read with the quad's index: bytes at {@code base + stride * i}, {@code width}
+	 *  consecutive bytes per entry. */
+	private static final class FamilyMember {
+		long base;
+		final int stride;
+		int width = 1;
+		boolean ptr;
+
+		FamilyMember(long base, int stride, boolean ptr) {
+			this.base = base;
+			this.stride = stride;
+			this.ptr = ptr;
+		}
+	}
+
+	private static final int[] FAMILY_X_READS = { 0xbd, 0xbc, 0x7d, 0xfd, 0xdd, 0x3d, 0x1d, 0x5d };
+	private static final int[] FAMILY_Y_READS = { 0xb9, 0xbe, 0x79, 0xf9, 0xd9, 0x39, 0x19, 0x59 };
+	/** ALU opcodes (other than the handled {@code ADC #}/{@code SBC #}) that replace A. */
+	private static final int[] A_ALU = { 0x29, 0x25, 0x35, 0x2d, 0x3d, 0x39, 0x21, 0x31, 0x09, 0x05,
+		0x15, 0x0d, 0x1d, 0x19, 0x01, 0x11, 0x49, 0x45, 0x55, 0x4d, 0x5d, 0x59, 0x41, 0x51, 0x65,
+		0x75, 0x6d, 0x7d, 0x79, 0x61, 0x71, 0xe5, 0xf5, 0xed, 0xfd, 0xf9, 0xe1, 0xf1 };
+	private static final int[] LOADS_A = { 0xa9, 0xb5, 0xbd, 0xb9, 0xa1, 0xb1 };
+	private static final int[] LOADS_X = { 0xa2, 0xb6, 0xbe };
+	private static final int[] LOADS_Y = { 0xa0, 0xb4, 0xbc };
+	/** Stores and read-modify-writes of one fixed cell (zero page / absolute). */
+	private static final int[] CELL_WRITES = { 0x85, 0x8d, 0x86, 0x8e, 0x84, 0x8c, 0x06, 0x0e, 0x46,
+		0x4e, 0x26, 0x2e, 0x66, 0x6e, 0xe6, 0xee, 0xc6, 0xce };
+	/** Stores and read-modify-writes whose cell is indexed or indirect: any cell may change. */
+	private static final int[] ANY_WRITES = { 0x95, 0x9d, 0x99, 0x81, 0x91, 0x96, 0x94, 0x16, 0x1e,
+		0x56, 0x5e, 0x36, 0x3e, 0x76, 0x7e, 0xf6, 0xfe, 0xd6, 0xde };
+	/** Opcodes that change no register (compares, branches, flag ops, NOP, TXS). */
+	private static final int[] NO_REG_CHANGE = { 0xc9, 0xc5, 0xd5, 0xcd, 0xdd, 0xd9, 0xc1, 0xd1,
+		0xe0, 0xe4, 0xec, 0xc0, 0xc4, 0xcc, 0x24, 0x2c, 0x10, 0x30, 0x50, 0x70, 0x90, 0xb0, 0xd0,
+		0xf0, 0xd8, 0xf8, 0x58, 0x78, 0xb8, 0xea, 0x9a };
+
+	/**
+	 * The slot range {@code [lo, hi]} the same-index family pins for {@code site}'s interleaved
+	 * table, as {@code {lo, hi}}, or null when the evidence does not suffice (see the class
+	 * javadoc, "The same-index family"). Never returns a range the ordinary walk would reject a
+	 * slot of.
+	 */
+	static int[] familyExtent(Program program, Site site, Set<Address> tableStarts) {
+		Listing listing = program.getListing();
+		Memory memory = program.getMemory();
+		MemoryBlock home = memory.getBlock(site.call().getMinAddress());
+		if (home == null || site.quadFirst() == null ||
+			!home.equals(memory.getBlock(site.table()))) {
+			return null;
+		}
+		List<FamilyMember> members = collectFamily(listing, site, home);
+		if (members == null || members.size() < 2) {
+			return null;
+		}
+		AddressSpace space = site.table().getAddressSpace();
+		long homeStart = home.getStart().getOffset();
+		long homeEnd = home.getEnd().getOffset();
+		// the value each pointer slot holds, -1 where unreadable
+		int[] slotValue = new int[MAX_ENTRIES];
+		for (int k = 0; k < MAX_ENTRIES; k++) {
+			slotValue[k] = -1;
+			try {
+				Address lo = site.table().addNoWrap(2L * k);
+				slotValue[k] = (memory.getByte(lo) & 0xff) | (memory.getByte(lo.addNoWrap(1)) & 0xff) << 8;
+			}
+			catch (Exception e) {
+				break;
+			}
+		}
+		int[] found = null;
+		for (int lo = 0; lo <= MAX_FAMILY_LO; lo++) {
+			for (int hi = lo + 1; hi < MAX_ENTRIES; hi++) {
+				long h = hi + 1;
+				// extents only grow with hi, so the first disjointness failure ends this lo
+				if (!familyDisjoint(listing, members, space, homeStart, homeEnd, lo, h)) {
+					break;
+				}
+				if (familyEquations(listing, members, space, slotValue, lo, hi) < 2) {
+					continue;
+				}
+				// the ordinary walk must accept every slot of the range
+				int[] nulls = new int[1];
+				List<Address> targets =
+					walkTargets(program, site, tableStarts, nulls, lo, hi + 1);
+				if (targets.size() < 2 || targets.size() + nulls[0] != hi - lo + 1) {
+					continue;
+				}
+				if (found != null) {
+					return null; // ambiguous: more than one range survives
+				}
+				found = new int[] { lo, hi };
+			}
+		}
+		return found;
+	}
+
+	/** Whether no member's extent for slots {@code lo .. h-1} overlaps another's or an instruction,
+	 *  and all lie inside {@code home}. */
+	private static boolean familyDisjoint(Listing listing, List<FamilyMember> members,
+			AddressSpace space, long homeStart, long homeEnd, int lo, long h) {
+		for (int i = 0; i < members.size(); i++) {
+			FamilyMember a = members.get(i);
+			long s = a.base + (long) a.stride * lo;
+			long e = a.base + (long) a.stride * h; // exclusive
+			if (s < homeStart || e - 1 > homeEnd) {
+				return false;
+			}
+			Address sa = space.getAddress(s);
+			if (listing.getInstructionContaining(sa) != null) {
+				return false;
+			}
+			Instruction after = listing.getInstructionAfter(sa);
+			if (after != null && after.getMinAddress().getOffset() < e) {
+				return false;
+			}
+			for (int j = i + 1; j < members.size(); j++) {
+				FamilyMember b = members.get(j);
+				long s2 = b.base + (long) b.stride * lo;
+				long e2 = b.base + (long) b.stride * h;
+				if (s < e2 && s2 < e) {
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	/** The number of independent tiling equations the range {@code lo..hi} satisfies: a member's
+	 *  end equals another member's start, or equals a decoded instruction's start or one of the
+	 *  range's own pointer targets (counted once per member, the two coincide on that address). */
+	private static int familyEquations(Listing listing, List<FamilyMember> members,
+			AddressSpace space, int[] slotValue, int lo, int hi) {
+		long h = hi + 1;
+		Set<Integer> own = new java.util.HashSet<>();
+		for (int k = lo; k <= hi; k++) {
+			if (slotValue[k] > 0) {
+				own.add(slotValue[k]);
+			}
+		}
+		int eqs = 0;
+		for (int a = 0; a < members.size(); a++) {
+			FamilyMember ma = members.get(a);
+			long ea = ma.base + (long) ma.stride * h;
+			for (int b = 0; b < members.size(); b++) {
+				FamilyMember mb = members.get(b);
+				if (a != b && ea == mb.base + (long) mb.stride * lo) {
+					eqs++;
+				}
+			}
+			if (ea >= 0 && ea <= 0xffff &&
+				(own.contains((int) ea) || listing.getInstructionAt(space.getAddress(ea)) != null)) {
+				eqs++;
+			}
+		}
+		return eqs;
+	}
+
+	/**
+	 * The family of {@code site}'s interleaved quad: its pointer table plus every non-store
+	 * {@code abs,X}/{@code abs,Y} read in the {@link #FAMILY_BACK_LIMIT} fall-through predecessors
+	 * whose index carries the quad's value, raw or doubled, with the base moved by any {@code INX}-
+	 * style adjustment. Registers are tracked through transfers, {@code ASL A}, {@code PHA/PLA},
+	 * constant {@code ADC}/{@code SBC} and cell loads; anything unknown makes a register fresh, so
+	 * it never matches. Reads in another block than the caller's are not members. Returns null
+	 * unless the quad's own index is a doubled, unadjusted value (the stride-2 pointer table).
+	 */
+	private static List<FamilyMember> collectFamily(Listing listing, Site site, MemoryBlock home) {
+		Instruction first = site.quadFirst();
+		int quadOp = opcode(first);
+		if (quadOp != 0xbd && quadOp != 0xb9) {
+			return null;
+		}
+		List<Instruction> window = new ArrayList<>();
+		Instruction cur = first;
+		for (int n = 0; n < FAMILY_BACK_LIMIT; n++) {
+			Instruction p = fallingInto(listing, cur);
+			if (p == null) {
+				break;
+			}
+			window.add(0, p);
+			cur = p;
+		}
+		int[] counter = { 1 };
+		IdxVal a = new IdxVal(counter[0]++, 1, 0);
+		IdxVal x = new IdxVal(counter[0]++, 1, 0);
+		IdxVal y = new IdxVal(counter[0]++, 1, 0);
+		java.util.ArrayDeque<IdxVal> stack = new java.util.ArrayDeque<>();
+		java.util.Map<Long, IdxVal> cells = new java.util.HashMap<>();
+		int carry = -1;
+		List<long[]> reads = new ArrayList<>(); // {operand, token, scale, offset}
+		for (Instruction instr : window) {
+			int op = opcode(instr);
+			Long operand = operand16(instr);
+			boolean xRead = in(op, FAMILY_X_READS);
+			if (operand != null && (xRead || in(op, FAMILY_Y_READS))) {
+				IdxVal v = xRead ? x : y;
+				reads.add(new long[] { operand, v.tok(), v.scale(), v.off() });
+			}
+			int newCarry = -1;
+			try {
+				if (op == 0xaa) {
+					x = a;
+				}
+				else if (op == 0xa8) {
+					y = a;
+				}
+				else if (op == 0x8a) {
+					a = x;
+				}
+				else if (op == 0x98) {
+					a = y;
+				}
+				else if (op == 0xba) {
+					x = new IdxVal(counter[0]++, 1, 0);
+				}
+				else if (op == 0x0a) {
+					a = new IdxVal(a.tok(), a.scale() * 2, a.off() * 2);
+				}
+				else if (op == 0x4a || op == 0x2a || op == 0x6a || in(op, A_ALU)) {
+					a = new IdxVal(counter[0]++, 1, 0);
+				}
+				else if (op == 0xe8 || op == 0xca) {
+					x = new IdxVal(x.tok(), x.scale(), x.off() + (op == 0xe8 ? 1 : -1));
+				}
+				else if (op == 0xc8 || op == 0x88) {
+					y = new IdxVal(y.tok(), y.scale(), y.off() + (op == 0xc8 ? 1 : -1));
+				}
+				else if (op == 0x18 || op == 0x38) {
+					newCarry = op == 0x18 ? 0 : 1;
+				}
+				else if (op == 0x69 || op == 0xe9) {
+					int imm = instr.getByte(1) & 0xff;
+					if ((op == 0x69 && carry == 0) || (op == 0xe9 && carry == 1)) {
+						a = new IdxVal(a.tok(), a.scale(), a.off() + (op == 0x69 ? imm : -imm));
+					}
+					else {
+						a = new IdxVal(counter[0]++, 1, 0);
+					}
+				}
+				else if (op == 0xa5 || op == 0xad || op == 0xa6 || op == 0xae || op == 0xa4 ||
+					op == 0xac) {
+					long cell = op == 0xa5 || op == 0xa6 || op == 0xa4 ? instr.getByte(1) & 0xff
+							: operand16(instr);
+					IdxVal v = cells.computeIfAbsent(cell, k -> new IdxVal(counter[0]++, 1, 0));
+					if (op == 0xa5 || op == 0xad) {
+						a = v;
+					}
+					else if (op == 0xa6 || op == 0xae) {
+						x = v;
+					}
+					else {
+						y = v;
+					}
+				}
+				else if (in(op, LOADS_A)) {
+					a = new IdxVal(counter[0]++, 1, 0);
+				}
+				else if (in(op, LOADS_X)) {
+					x = new IdxVal(counter[0]++, 1, 0);
+				}
+				else if (in(op, LOADS_Y)) {
+					y = new IdxVal(counter[0]++, 1, 0);
+				}
+				else if (op == 0x48) {
+					stack.push(a);
+				}
+				else if (op == 0x68) {
+					a = stack.isEmpty() ? new IdxVal(counter[0]++, 1, 0) : stack.pop();
+				}
+				else if (op == 0x08) {
+					stack.push(new IdxVal(counter[0]++, 1, 0));
+				}
+				else if (op == 0x28) {
+					if (!stack.isEmpty()) {
+						stack.pop();
+					}
+				}
+				else if (op == 0x20) {
+					a = new IdxVal(counter[0]++, 1, 0);
+					x = new IdxVal(counter[0]++, 1, 0);
+					y = new IdxVal(counter[0]++, 1, 0);
+					cells.clear();
+				}
+				else if (in(op, CELL_WRITES)) {
+					Long cell = in(op, STORE_ZP) ? (Long) (long) (instr.getByte(1) & 0xff)
+							: operand16(instr);
+					if (cell == null) {
+						cells.clear();
+					}
+					else {
+						cells.remove(cell);
+					}
+				}
+				else if (in(op, ANY_WRITES)) {
+					cells.clear();
+				}
+				else if (!in(op, NO_REG_CHANGE)) {
+					a = new IdxVal(counter[0]++, 1, 0);
+					x = new IdxVal(counter[0]++, 1, 0);
+					y = new IdxVal(counter[0]++, 1, 0);
+					cells.clear();
+					stack.clear();
+				}
+			}
+			catch (MemoryAccessException e) {
+				return null;
+			}
+			carry = newCarry;
+		}
+		IdxVal idx = quadOp == 0xbd ? x : y;
+		if (idx.scale() != 2 || idx.off() != 0) {
+			return null;
+		}
+		AddressSpace space = first.getMinAddress().getAddressSpace();
+		long tableOff = site.table().getOffset();
+		List<FamilyMember> raw = new ArrayList<>();
+		FamilyMember ptr = new FamilyMember(tableOff, 2, true);
+		ptr.width = 2;
+		raw.add(ptr);
+		for (long[] r : reads) {
+			if (r[1] != idx.tok() || (r[2] != 1 && r[2] != 2)) {
+				continue;
+			}
+			long base = r[0] + r[3];
+			if (base < 0 || base > 0xffff ||
+				!home.equals(first.getProgram().getMemory().getBlock(space.getAddress(base)))) {
+				continue; // not a table of the caller's block
+			}
+			raw.add(new FamilyMember(base, (int) r[2], false));
+		}
+		raw.sort((p, q) -> p.stride != q.stride ? Integer.compare(p.stride, q.stride)
+				: Long.compare(p.base, q.base));
+		List<FamilyMember> members = new ArrayList<>();
+		for (FamilyMember m : raw) {
+			FamilyMember last = members.isEmpty() ? null : members.get(members.size() - 1);
+			if (last != null && last.stride == m.stride && m.base - last.base < m.stride) {
+				last.width = (int) Math.max(last.width, m.base - last.base + m.width);
+				last.ptr |= m.ptr;
+				continue;
+			}
+			members.add(m);
+		}
+		for (FamilyMember m : members) {
+			if (m.ptr && m.base != tableOff) {
+				return null; // a field read below the table base: the extent is not modelled
+			}
+		}
+		return members;
 	}
 
 	/**
