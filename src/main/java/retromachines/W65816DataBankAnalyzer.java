@@ -1336,7 +1336,13 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 			for (Reference r : program.getReferenceManager().getReferencesTo(entry)) {
 				RefType t = r.getReferenceType();
 				if (!t.isFlow()) {
-					data = true;
+					// An instruction's own load/store of the entry's bytes (LDA >$c10000,X) reads
+					// memory; it cannot transfer control, so it is no way in. A pointer (DATA from
+					// data bytes or PEA) still is.
+					if (!((t.isRead() || t.isWrite()) &&
+						program.getListing().getInstructionAt(r.getFromAddress()) != null)) {
+						data = true;
+					}
 				}
 				else {
 					computed |= t.isComputed();

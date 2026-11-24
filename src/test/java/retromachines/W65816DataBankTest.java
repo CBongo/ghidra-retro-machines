@@ -245,6 +245,27 @@ public class W65816DataBankTest extends AbstractProgramTest {
 	}
 
 	@Test
+	public void aLoadOfTheEntryBytesIsNotAWayIn() throws Exception {
+		lay("0x8200", LDA_1234 + " 60", "H");
+		lay("0x8000", "f4 7e 7e ab ab 20 00 82 60", "C1");
+		lay("0x8100", "af 00 82 00 60", "R");   // LDA $008200 : reads H's bytes (grm-9nxj.56)
+		inTx(program, "read ref", () -> program.getReferenceManager().addMemoryReference(
+			addr(0x8100), addr(0x8200), RefType.READ, SourceType.ANALYSIS, 0));
+		analyze();
+		assertEquals(Integer.valueOf(0x7e), dbrAt(0x8200));
+	}
+
+	@Test
+	public void aPointerToTheEntryStillBlocksSeeding() throws Exception {
+		lay("0x8200", LDA_1234 + " 60", "H");
+		lay("0x8000", "f4 7e 7e ab ab 20 00 82 60", "C1");
+		inTx(program, "ptr ref", () -> program.getReferenceManager().addMemoryReference(
+			addr(0x8f00), addr(0x8200), RefType.DATA, SourceType.ANALYSIS, 0));
+		analyze();
+		assertNull(dbrAt(0x8200));
+	}
+
+	@Test
 	public void disagreeingCallersLeaveTheEntryUnknown() throws Exception {
 		lay("0x8200", LDA_1234 + " 60", "H");
 		lay("0x8000", "f4 7e 7e ab ab 20 00 82 60", "C1");
