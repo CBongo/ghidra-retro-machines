@@ -16,12 +16,14 @@
 package retromachines;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -212,6 +214,74 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 		}
 	}
 
+	/**
+	 * This image's per-game identity (bead grm-hb6.31, docs/per-game-descriptors-design.md
+	 * section 2): SHA-256 over the cartridge image with any 512-byte copier header excluded (the
+	 * SNES counterpart of the NES "PRG slice"; file order, before any de-interleave, so it is a
+	 * fact about the dump and not about loader policy), plus SHA-256 over the whole file. Null
+	 * for an empty image. Package-private for pure-JUnit tests.
+	 */
+	static GameIdentities.GameIdentity gameIdentity(ByteProvider provider, long dataOffset)
+			throws IOException {
+		long length = provider.length() - dataOffset;
+		if (dataOffset < 0 || length <= 0) {
+			return null;
+		}
+		String romSha;
+		try (InputStream in = provider.getInputStream(dataOffset)) {
+			romSha = GameIdentities.sha256Hex(in, length);
+		}
+		String fileSha;
+		try (InputStream in = provider.getInputStream(0)) {
+			fileSha = GameIdentities.sha256Hex(in, -1);
+		}
+		return new GameIdentities.GameIdentity(romSha, fileSha);
+	}
+
+	/** The board id a SNES game descriptor's {@code game.board} is cross-checked against. */
+	static String boardId(SnesRomHeader header) {
+		return "snes_" + header.mapType().name().toLowerCase(Locale.ROOT);
+	}
+
+	/**
+	 * Records the identity, resolves the curated/overlay game descriptor against it
+	 * (design sections 2.4, 3.2, 5) and publishes the 65816 hints it carries. A fact about the
+	 * file, so recorded before any layout work and never fatal.
+	 */
+	private static void recordGameIdentity(Program program, ByteProvider provider,
+			long dataOffset, SnesRomHeader header, MessageLog log) throws IOException {
+		GameIdentities.GameIdentity identity = gameIdentity(provider, dataOffset);
+		if (identity == null) {
+			log.appendMsg(NAME + ": empty cartridge image; skipping game identity");
+			return;
+		}
+		var info = program.getOptions(Program.PROGRAM_INFO);
+		info.setString(DescriptorHints.GAME_IDENTITY_PROPERTY, identity.toPropertyValue());
+		log.appendMsg("game identity " + identity.toPropertyValue());
+		GameDescriptorRegistry.GameDescriptor gd = GameDescriptorRegistry.resolve(
+			GameDescriptorRegistry.scan(log), identity, boardId(header), log);
+		if (gd == null) {
+			return;
+		}
+		info.setString(DescriptorHints.GAME_DESCRIPTOR_PROPERTY, gd.gmapPath());
+		log.appendMsg("game descriptor resolved: " + gd.gmapPath() + " ('" + gd.id() + "')");
+		publishW65816Hints(info, gd, log);
+	}
+
+	/** Publishes {@code w65816.dp_page_aligned} (a claim, so only a literal true counts). */
+	static void publishW65816Hints(Options info, GameDescriptorRegistry.GameDescriptor gd,
+			MessageLog log) {
+		JsonObject w = gd.doc().has("w65816") && gd.doc().get("w65816").isJsonObject()
+				? gd.doc().getAsJsonObject("w65816")
+				: null;
+		if (w != null && w.has("dp_page_aligned") && w.get("dp_page_aligned").isJsonPrimitive() &&
+			w.get("dp_page_aligned").getAsBoolean()) {
+			info.setString(DescriptorHints.W65816_DP_PAGE_ALIGNED_PROPERTY, "true");
+			log.appendMsg("game descriptor " + gd.gmapPath() +
+				" asserts the 65816 D register is page-aligned (low byte $00) program-wide");
+		}
+	}
+
 	private void loadCartridge(Program program, Loader.ImporterSettings settings)
 			throws CancelledException, IOException,
 			AddressOverflowException {
@@ -268,6 +338,7 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 
 		long dataOffset = layout.dataOffset();
 		long cartBytes = provider.length() - dataOffset;
+		recordGameIdentity(program, provider, dataOffset, header, log);
 		SnesAddressMap map = SnesAddressMap.of(header, cartBytes);
 
 		AddressSpace space = program.getAddressFactory().getDefaultAddressSpace();

@@ -16,6 +16,7 @@
 package retromachines;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -593,6 +594,19 @@ public class W65816DataBankTest extends AbstractProgramTest {
 		lay("0x8100", "a9 01 13 5b 60", "G");       // LDA #$1301 ; TCD ; RTS
 		analyzeDpThenDbr();
 		assertNull(dbrAt(0x8005));
+	}
+
+	@Test
+	public void gameDescriptorHintAssertsTheInvariantOverAnUnprovenWriter() throws Exception {
+		// grm-hb6.31: the same unprovable PLD as below, but the game descriptor asserts it.
+		lay("0x8000", TDC_PHA_PLB, "F");
+		lay("0x8100", "48 2b 60", "G");             // PHA (A unknown) ; PLD ; RTS
+		inTx(program, "hint", () -> program.getOptions(ghidra.program.model.listing.Program.PROGRAM_INFO)
+				.setString(DescriptorHints.W65816_DP_PAGE_ALIGNED_PROPERTY, "true"));
+		analyzeDpThenDbr();
+		assertTrue(W65816DirectPageAnalyzer.hinted(program));
+		assertFalse(W65816DirectPageAnalyzer.proven(program));
+		assertEquals(Integer.valueOf(0), dbrAt(0x8005));
 	}
 
 	@Test

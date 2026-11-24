@@ -157,6 +157,10 @@ public class GameCompiler {
 		if (banking != null) {
 			gameDoc.put("banking", banking);
 		}
+		Map<String, Object> w65816 = buildW65816(descriptor);
+		if (w65816 != null) {
+			gameDoc.put("w65816", w65816);
+		}
 		List<Map<String, Object>> symbols = buildSymbols(descriptor);
 		if (symbols != null) {
 			gameDoc.put("symbols", symbols);
@@ -625,6 +629,51 @@ public class GameCompiler {
 			s.put("entries", entries);
 			out.add(s);
 		}
+		return out;
+	}
+
+	// ---- w65816: CPU-level invariants asserted program-wide (bead grm-hb6.31) ----
+
+	/**
+	 * {@code w65816: { dp_page_aligned: true }} -- a declarative claim (design section 3.1) that
+	 * the 65816 direct page register's low byte is $00 everywhere in this game, for use when the
+	 * analyzer's own proof (W65816DirectPageAnalyzer) cannot establish it. Only {@code true} is
+	 * emitted; {@code false} is the absence of the claim. Rejected on a board that is not a SNES
+	 * (65816) board, since this compiler knows the CPU only through the {@code snes_} board-id
+	 * prefix.
+	 */
+	@SuppressWarnings("unchecked")
+	private static Map<String, Object> buildW65816(Map<String, Object> descriptor) {
+		Object obj = descriptor.get("w65816");
+		if (obj == null) {
+			return null;
+		}
+		if (!(obj instanceof Map)) {
+			throw new IllegalArgumentException("descriptor 'w65816:' must be a mapping");
+		}
+		Map<String, Object> w = (Map<String, Object>) obj;
+		for (String key : w.keySet()) {
+			if (!"dp_page_aligned".equals(key)) {
+				throw new IllegalArgumentException(
+					"unknown key 'w65816." + key + "' (dp_page_aligned)");
+			}
+		}
+		Object flag = w.get("dp_page_aligned");
+		if (!(flag instanceof Boolean)) {
+			throw new IllegalArgumentException(
+				"game descriptor 'w65816.dp_page_aligned:' must be true or false");
+		}
+		String board = MapCompiler.requireString(
+			(Map<String, Object>) descriptor.get("game"), "board", "game");
+		if (!board.startsWith("snes_")) {
+			throw new IllegalArgumentException("'w65816:' is a 65816 claim but game.board '" +
+				board + "' is not a SNES board (snes_*)");
+		}
+		if (!(Boolean) flag) {
+			return null;
+		}
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("dp_page_aligned", true);
 		return out;
 	}
 

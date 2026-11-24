@@ -101,6 +101,31 @@ public class GameCompilerTest {
 		assertEquals("mirroring", list.get(1).getAsString());
 	}
 
+	private String snesYaml(String w65816Block) {
+		return validYaml().replace("board: nes_mmc3", "board: snes_hirom")
+				.replace("banking:\n  initial_state: { prg_mode: 1 }\n", "") + w65816Block;
+	}
+
+	@Test
+	public void compilesW65816DpPageAligned() throws Exception {
+		JsonObject doc = compile("snesdp", snesYaml("w65816:\n  dp_page_aligned: true\n"));
+		assertTrue(doc.getAsJsonObject("w65816").get("dp_page_aligned").getAsBoolean());
+	}
+
+	@Test
+	public void w65816DpPageAlignedFalseEmitsNothing() throws Exception {
+		JsonObject doc = compile("snesdpf", snesYaml("w65816:\n  dp_page_aligned: false\n"));
+		assertFalse(doc.has("w65816"));
+	}
+
+	@Test
+	public void w65816RejectsWrongTypeUnknownKeyAndNonSnesBoard() throws Exception {
+		expectError("dpstr", snesYaml("w65816:\n  dp_page_aligned: \"yes\"\n"), "true or false");
+		expectError("dpunk", snesYaml("w65816:\n  dp_foo: true\n"), "unknown key");
+		expectError("dpnes", validYaml() + "w65816:\n  dp_page_aligned: true\n",
+			"not a SNES board");
+	}
+
 	@Test
 	public void emptyFixedAfterInitIsRejected() throws Exception {
 		expectError("fixedempty", validYaml().replace("initial_state: { prg_mode: 1 }",

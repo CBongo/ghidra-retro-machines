@@ -283,7 +283,9 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 		}
 		int[] aligned = markPageAlignedWriters(program, all, monitor);
 		AnalyzerLog.info(this, "DP writers proven page-aligned: " + aligned[0] + " of " +
-			aligned[1] + (aligned[0] == aligned[1] ? " (D's low byte is $00 program-wide)" : ""));
+			aligned[1] + (aligned[0] == aligned[1] ? " (D's low byte is $00 program-wide: proven)"
+					: hinted(program) ? " (D's low byte is $00 program-wide: hinted by the " +
+						"game descriptor)" : ""));
 		int[] warned = bookmarkSeeds(program, w.seeds, monitor);
 		int[] cc = assignDpPreserved(program, w, monitor);
 		if (stamped > 0 || refs > 0 || cc[0] > 0 || cc[1] > 0) {
@@ -316,6 +318,17 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 	 * own {@code PHD ... PLD} restore assumes the same).
 	 */
 	static boolean lowByteZero(Program program) {
+		return hinted(program) || proven(program);
+	}
+
+	/** True when the resolved game descriptor asserts D's low byte is $00 (grm-hb6.31). */
+	static boolean hinted(Program program) {
+		return "true".equals(program.getOptions(Program.PROGRAM_INFO)
+				.getString(DescriptorHints.W65816_DP_PAGE_ALIGNED_PROPERTY, null));
+	}
+
+	/** True when the analyzer's own proof covers every DP writer in the listing. */
+	static boolean proven(Program program) {
 		IntPropertyMap m = program.getUsrPropertyManager().getIntPropertyMap(ALIGNED_MAP);
 		if (m == null) {
 			return false;

@@ -1,0 +1,29 @@
+# Curated per-game descriptor (title tier). Compiled to data/games/ff3-us-rev1.gmap.
+# docs/per-game-descriptors-design.md; bead grm-hb6.31 (2026-11-23).
+#
+# WHY THIS FILE EXISTS. FF3's NMI prologue is TDC / PHA / PLB (M=1): DBR := D's low byte. The
+# 65816 DP analyzer (W65816DirectPageAnalyzer, grm-9nxj.49) proves D's low byte is $00
+# program-wide when every TCD/PLD is shown to write a page-aligned D -- but on this ROM it
+# proves 51 of the 54 writers. The other three (c0b9d4, c0b9f6, c5017d) are genuine PHD ... PLD
+# restores whose pairing the walk cannot see (grm-9nxj.55 is the real fix). The owner ruled
+# (2026-11-23) that the game tier may assert the invariant until then; with it, the TDC/PHA/PLB
+# prologue resolves to DBR $00. Remove this key once grm-9nxj.55 lets the proof cover all 54.
+
+schema: 2
+
+game:
+  id: ff3-us-rev1
+  title: "Final Fantasy III (USA) (Rev 1)"
+  board: snes_hirom
+  identity:
+    # SNES "slice" = the image without any 512-byte copier header; this dump has none, so both
+    # digests are the whole-file digest (the w_ff3 row of manifest-snes-analysis.tsv).
+    prg_sha256: "10eccc5d2fab81346dd759f6be478dcb682eef981e8d3d662da176e1f9a996bc"
+    file_sha256: "10eccc5d2fab81346dd759f6be478dcb682eef981e8d3d662da176e1f9a996bc"
+  provenance: "grm-9nxj.49 / grm-hb6.31, 2026-11-23: every TCD/PLD in the game writes $xx00 or
+    restores a saved D, so D's low byte is $00 everywhere including interrupt handlers; the
+    analyzer's proof covers 51 of 54 writers, the other three (c0b9d4, c0b9f6, c5017d) being
+    PHD...PLD restores it cannot pair."
+
+w65816:
+  dp_page_aligned: true

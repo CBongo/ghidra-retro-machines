@@ -191,6 +191,13 @@ final class DescriptorHints {
 	static final String GAME_DESCRIPTOR_PROPERTY = "Game Descriptor";
 
 	/**
+	 * Program-info property, "true" when the resolved game descriptor asserts
+	 * {@code w65816.dp_page_aligned} (bead grm-hb6.31): the 65816 D register's low byte is $00
+	 * program-wide. Absent otherwise. Consumed by {@link W65816DirectPageAnalyzer#lowByteZero}.
+	 */
+	static final String W65816_DP_PAGE_ALIGNED_PROPERTY = "Retro Machines.65816 DP Page Aligned";
+
+	/**
 	 * Program-info property listing the entry points a loader knows are reached
 	 * <em>asynchronously</em> -- on this hardware family, the 6502 {@code NMI} and {@code IRQ}
 	 * vector targets. Space-separated {@link Address#toString()} tokens (space-qualified, so
