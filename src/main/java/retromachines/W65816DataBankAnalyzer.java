@@ -179,41 +179,54 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 		int refs = 0;
 		int[] absByHow = new int[3];    // seeded, summary, local
 		int[] refsByHow = new int[3];
+		// Every walk that reaches an instruction speaks for it, whichever body holds it: ways in
+		// that disagree leave it unknown (grm-9nxj.57).
+		Map<Address, int[]> merged = new LinkedHashMap<>();   // addr -> {dbr, how}
 		for (Map.Entry<Address, Map<Address, State>> e : en.states.entrySet()) {
 			monitor.checkCancelled();
-			Function f = program.getFunctionManager().getFunctionAt(e.getKey());
-			if (f == null) {
+			if (program.getFunctionManager().getFunctionAt(e.getKey()) == null) {
 				continue;
 			}
 			int seed = en.seedOf(e.getKey());
 			for (Map.Entry<Address, State> s : e.getValue().entrySet()) {
+				if (program.getFunctionManager().getFunctionContaining(s.getKey()) == null) {
+					continue;
+				}
 				int dbr = en.resolve(s.getValue().dbr, seed);
-				if (!f.getBody().contains(s.getKey())) {
-					continue;
-				}
-				Instruction in = program.getListing().getInstructionAt(s.getKey());
-				if (in == null) {
-					continue;
-				}
-				if (dbr == UNKNOWN) {
-					en.clear(in);   // an earlier, less informed run may have stamped it
-					continue;
-				}
-				stamped += en.stamp(in, dbr) ? 1 : 0;
-				boolean abs = Engine.absOperand(in) != UNKNOWN;
 				// How DBR was known here: from the entry seed, through a callee's summary, or
 				// locally (PLB / MVN on the way).
 				int how = expand(s.getValue().dbr).contains(ENTRY) ? 0 :
 					s.getValue().viaCall ? 1 : 2;
-				if (abs) {
-					absByHow[how]++;
+				int[] was = merged.get(s.getKey());
+				if (was == null) {
+					merged.put(s.getKey(), new int[] { dbr, how });
 				}
-				if (addRefs) {
-					boolean added = en.reference(in, dbr);
-					refs += added ? 1 : 0;
-					if (added && abs) {
-						refsByHow[how]++;
-					}
+				else if (was[0] != dbr) {
+					was[0] = UNKNOWN;
+				}
+			}
+		}
+		for (Map.Entry<Address, int[]> e : merged.entrySet()) {
+			Instruction in = program.getListing().getInstructionAt(e.getKey());
+			if (in == null) {
+				continue;
+			}
+			int dbr = e.getValue()[0];
+			if (dbr == UNKNOWN) {
+				en.clear(in);   // an earlier, less informed run may have stamped it
+				continue;
+			}
+			int how = e.getValue()[1];
+			stamped += en.stamp(in, dbr) ? 1 : 0;
+			boolean abs = Engine.absOperand(in) != UNKNOWN;
+			if (abs) {
+				absByHow[how]++;
+			}
+			if (addRefs) {
+				boolean added = en.reference(in, dbr);
+				refs += added ? 1 : 0;
+				if (added && abs) {
+					refsByHow[how]++;
 				}
 			}
 		}
@@ -1359,6 +1372,27 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 			return out.isEmpty() && !reset ? null : out;
 		}
 
+		private Map<Address, List<Address>> reach;
+
+		/**
+		 * The roots whose walk reaches {@code a}, in walk order. A walk follows dispatch jumps into
+		 * handlers that Ghidra put in another function's body, so the roots that reach an
+		 * instruction are not just the functions that contain it (grm-9nxj.57: FF3's event
+		 * dispatcher {@code $C0:9A5A} jumps through {@code JMP ($2A)} into the case blocks of
+		 * {@code $C0:9C44}).
+		 */
+		List<Address> rootsAt(Address a) {
+			if (reach == null) {
+				reach = new HashMap<>();
+				for (Map.Entry<Address, Map<Address, State>> e : states.entrySet()) {
+					for (Address k : e.getValue().keySet()) {
+						reach.computeIfAbsent(k, x -> new ArrayList<>(1)).add(e.getKey());
+					}
+				}
+			}
+			return reach.getOrDefault(a, List.of());
+		}
+
 		/** The DBR each way in carries under the seeds known so far, by source. */
 		private Set<Integer> knownWaysIn(List<Address> src) {
 			Set<Integer> out = new LinkedHashSet<>();
@@ -1367,14 +1401,10 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 				if (ins == null) {
 					continue;
 				}
-				for (Function f : functionsAt(s)) {
-					Map<Address, State> m = states.get(f.getEntryPoint());
-					State st = m == null ? null : m.get(s);
-					if (st == null) {
-						continue;
-					}
+				for (Address root : rootsAt(s)) {
+					State st = states.get(root).get(s);
 					int v = ins.getFlowType().isCall() ? st.dbr : transfer(ins, st).dbr;
-					v = resolve(v, seedOf(f.getEntryPoint()));
+					v = resolve(v, seedOf(root));
 					if (v != UNKNOWN) {
 						out.add(v);
 					}
@@ -1493,8 +1523,8 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 					seen.computeIfAbsent(ge, k -> new LinkedHashSet<>()).add(0);
 				}
 				for (Address s : src) {
-					for (Function f : functionsAt(s)) {
-						deps.computeIfAbsent(f.getEntryPoint(), k -> new LinkedHashSet<>()).add(ge);
+					for (Address root : rootsAt(s)) {
+						deps.computeIfAbsent(root, k -> new LinkedHashSet<>()).add(ge);
 					}
 				}
 			}

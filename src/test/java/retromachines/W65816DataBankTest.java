@@ -295,6 +295,18 @@ public class W65816DataBankTest extends AbstractProgramTest {
 	}
 
 	@Test
+	public void dispatchHandlersInAnotherFunctionsBodyAreStampedFromTheJumper() throws Exception {
+		// grm-9nxj.57: FF3's event dispatcher jumps into case blocks Ghidra put in another body.
+		// B ($8280-$8304) has the handler at $8300, which its own walk never reaches.
+		lay("0x8280", "ea ".repeat(127) + "60 " + LDA_1234 + " 60", "B");
+		lay("0x8000", "f4 7e 7e ab ab 7c 00 82", "A");   // PEA $7e7e ; PLB ; PLB ; JMP ($8200,X)
+		inTx(program, "dispatch refs", () -> program.getReferenceManager().addMemoryReference(
+			addr(0x8005), addr(0x8300), RefType.COMPUTED_JUMP, SourceType.ANALYSIS, 0));
+		analyze();
+		assertEquals(Integer.valueOf(0x7e), dbrAt(0x8300));
+	}
+
+	@Test
 	public void resetIsEnteredWithDbrZero() throws Exception {
 		lay("0x8000", LDA_1234 + " 60", "F");
 		inTx(program, "RESET", () -> {
