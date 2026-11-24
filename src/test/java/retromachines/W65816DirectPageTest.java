@@ -16,6 +16,7 @@
 package retromachines;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -746,6 +747,39 @@ public class W65816DirectPageTest extends AbstractProgramTest {
 		assertRef(0x8007, 0x0610, RefType.READ);
 		assertRef(0x8009, 0x0610, RefType.READ);
 		assertRef(0x800b, 0x0610, RefType.READ);
+	}
+
+	// ---- grm-9nxj.55: the page-alignment proof carries a jumper's stack into jump-entered code ----
+
+	/**
+	 * FF3's shared epilogue shape: A pushes D and jumps into B, whose PLD pulls A's PHD. B is
+	 * entered by that jump alone, so the proof judges it with A's stack.
+	 */
+	@Test
+	public void plDOfAJumpEnteredEpilogueIsProvenByTheJumpersPhd() throws Exception {
+		lay("0x8000", "0b 4c 00 81", "A");   // PHD ; JMP $8100
+		lay("0x8100", "2b 6b", "B");   // PLD ; RTL
+		analyzeAll();
+		assertTrue(W65816DirectPageAnalyzer.proven(program));
+	}
+
+	/** The same epilogue also called with an empty stack: that way in cannot be proven. */
+	@Test
+	public void plDOfAnEpilogueAlsoCalledIsNotProven() throws Exception {
+		lay("0x8000", "0b 4c 00 81", "A");   // PHD ; JMP $8100
+		lay("0x8100", "2b 6b", "B");   // PLD ; RTL
+		lay("0x8200", "20 00 81 60", "C");   // JSR $8100 ; RTS
+		analyzeAll();
+		assertFalse(W65816DirectPageAnalyzer.proven(program));
+	}
+
+	/** A jumper that pushed nothing hands over nothing: the PLD pulls below. */
+	@Test
+	public void plDOfAJumpEnteredEpilogueWithoutPhdIsNotProven() throws Exception {
+		lay("0x8000", "4c 00 81", "A");   // JMP $8100
+		lay("0x8100", "2b 6b", "B");
+		analyzeAll();
+		assertFalse(W65816DirectPageAnalyzer.proven(program));
 	}
 
 	private void assertRef(long from, long to, RefType type) {

@@ -209,6 +209,54 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 	/** Dataflow state before an instruction. {@code stack == null} means poisoned. */
 	private record State(int dp, int a, int x, int y, List<Pushed> stack) {
 
+		/**
+		 * {@link #meet} for the page-alignment proof's carried walks (grm-9nxj.55): pushed items of
+		 * equal width and kind that differ in value merge to an unknown value instead of
+		 * poisoning the stack (FF3's {@code $C5:0211} loop {@code PHX ... PLX}, X known on the
+		 * first pass only). Only the proof reads these walks; the stamps and call summaries use
+		 * the strict meet.
+		 */
+		State meetLoose(State o) {
+			return new State(dp == o.dp ? dp : UNKNOWN, a == o.a ? a : UNKNOWN,
+				x == o.x ? x : UNKNOWN, y == o.y ? y : UNKNOWN, meetStackLoose(stack, o.stack));
+		}
+
+		private static List<Pushed> meetStackLoose(List<Pushed> p, List<Pushed> q) {
+			if (p == null || q == null) {
+				return null;
+			}
+			if (p.equals(q)) {
+				return p;
+			}
+			int k = 0;
+			List<Pushed> rev = new ArrayList<>();   // top first
+			while (k < p.size() && k < q.size()) {
+				Pushed u = p.get(p.size() - 1 - k);
+				Pushed v = q.get(q.size() - 1 - k);
+				if (u.equals(v)) {
+					rev.add(u);
+				}
+				else if (u.width > 0 && u.width == v.width && u.phd == v.phd) {
+					rev.add(new Pushed(u.width, UNKNOWN, u.phd));
+				}
+				else {
+					break;
+				}
+				k++;
+			}
+			if (k == 0) {
+				return null;
+			}
+			List<Pushed> out = new ArrayList<>(k + 1);
+			if (!rev.get(k - 1).equals(FLOOR) && (k < p.size() || k < q.size())) {
+				out.add(FLOOR);
+			}
+			for (int i = k - 1; i >= 0; i--) {
+				out.add(rev.get(i));
+			}
+			return List.copyOf(out);
+		}
+
 		State meet(State o) {
 			return new State(dp == o.dp ? dp : UNKNOWN, a == o.a ? a : UNKNOWN,
 				x == o.x ? x : UNKNOWN, y == o.y ? y : UNKNOWN, meetStack(stack, o.stack));
@@ -281,7 +329,7 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				refs += w.reference(in, dp) ? 1 : 0;
 			}
 		}
-		int[] aligned = markPageAlignedWriters(program, all, monitor);
+		int[] aligned = markPageAlignedWriters(program, w, all, monitor);
 		AnalyzerLog.info(this, "DP writers proven page-aligned: " + aligned[0] + " of " +
 			aligned[1] + (aligned[0] == aligned[1] ? " (D's low byte is $00 program-wide: proven)"
 					: hinted(program) ? " (D's low byte is $00 program-wide: hinted by the " +
@@ -356,9 +404,19 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 	 * {@code PLD} pulls a word pushed by {@code PHD} (the D of the moment, page-aligned by
 	 * induction) or a known word with low byte $00.
 	 *
+	 * <p>The states come from three places (grm-9nxj.55; FF3 proved 51 of 54 before, 54 of 54
+	 * now). The ordinary function walks, except those of functions entered only by jumps
+	 * ({@link Walker#jumpEntered}): such a function runs on its jumper's stack, so FF3's shared
+	 * epilogue {@code $C5:0171 ... PLD / PLB / RTL}, whose walk from an empty stack pulls below its
+	 * entry, is judged by {@link Walker#carriedWalks} instead, walked with the stack of each jump
+	 * into it (through the dispatch handlers that tail-jump to it, transitively). And, for a
+	 * writer nothing else reaches, the walks from dispatch JMP targets that are no function's entry
+	 * ({@link Walker#dispatchRootWalks}: FF3's event-command handlers inside {@code $C0:9C44}).
+	 * Every state at a writer must prove it, as before.
+	 *
 	 * @return {marked, writers}
 	 */
-	private static int[] markPageAlignedWriters(Program program,
+	private static int[] markPageAlignedWriters(Program program, Walker w,
 			Map<Function, Map<Address, State>> all, TaskMonitor monitor) throws CancelledException {
 		Map<Address, List<State>> at = new HashMap<>();
 		for (Instruction i : program.getListing().getInstructions(true)) {
@@ -367,11 +425,31 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				at.put(i.getAddress(), new ArrayList<>());
 			}
 		}
-		for (Map<Address, State> states : all.values()) {
-			for (Map.Entry<Address, State> e : states.entrySet()) {
-				List<State> l = at.get(e.getKey());
-				if (l != null) {
-					l.add(e.getValue());
+		List<Map<Address, State>> roots = w.dispatchRootWalks(monitor);
+		Set<Function> carried = w.jumpEntered(all.keySet(), monitor);
+		for (Map.Entry<Function, Map<Address, State>> fe : all.entrySet()) {
+			if (!carried.contains(fe.getKey())) {
+				collectWriters(fe.getValue(), at);
+			}
+		}
+		// Jump-entered functions are judged with the stacks their jumpers hand them (grm-9nxj.55).
+		for (Map<Address, State> states : w.carriedWalks(carried, all, roots, monitor)) {
+			collectWriters(states, at);
+		}
+		// A writer no walk reaches may sit in a dispatch handler that no function's walk follows:
+		// the roots' walks (see dispatchRootWalks) stand in, and only for such a writer.
+		Set<Address> unreached = new HashSet<>();
+		at.forEach((a, l) -> {
+			if (l.isEmpty()) {
+				unreached.add(a);
+			}
+		});
+		if (!unreached.isEmpty()) {
+			for (Map<Address, State> states : roots) {
+				for (Map.Entry<Address, State> e : states.entrySet()) {
+					if (unreached.contains(e.getKey())) {
+						at.get(e.getKey()).add(e.getValue());
+					}
 				}
 			}
 		}
@@ -400,6 +478,15 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 			}
 		}
 		return new int[] { marked, at.size() };
+	}
+
+	private static void collectWriters(Map<Address, State> states, Map<Address, List<State>> at) {
+		for (Map.Entry<Address, State> e : states.entrySet()) {
+			List<State> l = at.get(e.getKey());
+			if (l != null) {
+				l.add(e.getValue());
+			}
+		}
 	}
 
 	/** Why {@code s} does not prove writer {@code i} page-aligned; null when it does. */
@@ -776,6 +863,163 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 			return out;
 		}
 
+		/** A walk whose jumps are yet to be scanned; {@code owner} null for a dispatch root. */
+		private record Pending(Function owner, Map<Address, State> states) {}
+
+		/** Distinct jumper stacks a jump-entered function is walked with before giving up (poisoned). */
+		private static final int CARRY_LIMIT = 8;
+
+		/**
+		 * The targets control can jump to from {@code ins} without a return: a plain or
+		 * conditional jump, a CALL_RETURN-overridden tail jump, or an unconditional dispatch JMP.
+		 * A real call, a return and any other computed transfer have none.
+		 */
+		private static List<Address> jumpTargets(Instruction ins) {
+			var ft = ins.getFlowType();
+			boolean jump = ft.isCall() ? isTailCall(ft) :
+				ft.isJump() && (!ft.isComputed() || isDispatchJmp(ins));
+			return jump ? List.of(ins.getFlows()) : List.of();
+		}
+
+		/**
+		 * Functions entered only by jumps (grm-9nxj.55): every way into the entry is a jump, branch,
+		 * tail jump or dispatch JMP; a data reference counts only when a dispatch JMP resolved to
+		 * the entry too (a table slot of that dispatcher; optimistic, as rule A); no external
+		 * entry point and no fall-through from the instruction before. Such a function runs on its
+		 * jumper's stack, so a walk from an empty stack is not a way it is ever entered.
+		 */
+		Set<Function> jumpEntered(Collection<Function> fns, TaskMonitor monitor)
+				throws CancelledException {
+			Set<Function> out = new LinkedHashSet<>();
+			for (Function g : fns) {
+				monitor.checkCancelled();
+				if (isJumpEntered(g)) {
+					out.add(g);
+				}
+			}
+			return out;
+		}
+
+		private boolean isJumpEntered(Function g) {
+			Address entry = g.getEntryPoint();
+			if (program.getSymbolTable().isExternalEntryPoint(entry)) {
+				return false;
+			}
+			Instruction before = program.getListing().getInstructionBefore(entry);
+			if (before != null && entry.equals(before.getFallThrough())) {
+				return false;
+			}
+			boolean flow = false;
+			boolean data = false;
+			boolean computed = false;
+			for (Reference r : program.getReferenceManager().getReferencesTo(entry)) {
+				if (!r.getReferenceType().isFlow()) {
+					data = true;
+					continue;
+				}
+				Instruction src = program.getListing().getInstructionAt(r.getFromAddress());
+				if (src == null || !jumpTargets(src).contains(entry)) {
+					return false;
+				}
+				flow = true;
+				computed |= r.getReferenceType().isComputed();
+			}
+			return flow && (!data || computed);
+		}
+
+		/**
+		 * Walks each jump-entered function with the stack its jumpers carry (grm-9nxj.55), the DP
+		 * twin of the DBR analyzer's {@code intoEpilogues}/{@code intoBody} (grm-9nxj.42/.49)
+		 * for the page-alignment proof: FF3's sound driver leaves {@code PHB / PHD / PHP ...}
+		 * pushed through {@code JMP (tbl,X)} into handlers that tail-jump to the shared epilogue
+		 * {@code $C5:0171 ... PLD / PLB / RTL}, so that epilogue's {@code PLD} pulls the
+		 * dispatcher's {@code PHD}. The entry states are the in-states of the jumps into each,
+		 * from the ordinary walks of every function that is not itself jump-entered and,
+		 * transitively, from these walks; one walk per distinct stack. Registers are forgotten.
+		 */
+		List<Map<Address, State>> carriedWalks(Set<Function> carried,
+				Map<Function, Map<Address, State>> all, List<Map<Address, State>> roots,
+				TaskMonitor monitor)
+				throws CancelledException {
+			List<Map<Address, State>> out = new ArrayList<>();
+			if (carried.isEmpty()) {
+				return out;
+			}
+			Map<Address, Function> byEntry = new HashMap<>();
+			for (Function g : carried) {
+				byEntry.put(g.getEntryPoint(), g);
+			}
+			Map<Function, Set<List<Pushed>>> seen = new HashMap<>();
+			ArrayDeque<Pending> pending = new ArrayDeque<>();
+			for (Map.Entry<Function, Map<Address, State>> e : all.entrySet()) {
+				if (!carried.contains(e.getKey())) {
+					pending.add(new Pending(e.getKey(), e.getValue()));
+				}
+			}
+			for (Map<Address, State> r : roots) {
+				pending.add(new Pending(null, r));
+			}
+			while (!pending.isEmpty()) {
+				monitor.checkCancelled();
+				Pending p = pending.poll();
+				for (Map.Entry<Address, State> e : p.states().entrySet()) {
+					Instruction ins = program.getListing().getInstructionAt(e.getKey());
+					if (ins == null) {
+						continue;
+					}
+					for (Address t : jumpTargets(ins)) {
+						Function h = byEntry.get(t);
+						if (h == null || h.equals(p.owner())) {
+							continue;
+						}
+						Set<List<Pushed>> stacks = seen.computeIfAbsent(h, k -> new HashSet<>());
+						List<Pushed> stack = e.getValue().stack;
+						if (stacks.size() >= CARRY_LIMIT) {
+							stack = null;   // too many distinct frames: fail closed
+						}
+						if (stacks.add(stack)) {
+							Map<Address, State> ws =
+								walk(h.getEntryPoint(), h,
+									new State(UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN, stack), false, true);
+							out.add(ws);
+							pending.add(new Pending(h, ws));
+						}
+					}
+				}
+			}
+			return out;
+		}
+
+		/**
+		 * Walks from each resolved target of a dispatch JMP that is no function's entry, over an
+		 * empty stack and bounded by the function body holding it (grm-9nxj.55: FF3's
+		 * event-command handlers inside {@code $C0:9C44}'s body are reached only through the
+		 * command table, so no function walk follows them). Sound for a handler's own
+		 * {@code PHD ... PLD}: whatever frame the dispatcher left, the pair nests above it; a pull
+		 * below the handler's entry fails the proof. The walks stand in for an unreached writer
+		 * only, and their jumps feed {@link #carriedWalks}.
+		 */
+		List<Map<Address, State>> dispatchRootWalks(TaskMonitor monitor)
+				throws CancelledException {
+			Set<Address> roots = new LinkedHashSet<>();
+			for (Instruction i : program.getListing().getInstructions(true)) {
+				monitor.checkCancelled();
+				if (isDispatchJmp(i)) {
+					roots.addAll(List.of(i.getFlows()));
+				}
+			}
+			List<Map<Address, State>> out = new ArrayList<>();
+			for (Address t : roots) {
+				if (program.getFunctionManager().getFunctionAt(t) != null) {
+					continue;   // its own walk covers it
+				}
+				for (Function f : functionsAt(t)) {
+					out.add(walk(t, f, ENTRY, false, true));
+				}
+			}
+			return out;
+		}
+
 		Map<Address, State> walk(Function f, State entry) {
 			return walk(f, entry, false);
 		}
@@ -791,10 +1035,15 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 		 *     (see {@link #inline})
 		 */
 		private Map<Address, State> walk(Address start, Function f, State entry, boolean summary) {
+			return walk(start, f, entry, summary, false);
+		}
+
+		private Map<Address, State> walk(Address start, Function f, State entry, boolean summary,
+				boolean loose) {
 			Set<String> outerNotes = notes;
 			notes = TRACE == null ? null : new LinkedHashSet<>();
 			try {
-				return walkBody(start, f, entry, summary);
+				return walkBody(start, f, entry, summary, loose);
 			}
 			finally {
 				lastNotes = notes;
@@ -803,7 +1052,7 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 		}
 
 		private Map<Address, State> walkBody(Address start, Function f, State entry,
-				boolean summary) {
+				boolean summary, boolean loose) {
 			Map<Address, State> in = new LinkedHashMap<>();
 			ArrayDeque<Address> work = new ArrayDeque<>();
 			in.put(start, entry);
@@ -833,7 +1082,7 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				}
 				for (Address next : nexts) {
 					State old = in.get(next);
-					State merged = old == null ? out : old.meet(out);
+					State merged = old == null ? out : loose ? old.meetLoose(out) : old.meet(out);
 					if (notes != null && old != null && old.dp != UNKNOWN && out.dp != UNKNOWN &&
 						merged.dp == UNKNOWN) {
 						notes.add("merge at " + next + " of DP " + dpName(old.dp) + " and " +
