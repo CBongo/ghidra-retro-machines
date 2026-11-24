@@ -267,9 +267,29 @@ public class W65816DataBankTest extends AbstractProgramTest {
 
 	@Test
 	public void disagreeingCallersLeaveTheEntryUnknown() throws Exception {
-		lay("0x8200", LDA_1234 + " 60", "H");
+		lay("0x8200", "ad 34 52 60", "H");   // $5234: outside the WRAM mirror
 		lay("0x8000", "f4 7e 7e ab ab 20 00 82 60", "C1");
 		lay("0x8100", "4b ab 20 00 82 60", "C2");   // DBR 0
+		analyze();
+		assertNull(dbrAt(0x8200));
+	}
+
+	@Test
+	public void bank00AndWramCallersMergeWhenTheCalleeStaysInTheMirror() throws Exception {
+		lay("0x8200", "ad 00 01 60", "H");   // LDA $0100 : same byte under DBR $00 and $7E
+		lay("0x8000", "f4 7e 7e ab ab 20 00 82 60", "C1");
+		lay("0x8100", "4b ab 20 00 82 60", "C2");
+		analyze();
+		assertEquals(Integer.valueOf(0x7e), dbrAt(0x8200));
+		assertEquals(addr(0x7e0100), dataRef(0x8200).getToAddress());
+	}
+
+	@Test
+	public void mirrorMergeDeclinesWhenACalleeLeavesTheMirror() throws Exception {
+		lay("0x8300", "ad 00 21 60", "OUT");   // LDA $2100 : PPU under $00, WRAM under $7E
+		lay("0x8200", "ad 00 01 20 00 83 60", "H");
+		lay("0x8000", "f4 7e 7e ab ab 20 00 82 60", "C1");
+		lay("0x8100", "4b ab 20 00 82 60", "C2");
 		analyze();
 		assertNull(dbrAt(0x8200));
 	}

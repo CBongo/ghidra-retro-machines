@@ -1383,6 +1383,94 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 			return out;
 		}
 
+		// -- WRAM-mirror merge (grm-9nxj.56) --
+
+		/**
+		 * Collapses ways in that differ only by which bank-$00-style WRAM mirror they name. Banks
+		 * $00-$3F and $80-$BF show WRAM $0000-$1FFF, the same bytes as $7E:0000-$1FFF, so callers
+		 * that carry $00 and $7E into a routine whose every DBR-relative access stays below $2000
+		 * reach the same memory either way. Returns {@code $7E} (the canonical WRAM bank, which is
+		 * what the references then name) when that holds, else CONFLICT.
+		 */
+		private int mirrorMerge(Address entry, Set<Integer> ways) {
+			for (int w : ways) {
+				if (!(w == 0x7e || (w >= 0 && w <= 0x3f) || (w >= 0x80 && w <= 0xbf))) {
+					return CONFLICT;
+				}
+			}
+			Function g = program.getFunctionManager().getFunctionAt(entry);
+			if (g == null) {
+				return CONFLICT;
+			}
+			Integer known = mirrorSafe.get(entry);
+			if (known == null) {
+				known = mirrorSafeFrom(g, new HashSet<>(), new int[] { 0 }) ? 1 : 0;
+				mirrorSafe.put(entry, known);
+			}
+			return known == 1 ? 0x7e : CONFLICT;
+		}
+
+		private final Map<Address, Integer> mirrorSafe = new HashMap<>();
+
+		/**
+		 * Whether {@code g} and everything it can flow into reads DBR only for absolute operands
+		 * that stay inside WRAM's $0000-$1FFF mirror, never changes DBR, and has no computed flow.
+		 * Cycles count as safe; a search past 200 routines gives up.
+		 */
+		private boolean mirrorSafeFrom(Function g, Set<Address> seen, int[] budget) {
+			if (!seen.add(g.getEntryPoint())) {
+				return true;
+			}
+			if (++budget[0] > 200) {
+				return false;
+			}
+			AddressSetView body = g.getBody();
+			for (Instruction ins : program.getListing().getInstructions(body, true)) {
+				String m = ins.getMnemonicString();
+				if (m.equals("PLB") || m.equals("MVN") || m.equals("MVP") ||
+					W65816Shapes.constIntoDbr(ins) != null) {
+					return false;
+				}
+				if (ins.getFlowType().isComputed()) {
+					return false;
+				}
+				int off = absOperand(ins);
+				if (off != UNKNOWN) {
+					// An index can carry the access past the mirror, but the reference the analyzer
+					// records names the operand itself, and that byte is the same in either bank.
+					if (off >= 0x2000) {
+						return false;
+					}
+				}
+				else if (!ins.getFlowType().isJump() && !ins.getFlowType().isCall() &&
+					!m.equals("PEI")) {
+					String r = ins.getNumOperands() > 0 ? ins.getDefaultOperandRepresentation(0) : "";
+					if (r.contains("(")) {
+						return false;   // (dp), (dp,X), (dp),Y, (sr,S),Y all read through DBR
+					}
+				}
+				List<Address> outs = new ArrayList<>();
+				for (Reference r : ins.getReferencesFrom()) {
+					if (r.getReferenceType().isFlow()) {
+						outs.add(r.getToAddress());
+					}
+				}
+				if (ins.getFallThrough() != null) {
+					outs.add(ins.getFallThrough());
+				}
+				for (Address to : outs) {
+					if (body.contains(to)) {
+						continue;
+					}
+					Function t = program.getFunctionManager().getFunctionContaining(to);
+					if (t == null || !mirrorSafeFrom(t, seen, budget)) {
+						return false;
+					}
+				}
+			}
+			return true;
+		}
+
 		void solveSeeds(TaskMonitor monitor) throws CancelledException {
 			Map<Address, List<Address>> sources = new LinkedHashMap<>();
 			Map<Address, Set<Address>> deps = new HashMap<>();
@@ -1425,7 +1513,7 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 				if (s.isEmpty()) {
 					continue;
 				}
-				int now = s.size() == 1 ? s.iterator().next() : CONFLICT;
+				int now = s.size() == 1 ? s.iterator().next() : mirrorMerge(g, s);
 				if (was != null && was == now) {
 					continue;
 				}
