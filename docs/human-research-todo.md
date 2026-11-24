@@ -56,6 +56,16 @@ Each is minutes of work and settles something specific. Highest value per unit e
   - **Why it matters:** these are the bulk of the remaining "no table" sites; a "callback" answer
     retires them from the reachability backlog, a "table" answer becomes a recognizer bead.
 
+- [ ] **FF3 (w_ff3): what is DBR at `$C3:CE1C` (`JSR $C31206` in `FUN_c3cdea`)?**
+  (`grm-9nxj.58` P3). Eight callers enter `c31206` with DBR `$7E`; the analyzer credits this one
+  with `$00`. `c31206` writes `$36c9,X` / `$32c9,X` / `$35ca,X` / `$36ca,X`, which under `$00` land
+  on I/O or unmapped space, so `$00` is probably the analyzer's mistake. `FUN_c3cdea` is reached
+  by DATA refs at `c3c432`/`c3c434` and a computed call from `c3c5b2`. Same question for
+  `c3b211`'s `$00` way in (its `$7E` caller is `c3aed5`; it writes `$35ca,Y` / `$33ca,Y` /
+  `$344a,Y`). One breakpoint each.
+  - **Why it matters:** `$7E` means the analyzer derives a wrong `$00` and gets a fix bead (9
+    operands); `$00` means these are correct losses and the bead closes.
+
 ---
 
 ## 2. Def-use passes on untraced titles
