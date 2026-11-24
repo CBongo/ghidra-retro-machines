@@ -571,6 +571,8 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 		private final Register ctxX;
 		private final Register dbrReg;
 		private final Register dpReg;
+		/** D's low byte is $00 program-wide (W65816DirectPageAnalyzer#lowByteZero, grm-9nxj.49). */
+		private final boolean dpLowZero;
 		private final Register[] tracked;   // C, X, Y, SP, DBR
 
 		final Map<Address, Map<Address, State>> states = new LinkedHashMap<>();
@@ -594,6 +596,7 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 			ctxX = program.getRegister("ctx_XF");
 			dbrReg = program.getRegister("DBR");
 			dpReg = program.getRegister("DP");
+			dpLowZero = W65816DirectPageAnalyzer.lowByteZero(program);
 			tracked = new Register[] { program.getRegister("C"), program.getRegister("X"),
 				program.getRegister("Y"), program.getRegister("SP"), dbrReg };
 			scanUserValues();
@@ -1165,10 +1168,12 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 			W65816Shapes.Role dst = tr.dst();
 			if (src == W65816Shapes.Role.DP && dst == W65816Shapes.Role.A) {
 				// A = DP, from the DP analyzer's (or the user's) stamped value: FF3's
-				// TDC / PHA / PLB sets DBR to DP's low byte (grm-9nxj.42).
+				// TDC / PHA / PLB sets DBR to DP's low byte (grm-9nxj.42). With no stamped DP
+				// (FF3's NMI prologue: D is the interrupted code's), the low byte is still $00
+				// when every DP writer is proven page-aligned (grm-9nxj.49).
 				BigInteger d = dpReg == null ? null : ins.getValue(dpReg, false);
 				if (d == null) {
-					return s.withA(UNKNOWN, UNKNOWN);
+					return s.withA(dpLowZero ? 0 : UNKNOWN, UNKNOWN);
 				}
 				int v = d.intValue() & 0xffff;
 				return s.withA(v & 0xff, v >> 8);

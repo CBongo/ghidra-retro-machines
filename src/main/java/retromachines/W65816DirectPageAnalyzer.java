@@ -50,7 +50,10 @@ import ghidra.program.model.symbol.FlowType;
 import ghidra.program.model.symbol.RefType;
 import ghidra.program.model.symbol.Reference;
 import ghidra.program.model.symbol.SourceType;
+import ghidra.program.model.util.IntPropertyMap;
+import ghidra.program.model.util.PropertyMapManager;
 import ghidra.util.exception.CancelledException;
+import ghidra.util.exception.DuplicateNameException;
 import ghidra.util.exception.InvalidInputException;
 import ghidra.util.task.TaskMonitor;
 
@@ -278,6 +281,9 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				refs += w.reference(in, dp) ? 1 : 0;
 			}
 		}
+		int[] aligned = markPageAlignedWriters(program, all, monitor);
+		AnalyzerLog.info(this, "DP writers proven page-aligned: " + aligned[0] + " of " +
+			aligned[1] + (aligned[0] == aligned[1] ? " (D's low byte is $00 program-wide)" : ""));
 		int[] warned = bookmarkSeeds(program, w.seeds, monitor);
 		int[] cc = assignDpPreserved(program, w, monitor);
 		if (stamped > 0 || refs > 0 || cc[0] > 0 || cc[1] > 0) {
@@ -287,6 +293,123 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				"given " + DP_PRESERVED + ", " + cc[1] + " taken off it");
 		}
 		return true;
+	}
+
+	/**
+	 * User property map of the DP writers ({@code TCD}, {@code PLD}) proven to set a page-aligned
+	 * DP (low byte $00) in every walk that reaches them (grm-9nxj.49). The map's existence means
+	 * this analyzer ran; see {@link #lowByteZero}.
+	 */
+	static final String ALIGNED_MAP = "W65816 DP page-aligned writers";
+
+	/** {@code GRM_DP_ALIGN_TRACE=1} prints each DP writer the page-alignment proof fails at. */
+	private static final boolean ALIGN_TRACE = System.getenv("GRM_DP_ALIGN_TRACE") != null;
+
+	/**
+	 * Whether D's low byte is $00 everywhere in {@code program}, interrupt handlers included
+	 * (grm-9nxj.49, owner ruling 2026-11-23): this analyzer ran and proved every {@code TCD} and
+	 * {@code PLD} in the listing page-aligned. By induction from RESET (D = $0000) every D ever
+	 * held is then page-aligned, whatever code was interrupted. FF3's NMI prologue
+	 * {@code TDC / PHA / PLB} (M=1) reads it. Fails closed: a writer nobody proved (or one added
+	 * since the analyzer ran) breaks it. Code that was never disassembled is not seen, and a
+	 * stack-relative store into a PHD-pushed word before its PLD is not modelled (the walk's
+	 * own {@code PHD ... PLD} restore assumes the same).
+	 */
+	static boolean lowByteZero(Program program) {
+		IntPropertyMap m = program.getUsrPropertyManager().getIntPropertyMap(ALIGNED_MAP);
+		if (m == null) {
+			return false;
+		}
+		for (Instruction i : program.getListing().getInstructions(true)) {
+			if (isDpWriter(i) && !m.hasProperty(i.getAddress())) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static boolean isDpWriter(Instruction i) {
+		W65816Shapes.Transfer tr = W65816Shapes.transfer(i);
+		if (tr != null && tr.dst() == W65816Shapes.Role.DP) {
+			return true;
+		}
+		W65816Shapes.Pull pl = W65816Shapes.pull(i);
+		return pl != null && pl.role() == W65816Shapes.Role.DP;
+	}
+
+	/**
+	 * Rewrites {@link #ALIGNED_MAP}: a DP writer is marked when at least one walk reaches it and
+	 * in every walk state there, a {@code TCD} copies a known A with low byte $00, and a
+	 * {@code PLD} pulls a word pushed by {@code PHD} (the D of the moment, page-aligned by
+	 * induction) or a known word with low byte $00.
+	 *
+	 * @return {marked, writers}
+	 */
+	private static int[] markPageAlignedWriters(Program program,
+			Map<Function, Map<Address, State>> all, TaskMonitor monitor) throws CancelledException {
+		Map<Address, List<State>> at = new HashMap<>();
+		for (Instruction i : program.getListing().getInstructions(true)) {
+			monitor.checkCancelled();
+			if (isDpWriter(i)) {
+				at.put(i.getAddress(), new ArrayList<>());
+			}
+		}
+		for (Map<Address, State> states : all.values()) {
+			for (Map.Entry<Address, State> e : states.entrySet()) {
+				List<State> l = at.get(e.getKey());
+				if (l != null) {
+					l.add(e.getValue());
+				}
+			}
+		}
+		PropertyMapManager pm = program.getUsrPropertyManager();
+		pm.removePropertyMap(ALIGNED_MAP);
+		IntPropertyMap m;
+		try {
+			m = pm.createIntPropertyMap(ALIGNED_MAP);
+		}
+		catch (DuplicateNameException e) {
+			return new int[] { 0, at.size() };   // cannot happen: removed just above
+		}
+		int marked = 0;
+		for (Map.Entry<Address, List<State>> e : at.entrySet()) {
+			Instruction i = program.getListing().getInstructionAt(e.getKey());
+			String why = e.getValue().isEmpty() ? "no walk reaches it" : null;
+			for (State s : e.getValue()) {
+				why = why != null ? why : alignFailure(i, s);
+			}
+			if (why == null) {
+				m.add(e.getKey(), 1);
+				marked++;
+			}
+			else if (ALIGN_TRACE) {
+				System.out.println("DP-ALIGN fails at " + e.getKey() + " " + i + ": " + why);
+			}
+		}
+		return new int[] { marked, at.size() };
+	}
+
+	/** Why {@code s} does not prove writer {@code i} page-aligned; null when it does. */
+	private static String alignFailure(Instruction i, State s) {
+		W65816Shapes.Transfer tr = W65816Shapes.transfer(i);
+		if (tr != null) {
+			return s.a >= 0 && (s.a & 0xff) == 0 ? null :
+				"TCD with A " + (s.a >= 0 ? String.format("$%04X", s.a) : "unknown");
+		}
+		if (s.stack == null) {
+			return "PLD on a poisoned stack";
+		}
+		if (s.stack.isEmpty() || s.stack.equals(UNWOUND)) {
+			return "PLD pulls below the walk's entry";
+		}
+		Pushed top = s.stack.get(s.stack.size() - 1);
+		if (top.width != 2) {
+			return "PLD pulls a " + top.width + "-byte item";
+		}
+		if (top.phd || (top.value >= 0 && (top.value & 0xff) == 0)) {
+			return null;
+		}
+		return "PLD pulls " + (top.value >= 0 ? String.format("$%04X", top.value) : "an unknown word");
 	}
 
 	/** The w65816.cspec prototype that declares DP unaffected by a call (grm-hf5h.28). */

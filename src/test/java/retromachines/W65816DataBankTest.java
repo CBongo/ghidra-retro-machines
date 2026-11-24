@@ -556,6 +556,62 @@ public class W65816DataBankTest extends AbstractProgramTest {
 		assertNull(dbrAt(0x8005));
 	}
 
+	// ---- page-aligned DP invariant (grm-9nxj.49) ----
+
+	private static final String TDC_PHA_PLB = "e2 20 7b 48 ab " + LDA_1234 + " 60";
+
+	/** The DP analyzer (the prover of the invariant), then the DBR analyzer. */
+	private void analyzeDpThenDbr() throws Exception {
+		W65816DirectPageAnalyzer dp = new W65816DirectPageAnalyzer();
+		assertTrue(dp.canAnalyze(program));
+		inTx(program, "dp", () -> dp.added(program,
+			new AddressSet(addr(0x8000), addr(0x8fff)), TaskMonitor.DUMMY, new MessageLog()));
+		analyze();
+	}
+
+	@Test
+	public void tdcWithNoDpWriterAnywhereTakesLowByteZero() throws Exception {
+		// No TCD/PLD in the program: D is RESET's $0000 throughout.
+		lay("0x8000", TDC_PHA_PLB, "F");
+		analyzeDpThenDbr();
+		assertEquals(Integer.valueOf(0), dbrAt(0x8005));
+	}
+
+	@Test
+	public void tdcTakesLowByteZeroWhenEveryWriterIsPageAligned() throws Exception {
+		lay("0x8000", TDC_PHA_PLB, "F");
+		lay("0x8100", "a9 00 13 5b 60", "G");       // LDA #$1300 ; TCD ; RTS
+		lay("0x8200", "0b 2b 60", "H");             // PHD ; PLD ; RTS (restores a page-aligned D)
+		lay("0x8300", "f4 00 21 2b 60", "I");       // PEA #$2100 ; PLD ; RTS
+		analyzeDpThenDbr();
+		assertEquals(Integer.valueOf(0), dbrAt(0x8005));
+	}
+
+	@Test
+	public void oneUnalignedWriterBreaksTheInvariant() throws Exception {
+		lay("0x8000", TDC_PHA_PLB, "F");
+		lay("0x8100", "a9 01 13 5b 60", "G");       // LDA #$1301 ; TCD ; RTS
+		analyzeDpThenDbr();
+		assertNull(dbrAt(0x8005));
+	}
+
+	@Test
+	public void pldOfAnUnknownWordBreaksTheInvariant() throws Exception {
+		lay("0x8000", TDC_PHA_PLB, "F");
+		lay("0x8100", "48 2b 60", "G");             // PHA (A unknown) ; PLD ; RTS
+		analyzeDpThenDbr();
+		assertNull(dbrAt(0x8005));
+	}
+
+	@Test
+	public void unwalkedWriterBreaksTheInvariant() throws Exception {
+		lay("0x8000", TDC_PHA_PLB, "F");
+		builder.setBytes("0x8100", "a9 00 13 5b 60", false);   // aligned, but in no function
+		builder.disassemble("0x8100", 5, false);
+		analyzeDpThenDbr();
+		assertNull(dbrAt(0x8005));
+	}
+
 	@Test
 	public void txaPhaPlbCarriesAnImmediateThroughX() throws Exception {
 		// SEP #$30 ; LDX #$7e ; TXA ; PHA ; PLB ; LDA $1234 ; RTS
