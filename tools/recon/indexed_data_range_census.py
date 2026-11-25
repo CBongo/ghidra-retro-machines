@@ -13,7 +13,12 @@ Usage:
     indexed_data_range_census.py <dir> --show CATEGORY [--limit N] [--row R] raw probe lines
 
 CATEGORY (for --show): sym, symG, symL, symF, symnone (symptom sites no class proves),
-disagree, GL, GF, LF, lo2 (some class proves lo >= 2), loop-unknown.
+disagree, GL, GF, LF, lo2 (some class proves lo >= 2), loop-unknown, Lweak (L proven only
+weakly: unknown init or a variable limit, see `Lw=`), and with --baseline: newL (L proven now,
+not in the baseline logs), newLexpl (newL sites whose symptom L explains), newdis (disagreement
+absent from the baseline).
+
+Round 2 (grm-9nxj.41.2): `--baseline <dir>` also prints a before/after comparison of the L class.
 
 Definitions (see the probe's header for the evidence rules):
   site       a register-indexed absolute access whose base is in an initialized non-RAM block;
@@ -112,7 +117,9 @@ def bucket(n):
     return '0' if n == 0 else '1' if n == 1 else '2+' if n >= 2 else 'neg'
 
 
-def category(rec, cat):
+def category(rec, cat, base=None):
+    key = (rec['prog'], rec.get('at'))
+    old = base.get(key) if base is not None else None
     sym = rec.get('sym') == '1'
     has = {c: klass(rec, c) is not None for c in CLASSES}
     return {
@@ -127,6 +134,12 @@ def category(rec, cat):
         'LF': has['L'] and has['F'],
         'lo2': any(has[c] and lo_of(rec, c) >= 2 for c in CLASSES),
         'loop-unknown': 'Lunk' in rec,
+        'Lweak': has['L'] and 'Lw' in rec,
+        'newL': base is not None and has['L'] and not (old and klass(old, 'L')),
+        'newLexpl': base is not None and has['L'] and not (old and klass(old, 'L')) and
+                    sym and explains(rec, 'L'),
+        'newdis': base is not None and bool(set(disagreements(rec)) -
+                                            set(disagreements(old) if old else [])),
     }[cat]
 
 
@@ -164,6 +177,10 @@ def census(recs):
                     cnt['symexpl'] += 1
             if 'Lunk' in r:
                 cnt['Lunk'] += 1
+            if klass(r, 'L') and 'Lw' in r:
+                cnt['Lweak'] += 1
+            if sym and klass(r, 'L') and explains(r, 'L'):
+                cnt['symexplL'] += 1
         combos[present] += 1
         if sym:
             symcombo[present] += 1
@@ -195,23 +212,28 @@ def main():
     ap.add_argument('--show')
     ap.add_argument('--limit', type=int, default=15)
     ap.add_argument('--row')
+    ap.add_argument('--baseline', help='earlier log dir to compare L proofs against')
     a = ap.parse_args()
     recs = collect(a.paths)
     if a.row:
         recs = [r for r in recs if a.row in r['prog']]
     if not recs:
         sys.exit('no IDR lines found')
+    base = None
+    if a.baseline:
+        base = {(r['prog'], r.get('at')): r for r in collect([a.baseline])
+                if r.get('rw') == 'R'}
     if a.show:
         n = 0
         for r in recs:
-            if r.get('rw') == 'R' and category(r, a.show):
+            if r.get('rw') == 'R' and category(r, a.show, base):
                 print(r['raw'])
                 n += 1
                 if n >= a.limit:
                     break
         return
     rows, tot, combos, lodist, symcombo, lunk, pair_dis, explained, zero_but_sym = census(recs)
-    cols = ('reads', 'stores', 'G', 'L', 'F', 'any', 'Lunk', 'sym', 'tshape', 'symexpl',
+    cols = ('reads', 'stores', 'G', 'L', 'Lweak', 'F', 'any', 'Lunk', 'sym', 'tshape', 'symexpl',
             'symnone', 'disagree')
     print('%-28s' % 'row' + ''.join('%9s' % c for c in cols))
     for p in sorted(rows):
@@ -238,6 +260,19 @@ def main():
           (tot['disagree'], ', '.join('%s=%d' % kv for kv in pair_dis.most_common()) or 'none'))
     print('\nunknown loop shapes (%d reads): %s' %
           (tot['Lunk'], ', '.join('%s=%d' % kv for kv in lunk.most_common())))
+    print('L proofs: %d (weak: %d); symptom sites explained by L: %d' %
+          (tot['L'], tot['Lweak'], tot['symexplL']))
+    if base is not None:
+        rd = [r for r in recs if r.get('rw') == 'R']
+        newl = sum(1 for r in rd if category(r, 'newL', base))
+        newx = sum(1 for r in rd if category(r, 'newLexpl', base))
+        newd = sum(1 for r in rd if category(r, 'newdis', base))
+        have = {(r['prog'], r.get('at')) for r in rd if klass(r, 'L')}
+        progs = {r['prog'] for r in recs}
+        lost = sum(1 for key, o in base.items()
+                   if key[0] in progs and klass(o, 'L') and key not in have)
+        print('vs baseline: newly proven L %d, of which explain a symptom %d, new disagreements '
+              '%d, baseline L proofs no longer proven %d' % (newl, newx, newd, lost))
 
 
 if __name__ == '__main__':

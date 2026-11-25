@@ -24,11 +24,19 @@
 //              (range [.., imm-1]); fall-through of BCC / taken BCS => reg >= imm (lower bound only,
 //              upper open, printed `*`). The path back from the read must be entered only by
 //              fall-through or by the guard branch itself.
-//   L  loop:   the read sits in a loop closed by a backward conditional branch; the index register
-//              is set by LDX/LDY #n (or TAX/TAY after LDA #n) just before the loop head and stepped
-//              once per iteration by DEX/DEY+BNE ([1,n]) / +BPL ([0,n]), or INX/INY+CPX/CPY #m
-//              +BNE|BCC ([n,m-1]) / INX|INY+BNE ([n,255]); the read precedes the step. Any other
-//              loop shape is counted as `Lunk=<reason>`, never guessed.
+//   L  loop:   the read sits in a loop closed by a backward conditional branch (round 2,
+//              grm-9nxj.41.2: a forward dataflow over the loop body). The index register is a
+//              symbolic iteration-start value I; it may be saved and restored inside the body
+//              (TXA/PHA..PLA/TAX, STX cell..LDX cell, PHX/PLX), inner loops are black boxes, and a
+//              JSR is transparent when the callee (3 levels deep) provably never writes the
+//              register (`Lcall=1`). The closing branch's flag source gives the range:
+//              DEX/DEY+BNE ([k,n]) / +BPL ([0,n]), INX/INY+BNE ([n,256-k]) or +CPX/CPY #m with
+//              BNE/BCC ([n,m-k]) and the countdown BNE/BCS forms, step k up to 8; a read after the
+//              step shifts the range; a different counter register stepping in lock-step is used
+//              when both inits are immediates (`Lw=lockstep`). `Lw=init` marks a countdown whose
+//              init is not an immediate (lower bound only, hi `*`), `Lw=limit` a count-up to a
+//              memory limit (lo only). Entries into the loop other than falling into the head, and
+//              every other shape, are `Lunk=<reason>`, never guessed.
 //   F  family: other reads in the straight-line window carrying the SAME index token (ASL-doubled
 //              = stride 2), with TableFamilyProbe's tiling/disjointness equations: candidate
 //              [lo,H) is disjoint, in initialized memory, over no instruction; an equation is
@@ -47,6 +55,7 @@
 //@category RetroMachines.Test
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -424,6 +433,10 @@ public class IndexedDataRangeProbe extends GhidraScript {
 		if (lres[2] != null) {
 			sb.append(" Lcall=1");
 		}
+		if (lres[3] != null && l != null) {
+			sb.append(" Lw=").append(lres[3]);
+			bump("class.Lweak");
+		}
 		if (f != null) {
 			sb.append(" Fn=").append(f[0]);
 			if (f[1] != null) {
@@ -624,9 +637,20 @@ public class IndexedDataRangeProbe extends GhidraScript {
 	}
 
 	// ---------------------------------------------------------------- L: loops
+	//
+	// Round 2 (grm-9nxj.41.2). The loop body is run through a small forward dataflow whose state
+	// tracks A/X/Y as (token, scale, offset), a stack, and plain memory cells, starting from a
+	// symbolic iteration-start value I of the index register. The read is proven when, at the
+	// read, the index register is still I+d1 (restored through TXA/PHA..PLA/TAX, STX cell..LDX
+	// cell, PHX/PLX, a callee that never writes it, ...) and at the back edge it is I+d_e with
+	// d_e = +-1; the closing branch's flag source then pins the range. Anything else is an Lunk
+	// with a reason (regWrite.<cause>, nested..., flagSrc.<mnemonic>, ...), never a guess.
 
 	private static boolean writesReg(Instruction i, String r) {
 		String m = mn(i);
+		if (m.equals("MVN") || m.equals("MVP")) {
+			return true;
+		}
 		if (r.equals("X")) {
 			return m.equals("LDX") || m.equals("TAX") || m.equals("TSX") || m.equals("PLX") ||
 				m.equals("TYX") || m.equals("INX") || m.equals("DEX");
@@ -635,8 +659,382 @@ public class IndexedDataRangeProbe extends GhidraScript {
 			m.equals("INY") || m.equals("DEY");
 	}
 
-	/** {range or null, unknown-reason or null, call-flag or null}. */
+	private static final V OPAQUE = new V(-1, 1, 0);
+
+	private final Map<Integer, String> why = new HashMap<>();
+
+	private V freshW(String cause) {
+		V v = fresh();
+		why.put(v.tok(), cause);
+		return v;
+	}
+
+	/** Loop-body dataflow state. */
+	private static final class LS {
+		V a;
+		V x;
+		V y;
+		int carry = -1;
+		boolean stackBad;
+		List<V> stack = new ArrayList<>();
+		Map<Long, V> cells = new HashMap<>();
+
+		LS copy() {
+			LS c = new LS();
+			c.a = a;
+			c.x = x;
+			c.y = y;
+			c.carry = carry;
+			c.stackBad = stackBad;
+			c.stack = new ArrayList<>(stack);
+			c.cells = new HashMap<>(cells);
+			return c;
+		}
+	}
+
+	private V mv(V u, V v) {
+		return u.equals(v) ? u : freshW("merge");
+	}
+
+	private LS merge(LS p, LS q) {
+		LS m = new LS();
+		m.a = mv(p.a, q.a);
+		m.x = mv(p.x, q.x);
+		m.y = mv(p.y, q.y);
+		m.carry = p.carry == q.carry ? p.carry : -1;
+		m.stackBad = p.stackBad || q.stackBad || p.stack.size() != q.stack.size();
+		if (!m.stackBad) {
+			for (int k = 0; k < p.stack.size(); k++) {
+				m.stack.add(mv(p.stack.get(k), q.stack.get(k)));
+			}
+		}
+		for (Map.Entry<Long, V> e : p.cells.entrySet()) {
+			if (e.getValue().equals(q.cells.get(e.getKey()))) {
+				m.cells.put(e.getKey(), e.getValue());
+			}
+		}
+		return m;
+	}
+
+	private static boolean indirect(Instruction i) {
+		if (i.getNumOperands() == 0) {
+			return false;
+		}
+		String r = i.getDefaultOperandRepresentation(0);
+		return r.contains("(") || r.contains("[");
+	}
+
+	private static boolean hasIndexReg(Instruction i) {
+		for (Object o : i.getOpObjects(0)) {
+			if (o instanceof ghidra.program.model.lang.Register) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** First address/scalar operand value, or -1. */
+	private static long operandBase(Instruction i) {
+		for (Object o : i.getOpObjects(0)) {
+			if (o instanceof Address a) {
+				return a.getOffset();
+			}
+			if (o instanceof Scalar sc) {
+				return sc.getUnsignedValue();
+			}
+		}
+		return -1;
+	}
+
+	private static final Set<String> MEM_WRITE =
+		Set.of("STA", "STX", "STY", "STZ", "INC", "DEC", "ASL", "LSR", "ROL", "ROR", "TSB",
+			"TRB");
+
+	/** Whether i writes memory (accumulator-form RMW excluded). */
+	private static boolean writesMem(Instruction i) {
+		String m = mn(i);
+		if (!MEM_WRITE.contains(m)) {
+			return false;
+		}
+		return !(i.getLength() == 1);
+	}
+
+	private void clearRange(LS s, Instruction i) {
+		if (is816 || indirect(i)) {
+			s.cells.clear();
+			return;
+		}
+		long b = operandBase(i);
+		if (b < 0) {
+			s.cells.clear();
+			return;
+		}
+		long lo = i.getLength() == 2 ? 0 : b;
+		long hi = i.getLength() == 2 ? 255 : b + 255;
+		s.cells.keySet().removeIf(k -> k >= lo && k <= hi);
+	}
+
+	/** Result of what a callee (and what it calls) may disturb. */
+	private static final class Summ {
+		boolean wX;
+		boolean wY;
+		boolean unknown;
+		boolean unknownWrite;
+		boolean unbalanced;
+		int net;
+		Set<Long> cells = new java.util.HashSet<>();
+	}
+
+	private final Map<Address, Summ> summCache = new HashMap<>();
+	private boolean callRelied;
+
+	private Summ summarize(Address entry, int depth) {
+		Summ c = summCache.get(entry);
+		if (c != null) {
+			return c;
+		}
+		Summ s = new Summ();
+		s.unknown = true; // a recursive re-entry sees the conservative answer
+		summCache.put(entry, s);
+		boolean unk = false;
+		java.util.Set<Address> seen = new java.util.HashSet<>();
+		java.util.ArrayDeque<Address> work = new java.util.ArrayDeque<>();
+		work.add(entry);
+		int net = 0;
+		while (!work.isEmpty() && !unk) {
+			Address a = work.poll();
+			if (!seen.add(a)) {
+				continue;
+			}
+			if (seen.size() > 400) {
+				unk = true;
+				break;
+			}
+			Instruction i = listing.getInstructionAt(a);
+			if (i == null) {
+				unk = true;
+				break;
+			}
+			String m = mn(i);
+			if (writesReg(i, "X")) {
+				s.wX = true;
+			}
+			if (writesReg(i, "Y")) {
+				s.wY = true;
+			}
+			switch (m) {
+				case "PHA", "PHX", "PHY", "PHP", "PEA", "PEI", "PER", "PHB", "PHD", "PHK" -> net++;
+				case "PLA", "PLX", "PLY", "PLP", "PLB", "PLD" -> net--;
+				case "TXS", "TCS" -> unk = true;
+				case "RTI", "BRK" -> unk = true;
+				default -> {
+				}
+			}
+			if (writesMem(i)) {
+				if (indirect(i) || hasIndexReg(i) || is816) {
+					s.unknownWrite = true;
+				}
+				else {
+					s.cells.add(operandBase(i));
+				}
+			}
+			if (m.equals("MVN") || m.equals("MVP")) {
+				s.unknownWrite = true;
+			}
+			if (i.getFlowType().isComputed()) {
+				unk = true;
+				break;
+			}
+			if (i.getFlowType().isCall()) {
+				Address[] fl = i.getFlows();
+				if (fl.length != 1 || depth >= 2) {
+					unk = true;
+					break;
+				}
+				Summ cs = summarize(fl[0], depth + 1);
+				if (cs.unknown || cs.unbalanced) {
+					unk = true;
+					break;
+				}
+				s.wX |= cs.wX;
+				s.wY |= cs.wY;
+				s.unknownWrite |= cs.unknownWrite;
+				s.cells.addAll(cs.cells);
+			}
+			else {
+				for (Address f : i.getFlows()) {
+					work.add(f);
+				}
+			}
+			Address ft = i.getFallThrough();
+			if (ft != null) {
+				work.add(ft);
+			}
+		}
+		s.net = net;
+		s.unbalanced = net != 0;
+		s.unknown = unk || s.unbalanced;
+		return s;
+	}
+
+	private V popV(LS s, String cause) {
+		if (s.stack.isEmpty()) {
+			return freshW(cause);
+		}
+		V v = s.stack.remove(s.stack.size() - 1);
+		return v.tok() == -1 ? freshW(cause) : v;
+	}
+
+	private void step(LS s, Instruction i) {
+		String m = mn(i);
+		boolean acc = i.getLength() == 1;
+		int newCarry = -1;
+		switch (m) {
+			case "CLC" -> newCarry = 0;
+			case "SEC" -> newCarry = 1;
+			default -> {
+			}
+		}
+		Long cell = null;
+		if (!is816 && !indirect(i) && !hasIndexReg(i) && i.getLength() >= 2 &&
+			!(i.getNumOperands() > 0 && i.getDefaultOperandRepresentation(0).startsWith("#"))) {
+			long b = operandBase(i);
+			cell = b < 0 ? null : b;
+		}
+		if (writesMem(i) && !m.startsWith("ST")) {
+			// read-modify-write: the cell no longer holds a tracked value
+			if (cell != null) {
+				s.cells.remove(cell);
+			}
+			else {
+				clearRange(s, i);
+			}
+		}
+		switch (m) {
+			case "TAX" -> s.x = s.a;
+			case "TAY" -> s.y = s.a;
+			case "TXA" -> s.a = s.x;
+			case "TYA" -> s.a = s.y;
+			case "TXY" -> s.y = s.x;
+			case "TYX" -> s.x = s.y;
+			case "TSX" -> s.x = freshW("tsx");
+			case "TXS", "TCS" -> s.stackBad = true;
+			case "TSC", "XBA", "TDC" -> s.a = freshW("arith");
+			case "ASL" -> {
+				if (acc) {
+					s.a = new V(s.a.tok(), s.a.scale() * 2, s.a.off() * 2);
+				}
+			}
+			case "LSR", "ROL", "ROR" -> {
+				if (acc) {
+					s.a = freshW("arith");
+				}
+			}
+			case "INX" -> s.x = new V(s.x.tok(), s.x.scale(), s.x.off() + 1);
+			case "DEX" -> s.x = new V(s.x.tok(), s.x.scale(), s.x.off() - 1);
+			case "INY" -> s.y = new V(s.y.tok(), s.y.scale(), s.y.off() + 1);
+			case "DEY" -> s.y = new V(s.y.tok(), s.y.scale(), s.y.off() - 1);
+			case "INC" -> {
+				if (acc) {
+					s.a = new V(s.a.tok(), s.a.scale(), s.a.off() + 1);
+				}
+			}
+			case "DEC" -> {
+				if (acc) {
+					s.a = new V(s.a.tok(), s.a.scale(), s.a.off() - 1);
+				}
+			}
+			case "ADC", "SBC" -> {
+				Long imm = immediate(i);
+				if (imm != null && ((m.equals("ADC") && s.carry == 0) ||
+					(m.equals("SBC") && s.carry == 1))) {
+					s.a = new V(s.a.tok(), s.a.scale(), s.a.off() + (int) (m.equals("ADC") ? imm : -imm));
+				}
+				else {
+					s.a = freshW("arith");
+				}
+			}
+			case "AND", "ORA", "EOR" -> s.a = freshW("arith");
+			case "LDA" -> s.a = load(s, i, cell, "lda");
+			case "LDX" -> s.x = load(s, i, cell, "ldx");
+			case "LDY" -> s.y = load(s, i, cell, "ldy");
+			case "STA" -> store(s, i, cell, s.a);
+			case "STX" -> store(s, i, cell, s.x);
+			case "STY" -> store(s, i, cell, s.y);
+			case "STZ" -> store(s, i, cell, OPAQUE);
+			case "PHA" -> s.stack.add(s.a);
+			case "PHX" -> s.stack.add(s.x);
+			case "PHY" -> s.stack.add(s.y);
+			case "PHP", "PEA", "PEI", "PER", "PHB", "PHD", "PHK" -> s.stack.add(OPAQUE);
+			case "PLA" -> s.a = popV(s, "pla");
+			case "PLX" -> s.x = popV(s, "plx");
+			case "PLY" -> s.y = popV(s, "ply");
+			case "PLP", "PLB", "PLD" -> popV(s, "pl");
+			case "MVN", "MVP" -> {
+				s.a = freshW("block");
+				s.x = freshW("block");
+				s.y = freshW("block");
+				s.cells.clear();
+			}
+			case "JSR", "JSL" -> {
+				Address[] fl = i.getFlows();
+				Summ sm = (fl.length == 1 && !i.getFlowType().isComputed())
+						? summarize(fl[0], 0) : null;
+				s.a = freshW("call");
+				if (sm == null || sm.unknown) {
+					s.x = freshW("call");
+					s.y = freshW("call");
+					s.cells.clear();
+				}
+				else {
+					if (sm.wX) {
+						s.x = freshW("call");
+					}
+					else {
+						callRelied = true;
+					}
+					if (sm.wY) {
+						s.y = freshW("call");
+					}
+					if (sm.unknownWrite) {
+						s.cells.clear();
+					}
+					else {
+						s.cells.keySet().removeAll(sm.cells);
+					}
+				}
+			}
+			default -> {
+			}
+		}
+		if (writesMem(i) && m.startsWith("ST") && cell == null) {
+			clearRange(s, i);
+		}
+		s.carry = newCarry;
+	}
+
+	private V load(LS s, Instruction i, Long cell, String cause) {
+		if (cell != null) {
+			V v = s.cells.get(cell);
+			if (v == null) {
+				v = freshW(cause + "Cell");
+				s.cells.put(cell, v);
+			}
+			return v;
+		}
+		return freshW(cause);
+	}
+
+	private void store(LS s, Instruction i, Long cell, V v) {
+		if (cell != null) {
+			s.cells.put(cell, v);
+		}
+	}
+
+	/** {range or null, unknown-reason or null, call-flag or null, weak-reason or null}. */
 	private String[] loop(Site s) {
+		why.clear();
+		callRelied = false;
 		Instruction rd = s.insn;
 		Instruction cur = rd;
 		Instruction closing = null;
@@ -659,11 +1057,15 @@ public class IndexedDataRangeProbe extends GhidraScript {
 			}
 		}
 		if (closing == null) {
-			return new String[] { null, null, null };
+			return new String[] { null, null, null, null };
 		}
 		Instruction head = listing.getInstructionAt(closing.getFlows()[0]);
 		if (head == null) {
 			return unk("headNotInsn");
+		}
+		if (head.getFlowType().isTerminal()) {
+			// a backward branch to a nearby RTS is a conditional return, not a loop
+			return new String[] { null, null, null, null };
 		}
 		List<Instruction> body = new ArrayList<>();
 		InstructionIterator it = listing.getInstructions(head.getMinAddress(), true);
@@ -682,108 +1084,383 @@ public class IndexedDataRangeProbe extends GhidraScript {
 		if (prev == null || !prev.equals(closing)) {
 			return unk("bodyScan");
 		}
-		boolean call = false;
-		int stepAt = -1;
-		int readAt = -1;
-		for (int k = 0; k < body.size(); k++) {
-			Instruction i = body.get(k);
-			String m = mn(i);
-			if (i.equals(rd)) {
-				readAt = k;
+		int n = body.size();
+		Map<Address, Integer> idxOf = new HashMap<>();
+		for (int k = 0; k < n; k++) {
+			idxOf.put(body.get(k).getMinAddress(), k);
+		}
+		int readIdx = idxOf.get(rd.getMinAddress());
+		// every way in comes from inside the loop (the one outside entry is falling into the head);
+		// a violation is reported only for loops that would otherwise have been proven
+		boolean multi = false;
+		for (int k = 0; k < n; k++) {
+			Instruction bi = body.get(k);
+			if (bi.getFlowType().isComputed() && !bi.getFlowType().isCall()) {
+				return unk("indirectFlow");
 			}
-			if (m.equals("JSR") || m.equals("JSL")) {
-				call = true;
-			}
-			if (i != closing && condBranch(i)) {
-				Address[] fl = i.getFlows();
-				if (fl.length == 1 && fl[0].compareTo(i.getMinAddress()) <= 0) {
-					return unk("nested");
-				}
-			}
-			if (writesReg(i, s.reg)) {
-				if ((m.equals("INX") || m.equals("DEX") || m.equals("INY") || m.equals("DEY")) &&
-					stepAt < 0) {
-					stepAt = k;
-				}
-				else {
-					return unk("regWrite");
+			for (Reference r : otherFlowsInto(bi)) {
+				if (!idxOf.containsKey(r.getFromAddress())) {
+					multi = true;
 				}
 			}
 		}
-		if (call) {
-			return unkCall("callInBody");
-		}
-		if (stepAt < 0) {
-			return unk("noStep");
-		}
-		if (readAt < 0 || readAt > stepAt) {
-			return unk("readAfterStep");
-		}
-		String stepM = mn(body.get(stepAt));
-		String cb = mn(closing);
-		boolean down = stepM.startsWith("DE");
-		Long m = null;
-		int branchAt = body.size() - 1;
-		if (down) {
-			if (branchAt != stepAt + 1) {
-				return unk("downNotAdjacent");
+		// inner loops (back edges other than the closing one) become black-box regions
+		List<int[]> regs = new ArrayList<>();
+		for (int k = 0; k < n - 1; k++) {
+			Instruction bi = body.get(k);
+			if (bi.getFlowType().isCall()) {
+				continue;
+			}
+			for (Address f : bi.getFlows()) {
+				Integer t = idxOf.get(f);
+				if (t != null && t <= k) {
+					regs.add(new int[] { t, k });
+				}
 			}
 		}
-		else if (branchAt == stepAt + 2) {
-			Instruction cmp = body.get(stepAt + 1);
-			int co = op(cmp);
-			if (co != (s.reg.equals("X") ? 0xe0 : 0xc0)) {
-				return unk("upCmpShape");
-			}
-			m = immediate(cmp);
-			if (m == null) {
-				return unk("upCmpShape");
-			}
-		}
-		else if (branchAt != stepAt + 1) {
-			return unk("upNotAdjacent");
-		}
-		// initialisation before the head
-		Long n = initValue(head, s.reg);
-		if (n == null) {
-			return unk("initUnknown");
-		}
-		Rng r;
-		if (down) {
-			if (n < 1) {
-				return unk("initZero");
-			}
-			if (cb.equals("BNE")) {
-				r = new Rng(1, n);
-			}
-			else if (cb.equals("BPL")) {
-				r = new Rng(0, n);
+		regs.sort((p, q) -> Integer.compare(p[0], q[0]));
+		List<int[]> union = new ArrayList<>();
+		for (int[] r : regs) {
+			if (!union.isEmpty() && r[0] <= union.get(union.size() - 1)[1]) {
+				int[] last = union.get(union.size() - 1);
+				last[1] = Math.max(last[1], r[1]);
 			}
 			else {
-				return unk("downBranch" + cb);
+				union.add(new int[] { r[0], r[1] });
 			}
 		}
-		else if (m != null) {
-			if (!(cb.equals("BNE") || cb.equals("BCC")) || n >= m) {
-				return unk("upBranch" + cb);
+		int[] regEnd = new int[n];
+		java.util.Arrays.fill(regEnd, -1);
+		for (int[] r : union) {
+			if (readIdx >= r[0] && readIdx <= r[1]) {
+				return unk("nested.containsRead");
 			}
-			r = new Rng(n, m - 1);
+			regEnd[r[0]] = r[1];
+		}
+		boolean hasInner = !union.isEmpty();
+		// dataflow
+		String r = s.reg;
+		V tokI = freshW("iter");
+		LS entry = new LS();
+		entry.a = freshW("entry");
+		V tokJ = freshW("iter2");
+		entry.x = r.equals("X") ? tokI : tokJ;
+		entry.y = r.equals("Y") ? tokI : tokJ;
+		LS[] in = new LS[n];
+		in[0] = entry;
+		LS readState = null;
+		LS closeState = null;
+		int k = 0;
+		while (k < n) {
+			if (regEnd[k] >= 0) {
+				int end = regEnd[k];
+				LS m = null;
+				for (int j = k; j <= end; j++) {
+					if (in[j] != null) {
+						m = m == null ? in[j] : merge(m, in[j]);
+					}
+				}
+				if (m != null) {
+					LS out = blackBox(m, body, k, end);
+					push(in, end + 1, out, n);
+					for (int j = k; j <= end; j++) {
+						for (Address f : body.get(j).getFlows()) {
+							Integer t = idxOf.get(f);
+							if (t != null && t > end && !body.get(j).getFlowType().isCall()) {
+								push(in, t, out, n);
+							}
+						}
+					}
+				}
+				k = end + 1;
+				continue;
+			}
+			LS s0 = in[k];
+			if (s0 == null) {
+				k++;
+				continue;
+			}
+			if (k == readIdx) {
+				readState = s0;
+			}
+			if (k == n - 1) {
+				closeState = s0;
+				break;
+			}
+			Instruction bi = body.get(k);
+			LS c = s0.copy();
+			step(c, bi);
+			if (bi.getFallThrough() != null) {
+				push(in, k + 1, c, n);
+			}
+			if (!bi.getFlowType().isCall()) {
+				for (Address f : bi.getFlows()) {
+					Integer t = idxOf.get(f);
+					if (t != null && t > k) {
+						push(in, t, c, n);
+					}
+				}
+			}
+			k++;
+		}
+		String pfx = hasInner ? "nested." : "";
+		if (readState == null) {
+			return unk(pfx + "readUnreached");
+		}
+		if (closeState == null) {
+			return unk(pfx + "noBackEdge");
+		}
+		V rx = r.equals("X") ? readState.x : readState.y;
+		if (rx.tok() != tokI.tok()) {
+			return unk(pfx + "regWrite." + why.getOrDefault(rx.tok(), "?"));
+		}
+		if (rx.scale() != 1) {
+			return unk(pfx + "regWrite.scaled");
+		}
+		V cx = r.equals("X") ? closeState.x : closeState.y;
+		if (cx.tok() != tokI.tok()) {
+			return unk(pfx + "regWrite.backedge." + why.getOrDefault(cx.tok(), "?"));
+		}
+		if (cx.scale() != 1) {
+			return unk(pfx + "regWrite.scaled");
+		}
+		int d1 = rx.off();
+		int de = cx.off();
+		if (de == 0) {
+			return unk(pfx + "noStep");
+		}
+		if (Math.abs(de) > 8) {
+			return unk(pfx + "stepN");
+		}
+		// closing branch + flag source
+		if (!otherFlowsInto(closing).isEmpty()) {
+			return unk(pfx + "closeJoin");
+		}
+		String cb = mn(closing);
+		Instruction pi = n >= 2 ? body.get(n - 2) : null;
+		if (pi == null) {
+			return unk(pfx + "closeNoFlag");
+		}
+		String pm = mn(pi);
+		String tested;
+		boolean flagReg = pm.equals("INX") || pm.equals("DEX") || pm.equals("INY") ||
+			pm.equals("DEY");
+		boolean cmp = pm.equals("CPX") || pm.equals("CPY");
+		if (flagReg) {
+			tested = pm.endsWith("X") ? "X" : "Y";
+		}
+		else if (cmp) {
+			tested = pm.endsWith("X") ? "X" : "Y";
 		}
 		else {
-			if (!cb.equals("BNE")) {
-				return unk("upBranch" + cb);
-			}
-			r = new Rng(n, 255);
+			return unk(pfx + "flagSrc." + pm);
 		}
-		return new String[] { r.txt(), null, null };
+		boolean cmpImm = cmp && immediateForm(pi);
+		Long mm = cmpImm ? immediate(pi) : null;
+		if (cmpImm && mm == null) {
+			return unk(pfx + "cmpNoImm");
+		}
+		boolean lock = !tested.equals(r);
+		int dT = de;
+		if (lock) {
+			String other = tested;
+			V ox = other.equals("X") ? closeState.x : closeState.y;
+			if (ox.tok() != tokJ.tok() || ox.scale() != 1) {
+				return unk(pfx + "lockstep.otherRegWrite");
+			}
+			dT = ox.off();
+			if (dT == 0) {
+				return unk(pfx + "lockstep.noStep");
+			}
+		}
+		int sk = Math.abs(dT);
+		if (sk > 8) {
+			return unk(pfx + "stepN");
+		}
+		Long initT = initValue(head, tested);
+		Long init = lock ? initValue(head, r) : initT;
+		if (lock && (init == null || initT == null)) {
+			return unk(pfx + "lockstep.initUnknown");
+		}
+		if (!lock && (de != 1 && de != -1) && init == null) {
+			return unk(pfx + "stepN");
+		}
+		long[] tr = testedRange(cb, flagReg, cmpImm, cmp, mm, dT, sk, initT);
+		if (tr == null || tr.length == 1) {
+			return unk(pfx + (tr == null ? "closeBranch." + cb + "." + pm : "unprovable"));
+		}
+		String weak = tr[2] == 1 ? "limit" : null;
+		long lo = tr[0];
+		long hi = tr[1];
+		if (initT == null && weak == null) {
+			weak = "init";
+		}
+		if (lock) {
+			if (hi == Long.MIN_VALUE || (cb.equals("BPL")) || weak != null) {
+				return unk(pfx + "lockstep.inexact");
+			}
+			long cnt = (hi - lo) / sk + 1;
+			long a = init;
+			long b = init + (cnt - 1) * de;
+			lo = Math.min(a, b);
+			hi = Math.max(a, b);
+		}
+		long rlo = lo + d1;
+		long rhi = hi == Long.MIN_VALUE ? Long.MIN_VALUE : hi + d1;
+		if (rhi != Long.MIN_VALUE && rhi < rlo) {
+			return unk(pfx + "emptyRange");
+		}
+		if (multi) {
+			return unk("multiEntry");
+		}
+		return new String[] { new Rng(rlo, rhi).txt(), null, callRelied ? "1" : null,
+			weak == null ? (lock ? "lockstep" : null) : weak };
 	}
 
-	private String[] unk(String why) {
-		return new String[] { null, why, null };
+	/**
+	 * The values the tested register takes at the loop body's executed iterations, as
+	 * {lo, hi, weak}; hi == Long.MIN_VALUE when open. null when the branch/flag pair is not a
+	 * modelled loop test; {0} for a modelled test whose arithmetic does not close (wraps).
+	 */
+	private long[] testedRange(String cb, boolean flagReg, boolean cmpImm, boolean cmpMem, Long m,
+			int dT, int k, Long init) {
+		long open = Long.MIN_VALUE;
+		if (flagReg) {
+			if (dT < 0 && cb.equals("BNE")) {
+				if (init != null && (init < k || init % k != 0)) {
+					return new long[] { 0 };
+				}
+				return new long[] { k, init == null ? open : init, 0 };
+			}
+			if (dT < 0 && cb.equals("BPL")) {
+				if (init != null && init < 0) {
+					return new long[] { 0 };
+				}
+				return new long[] { init == null ? 0 : init % k, init == null ? open : init, 0 };
+			}
+			if (dT > 0 && cb.equals("BNE")) {
+				if (init == null || (256 - init) % k != 0) {
+					return new long[] { 0 };
+				}
+				return new long[] { init, 256 - k, 0 };
+			}
+			return null;
+		}
+		if (cmpImm) {
+			if (dT > 0 && (cb.equals("BNE") || cb.equals("BCC"))) {
+				if (init == null || init >= m) {
+					return new long[] { 0 };
+				}
+				if (cb.equals("BNE")) {
+					if ((m - init) % k != 0) {
+						return new long[] { 0 };
+					}
+					return new long[] { init, m - k, 0 };
+				}
+				return new long[] { init, init + ((m - 1 - init) / k) * k, 0 };
+			}
+			if (dT < 0 && cb.equals("BNE")) {
+				if (init != null && (init <= m || (init - m) % k != 0)) {
+					return new long[] { 0 };
+				}
+				return new long[] { m + k, init == null ? open : init, 0 };
+			}
+			if (dT < 0 && cb.equals("BCS")) {
+				if (init != null && init < m) {
+					return new long[] { 0 };
+				}
+				return new long[] { init == null ? m : init - ((init - m) / k) * k,
+					init == null ? open : init, 0 };
+			}
+			return null;
+		}
+		if (cmpMem && dT > 0 && (cb.equals("BNE") || cb.equals("BCC"))) {
+			if (init == null) {
+				return new long[] { 0 };
+			}
+			return new long[] { init, open, 1 };
+		}
+		return null;
 	}
 
-	private String[] unkCall(String why) {
-		return new String[] { null, why, "1" };
+	private static boolean immediateForm(Instruction cmp) {
+		int o = op(cmp);
+		return o == 0xe0 || o == 0xc0;
+	}
+
+	private void push(LS[] in, int t, LS st, int n) {
+		if (t >= n) {
+			return;
+		}
+		in[t] = in[t] == null ? st.copy() : merge(in[t], st);
+	}
+
+	/** Effect of an inner-loop region (indices k..end) that does not contain the read. */
+	private LS blackBox(LS m, List<Instruction> body, int k, int end) {
+		LS o = m.copy();
+		o.a = freshW("innerLoop");
+		o.carry = -1;
+		int net = 0;
+		for (int j = k; j <= end; j++) {
+			Instruction i = body.get(j);
+			String mm = mn(i);
+			if (writesReg(i, "X")) {
+				o.x = freshW("innerLoop");
+			}
+			if (writesReg(i, "Y")) {
+				o.y = freshW("innerLoop");
+			}
+			switch (mm) {
+				case "PHA", "PHX", "PHY", "PHP", "PEA", "PEI", "PER", "PHB", "PHD", "PHK" -> net++;
+				case "PLA", "PLX", "PLY", "PLP", "PLB", "PLD" -> net--;
+				case "TXS", "TCS" -> o.stackBad = true;
+				default -> {
+				}
+			}
+			if (writesMem(i)) {
+				if (!is816 && !indirect(i) && !hasIndexReg(i) && operandBase(i) >= 0) {
+					o.cells.remove(operandBase(i));
+				}
+				else {
+					clearRange(o, i);
+				}
+			}
+			if (i.getFlowType().isCall()) {
+				Address[] fl = i.getFlows();
+				Summ sm = (fl.length == 1 && !i.getFlowType().isComputed())
+						? summarize(fl[0], 0) : null;
+				if (sm == null || sm.unknown) {
+					o.x = freshW("innerLoop");
+					o.y = freshW("innerLoop");
+					o.cells.clear();
+				}
+				else {
+					if (sm.wX) {
+						o.x = freshW("innerLoop");
+					}
+					if (sm.wY) {
+						o.y = freshW("innerLoop");
+					}
+					if (sm.unknownWrite) {
+						o.cells.clear();
+					}
+					else {
+						o.cells.keySet().removeAll(sm.cells);
+					}
+				}
+			}
+			if (mm.equals("MVN") || mm.equals("MVP")) {
+				o.cells.clear();
+			}
+		}
+		if (net != 0) {
+			o.stackBad = true;
+		}
+		return o;
+	}
+
+	private String[] unk(String why2) {
+		return new String[] { null, why2, null, null };
 	}
 
 	/** Immediate loaded into reg just before the loop head (LDX #n, or TAX after LDA #n). */
