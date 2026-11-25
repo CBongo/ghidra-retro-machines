@@ -870,7 +870,7 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 		 * at all and an UNKNOWN summary (grm-9nxj.42).
 		 */
 		private static boolean isTailJump(Instruction ins) {
-			var ft = ins.getFlowType();
+			var ft = W65816FarCall.flow(ins);
 			return !isCallInstr(ins) && !ft.isComputed() && ins.getFlows().length == 1 &&
 				(ft.isJump() || (ft.isCall() && ft.isTerminal()));
 		}
@@ -882,7 +882,7 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 
 		private List<Address> successors(Address root, Instruction ins, boolean dispatch) {
 			List<Address> out = new ArrayList<>();
-			var ft = ins.getFlowType();
+			var ft = W65816FarCall.flow(ins);
 			if (isDispatchJmp(ins) && (dispatch || followsDispatch(root, ins))) {
 				for (Address a : ins.getFlows()) {
 					if (!tailExit(root, a)) {
@@ -908,7 +908,7 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 					out.add(a);
 				}
 			}
-			if (ins.hasFallthrough() && ins.getFallThrough() != null) {
+			if (W65816FarCall.hasFallthrough(ins) && ins.getFallThrough() != null) {
 				out.add(ins.getFallThrough());
 			}
 			return out;
@@ -1247,7 +1247,7 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 					}
 				}
 			}
-			else if (flows.length > 1 && ins.getFlowType().isComputed()) {
+			else if (flows.length > 1 && W65816FarCall.flow(ins).isComputed()) {
 				dbr = s.dbr;   // rule A for computed calls, as the DP analyzer
 			}
 			return new State(dbr, UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN, stack,
@@ -1366,7 +1366,7 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 				return null;
 			}
 			Instruction before = program.getListing().getInstructionBefore(entry);
-			if (before != null && entry.equals(before.getFallThrough())) {
+			if (before != null && entry.equals(W65816FarCall.fallThrough(before))) {
 				out.add(before.getMinAddress());
 			}
 			return out.isEmpty() && !reset ? null : out;
@@ -1403,7 +1403,7 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 				}
 				for (Address root : rootsAt(s)) {
 					State st = states.get(root).get(s);
-					int v = ins.getFlowType().isCall() ? st.dbr : transfer(ins, st).dbr;
+					int v = W65816FarCall.flow(ins).isCall() ? st.dbr : transfer(ins, st).dbr;
 					v = resolve(v, seedOf(root));
 					if (v != UNKNOWN) {
 						out.add(v);
@@ -1461,7 +1461,7 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 					W65816Shapes.constIntoDbr(ins) != null) {
 					return false;
 				}
-				if (ins.getFlowType().isComputed()) {
+				if (W65816FarCall.flow(ins).isComputed()) {
 					return false;
 				}
 				int off = absOperand(ins);
@@ -1472,7 +1472,7 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 						return false;
 					}
 				}
-				else if (!ins.getFlowType().isJump() && !ins.getFlowType().isCall() &&
+				else if (!W65816FarCall.flow(ins).isJump() && !W65816FarCall.flow(ins).isCall() &&
 					!m.equals("PEI")) {
 					String r = ins.getNumOperands() > 0 ? ins.getDefaultOperandRepresentation(0) : "";
 					if (r.contains("(")) {
@@ -1763,13 +1763,13 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 							out.add(m == null || m.isEmpty() ? "walkEmpty" : "notReached");
 							continue;
 						}
-						int v = ins.getFlowType().isCall() ? st.dbr : transfer(ins, st).dbr;
+						int v = W65816FarCall.flow(ins).isCall() ? st.dbr : transfer(ins, st).dbr;
 						if (resolve(v, seedOf(fe)) != UNKNOWN) {
 							continue;   // a known way in: cannot be what blocks the seed
 						}
 						if (v == UNKNOWN) {
 							String c = causeMap(fe).getOrDefault(s, "merge/userOrRoot");
-							if (!ins.getFlowType().isCall() && lossAt(ins, st) != null) {
+							if (!W65816FarCall.flow(ins).isCall() && lossAt(ins, st) != null) {
 								c = lossAt(ins, st);
 							}
 							out.add(c.indexOf('@') > 0 ? c : c + "@" + s);
@@ -2009,7 +2009,7 @@ public class W65816DataBankAnalyzer extends AbstractAnalyzer {
 		 * jump, call, PEA/PER or block move), or UNKNOWN.
 		 */
 		static int absOperand(Instruction ins) {
-			if (ins.getLength() != 3 || ins.getNumOperands() < 1 || ins.getFlowType().isJump() || ins.getFlowType().isCall() || ins.getFlowType().isTerminal()) {
+			if (ins.getLength() != 3 || ins.getNumOperands() < 1 || W65816FarCall.flow(ins).isJump() || W65816FarCall.flow(ins).isCall() || W65816FarCall.flow(ins).isTerminal()) {
 				return UNKNOWN;
 			}
 			// PEA/PER (pushes) and MVN/MVP (block moves) are not data references.

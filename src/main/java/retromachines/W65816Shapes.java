@@ -206,9 +206,15 @@ final class W65816Shapes {
 		}
 	}
 
-	/** A real call: a call flow that is not made terminal by a CALL_RETURN override. */
+	/**
+	 * A real call: a call flow that is not made terminal by a CALL_RETURN override. A far-call
+	 * jump the continuation analyzer overrode into a call (grm-9nxj.48) is not one here: it
+	 * pushes nothing of its own and its callee pulls the caller's {@code PHK / PER / PEA}, which
+	 * the stack walkers model as the jump through a pushed return address it was
+	 * ({@link W65816FarCall}).
+	 */
 	static boolean isCall(Instruction ins) {
-		FlowType ft = ins.getFlowType();
+		FlowType ft = W65816FarCall.flow(ins);
 		return ft.isCall() && !ft.isTerminal();
 	}
 

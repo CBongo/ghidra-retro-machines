@@ -17,10 +17,10 @@ package retromachines;
 
 import java.math.BigInteger;
 import java.util.LinkedHashMap;
-import java.util.Locale;
 import java.util.Map;
 
 import ghidra.app.cmd.disassemble.DisassembleCommand;
+import ghidra.app.cmd.function.CreateFunctionCmd;
 import ghidra.app.services.AbstractAnalyzer;
 import ghidra.app.services.AnalysisPriority;
 import ghidra.app.services.AnalyzerType;
@@ -30,6 +30,8 @@ import ghidra.program.model.address.AddressSetView;
 import ghidra.program.model.lang.Register;
 import ghidra.program.model.listing.CommentType;
 import ghidra.program.model.listing.ContextChangeException;
+import ghidra.program.model.listing.FlowOverride;
+import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
@@ -70,8 +72,11 @@ import ghidra.util.task.TaskMonitor;
  * jump-table targets (grm-hf5h.31).
  *
  * <p>Runs with the other 65816 decoders, early, so function creation and the DP / DBR analyzers
- * see the new code. The continuation stays outside any function body (the jump is terminal); the
- * DBR analyzer walks into it through the pushed return address.
+ * see the new code. Once the continuation is decoded the jump is overridden into a call
+ * ({@link FlowOverride#CALL}, grm-9nxj.48): its default fall-through is the continuation, so the
+ * continuation joins the caller's function body, the decompiler follows the call and carries on
+ * there, and the DP / DBR analyzers stamp it with the rest of the body. The stack walkers read
+ * the overridden jump through {@link W65816FarCall}.
  */
 public class W65816FarCallContinuationAnalyzer extends AbstractAnalyzer {
 
@@ -103,6 +108,7 @@ public class W65816FarCallContinuationAnalyzer extends AbstractAnalyzer {
 		Listing listing = program.getListing();
 		W65816WidthEffects fx = new W65816WidthEffects(program);
 		int decoded = 0;
+		int joined = 0;
 		int instructions = 0;
 		for (Instruction in : listing.getInstructions(set, true)) {
 			monitor.checkCancelled();
@@ -122,6 +128,9 @@ public class W65816FarCallContinuationAnalyzer extends AbstractAnalyzer {
 			InlineJumpTableDispatchAnalyzer.followDroppedFlows(program, listing, got, monitor);
 			decoded++;
 			instructions += got == null ? 0 : count(listing, got);
+			if (overrideToCall(program, in, s, monitor)) {
+				joined++;
+			}
 			String note = "returned to by " + s.kind() + " from " + s.callee() + " (call at " +
 				in.getMinAddress() + "), decoded at " + W65816JumpTableAnalyzer.describe(s.ctx());
 			listing.setComment(s.cont(), CommentType.EOL, COMMENT + note);
@@ -131,7 +140,33 @@ public class W65816FarCallContinuationAnalyzer extends AbstractAnalyzer {
 		}
 		if (decoded > 0) {
 			AnalyzerLog.info(this, "decoded " + decoded + " far-call continuations, " +
-				instructions + " instructions");
+				instructions + " instructions; " + joined + " jumps made calls (grm-9nxj.48)");
+		}
+		return true;
+	}
+
+	/**
+	 * Turns the far-call jump into a call whose fall-through is the continuation just decoded
+	 * (grm-9nxj.48), and re-fits the body of the function holding it so the continuation joins
+	 * it. {@link FlowOverride#CALL} on a {@code JML}/{@code JMP} is an {@code UNCONDITIONAL_CALL}
+	 * (Ghidra 12.2 {@code FlowOverride.getModifiedFlowType}), whose default fall-through is the
+	 * next address: exactly {@code r + 1}, which {@link W65816FarCall#shape} proved. No
+	 * fall-through override is set: it would add a second, user-defined flow reference to the
+	 * same address for nothing. A function created later follows the call's fall-through when it
+	 * is created; one created already is fitted here. True when the override took.
+	 */
+	private static boolean overrideToCall(Program program, Instruction jmp, Site s,
+			TaskMonitor monitor) throws CancelledException {
+		Address at = jmp.getMinAddress();
+		jmp.setFlowOverride(FlowOverride.CALL);
+		Instruction now = program.getListing().getInstructionAt(at);
+		if (now == null || !s.cont().equals(now.getFallThrough())) {
+			jmp.setFlowOverride(FlowOverride.NONE);   // not the flow shape the walkers expect
+			return false;
+		}
+		Function f = program.getFunctionManager().getFunctionContaining(at);
+		if (f != null) {
+			CreateFunctionCmd.fixupFunctionBody(program, f, monitor);
 		}
 		return true;
 	}
@@ -159,31 +194,17 @@ public class W65816FarCallContinuationAnalyzer extends AbstractAnalyzer {
 
 	/** The far call ending at {@code jmp}, when every guard rail holds; null otherwise. */
 	static Site recognize(Program program, W65816WidthEffects fx, Instruction jmp) {
-		String mn = jmp.getMnemonicString().toUpperCase(Locale.ROOT);
-		if (!(mn.equals("JML") || mn.equals("JMP")) || jmp.getFlowType().isComputed() ||
-			jmp.getFlows().length != 1) {
-			return null;
+		if (jmp.getFlowOverride() == FlowOverride.CALL) {
+			return null;   // already a call: this analyzer made it one (grm-9nxj.48)
 		}
 		Listing listing = program.getListing();
-		Address fall = jmp.getMaxAddress().next();
-		Instruction push = adjacentBefore(listing, jmp);
-		if (fall == null || push == null) {
+		W65816FarCall.Shape shape = W65816FarCall.shape(listing, jmp);
+		if (shape == null) {
 			return null;
 		}
-		int pushed = pushedWord(push);
-		if (pushed < 0 || ((pushed + 1) & 0xffff) != (fall.getOffset() & 0xffff)) {
-			return null;
-		}
-		Instruction phk = adjacentBefore(listing, push);
-		boolean far = phk != null && W65816Shapes.pushesProgramBank(phk);
+		Address fall = shape.fall();
+		boolean far = shape.far();
 		Address callee = jmp.getFlows()[0];
-		long bank = jmp.getMinAddress().getOffset() & 0xff0000L;
-		if (!far && (callee.getOffset() & 0xff0000L) != bank) {
-			return null;   // an RTS returns in the callee's bank, not to this one
-		}
-		if ((fall.getOffset() & 0xff0000L) != bank) {
-			return null;   // the jump ends on a bank boundary
-		}
 		String kind = far ? "RTL" : "RTS";
 		String proven = W65816ReturnProof.provenReturn(program, callee);
 		if (!kind.equals(proven)) {
@@ -238,16 +259,5 @@ public class W65816FarCallContinuationAnalyzer extends AbstractAnalyzer {
 			return -1;
 		}
 		return callee.knownAfter(before);
-	}
-
-	private static Instruction adjacentBefore(Listing listing, Instruction in) {
-		Instruction p = listing.getInstructionBefore(in.getMinAddress());
-		return p != null && p.getMaxAddress().next() != null &&
-			p.getMaxAddress().next().equals(in.getMinAddress()) ? p : null;
-	}
-
-	/** The word a {@code PER} or {@code PEA} pushes, or -1. */
-	private static int pushedWord(Instruction push) {
-		return W65816Shapes.pushedConstantWord(push);
 	}
 }

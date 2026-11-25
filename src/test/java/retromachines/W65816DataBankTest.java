@@ -31,6 +31,9 @@ import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.lang.Register;
 import ghidra.program.model.lang.RegisterValue;
+import ghidra.program.model.listing.FlowOverride;
+import ghidra.program.model.listing.Function;
+import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.symbol.RefType;
 import ghidra.program.model.symbol.Reference;
@@ -572,6 +575,69 @@ public class W65816DataBankTest extends AbstractProgramTest {
 		builder.setBytes("0x8008", "a9 7f 48 ab 60", false);
 		farCalls();
 		assertNull(program.getListing().getInstructionAt(addr(0x8008)));
+		assertEquals("a declined site keeps its jump", FlowOverride.NONE,
+			program.getListing().getInstructionAt(addr(0x8004)).getFlowOverride());
+	}
+
+	@Test
+	public void aFarCallJumpBecomesACallAndItsContinuationJoinsTheCallersBody() throws Exception {
+		// grm-9nxj.48. G: RTL. F: PHK ; PER +3 (pushes $8007) ; JML G ; [$8008] NOP ; RTS
+		lay("0x8100", "6b", "G");
+		lay("0x8000", "4b 62 03 00 5c 00 81 00", "F");
+		builder.setBytes("0x8008", "ea 60", false);
+		Function f = program.getFunctionManager().getFunctionAt(addr(0x8000));
+		assertFalse("the continuation starts outside the body", f.getBody().contains(addr(0x8008)));
+		assertEquals("the continuation is not decoded yet, so there is nothing to prove F by",
+			null, W65816ReturnProof.provenReturn(program, addr(0x8000)));
+		farCalls();
+		Instruction jml = program.getListing().getInstructionAt(addr(0x8004));
+		assertEquals(FlowOverride.CALL, jml.getFlowOverride());
+		assertEquals(RefType.UNCONDITIONAL_CALL, jml.getFlowType());
+		assertTrue(jml.hasFallthrough());
+		assertEquals("falls through to the continuation", addr(0x8008), jml.getFallThrough());
+		assertFalse("no fall-through override: the default one is the continuation",
+			jml.isFallThroughOverridden());
+		assertEquals(1, jml.getFlows().length);
+		assertEquals(addr(0x8100), jml.getFlows()[0]);
+		assertEquals("PHK + PER", 3, W65816FarCall.pushedBytes(jml));
+		assertTrue(W65816FarCall.isOverridden(jml));
+		assertFalse("the walkers' call predicate does not see it", W65816Shapes.isCall(jml));
+		assertEquals("the walkers' flow is the terminal call it was", RefType.CALL_TERMINATOR,
+			W65816FarCall.flow(jml));
+		assertNull(W65816FarCall.fallThrough(jml));
+		assertTrue("the continuation joined the body", f.getBody().contains(addr(0x8008)));
+		assertTrue(f.getBody().contains(addr(0x8009)));
+		assertEquals("F pushes 3, the callee pulls them, F returns by its own RTS", "RTS",
+			W65816ReturnProof.provenReturn(program, addr(0x8000)));
+		// a second run changes nothing
+		farCalls();
+		assertEquals(FlowOverride.CALL, jml.getFlowOverride());
+	}
+
+	@Test
+	public void aPeaJmpFarCallIntoAnRtsRoutineBecomesACallToo() throws Exception {
+		// G: RTS. F: PEA $8305 ; JMP G ; [$8306] NOP ; RTS (no PHK: two bytes pulled)
+		lay("0x8180", "60", "G");
+		lay("0x8300", "f4 05 83 4c 80 81", "F");
+		builder.setBytes("0x8306", "ea 60", false);
+		farCalls();
+		Instruction jmp = program.getListing().getInstructionAt(addr(0x8303));
+		assertEquals(FlowOverride.CALL, jmp.getFlowOverride());
+		assertEquals("PEA only", 2, W65816FarCall.pushedBytes(jmp));
+		assertEquals(addr(0x8306), jmp.getFallThrough());
+		assertTrue(program.getFunctionManager().getFunctionAt(addr(0x8300)).getBody()
+				.contains(addr(0x8307)));
+		assertEquals("RTS", W65816ReturnProof.provenReturn(program, addr(0x8300)));
+	}
+
+	@Test
+	public void aPlainJmpIsNotAFarCall() throws Exception {
+		lay("0x8100", "6b", "G");
+		lay("0x8000", "4b 62 03 00 5c 00 81 00", "F");
+		Instruction jml = program.getListing().getInstructionAt(addr(0x8004));
+		assertEquals(0, W65816FarCall.pushedBytes(jml));
+		assertFalse(W65816FarCall.isOverridden(jml));
+		assertEquals(jml.getFlowType(), W65816FarCall.flow(jml));
 	}
 
 	@Test

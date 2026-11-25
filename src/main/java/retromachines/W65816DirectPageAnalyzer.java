@@ -824,7 +824,7 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				return null;
 			}
 			Instruction before = program.getListing().getInstructionBefore(entry);
-			if (before != null && entry.equals(before.getFallThrough())) {
+			if (before != null && entry.equals(W65816FarCall.fallThrough(before))) {
 				out.add(before.getMinAddress());
 			}
 			return out.isEmpty() ? null : out;
@@ -853,7 +853,7 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 						if (st == null) {
 							continue;
 						}
-						int v = ins.getFlowType().isCall() ? st.dp : transfer(ins, st).dp;
+						int v = W65816FarCall.flow(ins).isCall() ? st.dp : transfer(ins, st).dp;
 						if (v != UNKNOWN) {
 							out.computeIfAbsent(s, k -> new LinkedHashSet<>()).add(v);
 						}
@@ -875,7 +875,7 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 		 * A real call, a return and any other computed transfer have none.
 		 */
 		private static List<Address> jumpTargets(Instruction ins) {
-			var ft = ins.getFlowType();
+			var ft = W65816FarCall.flow(ins);
 			boolean jump = ft.isCall() ? isTailCall(ft) :
 				ft.isJump() && (!ft.isComputed() || isDispatchJmp(ins));
 			return jump ? List.of(ins.getFlows()) : List.of();
@@ -906,7 +906,7 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				return false;
 			}
 			Instruction before = program.getListing().getInstructionBefore(entry);
-			if (before != null && entry.equals(before.getFallThrough())) {
+			if (before != null && entry.equals(W65816FarCall.fallThrough(before))) {
 				return false;
 			}
 			boolean flow = false;
@@ -1070,7 +1070,7 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 					continue;   // a call that does not come back to its fall-through
 				}
 				if (notes != null && in.get(at).dp != UNKNOWN && out.dp == UNKNOWN &&
-					!ins.getFlowType().isCall()) {
+					!W65816FarCall.flow(ins).isCall()) {
 					notes.add("DP written UNKNOWN at " + at + ": " + ins);
 				}
 				List<Address> nexts = new ArrayList<>();
@@ -1107,7 +1107,7 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 		private List<Address> successors(Address start, Function f, Instruction ins,
 				boolean summary) {
 			List<Address> out = new ArrayList<>();
-			var ft = ins.getFlowType();
+			var ft = W65816FarCall.flow(ins);
 			if (summary && isDispatchJmp(ins)) {
 				return out;
 			}
@@ -1125,7 +1125,7 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 			for (Address a : ins.getFlows()) {
 				add(start, f, summary, out, a);
 			}
-			if (ins.hasFallthrough()) {
+			if (W65816FarCall.hasFallthrough(ins)) {
 				add(start, f, summary, out, ins.getFallThrough());
 			}
 			return out;
@@ -1153,7 +1153,7 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 		 * {@code JSR $D0AA} looked like a hand-rolled JSL. Null otherwise.
 		 */
 		private PushedCall pushedCall(Address start, Function f, Instruction ins, State s) {
-			var ft = ins.getFlowType();
+			var ft = W65816FarCall.flow(ins);
 			Address[] fl = ins.getFlows();
 			if (s == null || s.stack == null || s.stack.isEmpty() || ft.isComputed() ||
 				ft.isConditional() || fl.length != 1 ||
@@ -1277,7 +1277,7 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				else if (W65816Shapes.isReturn(i) || MosOperands.isInterruptReturn(i)) {
 					return false;   // returns with its own pushes balanced: a routine
 				}
-				var ft = i.getFlowType();
+				var ft = W65816FarCall.flow(i);
 				List<Address> next = new ArrayList<>();
 				if (ft.isCall() || ft.isComputed()) {
 					if (!ft.isTerminal() && i.getFallThrough() != null) {
@@ -1289,8 +1289,8 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				}
 				else {
 					next.addAll(List.of(i.getFlows()));
-					if (i.getFallThrough() != null) {
-						next.add(i.getFallThrough());
+					if (W65816FarCall.fallThrough(i) != null) {
+						next.add(W65816FarCall.fallThrough(i));
 					}
 				}
 				for (Address n : next) {
@@ -1472,7 +1472,7 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 					dp = e == ENTRY_DP ? s.dp : e;
 				}
 			}
-			else if (flows.length > 1 && ins.getFlowType().isComputed()) {
+			else if (flows.length > 1 && W65816FarCall.flow(ins).isComputed()) {
 				// Rule A for computed calls (owner ruling 2026-11-17, grm-hf5h.26): a JSR/JSL
 				// (abs,X) dispatcher with several resolved targets -- FZero RESET's main loop,
 				// JSR ($8050,X) at $00:8046 -- returns with the DP it was given. Optimistic, like
@@ -1674,7 +1674,7 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				if (i == null || UNWOUND.equals(e.getValue().stack)) {
 					continue;
 				}
-				var ft = i.getFlowType();
+				var ft = W65816FarCall.flow(i);
 				Address[] fl = i.getFlows();
 				if (W65816Shapes.isReturn(i)) {
 					kinds.add(W65816Shapes.returnKind(i));
@@ -1798,7 +1798,7 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 					continue;
 				}
 				String mn = i.getMnemonicString().toUpperCase(Locale.ROOT);
-				var ft = i.getFlowType();
+				var ft = W65816FarCall.flow(i);
 				State st = e.getValue();
 				Address[] fl = i.getFlows();
 				int out = UNKNOWN;
@@ -2066,7 +2066,7 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				if (live != null && !live.contains(i.getAddress())) {
 					continue;   // a handler reached only through a dispatch JMP (rule A)
 				}
-				var ft = i.getFlowType();
+				var ft = W65816FarCall.flow(i);
 				W65816Shapes.Transfer tcd = W65816Shapes.transfer(i);
 				W65816Shapes.Push push = W65816Shapes.push(i);
 				W65816Shapes.Pull pull = W65816Shapes.pull(i);

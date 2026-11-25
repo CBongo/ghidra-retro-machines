@@ -46,7 +46,11 @@ import ghidra.program.model.symbol.FlowType;
  * {@code RTL} at depth 0; at least one leaf must exist. A direct call is stepped over (it
  * returns with the stack it found) unless its callee carries Ghidra's no-return flag; a
  * {@code PHK / JSR} into a routine proven to return by {@code RTL} is a hand-rolled {@code JSL}
- * and also pulls the PHK byte (grm-9nxj.52). Computed flow whose targets analysis has resolved
+ * and also pulls the PHK byte (grm-9nxj.52). A far-call jump that
+ * {@link W65816FarCallContinuationAnalyzer} overrode into a call (grm-9nxj.48) is stepped over
+ * like a call, and its callee's return also pulls the caller's own {@code PHK / PER} or
+ * {@code PEA} ({@link W65816FarCall#pushedBytes}); the same jump not yet overridden is the
+ * pushed-return jump below. Computed flow whose targets analysis has resolved
  * is followed like its direct form (grm-9nxj.53): a {@code JMP (t,X)} walks every resolved
  * target at the jump's depth, a {@code JSR (t,X)} steps over every resolved callee. F-Zero's
  * far-call callees dispatch on a state byte ({@code LDA $55 / ASL / TAX / JMP ($8077,X)}) into
@@ -193,7 +197,16 @@ final class W65816ReturnProof {
 						return fail(entry, at, "call into no-return " + t);
 					}
 				}
-				if (handRolledJsl(program, listing, i, active)) {
+				int far = W65816FarCall.pushedBytes(i);
+				if (far > 0) {
+					// An overridden far call (grm-9nxj.48): the callee's return pulls the caller's
+					// own PHK / PER or PEA, and control comes back at the fall-through.
+					d -= far;
+					if (d < 0) {
+						return fail(entry, at, "far call pulls below entry");
+					}
+				}
+				else if (handRolledJsl(program, listing, i, active)) {
 					d -= 1;   // the callee's RTL also pulled the PHK byte (d >= 1: PHK pushed it)
 				}
 			}
