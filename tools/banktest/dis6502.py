@@ -6,6 +6,21 @@ Usage:
   dis6502.py <rom.nes> <map> words <start_hex> <count>  dump little-endian words (tables)
   dis6502.py --find <row-id>                            print the image for a manifest row
 
+Block-name mode (bead grm-2a2a.5; NES rows) -- use the name a golden dump or a bead prints:
+  dis6502.py <row-id> <block>:<addr>[-<end>] [-n N]     disassemble (default 12 instructions)
+  dis6502.py <row-id> <block>::<addr> --bytes N         raw bytes, 16 per line, with prg/file offsets
+  dis6502.py <row-id> <block>:<addr> --words N          N little-endian words
+  dis6502.py <row-id> <block>:<addr> --jumptable N      N words, each target labelled block:addr
+        [--split <hi-addr> | <block>:<hi-addr>]         lo bytes at <addr>, hi bytes at <hi-addr>
+        [--plus1]                                       RTS-trick table: target = word + 1
+  dis6502.py <row-id> --blocks                          list the row's windows and naming
+  e.g. dis6502.py cv2 W8000_B5:a734 -n 8      dis6502.py contra PRG_LO_B5:8000 --jumptable 16
+Options: --rom <path> overrides the manifest image. `:` and `::` both separate block and address.
+Block names follow NesRomLoader/OverlayNaming (blockmap.py has the rules): <w>, <w>_B<n>, <w>_M<m>,
+<w>_M<m>_B<n>, n = the banking.state field value; mapped via machines/<board>.yaml (needs PyYAML)
+plus any machines/games hint. An unmappable name or a bank the loader would not create is an error
+that lists the board's windows -- never a guess. Other platforms: error (seam in blockmap.RESOLVERS).
+
 <map> places PRG bytes in a 64 KiB CPU view:
   <n>               32 KiB PRG bank n at $8000-$FFFF (NROM/AxROM/MMC1 32K mode)
   o<off>@<addr>     PRG offset <off> placed at <addr>, both hex -- any bank size/window,
@@ -21,6 +36,7 @@ Used for grm-2m07, grm-3er5, grm-ujj5, grm-h0oa. Undocumented opcodes print as .
 Manifest reading and ROM-dir resolution live in romlib.py (same directory); no other dependencies.
 """
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -95,7 +111,102 @@ def find(row_id):
     print(romlib.find_path(row_id))
 
 
+def _parse_loc(text):
+    m = re.fullmatch(r'(\w+?)::?([0-9a-fA-F]+)(?:-([0-9a-fA-F]+))?', text)
+    if not m:
+        sys.exit("bad location '%s' (want <block>:<addr>[-<end>])" % text)
+    return m.group(1), int(m.group(2), 16), int(m.group(3), 16) if m.group(3) else None
+
+
+def _words_at(view, a, n, hi_view=None, hi=None):
+    out = []
+    for i in range(n):
+        if hi_view is None:
+            lo_a = a + 2 * i
+            if lo_a + 1 >= view.end:
+                break
+            w = view.byte(lo_a) | view.byte(lo_a + 1) << 8
+            out.append((lo_a, w))
+        else:
+            if a + i >= view.end or hi + i >= hi_view.end:
+                break
+            out.append((a + i, view.byte(a + i) | hi_view.byte(hi + i) << 8))
+    return out
+
+
+def block_main(argv):
+    import argparse
+    import blockmap
+    ap = argparse.ArgumentParser(prog='dis6502.py', add_help=True)
+    ap.add_argument('row')
+    ap.add_argument('loc', nargs='?')
+    ap.add_argument('-n', type=int, default=12, help='instructions to disassemble')
+    ap.add_argument('--bytes', type=int)
+    ap.add_argument('--words', type=int)
+    ap.add_argument('--jumptable', type=int)
+    ap.add_argument('--split')
+    ap.add_argument('--plus1', action='store_true')
+    ap.add_argument('--blocks', action='store_true')
+    ap.add_argument('--rom')
+    a = ap.parse_args(argv)
+    try:
+        row = blockmap.find_row(a.row)
+        plat = blockmap.platform_of(row)
+        if plat not in blockmap.RESOLVERS:
+            sys.exit("row %s: platform '%s' has no block resolver (only %s)"
+                     % (a.row, plat, ', '.join(blockmap.RESOLVERS)))
+        path = a.rom or romlib.find_path(a.row)
+        res = blockmap.RESOLVERS[plat]
+        if a.blocks or a.loc is None:
+            print(chr(10).join(res(row, path, None).describe()))
+            return
+        blk, addr, end = _parse_loc(a.loc)
+        view = res(row, path, blk)
+        hi_view = hi = None
+        if a.split:
+            hb, hi, _ = _parse_loc(a.split if ':' in a.split else view.name + ':' + a.split)
+            hi_view = view if hb == view.name else res(row, path, hb)
+        if not view.contains(addr):
+            sys.exit('%04x is outside block %s (%04x-%04x)' % (addr, view.name, view.start,
+                                                              view.end - 1))
+    except blockmap.BlockError as e:
+        sys.exit('error: %s' % e)
+    po, fo = view.offset_of(addr)
+    print('# %s %s:%04x = prg $%x, file $%x%s' % (a.row, view.name, addr, po, fo,
+                                                 ' (%s)' % view.note if view.note else ''))
+    if a.bytes is not None:
+        n = min(a.bytes, view.end - addr)
+        for i in range(0, n, 16):
+            chunk = bytes(view.byte(addr + i + k) for k in range(min(16, n - i)))
+            print('%s:%04x  %s' % (view.name, addr + i, ' '.join('%02x' % b for b in chunk)))
+    elif a.words is not None or a.jumptable is not None:
+        cnt = a.words if a.words is not None else a.jumptable
+        for at, w in _words_at(view, addr, cnt, hi_view, hi):
+            if a.jumptable is None:
+                print('%04x: %04x' % (at, w))
+            else:
+                t = (w + 1) & 0xffff if a.plus1 else w
+                print('%s:%04x  %04x%s -> %s' % (view.name, at, w, ' +1' if a.plus1 else '',
+                                               view.label(t)))
+    else:
+        mem = bytearray(0x8000 + 3)
+        mem[view.start - 0x8000:view.end - 0x8000] = view.data
+        left = a.n
+        while addr < (end if end is not None else view.end) and (end is not None or left > 0):
+            n, s = fmt(mem, addr)
+            if addr + n > view.end:
+                break
+            raw = ' '.join('%02x' % mem[addr - 0x8000 + k] for k in range(n))
+            print('%s:%04x  %-9s %s' % (view.name, addr, raw, s))
+            addr += n
+            left -= 1
+
+
 def main():
+    if len(sys.argv) >= 3 and not sys.argv[1].startswith('-') and (
+            ':' in sys.argv[2] or sys.argv[2] == '--blocks'):
+        block_main(sys.argv[1:])
+        return
     if sys.argv[1] == '--find':
         find(sys.argv[2])
         return

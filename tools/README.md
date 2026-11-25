@@ -24,6 +24,7 @@ hardcoded.
 | Which analyzer created, changed or removed a code unit or function | `banktest/CodeUnitWatchProbe.java`, `FunctionWatchProbe.java` (prescripts) |
 | Where is a pinned row's ROM image; decode its bytes | `banktest/dis6502.py --find <row-id>`, or `dis6502.py <rom> <map> <start> <end>` |
 | Where does this byte pattern occur (wildcards, captures) across the ROM corpus | `recon/romscan.py` |
+| Bytes, disassembly or a jump table at a golden/bead block name (`PRG_LO_B5:a734`, `W8000_M3_B31::8000`), no hand file-offset math | `banktest/dis6502.py <row-id> <block>:<addr> [-n N \| --bytes N \| --words N \| --jumptable N [--split HI] [--plus1]]`; `<row-id> --blocks` lists the row's windows (NES; mapping in `banktest/blockmap.py`, needs PyYAML) |
 | Who reads or writes a RAM cell, who calls a routine | `recon/cellxref.py` |
 | Is a fixed-bank call target the same code in every switchable bank | `recon/bankdiff.py` |
 | Why is a function flagged no-return | `banktest/NoReturnProbe.java`, `NoReturnEvidenceProbe.java`, `NoReturnFlagCensus.java` |
@@ -110,7 +111,9 @@ Detail and worked examples: `recon/README.md`.
 ## Decoders and vector harnesses
 
 - `banktest/dis6502.py` - THE 6502 disassembler and opcode table; `--find <row-id>` resolves a
-  pinned ROM. Import it, do not write another.
+  pinned ROM; `<row-id> <block>:<addr>` reads by the loader's block name (grm-2a2a.5, rules in
+  `banktest/blockmap.py`, one resolver per platform in `RESOLVERS`, NES only so far). Import it,
+  do not write another.
 - `banktest/romlib.py` - THE manifest reader and ROM locator (`rom_dirs`, `manifest_rows`,
   `find_path`/`find_many`/`find_sha`, `parse_ines`, `cpu_of`); import it, do not re-split
   `GRM_ROM_DIR` or re-parse `manifest*.tsv`. Not a CLI.
