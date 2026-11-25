@@ -22,13 +22,15 @@ REALROM count blocks.overlay 7
 REALROM count refs.intoOverlay.retargeted 39
 REALROM count refs.intoOverlay.intraOverlay 440
 REALROM count instrs.inOverlay 1613
-REALROM count bankComments 5
-REALROM count warnings 7
+REALROM count bankComments 7
+REALROM count warnings 5
 REALROM count notes 7
 REALROM count symbols 28
 REALROM count jumptable.wordArrays 2
 REALROM count jumptable.planarArrays 0
 REALROM sample.bankcomment c03a bank -> mirroring=0,prg_mode=3,prg_bank=0? via FUN_c4fa [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
+REALROM sample.bankcomment c099 bank -> mirroring=0,prg_mode=3,prg_bank=0? via FUN_c4b2 [known: mirroring.0=0,prg_bank.0=0,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
+REALROM sample.bankcomment c56f bank -> mirroring=0,prg_mode=3,prg_bank=0? via FUN_c4ef [known: mirroring.0=0,prg_bank.0=0,prg_bank.1=0,prg_bank.2=0; assumed from initial: mirroring.1,prg_mode.0,prg_mode.1,prg_bank.3,prg_bank.4] [switch-value flow]
 REALROM sample.bankcomment ffc6 bank -> mirroring=0,prg_mode=3,prg_bank=0? [known: prg_mode.0=1,prg_mode.1=1; assumed from initial: mirroring.0,mirroring.1,prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
 REALROM sample.bankcomment ffc9 bank -> mirroring=0,prg_mode=3,prg_bank=0? [known: prg_mode.0=1,prg_mode.1=1; assumed from initial: mirroring.0,mirroring.1,prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
 REALROM sample.bankcomment ffcc bank -> mirroring=0,prg_mode=3,prg_bank=0? [known: prg_mode.0=1,prg_mode.1=1; assumed from initial: mirroring.0,mirroring.1,prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
@@ -59,13 +61,11 @@ REALROM sample.ref 80bf -> W8000_B1::80c7 CONDITIONAL_JUMP primary=true
 REALROM sample.ref 80c1 -> W8000_B1::81fc UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 80c4 -> W8000_B1::80f6 UNCONDITIONAL_JUMP primary=true
 REALROM sample.ref.truncated 25 of 479
-REALROM sample.warn c099 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c4b2, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
 REALROM sample.warn c4c5 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn c4d5 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
-REALROM sample.warn c4e2 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c4e8, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
-REALROM sample.warn c56f [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c4ef, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
-REALROM sample.warn c7c1 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c4ef, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
-REALROM sample.warn c7d2 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c4ef, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
+REALROM sample.warn c4e2 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c4e8 whose bank argument could not be recovered at this call site
+REALROM sample.warn c7c1 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c4ef whose bank argument could not be recovered at this call site
+REALROM sample.warn c7d2 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c4ef whose bank argument could not be recovered at this call site
 REALROM sample.note 77f0 [CopyLoopAnalyzer] run-from-elsewhere copy of RAM:c5a8; initialized in place as COPY_77f0
 REALROM sample.note 8cf5 [CopyLoopAnalyzer] copy-shaped loop RAM:687d -> RAM:6993 (4 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note 8d31 [CopyLoopAnalyzer] copy-shaped loop RAM:6993 -> RAM:687d (4 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.

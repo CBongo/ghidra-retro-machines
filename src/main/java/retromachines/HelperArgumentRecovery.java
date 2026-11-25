@@ -19,11 +19,13 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Supplier;
 
 import ghidra.program.model.address.Address;
 import ghidra.program.model.symbol.FlowType;
@@ -502,10 +504,48 @@ final class HelperArgumentRecovery {
 		if (!argumentSurvives && reloadTransform == null) {
 			readBack = null;
 		}
+		// The caller's A/X/Y at the helper's entry, built at most once per call (bead grm-hsv.15
+		// hoisted this from below so the inbound-register scan can share it). See the memo's
+		// rules at the use below.
+		Address scanStop = insideHelperEntry(helper);
+		CallSiteRegKey key =
+			new CallSiteRegKey(callInstr.getMinAddress(), localIn, path.armPredecessors());
+		Supplier<RegisterEnv> callerRegsOf = new Supplier<>() {
+			private RegisterEnv memo;
+
+			@Override
+			public RegisterEnv get() {
+				if (memo != null) {
+					return memo;
+				}
+				RegisterEnv cached = envCache.get(key);
+				if (cached == null) {
+					int before = oracleHooks == null ? 0 : oracleHooks.consultations;
+					cached = callSiteRegisters(program, callInstr, scanStop,
+						crossableWrapperJoin(program, helper.firstSite(), scanStop), helper,
+						localIn, path, callerHooks);
+					if (oracleHooks == null || oracleHooks.consultations == before) {
+						envCache.put(key, cached);
+					}
+				}
+				memo = cached;
+				return cached;
+			}
+		};
 		boolean definitelyNoInboundArgument =
 			(helper.strategy() == null || helper.strategy().consumesHelperArgument()) &&
 				!argumentSurvives &&
 				argumentDefinitelyClobbered(program, clobberSegments(helper), reg);
+		// bead grm-hsv.15: argReg's own redefinition proves only that the CALLER'S argReg value is
+		// gone -- the argument may have arrived in ANOTHER register and reached argReg through a
+		// transfer (TYA) or a scratch-cell spill (STA $00 ... ORA $00). Metroid's c4ef takes its
+		// bank in Y. Such a helper does take an inbound argument, so the "takes NO INBOUND
+		// ARGUMENT" claim is withdrawn. A false veto costs only wording; see
+		// inboundRegisterReaches for what it does and does not see.
+		if (definitelyNoInboundArgument && helper.relay() == null &&
+			inboundRegisterReaches(program, helper.entry(), helperValueSite(helper), reg)) {
+			definitelyNoInboundArgument = false;
+		}
 		// bead grm-yflf: only meaningful once definitelyNoInboundArgument already holds -- see
 		// restoreSourceCell's javadoc for why it re-derives nothing and only narrows further.
 		Address restoreCell =
@@ -524,8 +564,21 @@ final class HelperArgumentRecovery {
 			// javadoc. A store to the mechanism is still stepped over on the strength of being a
 			// provably different cell than `inbound`; what changed is only that a LOAD of a mirror
 			// encountered on the way there can now resolve instead of declining outright.
-			local = viaCell.knownMask() != 0 ? viaCell
-					: valueSuppliedInsideHelper(program, helper, reg, byteMask);
+			if (viaCell.knownMask() != 0) {
+				local = viaCell;
+			}
+			else {
+				local = valueSuppliedInsideHelper(program, helper, reg, byteMask);
+				if (local.knownMask() == 0 && helper.strategy() != null && switchSite != null) {
+					// bead grm-hsv.15: the byte may be derived from the caller's OTHER registers
+					// by a transfer or a scratch-cell spill inside the helper (TYA / STA $00 /
+					// ... ORA $00) -- scan the value site again with the caller's A/X/Y adopted
+					// at the entry, the same mini-inline the memory-latch and select-data
+					// strategies run. Only ever ADDS knowledge to an unknown answer.
+					local = valueFromCallerRegisters(program, helper, reg, byteMask,
+						callerRegsOf.get());
+				}
+			}
 		}
 		if (helper.strategy() == null || switchSite == null) {
 			// grm-mej.7: no deposit here to check a reload-kept read-back against -- drop it.
@@ -541,26 +594,9 @@ final class HelperArgumentRecovery {
 		// For a CALL-EDGE wrapper it is the relay's callee entry instead: the scan runs inside
 		// the WRAPPED helper, so stopping at the wrapper's entry would let it run off the
 		// helper's own entry and back into the wrapper's tail (grm-2dr increment 2).
-		Address scanStop = insideHelperEntry(helper);
-		// Keyed on (call address, localIn), not address alone (bead grm-mej.3 item 4, tripwire 2)
-		// -- see the memo's declaration at BankDataflowEngine.runDataflow for why the address-only
-		// key this replaced is no longer sound. BankState is a record, so CallSiteRegKey gets
-		// value equality on localIn for free.
-		// ... and NOT memoized at all when the scans consulted the StateOracle (grm-mej.3
-		// increment 3): then the answer depends on the state at another address too, which the
-		// key does not name. See the eight-argument overload's javadoc.
-		CallSiteRegKey key =
-			new CallSiteRegKey(callInstr.getMinAddress(), localIn, path.armPredecessors());
-		RegisterEnv callerRegs = envCache.get(key);
-		if (callerRegs == null) {
-			int before = oracleHooks == null ? 0 : oracleHooks.consultations;
-			callerRegs = callSiteRegisters(program, callInstr, scanStop,
-				crossableWrapperJoin(program, helper.firstSite(), scanStop), helper, localIn,
-				path, callerHooks);
-			if (oracleHooks == null || oracleHooks.consultations == before) {
-				envCache.put(key, callerRegs);
-			}
-		}
+		// (scanStop, the memo key and the lazily built callerRegs are declared above, beside the
+		// inbound-register fallback that shares them -- bead grm-hsv.15.)
+		RegisterEnv callerRegs = callerRegsOf.get();
 		// The argument-bearing deposit, computed exactly as it was before grm-4bgh.5 -- this
 		// is both the answer for a single-site helper and, for a folded one, the deposit whose
 		// emptiness decides whether this CALL SITE gets a warning. See foldDeposits.
@@ -582,7 +618,8 @@ final class HelperArgumentRecovery {
 				helper.strategy().consumesHelperArgument() &&
 				Character.valueOf(reg).equals(MosOperands.storeRegister(live)) &&
 				argumentDefinitelyClobbered(program,
-					List.of(new PrologueSegment(helper.entry(), fold.primarySite())), reg);
+					List.of(new PrologueSegment(helper.entry(), fold.primarySite())), reg) &&
+				!inboundRegisterReaches(program, helper.entry(), fold.primarySite(), reg);
 		}
 		BankSwitchStrategy.HelperDeposit primary = fold.primary();
 		BankSwitchStrategy.HelperDeposit deposit = fold.deposit();
@@ -1703,6 +1740,123 @@ final class HelperArgumentRecovery {
 			PartialByte.unknown(), PartialByte.unknown());
 		return StoredValueScanner.resolveStoredValue(program, site, reg, MechanismState.unknown(),
 			byteMask, StoredValueScanner.Hooks.INERT, insideOnly);
+	}
+
+	/**
+	 * What the helper's value site stores in {@code reg}, derived from the CALLER's registers
+	 * (bead grm-hsv.15): the same backward scan {@link #valueSuppliedInsideHelper} runs, but
+	 * with {@code callerRegs} -- the caller's A/X/Y at the helper's entry -- adopted at the entry
+	 * stop instead of "unknown".
+	 * <p>
+	 * This is what lets an argument arrive in one register and reach the mechanism through
+	 * another. Metroid's PRG helper takes the bank in Y: {@code TYA / STA $00 / LDA $28 / AND #$18
+	 * / ORA $00 / STA $E000}. The scan renames A to Y at the {@code TYA} (grm-mej.33), resolves
+	 * {@code ORA $00} by forwarding the {@code STA $00} spill, and composes the mask algebra, so
+	 * with {@code LDY #n} at the call the result is exactly the bits the OR leaves determined
+	 * (bits 0-2 of the field; bits 3-4 come from the {@code $28} shadow and stay unknown). A
+	 * second entry that steps the register first ({@code DEY}, falling into the first entry)
+	 * is covered by the same walk: the exact-value evaluator applies the step to the caller's
+	 * known register.
+	 * <p>
+	 * <b>Soundness is the mini-inline's, unchanged</b> (see {@link RegisterEnv}): the scan walks
+	 * only straight-line code back to the entry, refuses joins, calls and clobbers it cannot
+	 * evaluate, and the result is used for THIS call site only. It never overrides a value
+	 * the helper's own body already pins ({@code local.knownMask() != 0} is checked by the
+	 * caller) -- it only turns an unknown answer into a partial or known one.
+	 */
+	private static PartialByte valueFromCallerRegisters(Program program, HelperModel helper,
+			char reg, int byteMask, RegisterEnv callerRegs) {
+		Address readAt = helperValueSite(helper);
+		Instruction site = readAt == null ? null : program.getListing().getInstructionAt(readAt);
+		if (site == null || callerRegs == null) {
+			return PartialByte.unknown();
+		}
+		return StoredValueScanner.resolveStoredValue(program, site, reg, MechanismState.unknown(),
+			byteMask, StoredValueScanner.Hooks.INERT, callerRegs);
+	}
+
+	/**
+	 * Whether the CALLER's value of any of A/X/Y may reach {@code reg} at {@code valueSite}
+	 * through the helper's straight-line body from {@code entry} (bead grm-hsv.15): a forward
+	 * taint walk. It answers the question {@link #argumentDefinitelyClobbered} cannot -- that
+	 * predicate proves {@code reg}'s OWN inbound byte is gone, not that the mechanism's byte
+	 * is independent of every other inbound register.
+	 * <p>
+	 * Initially all three registers are tainted. A load or ALU op taints its destination when
+	 * any tainted register or tainted cell is an input (an immediate load, or a load of a clean
+	 * cell, cleans it); transfers and {@code DEY}-style steps follow the same rule; a plain
+	 * store of a tainted register taints its cell, of a clean one cleans it (zero-page and
+	 * absolute cells only). The walk is OVER-approximate in the taint direction, which is the
+	 * safe one for its only use, vetoing a "takes no inbound argument" claim.
+	 * <p>
+	 * <b>It declines (returns {@code false}, leaving the existing proof untouched) at anything
+	 * it does not model</b>: a call, any flow, a stack operation, a store to an indexed or
+	 * indirect target, a disassembly gap, or a span over {@link #MAX_RELOAD_WALK} instructions.
+	 * That keeps every pre-existing no-argument verdict byte-identical outside the new shape.
+	 */
+	static boolean inboundRegisterReaches(Program program, Address entry, Address valueSite,
+			char reg) {
+		if (entry == null || valueSite == null || entry.compareTo(valueSite) >= 0) {
+			return false;
+		}
+		Listing listing = program.getListing();
+		Set<Character> tainted = new HashSet<>(List.of('A', 'X', 'Y'));
+		Set<Address> cells = new HashSet<>();
+		Address cursor = entry;
+		int steps = 0;
+		while (cursor.compareTo(valueSite) < 0) {
+			if (++steps > MAX_RELOAD_WALK) {
+				return false;
+			}
+			Instruction instr = listing.getInstructionAt(cursor);
+			if (instr == null || instr.getFlowType().isCall() || instr.getFlowType().isTerminal() ||
+				instr.getFlows().length > 0 || MosOperands.touchesStack(instr)) {
+				return false;
+			}
+			Address target = MosOperands.plainAbsoluteTarget(instr);
+			boolean hasMemoryOperand = instr.getNumOperands() > 0 && !MosOperands.isImmediate(instr);
+			Character stored = MosOperands.storeRegister(instr);
+			if (stored != null) {
+				if (target == null) {
+					return false; // an indexed/indirect store may land on a tracked cell
+				}
+				if (tainted.contains(stored)) {
+					cells.add(target);
+				}
+				else {
+					cells.remove(target);
+				}
+			}
+			else {
+				if (target == null && hasMemoryOperand && MosOperands.writesMemory(instr)) {
+					return false;
+				}
+				boolean inputTainted = target == null
+						? hasMemoryOperand && !cells.isEmpty() && !MosOperands.writesMemory(instr)
+						: cells.contains(target);
+				for (char c : tainted) {
+					Register r = program.getLanguage().getRegister(String.valueOf(c));
+					if (r != null && MosOperands.readsRegister(instr, r)) {
+						inputTainted = true;
+					}
+				}
+				for (char c : new char[] { 'A', 'X', 'Y' }) {
+					if (MosOperands.modifiesRegister(instr, c)) {
+						if (inputTainted) {
+							tainted.add(c);
+						}
+						else {
+							tainted.remove(c);
+						}
+					}
+				}
+			}
+			cursor = instr.getMaxAddress().next();
+			if (cursor == null) {
+				return false;
+			}
+		}
+		return cursor.equals(valueSite) && tainted.contains(reg);
 	}
 
 	/**
