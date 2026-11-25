@@ -268,6 +268,24 @@ public class W65816RtsTrickTest extends AbstractProgramTest {
 		assertArray(0x018000, 2);
 	}
 
+	/**
+	 * grm-9nxj.45: the first pass runs before the DBR analyzer and declines the fallback-bank
+	 * table; once DBR is tracked, the post-DBR pass retries the same RTS with the moved table.
+	 */
+	@Test
+	public void postDbrPassRetriesAnRtsWhoseTableTheTrackedDbrMoved() throws Exception {
+		words("0x018000", 0x81ff, 0x820f, 0x0000);
+		Address rts = dispatcher("0a aa bd 00 80 48 60");
+		analyze(rts);
+		assertTargets(rts);   // $8000 in bank 0 is the dispatcher's own code: declined
+		setDbr(0x8000, 0x8fff, 1);
+		W65816RtsTrickPostDbrAnalyzer post = new W65816RtsTrickPostDbrAnalyzer();
+		inTx(program, "post-DBR", () -> post.added(program, new AddressSet(addr(0x8000), rts),
+			TaskMonitor.DUMMY, new MessageLog()));
+		assertTargets(rts, 0x8200, 0x8210);
+		assertArray(0x018000, 2);
+	}
+
 	@Test
 	public void trackedDbrAgreeingWithPbrChangesNothing() throws Exception {
 		words("0x8100", 0x81ff, 0x820f, 0x0000);

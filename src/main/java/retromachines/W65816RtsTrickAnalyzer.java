@@ -17,6 +17,7 @@ package retromachines;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -54,8 +55,14 @@ import ghidra.util.task.TaskMonitor;
  * <li>stamps the {@code RTS}'s E/M/X at each undecoded target and disassembles it.</li>
  * </ol>
  * No function is created: the cases share the dispatcher's stack frame. Each {@code RTS} is
- * handled once per program, and one that already has flow references is left alone. Priority is
- * that of {@link W65816JumpTableAnalyzer}.
+ * handled once per program PER TABLE ADDRESS, and one that already has flow references is left
+ * alone. Priority is that of {@link W65816JumpTableAnalyzer}.
+ *
+ * <p>That priority is before {@link W65816DataBankAnalyzer}, so in a normal run an abs-operand
+ * table is read in the fallback bank (DBR == PBR) or a user-set DBR. {@link
+ * W65816RtsTrickPostDbrAnalyzer} (grm-9nxj.45) runs the same pass again after the DBR analyzer; the
+ * record of which table each {@code RTS} was tried with is shared, so a site is retried only when
+ * the tracked DBR moved its table (or a table now first recognizes).
  */
 public class W65816RtsTrickAnalyzer extends AbstractAnalyzer {
 
@@ -66,13 +73,24 @@ public class W65816RtsTrickAnalyzer extends AbstractAnalyzer {
 			"(grm-gipk.11).";
 	private static final String COMMENT_PREFIX = "65816 RTS trick ";
 
-	/** RTS sites already handled, per program. */
-	private static final Map<Program, Set<Address>> DONE =
+	/**
+	 * RTS sites already handled, per program: the table each was tried with, or {@link #HAS_FLOW}
+	 * when it had flow references of its own. Shared with {@link W65816RtsTrickPostDbrAnalyzer}.
+	 */
+	private static final Map<Program, Map<Address, Object>> DONE =
 		Collections.synchronizedMap(new WeakHashMap<>());
 
+	/** {@link #DONE} value for an {@code RTS} left alone because it already had flow. */
+	private static final Object HAS_FLOW = new Object();
+
 	public W65816RtsTrickAnalyzer() {
-		super(NAME, DESCRIPTION, AnalyzerType.INSTRUCTION_ANALYZER);
-		setPriority(AnalysisPriority.BLOCK_ANALYSIS.after());
+		this(NAME, DESCRIPTION, AnalysisPriority.BLOCK_ANALYSIS.after());
+	}
+
+	/** For {@link W65816RtsTrickPostDbrAnalyzer}: the same pass under another name and priority. */
+	protected W65816RtsTrickAnalyzer(String name, String description, AnalysisPriority priority) {
+		super(name, description, AnalyzerType.INSTRUCTION_ANALYZER);
+		setPriority(priority);
 		setDefaultEnablement(true);
 		setSupportsOneTimeAnalysis();
 	}
@@ -86,12 +104,12 @@ public class W65816RtsTrickAnalyzer extends AbstractAnalyzer {
 	public boolean added(Program program, AddressSetView set, TaskMonitor monitor, MessageLog log)
 			throws CancelledException {
 		Listing listing = program.getListing();
-		Set<Address> done =
-			DONE.computeIfAbsent(program, p -> Collections.synchronizedSet(new LinkedHashSet<>()));
+		Map<Address, Object> done =
+			DONE.computeIfAbsent(program, p -> Collections.synchronizedMap(new LinkedHashMap<>()));
 		W65816WidthEffects effects = new W65816WidthEffects(program);
 		List<Instruction> sites = new ArrayList<>();
 		for (Instruction in : listing.getInstructions(set, true)) {
-			if ("RTS".equals(in.getMnemonicString()) && !done.contains(in.getMinAddress())) {
+			if ("RTS".equals(in.getMnemonicString()) && !HAS_FLOW.equals(done.get(in.getMinAddress()))) {
 				sites.add(in);
 			}
 		}
@@ -101,14 +119,18 @@ public class W65816RtsTrickAnalyzer extends AbstractAnalyzer {
 			monitor.checkCancelled();
 			Address rtsAddr = rts.getMinAddress();
 			if (hasFlow(rts)) {
-				done.add(rtsAddr);
+				done.put(rtsAddr, HAS_FLOW);
 				continue;
 			}
 			W65816RtsTrick.Shape shape = W65816RtsTrick.recognize(program, rts);
 			if (shape == null) {
 				continue;   // not final: a later pass may decode the window
 			}
-			done.add(rtsAddr);
+			// grm-9nxj.45: tried before with this table -> same answer. A tracked DBR that has since
+			// moved the table (W65816RtsTrickPostDbrAnalyzer) gets one more try.
+			if (shape.table().equals(done.put(rtsAddr, shape.table()))) {
+				continue;
+			}
 			Map<Register, Integer> ctx = W65816JumpTableAnalyzer.context(program, rts);
 			if (effects.emulation(rts)) {
 				continue;
