@@ -101,6 +101,8 @@ Detail and worked examples: `recon/README.md`.
   two-level ZP pointer dispatch, pop-return helpers.
 - `offset_label_classify.py` - classify offset-label switch sites by where the index comes from.
 - `param_return_census.py` - per-platform table from `ParamReturnCensusProbe` output.
+- `indexed_data_range_census.py` - census of `IndexedDataRangeProbe` output: which evidence
+  (guard / loop / family) proves an indexed data read's range (`grm-9nxj.41.1`).
 - `w65816_stack_wrap_census.py` - 65816 vector cases that wrap the 16-bit S in native mode.
 
 ## Decoders and vector harnesses
