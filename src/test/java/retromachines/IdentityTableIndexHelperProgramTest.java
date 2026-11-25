@@ -156,28 +156,59 @@ public class IdentityTableIndexHelperProgramTest extends AbstractProgramTest {
 	}
 
 	/**
-	 * 3. {@code LDX #$07 / TXA / STA $8000}: {@code TXA} (A FROM X) must NOT be renamed while
-	 * tracking A -- only the {@code TAX}/{@code TAY} direction (A INTO X/Y) renames. A walk
-	 * tracking A that meets {@code TXA} still treats it as an opaque A modifier: {@code X}'s own
-	 * immediate never enters the mask algebra as a fully-known base the way the renamed cases
-	 * above do, so the load-mnemonic branch never fires for it and the walk falls through to
-	 * {@code constantRegisterValue} exactly as before this bead. That evaluator DOES model
-	 * {@code TXA} (bead grm-4bgh.6, the "other evaluator" fallback) and so still recovers 7 here --
-	 * the discriminating claim is that behavior is BYTE-IDENTICAL to pre-grm-ld68, not that this
-	 * particular shape declines.
+	 * 3. {@code LDX #$07 / TXA / STA $8000}: since grm-mej.33 an A-tracked walk renames onto X at
+	 * {@code TXA} as well (before, only the {@code TAX}/{@code TAY} direction renamed, and this
+	 * shape was answered by {@code constantRegisterValue}'s fallback). Either way the value is 7.
 	 */
 	@Test
-	public void txaIsNotRenamedWhileTrackingA() throws Exception {
+	public void txaRenamesOntoXWhileTrackingA() throws Exception {
 		put("0xc000", "a2 07"); // LDX #$07
 		put("0xc002", "8a"); // TXA
 		put("0xc003", "8d 00 80"); // STA $8000
 
 		PartialByte value = StoredValueScanner.resolveStoredValue(program, instructionAt("0xc003"),
 			'A', MechanismState.unknown(), 0xFF, NO_HOOKS);
-		assertEquals("constantRegisterValue's fallback still resolves TXA -- this pins that the "
-				+ "answer comes from THAT evaluator, not from a (wrong) rename onto X", 0xFF,
-			value.knownMask());
+		assertEquals(0xFF, value.knownMask());
 		assertEquals(7, value.bits());
+	}
+
+	/**
+	 * 4. cv3 FUN_e9b3's shape (grm-mej.33): {@code LDY $10 (mirror) / TYA / PHA / PLA / STA $8000}.
+	 * The A-tracked walk renames onto Y at {@code TYA} and reaches the unmodified read-back of the
+	 * mirror into Y -- {@code RESTORED_BANK}, with the {@code LDY} as the read.
+	 */
+	@Test
+	public void tyaRenamingReachesAMirrorReadBackIntoY() throws Exception {
+		put("0xc000", "a4 10"); // LDY $10   -- mirror read into Y
+		put("0xc002", "98"); // TYA
+		put("0xc003", "48"); // PHA
+		put("0xc004", "68"); // PLA
+		put("0xc005", "8d 00 80"); // STA $8000
+
+		StoredValueScanner.Hooks mirrorHooks = new StoredValueScanner.Hooks() {
+			@Override
+			public boolean isMechanismWrite(Instruction instr) {
+				return false;
+			}
+
+			@Override
+			public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
+					MechanismState inStateAtStore) {
+				return null;
+			}
+
+			@Override
+			public boolean isLiveBankMirror(Address target) {
+				return builder.addr("0x10").equals(target);
+			}
+		};
+
+		StoredValueScanner.Scan scan = StoredValueScanner.resolveStoredValueScan(program,
+			instructionAt("0xc005"), 'A', MechanismState.unknown(), 0xFF, mirrorHooks, RegisterEnv.NONE);
+		assertEquals(BankSwitchStrategy.ValueStop.RESTORED_BANK, scan.stop());
+		assertNotNull("a RESTORED_BANK stop must carry a ReadBack", scan.readBack());
+		assertEquals(builder.addr("0x10"), scan.readBack().cell());
+		assertEquals(builder.addr("0xc000"), scan.readBack().readAt());
 	}
 
 	// ==================================================================

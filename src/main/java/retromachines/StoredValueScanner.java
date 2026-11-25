@@ -1170,17 +1170,18 @@ final class StoredValueScanner {
 				continue;
 			}
 
-			// TAX/TAY renaming (bead grm-ld68): when tracking Y and prev is TAY (or tracking X
-			// and prev is TAX), the value carried past this point is A's, not an opaque Y/X
-			// modifier -- switch what this walk tracks to A and keep resolving under the SAME
-			// accumulators (contra's `PLA / TAY / JSR helper`, where the helper consumes Y but
-			// the value was A's all along). transferSource(mnem, reg) also answers TXA/TYA
-			// (source X/Y, writing A) when reg == 'A', but that direction never returns 'A' as
-			// the source -- only TAX (reg == 'X') and TAY (reg == 'Y') do -- so the `== 'A'` test
-			// below excludes TXA/TYA automatically without a second mnemonic check; renaming on
-			// TXA/TYA would move a direct A-site scan onto X/Y, which is out of scope here.
+			// Transfer renaming. TAX/TAY (bead grm-ld68): when tracking Y and prev is TAY (or
+			// tracking X and prev is TAX), the value carried past this point is A's, not an opaque
+			// Y/X modifier -- switch what this walk tracks to A and keep resolving under the SAME
+			// accumulators (contra's `PLA / TAY / JSR helper`, where the helper consumes Y but the
+			// value was A's all along). TXA/TYA (bead grm-mej.33) is the same rename the other way:
+			// cv3 FUN_e9b3 reads the live bank with `LDY $8000`, switches through `JSR $e2e6`
+			// (which preserves Y), then saves the old bank with `TYA / PHA` and restores it with
+			// `PLA / JMP $e2e6`. Every branch below that is only sound for A (AND/ORA folding,
+			// PLA pairing, stack-relative reloads) tests reg == 'A', so after a rename onto X/Y
+			// those simply do not fire; the accumulators already built still describe the value.
 			Character transferredFrom = MosOperands.transferSource(prev, reg);
-			if (transferredFrom != null && transferredFrom == 'A') {
+			if (transferredFrom != null) {
 				reg = transferredFrom;
 				cur = prev;
 				continue;
