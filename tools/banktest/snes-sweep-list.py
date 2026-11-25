@@ -6,21 +6,19 @@ possible.
     python -I tools/banktest/snes-sweep-list.py <repo root> "$GRM_SNES_ROM_DIR" <out list>
 """
 import csv
-import glob
 import os
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import romlib  # noqa: E402
 
 repo, romdir, out = sys.argv[1], sys.argv[2], sys.argv[3]
 
 tier_files = []
-for m in sorted(glob.glob(os.path.join(repo, "tools/banktest/realrom/manifest-snes*.tsv"))):
-    with open(m, encoding="utf-8") as f:
-        for line in f:
-            if line.startswith("#") or line.startswith("id\t"):
-                continue
-            cols = line.rstrip("\n").split("\t")
-            if len(cols) > 2:
-                tier_files.append(cols[1])
+# romlib reads the manifests of the checkout it lives in; <repo root> is only used for build/.
+for cols in romlib.manifest_rows(["manifest-snes*.tsv"]):
+    if len(cols) > 2:
+        tier_files.append(cols[1])
 
 rows = []
 with open(os.path.join(repo, "build/snes-rom-corpus/roms.tsv"), encoding="utf-8") as f:

@@ -1,4 +1,4 @@
-"""Shared helpers for the tools/recon scripts: iNES parsing and byte-level 6502 decoding.
+"""Shared helpers for the tools/recon scripts: byte-level 6502 decoding (iNES parsing and ROM finding live in tools/banktest/romlib.py and are re-exported here).
 
 The opcode table is NOT defined here: it is tools/banktest/dis6502.py's (`OPS`, `MODES`, `fmt`),
 imported by path so that there is exactly one 6502 decode table in the repo (see AGENTS.md,
@@ -16,6 +16,8 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'banktest'))
 import dis6502  # noqa: E402  (path set up just above)
+import romlib  # noqa: E402
+from romlib import cpu_of, parse_ines  # noqa: E402,F401  (moved to romlib; re-exported for importers)
 
 OPS = dis6502.OPS
 LEN = dis6502.MODES            # mode -> instruction length
@@ -69,26 +71,6 @@ def chain_back(d, p, maxback, lo):
     return []
 
 
-def parse_ines(path):
-    """Return (mapper, prg_bytes) for an iNES file, or None if it is not one."""
-    raw = open(path, 'rb').read()
-    if raw[:4] != b'NES\x1a':
-        return None
-    prg16, f6, f7 = raw[4], raw[6], raw[7]
-    mapper = (f6 >> 4) | (f7 & 0xF0)
-    if (f7 & 0x0C) == 0x08:
-        mapper |= (raw[8] & 0x0F) << 8
-    elif raw[12:16] != b'\0\0\0\0':
-        mapper &= 0x0F  # DiskDude header garbage
-    off = 16 + (512 if f6 & 4 else 0)
-    return mapper, raw[off: off + prg16 * 0x4000]
-
-
-def cpu_of(prgsize, off):
-    """CPU address of PRG offset `off` when the last 16K bank sits at $C000."""
-    return 0xC000 + (off - (prgsize - 0x4000))
-
-
 class _View:
     """Makes dis6502.fmt (which indexes a 32K view by addr-$8000) read from a few raw bytes."""
 
@@ -106,10 +88,5 @@ def fmt_ins(ins, pc):
 
 
 def find_rom(row_id):
-    """Resolve a manifest row id to a ROM path via dis6502's --find logic (prints, so capture it)."""
-    import contextlib
-    import io
-    buf = io.StringIO()
-    with contextlib.redirect_stdout(buf):
-        dis6502.find(row_id)
-    return buf.getvalue().strip()
+    """Resolve a manifest row id to a ROM path (romlib.find_path; SystemExit if missing)."""
+    return romlib.find_path(row_id)

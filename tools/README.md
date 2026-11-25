@@ -93,7 +93,8 @@ Run with `REALROM_EXTRA_POSTSCRIPT=<Name>.java bash tools/banktest/realrom-test.
 
 Detail and worked examples: `recon/README.md`.
 
-- `rom6502.py` - shared iNES parse and 6502 decode (uses dis6502's table); not a CLI.
+- `rom6502.py` - shared 6502 decode (uses dis6502's table); re-exports `parse_ines`/`cpu_of` from
+  `banktest/romlib.py`; not a CLI.
 - `reqscan.py`, `reqrank.py` - corpus scan and ranking for request/fulfil bank switching.
 - `cellxref.py` - who reads or writes a RAM cell, who calls a routine, across all PRG banks.
 - `bankdiff.py` - is a fixed-bank call target the same code in every switchable bank?
@@ -109,6 +110,9 @@ Detail and worked examples: `recon/README.md`.
 
 - `banktest/dis6502.py` - THE 6502 disassembler and opcode table; `--find <row-id>` resolves a
   pinned ROM. Import it, do not write another.
+- `banktest/romlib.py` - THE manifest reader and ROM locator (`rom_dirs`, `manifest_rows`,
+  `find_path`/`find_many`/`find_sha`, `parse_ines`, `cpu_of`); import it, do not re-split
+  `GRM_ROM_DIR` or re-parse `manifest*.tsv`. Not a CLI.
 - `mos6502/`, `w65816/`, `spc700/` `sample-vectors.py` - vendor a sample of the SingleStepTests
   suites (consumed by JUnit). `spc700/extract-upload-blocks.py` - SPC700 upload stream from a
   SNES ROM.

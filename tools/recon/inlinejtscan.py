@@ -3,7 +3,7 @@
 
 Usage:
   python -I tools/recon/inlinejtscan.py <rom.nes> [...]
-  python -I tools/recon/inlinejtscan.py --row <row-id> [...]   (resolves via dis6502.py --find)
+  python -I tools/recon/inlinejtscan.py --row <row-id> [...]   (resolves via romlib, like dis6502.py --find)
 
 Written for grm-gipk.26 (metroid_u's ChooseRoutine at $C27C parks the entry's low byte in X).
 Prints every PRG offset where the dispatcher's double indirect load appears, labelled by where
@@ -19,8 +19,10 @@ pointer-copy loops, and ultimaav's `tax` hits at $C36E/$C392 are a table search,
 dispatcher (its real one is $F449).
 """
 import os
-import subprocess
 import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'banktest'))
+import romlib  # noqa: E402
 
 SHAPES = (
     ('tax', lambda d, i: d[i + 2] == 0xAA and d[i + 3] == 0xC8 and d[i + 4] == 0xB1 and
@@ -51,12 +53,8 @@ def main():
         sys.exit(__doc__)
     paths = []
     if args[0] == '--row':
-        here = os.path.dirname(os.path.abspath(__file__))
-        dis = os.path.join(here, '..', 'banktest', 'dis6502.py')
         for row in args[1:]:
-            out = subprocess.run([sys.executable, '-I', dis, '--find', row],
-                                 capture_output=True, text=True, check=True)
-            paths.append((row, out.stdout.strip()))
+            paths.append((row, romlib.find_path(row)))
     else:
         paths = [(p, p) for p in args]
     for label, path in paths:

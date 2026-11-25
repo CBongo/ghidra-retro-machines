@@ -16,21 +16,20 @@ Output per hit: PRG offset, CPU address, outer table T, inner cap (from an AND #
 inner TAY, else '?'), and the first outer-table words ('ok' = they all land in $8000-$FFFF).
 """
 import argparse
-import glob
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import rom6502  # noqa: E402
+import romlib  # noqa: E402  (rom6502 put tools/banktest on sys.path)
 
 
 def rows():
+    """Ids of every manifest row with a numeric mapper column (the NES rows)."""
     out = []
-    for m in sorted(glob.glob('tools/banktest/realrom/manifest*.tsv')):
-        for line in open(m, encoding='utf-8'):
-            f = line.rstrip('\n').split('\t')
-            if len(f) > 3 and f[0] != 'id' and f[3].isdigit() and f[0] not in out:
-                out.append(f[0])
+    for f in romlib.manifest_rows():
+        if len(f) > 3 and f[3].isdigit() and f[0] not in out:
+            out.append(f[0])
     return out
 
 

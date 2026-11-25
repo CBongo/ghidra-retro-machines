@@ -8,7 +8,7 @@ RTS/JMP, byte-pattern writer counts include data coincidences).
 
 All of them share one 6502 decode table: `tools/banktest/dis6502.py`, via `rom6502.py` here.
 Run with `python -I tools/recon/<script>.py` from the repo root. ROM paths come from arguments, or
-`--find <row-id>` (a pinned manifest row, resolved from `$GRM_ROM_DIR` like `dis6502.py --find`).
+`--find <row-id>` (a pinned manifest row, resolved from `$GRM_ROM_DIR` by `tools/banktest/romlib.py`, like `dis6502.py --find`).
 For a plain disassembly use `tools/banktest/dis6502.py`.
 
 | Tool | Bead | What it does |
@@ -23,7 +23,7 @@ For a plain disassembly use `tools/banktest/dis6502.py`.
 | `offset_label_classify.py` | grm-hf5h.11 | Classifies switch sites that still print byte-offset labels by where the index comes from (stride, back-chain evidence). Inputs: a `SwitchLabelCensus` log dir and `IndexBackChainProbe` output. |
 | `param_return_census.py` | grm-etbh | Aggregates `ParamReturnCensusProbe` `.prc` files into a per-platform table of callee, caller and confirmed parameter/return evidence (`--md` for Markdown). |
 | `w65816_stack_wrap_census.py` | grm-9nxj.44 | Counts 65816 SingleStepTests vector cases whose native-mode stack access wraps at the 16-bit S boundary (default `$GRM_W65816_VECTORS/v1`). |
-| `rom6502.py` | both | Shared helpers (iNES parse, decode, chain-back, formatting); not a CLI. |
+| `rom6502.py` | both | Shared helpers (decode, chain-back, formatting; re-exports `parse_ines`/`cpu_of`/`find_rom` from `tools/banktest/romlib.py`); not a CLI. |
 
 Worked example (Metroid, mapper 1):
 

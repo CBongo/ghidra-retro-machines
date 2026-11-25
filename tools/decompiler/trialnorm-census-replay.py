@@ -22,49 +22,25 @@ WSL paths are given as seen from WSL; the bins and sleigh homes are WSL paths. T
 needs a .sla compiled by the replay tree's own sleigh (see the 65816-replay-sla bd memory).
 """
 import argparse
-import hashlib
 import os
 import re
 import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(os.path.dirname(HERE))
+sys.path.insert(0, os.path.join(HERE, '..', 'banktest'))
+import romlib  # noqa: E402
 MANIFESTS = ['manifest.tsv', 'manifest-gme.tsv', 'manifest-snes-analysis.tsv']
-
-
-def split_dirs(value):
-    """Split a ROM-dir list the way realrom-test.sh does: a value containing ';' splits on ';'
-    only (dirs may hold spaces), each part whitespace-trimmed; otherwise on any whitespace."""
-    parts = value.split(';') if ';' in value else value.split()
-    return [p.strip() for p in parts if p.strip()]
+split_dirs = romlib.split_dirs   # realrom-test.sh's ROM-dir rule, shared (tools/banktest/romlib.py)
+find_rom = romlib.find_sha       # any regular file under 16 MiB, like before
 
 
 def manifest_rows():
     rows = {}
-    for m in MANIFESTS:
-        p = os.path.join(ROOT, 'tools', 'banktest', 'realrom', m)
-        if not os.path.exists(p):
-            continue
-        for ln in open(p, encoding='utf-8'):
-            if ln.startswith('#') or not ln.strip():
-                continue
-            f = ln.rstrip('\n').split('\t')
-            if len(f) > 4:
-                rows.setdefault(f[0], (f[2], f[4]))
+    for f in romlib.manifest_rows(MANIFESTS):
+        if len(f) > 4:
+            rows.setdefault(f[0], (f[2], f[4]))
     return rows
-
-
-def find_rom(sha, dirs):
-    for d in dirs:
-        if not os.path.isdir(d):
-            continue
-        for fn in os.listdir(d):
-            p = os.path.join(d, fn)
-            if os.path.isfile(p) and os.path.getsize(p) < 16 * 1024 * 1024:
-                if hashlib.sha256(open(p, 'rb').read()).hexdigest() == sha:
-                    return p
-    return None
 
 
 def chunks(xml):

@@ -27,7 +27,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import rom6502  # noqa: E402
-import twolevelscan  # noqa: E402  (shares its manifest row reader)
+import romlib  # noqa: E402  (rom6502 put tools/banktest on sys.path)
+import twolevelscan  # noqa: E402  (shares its NES-row id list)
 
 PUSH = {'PHA': 1, 'PHP': 1, 'PLA': -1, 'PLP': -1}
 USE_AFTER_PLA = {'STA', 'TAX', 'TAY', 'AND', 'ORA', 'EOR', 'ADC', 'SBC', 'CMP', 'ASL', 'LSR',
@@ -95,7 +96,7 @@ def main():
     a = ap.parse_args()
     targets = [(p, p) for p in a.roms]
     ids = a.find + (twolevelscan.rows() if a.all_rows else [])
-    found = rom6502.dis6502.find_many(ids)   # one hashing pass for every row
+    found = romlib.find_many(ids)   # one hashing pass for every row
     for rid in ids:
         if rid in found:
             targets.append((rid, found[rid]))

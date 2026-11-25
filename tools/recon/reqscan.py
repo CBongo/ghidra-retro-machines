@@ -37,6 +37,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from rom6502 import TERM, chain_back, cpu_of, decode, operand  # noqa: E402
 from rom6502 import parse_ines as parse  # noqa: E402
+from romlib import split_dirs  # noqa: E402  (rom6502 put tools/banktest on sys.path)
 
 def scan(path):
     r = parse(path)
@@ -246,7 +247,7 @@ def main():
         raw = os.environ.get('GRM_ROM_DIR', '') if '--rom-dir' in sys.argv else ''
         if not raw:
             sys.exit(__doc__)
-        dirs = [d.strip() for d in raw.split(';')] if ';' in raw else raw.split()
+        dirs = split_dirs(raw)
     else:
         dirs = sys.argv[2].split(';')
     only = None
