@@ -61,7 +61,7 @@ public class Mos6502VectorSampleTest extends AbstractBundledLanguageTest {
 		File vectorsDir = new File(moduleRoot, "src/test/resources/mos6502-vectors");
 		List<File> opcodeFiles = Mos6502VectorHarnessSupport.opcodeFilesIn(vectorsDir);
 		assertTrue("no vendored vector files found under " + vectorsDir +
-			" -- run tools/mos6502/sample-vectors.py", !opcodeFiles.isEmpty());
+			" -- run tools/vectors/sample-vectors.py --cpu mos6502", !opcodeFiles.isEmpty());
 
 		VectorRunner runner = Mos6502VectorHarnessSupport.newRunner(language);
 		List<OpcodeBaseline> actual = new ArrayList<>();

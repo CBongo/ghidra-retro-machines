@@ -77,7 +77,7 @@ public class W65816VectorSampleTest extends AbstractBundledLanguageTest {
 		File vectorsDir = new File(moduleRoot, "src/test/resources/w65816-vectors");
 		List<File> opcodeFiles = W65816VectorHarnessSupport.opcodeFilesIn(vectorsDir);
 		assertTrue("no vendored vector files found under " + vectorsDir +
-			" -- run tools/w65816/sample-vectors.py", !opcodeFiles.isEmpty());
+			" -- run tools/vectors/sample-vectors.py --cpu w65816", !opcodeFiles.isEmpty());
 
 		VectorRunner runner = W65816VectorHarnessSupport.newRunner(language);
 		List<OpcodeBaseline> actual = new ArrayList<>();

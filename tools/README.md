@@ -114,7 +114,7 @@ Detail and worked examples: `recon/README.md`.
 - `banktest/romlib.py` - THE manifest reader and ROM locator (`rom_dirs`, `manifest_rows`,
   `find_path`/`find_many`/`find_sha`, `parse_ines`, `cpu_of`); import it, do not re-split
   `GRM_ROM_DIR` or re-parse `manifest*.tsv`. Not a CLI.
-- `mos6502/`, `w65816/`, `spc700/` `sample-vectors.py` - vendor a sample of the SingleStepTests
+- `vectors/sample-vectors.py --cpu {mos6502,w65816,spc700}` - vendor a sample of the SingleStepTests
   suites (consumed by JUnit). `spc700/extract-upload-blocks.py` - SPC700 upload stream from a
   SNES ROM.
 - No 65816 or SPC700 disassembler lives in tools/: use the Ghidra listing (probes) or

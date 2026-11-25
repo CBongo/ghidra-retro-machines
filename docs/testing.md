@@ -337,7 +337,7 @@ see `Spc700VectorExhaustiveTest`'s class doc):
   variable is unset, mirroring `tools/banktest/realrom-test.sh`'s "never report a clean gate for
   a tier that did not execute" rule. Regenerate the clone with `git clone --depth 1
   https://github.com/SingleStepTests/spc700 <dir>`; regenerate the vendored sample with
-  `python3 tools/spc700/sample-vectors.py --source <dir>`; regenerate this baseline with
+  `python3 tools/vectors/sample-vectors.py --cpu spc700 --source <dir>`; regenerate this baseline with
   `gradle spc700VectorTest -Dgrm.spc700.regenerateExhaustiveBaseline=true` (a *different* `-D`
   property from the sample test's, forwarded to this task's own forked worker in `build.gradle` —
   Gradle does not forward `-D` properties across Test tasks automatically, only within one task's
@@ -500,7 +500,7 @@ fires anyway: drop the 43 entries and regenerate.
 **Rank a failing row by its pass fraction before believing it is a bug** still holds, but there is
 now very little to rank.
 
-Regenerate the vendored sample with `python3 tools/w65816/sample-vectors.py --source
+Regenerate the vendored sample with `python3 tools/vectors/sample-vectors.py --cpu w65816 --source
 <full-clone-dir>` (or, for the loose one-file-at-a-time flow used the first time, `--source
 <scratch-dir> --loose`); regenerate `w65816-vector-baseline.txt` with `gradle test
 -Dgrm.w65816.regenerateBaseline=true --tests '*W65816VectorSampleTest'`; regenerate the
@@ -554,7 +554,7 @@ neither test class Assume-skips on a missing language — a resolution failure i
   Sleigh constructor differing only in which `op` value selects it, so the representative
   verification stands for all twelve.
 
-**Regenerate the vendored sample** with `python3 tools/mos6502/sample-vectors.py --source
+**Regenerate the vendored sample** with `python3 tools/vectors/sample-vectors.py --cpu mos6502 --source
 <full-clone-dir>` (writes `src/test/resources/mos6502-vectors/`, 32 cases/opcode, 256 files,
 8192 cases; see that directory's `MANIFEST.txt` for upstream provenance). **Regenerate
 `mos6502-vector-baseline.txt`** with `gradle test -Dgrm.mos6502.regenerateBaseline=true --tests

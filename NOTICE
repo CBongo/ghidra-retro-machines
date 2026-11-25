@@ -79,7 +79,7 @@ src/test/resources/spc700-vectors/*.json
   Commit:   67d15f492b2740964abd4efd1229e0ec9c342228
   Path:     v1/<opcode-hex>.json
 
-  Sampled, not vendored verbatim: tools/spc700/sample-vectors.py takes the
+  Sampled, not vendored verbatim: tools/vectors/sample-vectors.py --cpu spc700 takes the
   first N cases of each of the 256 upstream per-opcode files (N=32 by
   default) with no reordering, so the sample is a byte-for-byte prefix of
   upstream content, regenerable at any N against a fresh clone.
@@ -179,7 +179,7 @@ src/test/resources/w65816-vectors/*.json
   taken with no reordering (N=8) from a full clone, EXCEPT opcodes 44 (MVP) and 54
   (MVN), whose files take the 8 cases with the smallest initial A (ties by file order,
   kept in file order) to bound their size -- see
-  tools/w65816/sample-vectors.py, which reproduces the same sampling logic against
+  tools/vectors/sample-vectors.py --cpu w65816, which reproduces the same sampling logic against
   a real clone or a loose directory of individually-fetched files (--loose).
 --------------------------------------------------------------------------------
 src/test/resources/mos6502-vectors/*.json
@@ -217,7 +217,7 @@ src/test/resources/mos6502-vectors/*.json
   Commit:   2f6980a2d95757486c7bee24355c360e40e2a224
   Path:     6502/v1/<opcode-hex>.json
 
-  Sampled, not vendored verbatim: tools/mos6502/sample-vectors.py takes the
+  Sampled, not vendored verbatim: tools/vectors/sample-vectors.py --cpu mos6502 takes the
   first N cases of each of the 256 upstream per-opcode files (N=32 by
   default) with no reordering, so the sample is a byte-for-byte prefix of
   upstream content, regenerable at any N against a fresh clone. Only the

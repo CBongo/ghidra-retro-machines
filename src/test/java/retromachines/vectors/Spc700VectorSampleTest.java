@@ -75,7 +75,7 @@ public class Spc700VectorSampleTest extends AbstractBundledLanguageTest {
 		File vectorsDir = new File(moduleRoot, "src/test/resources/spc700-vectors");
 		List<File> opcodeFiles = Spc700VectorHarnessSupport.opcodeFilesIn(vectorsDir);
 		assertTrue("no vendored vector files found under " + vectorsDir +
-			" -- run tools/spc700/sample-vectors.py", !opcodeFiles.isEmpty());
+			" -- run tools/vectors/sample-vectors.py --cpu spc700", !opcodeFiles.isEmpty());
 
 		VectorRunner runner = Spc700VectorHarnessSupport.newRunner(language);
 		List<OpcodeBaseline> actual = new ArrayList<>();
