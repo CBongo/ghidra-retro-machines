@@ -23,6 +23,7 @@ hardcoded.
 | Compare two builds, commits or toolchains on real ROMs | `banktest/ab-test.sh`; per-address diffs via `InstructionListDump`, `FunctionListDump`, `CallSiteListDump` |
 | Which analyzer created, changed or removed a code unit or function | `banktest/CodeUnitWatchProbe.java`, `FunctionWatchProbe.java` (prescripts) |
 | Where is a pinned row's ROM image; decode its bytes | `banktest/dis6502.py --find <row-id>`, or `dis6502.py <rom> <map> <start> <end>` |
+| Where does this byte pattern occur (wildcards, captures) across the ROM corpus | `recon/romscan.py` |
 | Who reads or writes a RAM cell, who calls a routine | `recon/cellxref.py` |
 | Is a fixed-bank call target the same code in every switchable bank | `recon/bankdiff.py` |
 | Why is a function flagged no-return | `banktest/NoReturnProbe.java`, `NoReturnEvidenceProbe.java`, `NoReturnFlagCensus.java` |
