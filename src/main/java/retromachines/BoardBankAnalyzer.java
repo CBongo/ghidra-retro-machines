@@ -45,6 +45,7 @@ import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
+import ghidra.program.model.symbol.Reference;
 import ghidra.program.model.symbol.ReferenceManager;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.task.TaskMonitor;
@@ -979,6 +980,13 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		BankMirrors.Membership membership =
 			mirrors.restoreMembership(cell, readBack.statesAtEveryRead(flow::statesAt));
 		if (membership == BankMirrors.Membership.UNPROVEN) {
+			// grm-mej.32: a read in its function's entry run holds the bank of whichever call
+			// entered it. The joined entry state can lose bits two fully known callers disagree
+			// on (cv3 FUN_e935, entered from banks 4 and 26), so judge each caller's state.
+			membership = mirrors.restoreMembership(cell, readBack.statesAtEveryRead(
+				at -> statesThroughEntryCallers(program, listing, flow, at)));
+		}
+		if (membership == BankMirrors.Membership.UNPROVEN) {
 			return null;
 		}
 		BankMirrors.IdentifyingEncoding encoding = mirrors.identifyingEncoding(cell);
@@ -1139,6 +1147,43 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			cursor = next;
 		}
 		return false;
+	}
+
+	/**
+	 * The states at {@code readAt}, split by way in when the read is in its function's entry run
+	 * ({@link #readsEntryBank}): the state at every flow source into the entry, each of which
+	 * enters with its own bank (bead grm-mej.32). Their join is {@code flow.statesAt(readAt)}, so
+	 * this is never less precise. Falls back to {@code flow.statesAt(readAt)} whenever a way in is
+	 * not a seen flow edge: an external entry point (vector), a non-flow reference to the entry (a
+	 * pointer table), a fall-through into it, or a source with no tracked state.
+	 */
+	private static List<BankState> statesThroughEntryCallers(Program program, Listing listing,
+			DataflowResult flow, Address readAt) {
+		List<BankState> plain = flow.statesAt(readAt);
+		Function function = program.getFunctionManager().getFunctionContaining(readAt);
+		if (function == null || !readsEntryBank(program, listing, flow, function, readAt)) {
+			return plain;
+		}
+		Address entry = function.getEntryPoint();
+		if (program.getSymbolTable().isExternalEntryPoint(entry)) {
+			return plain;
+		}
+		Instruction before = listing.getInstructionBefore(entry);
+		if (before != null && entry.equals(before.getFallThrough())) {
+			return plain;
+		}
+		List<BankState> split = new ArrayList<>();
+		for (Reference ref : program.getReferenceManager().getReferencesTo(entry)) {
+			if (!ref.getReferenceType().isFlow()) {
+				return plain;
+			}
+			List<BankState> states = flow.statesAt(ref.getFromAddress());
+			if (states.isEmpty()) {
+				return plain;
+			}
+			split.addAll(states);
+		}
+		return split.isEmpty() ? plain : split;
 	}
 
 	/** How far {@link #readsEntryBank} walks from a function's entry before declining. */
