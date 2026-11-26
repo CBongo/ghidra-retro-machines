@@ -469,10 +469,22 @@ grm_prune_work_dirs() {
 # entries are touched on every hit (grm_touch_cache_entry) and rewritten by every check, so a
 # live build's entries never age out. Dotfiles are never matched -- build/realrom-cache/
 # .last-verified is the REALROM staleness stamp (GRM_REALROM_STAMP), not a cache entry.
+#
+# At most ONE sweep per day per cache dir, behind the .last-prune stamp (bead grm-949h.5).
+# The sweep stats every entry (build/banktest-cache held 15,560 files on 2026-11-25). Warm,
+# that took 0.4s, but cold it stalled a gate's preflight for 87-118s, silently, on every
+# runner invocation. A 14-day retention lost nothing by being checked daily rather than per
+# run. GRM_CACHE_PRUNE_NOW=1 forces a sweep.
 grm_prune_cache() {
-	local dir="$1" days="${GRM_CACHE_KEEP_DAYS:-14}" n=0
+	local dir="$1" days="${GRM_CACHE_KEEP_DAYS:-14}" n=0 stamp
 	[ -d "$dir" ] || return 0
 	case "$days" in *[!0-9]*|"") return 0 ;; esac
+	stamp="$dir/.last-prune"
+	if [ "${GRM_CACHE_PRUNE_NOW:-}" != 1 ] && [ -f "$stamp" ] &&
+		[ -n "$(find "$stamp" -maxdepth 0 -mmin -1440 2>/dev/null)" ]; then
+		return 0
+	fi
+	touch "$stamp" 2>/dev/null
 	n="$(find "$dir" -maxdepth 1 -type f \( -name '*.dump' -o -name '*.crit' \) -mtime +"$days" -print -delete 2>/dev/null | wc -l)"
 	[ "${n:-0}" -gt 0 ] && echo "== pruned $n stale cache file(s) from $dir (untouched ${days}d) =="
 	return 0

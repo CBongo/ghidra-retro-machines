@@ -464,28 +464,61 @@ bless_candidate() {
 # imported together by flush_batch: ONE analyzeHeadless with several -import args (same -loader,
 # options, -scriptPath, -postScript; the postScript runs once per program). The queue is flushed
 # (in order) before anything that is not a plain queued import -- a non-batchable run_one,
-# run_reject, run_census, a cache hit, a step that reads a fixture's log -- when the loader or
-# options change, when a basename would repeat (program names must be unique in a project),
-# at the batch size, and at the end of the run. Every flush prints "BATCH n=<k> flush=<reason>".
+# run_reject, run_census, a cache hit, a step that reads a fixture's log -- and at the end of
+# the run. A sub-queue (see KEYED QUEUES below) is also flushed on its own when a basename
+# would repeat in it (program names must be unique in a project) and at the batch size. Every flush prints "BATCH n=<k> flush=<reason>".
 # Failure isolation: a batch that exits non-zero, or leaves a fixture without its section, is
 # re-run fixture by fixture through run_one_import, so a crash is attributed to its fixture.
 # run_headless_timed lives in lib/common.sh (shared with realrom-test.sh, grm-x4y1.2).
 
+#
+# KEYED QUEUES (bead grm-949h, proposal 4). One JVM takes one -loader and one option set, so
+# the queue holds one sub-queue per (loader, options) pair, and a fixture with different
+# options joins (or opens) its own sub-queue instead of flushing the others. Before this, one
+# odd-options fixture between two plain ones split them into separate JVMs. That was 23 of
+# the gate's batch boundaries, each costing a ~4s JVM start. flush_batch still drains EVERY
+# sub-queue, in the order each was opened. So the ordering rule is unchanged: every queued
+# fixture is imported before the next side-effecting or log-reading step
+# (batched-banktest-flush-before-side-effects). Only plain imports between two flush points
+# can change order relative to each other, and those share no state. Size cap and duplicate
+# basename apply per sub-queue (each is its own project).
 BQ_NAME=()
 BQ_FIX=()
 BQ_BASE=()
 BQ_KEY=()
-BQ_LOADER=""
-BQ_EXTRA=""
+BQ_Q=()          # sub-queue index of each entry
+BQ_QLOADER=()    # per sub-queue: loader
+BQ_QEXTRA=()     # per sub-queue: loader options
 BATCH_SEQ=0
 
+# Drain every sub-queue (see above).
 flush_batch() {
-	local reason="${1:-unspecified}"
-	local n=${#BQ_NAME[@]}
+	local reason="${1:-unspecified}" q
+	for q in "${!BQ_QLOADER[@]}"; do
+		flush_subqueue "$q" "$reason"
+	done
+	BQ_NAME=(); BQ_FIX=(); BQ_BASE=(); BQ_KEY=(); BQ_Q=(); BQ_QLOADER=(); BQ_QEXTRA=()
+}
+
+# Import sub-queue $1's entries in one analyzeHeadless and remove them from the queue.
+flush_subqueue() {
+	local q="$1" reason="${2:-unspecified}" i
+	local names=() fixes=() bases=() keys=()
+	local kn=() kf=() kb=() kk=() kq=()
+	for i in "${!BQ_NAME[@]}"; do
+		if [ "${BQ_Q[$i]}" = "$q" ]; then
+			names+=("${BQ_NAME[$i]}"); fixes+=("${BQ_FIX[$i]}")
+			bases+=("${BQ_BASE[$i]}"); keys+=("${BQ_KEY[$i]}")
+		else
+			kn+=("${BQ_NAME[$i]}"); kf+=("${BQ_FIX[$i]}")
+			kb+=("${BQ_BASE[$i]}"); kk+=("${BQ_KEY[$i]}"); kq+=("${BQ_Q[$i]}")
+		fi
+	done
+	BQ_NAME=(${kn[@]+"${kn[@]}"}); BQ_FIX=(${kf[@]+"${kf[@]}"}); BQ_BASE=(${kb[@]+"${kb[@]}"})
+	BQ_KEY=(${kk[@]+"${kk[@]}"}); BQ_Q=(${kq[@]+"${kq[@]}"})
+	local n=${#names[@]}
 	[ "$n" -gt 0 ] || return 0
-	local names=("${BQ_NAME[@]}") fixes=("${BQ_FIX[@]}") bases=("${BQ_BASE[@]}") keys=("${BQ_KEY[@]}")
-	local loader="$BQ_LOADER" extra="$BQ_EXTRA"
-	BQ_NAME=(); BQ_FIX=(); BQ_BASE=(); BQ_KEY=()
+	local loader="${BQ_QLOADER[$q]}" extra="${BQ_QEXTRA[$q]}"
 	BATCH_SEQ=$((BATCH_SEQ + 1))
 	local seq=$BATCH_SEQ i
 	echo "BATCH n=$n flush=$reason"
@@ -592,24 +625,36 @@ run_one() {
 	# Batched path (bead grm-w9ev.5): only a plain import -- no pre/post-script arguments, no
 	# key inputs, no produced file (GRM_NO_CACHE) -- is queued; everything else flushes the queue
 	# first (so ordering and side effects hold) and runs on its own.
+	# -recursive (a .d64 drilled into) is never queued: its programs are named after the disk's
+	# members, not the fixture's basename, so the batch log never splits back into per-fixture
+	# sections and every such batch fell back to solo runs, one JVM wasted per batch.
 	if [ "$BATCH_ON" -eq 1 ] && [ -z "$hargs" ] && [ -z "$pargs" ] &&
-		[ -z "${GRM_KEY_INPUTS:-}" ] && [ -z "${GRM_NO_CACHE:-}" ]; then
-		local base
+		[ -z "${GRM_KEY_INPUTS:-}" ] && [ -z "${GRM_NO_CACHE:-}" ] &&
+		[[ " $extra " != *" -recursive "* ]]; then
+		local base q="" i cnt=0
 		base="$(basename "$fixture")"
-		if [ ${#BQ_NAME[@]} -gt 0 ]; then
-			if [ "$loader" != "$BQ_LOADER" ] || [ "$extra" != "$BQ_EXTRA" ]; then
-				flush_batch "loader-or-options-change:$name"
-			elif [[ " ${BQ_BASE[*]} " == *" $base "* ]]; then
-				flush_batch "duplicate-basename:$name"
+		for i in "${!BQ_QLOADER[@]}"; do
+			if [ "${BQ_QLOADER[$i]}" = "$loader" ] && [ "${BQ_QEXTRA[$i]}" = "$extra" ]; then
+				q="$i"; break
 			fi
+		done
+		if [ -z "$q" ]; then
+			q=${#BQ_QLOADER[@]}
+			BQ_QLOADER+=("$loader"); BQ_QEXTRA+=("$extra")
 		fi
-		BQ_LOADER="$loader"
-		BQ_EXTRA="$extra"
+		for i in "${!BQ_NAME[@]}"; do
+			if [ "${BQ_Q[$i]}" = "$q" ] && [ "${BQ_BASE[$i]}" = "$base" ]; then
+				flush_subqueue "$q" "duplicate-basename:$name"
+				break
+			fi
+		done
 		BQ_NAME+=("$name")
 		BQ_FIX+=("$fixture")
 		BQ_BASE+=("$base")
 		BQ_KEY+=("$key")
-		if [ ${#BQ_NAME[@]} -ge "$BATCH_N" ]; then flush_batch "size-cap"; fi
+		BQ_Q+=("$q")
+		for i in "${BQ_Q[@]}"; do [ "$i" = "$q" ] && cnt=$((cnt + 1)); done
+		if [ "$cnt" -ge "$BATCH_N" ]; then flush_subqueue "$q" "size-cap"; fi
 		return
 	fi
 	flush_batch "non-batchable:$name"
