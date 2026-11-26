@@ -327,6 +327,15 @@ sourceSets {
 	}
 }
 
+// Only main's `gdtbuilder` package, for the gdtBuilder classpath (grm-949h.7; see the
+// gdtBuilderImplementation comment below). Sync, not Copy, so a deleted class leaves too.
+def gdtBuilderMainClasses = tasks.register('gdtBuilderMainClasses', Sync) {
+	from(sourceSets.main.output.classesDirs) {
+		include 'gdtbuilder/**'
+	}
+	into layout.buildDirectory.dir('gdtbuilder-main-classes')
+}
+
 dependencies {
 	// Ghidra's own jars, needed to construct DataTypeManager/StructureDataType/etc.
 	// standalone (outside the Ghidra GUI/headless-analyzer process). Build-only: this
@@ -348,7 +357,14 @@ dependencies {
 	// `gradle test` failing with "Circular dependency between the following tasks". Only the
 	// compiled .class files are actually needed here, and `classesDirs` depends on
 	// `compileJava` alone, which has no such path back.
-	gdtBuilderImplementation files(sourceSets.main.output.classesDirs)
+	//
+	// Narrowed to main's `gdtbuilder` package through the gdtBuilderMainClasses Sync below
+	// (bead grm-949h.7). Every buildXxxGdt/Map/Game JavaExec has this on its classpath, and a
+	// JavaExec classpath is a content-fingerprinted input, so with all of main's classes there,
+	// ANY src/main edit reran all ~35 tasks (~36s measured) to emit byte-identical output. The
+	// gdtbuilder classes (MapCompiler, YamlSupport, GameCompiler) import nothing else from main;
+	// should one ever start to, the gdtBuilder compile fails on it rather than going stale.
+	gdtBuilderImplementation files(gdtBuilderMainClasses)
 
 	// YAML parsing, needed at RUNTIME by the JavaExec tasks below (classpath =
 	// sourceSets.gdtBuilder.runtimeClasspath) whenever they execute YamlSupport's
@@ -695,6 +711,25 @@ test {
 	useJUnit()
 	maxHeapSize = '2g'
 	environment 'GHIDRA_INSTALL_DIR', ghidraInstallDir
+
+	// Parallel forks (bead grm-949h.6): the suite was ~215s in one serial fork. Default
+	// min(4, cores/2), since each fork may take its 2g heap; override with -PtestForks=N.
+	// Forks must not share Ghidra's test directory, which is also the test application's
+	// user-settings dir. In development mode AbstractGTest derives it from the repo's name
+	// alone, so every fork of this worktree would get the same one. Ghidra's own
+	// batch-test mode (SystemUtilities.TESTING_BATCH_PROPERTY) gives each JVM a
+	// test_<UUID> dir instead. Its only other effect is debug logging, checked at the 12.2
+	// tag. java.io.tmpdir keeps those per-fork dirs under build/ rather than %TEMP%, and
+	// doFirst clears them before each run.
+	maxParallelForks = (project.findProperty('testForks') ?:
+		Math.max(1, Math.min(4, Runtime.runtime.availableProcessors().intdiv(2)))) as int
+	def testTmp = layout.buildDirectory.dir('test-tmp').get().asFile
+	systemProperty 'ghidra.test.property.batch.mode', 'true'
+	systemProperty 'java.io.tmpdir', testTmp.absolutePath
+	doFirst {
+		project.delete(testTmp)
+		testTmp.mkdirs()
+	}
 
 	// Bundled-language visibility for Tier-2 tests (bead grm-2pi). Ghidra finds languages by
 	// scanning module data dirs, not the classpath, and the stock test layout only discovers
