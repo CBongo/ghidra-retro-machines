@@ -83,6 +83,15 @@ bash tools/banktest/realrom-test.sh check snes <romdir>         # SNES set only
 bash tools/banktest/realrom-test.sh check all <romdir>          # every set, every platform
 ```
 
+**Bistability check (`grm-2a2a.11`).** `realrom-test.sh repeat N [SET ...] --only <ids>` imports each
+named row N times solo (fresh import every time, never from `build/realrom-cache`, batch size 1) and
+prints, per row, the distinct dump sha256s with counts and whether each equals the golden, e.g.
+`contra  10 runs  1 distinct  ok` or `megaman  4 runs  2 distinct  BISTABLE  a1b2..x3  c4d5..x1`.
+One dump per variant is kept in the work dir (`<id>.v<k>.dump`) to diff. Exit 0 only if every row
+has exactly 1 distinct dump. `--only` is required; it stages the build like `check` (`--no-build`
+honoured) and never refreshes the staleness stamp. A clean streak does not retire a bistable bead
+(`bd recall bistable-golden-sticky-states`).
+
 **The old `--gme`/`--all`/`--snes` flags were removed in grm-x4y1.5** and now exit 2 with a hint
 (`--gme` → `nes-gme`, `--all` → `nes`, `--snes` → `snes`; no flag used to mean `nes-curated`). Sets
 *select* rather than adding to a running total, and every run announces which sets it resolved and

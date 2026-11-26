@@ -10,6 +10,7 @@
 #   bash tools/banktest/realrom-test.sh bless    [SET ...] [--only|--except <ids>] [--no-build] <romdir> ...
 #   bash tools/banktest/realrom-test.sh nominate <romdir> ...
 #   bash tools/banktest/realrom-test.sh coverage [SET ...] [--only|--except <ids>] [--no-build]
+#   bash tools/banktest/realrom-test.sh repeat N [SET ...] --only <ids> [--no-build] <romdir> ...
 #   bash tools/banktest/realrom-test.sh --list-sets
 #
 # SETS ARE NAMED POSITIONALLY, NOT SELECTED BY A FLAG PER PLATFORM (bead grm-ughg). This
@@ -204,6 +205,7 @@ if ! [[ "$GRM_REALROM_SOLO_RERUNS" =~ ^[1-9][0-9]*$ ]]; then
 fi
 
 USAGE="usage: $0 check|bless|nominate [SET ...] [--only <ids>|--except <ids>] [--no-build] [--keep-project] [--require-all] [--batch-size N] <romdir> ...
+       $0 repeat N [SET ...] --only <ids> [--no-build] <romdir> ...
        $0 coverage [SET ...] [--only <ids>|--except <ids>] [--no-build]
        $0 --list-sets
        $0 ids [SET ...]
@@ -217,6 +219,12 @@ row whether build/realrom-cache holds an entry for the CURRENT extension build -
 the row has RAN at this build. It says nothing about whether the row passed. Like check it
 stages the build first (so the build identity matches what a check would use) unless
 --no-build/GRM_SKIP_BUILD is given. It never fails a run.
+
+repeat N (bead grm-2a2a.11) is the bistability check: it imports each selected row N times SOLO
+(a fresh import every time, never from build/realrom-cache, batch size 1) and prints per row the
+distinct dump sha256s with counts, whether each matches the golden, and keeps one dump per variant
+in the work dir to diff. Exit 0 only if every row gave exactly 1 distinct dump. --only is required
+(a whole-set repeat is a footgun). It is not a gate: it never refreshes the REALROM STALENESS stamp.
 
 --require-all (check/bless, bead grm-x4y1.2) exits nonzero if ANY selected row was SKIPPED for want
 of a ROM. Without it a run with skips exits 0 and prints: REALROM check: OK (PARTIAL: N skipped)
@@ -314,7 +322,7 @@ fi
 
 MODE="${1:-}"
 case "$MODE" in
-	check|bless|nominate|coverage|ids) shift ;;
+	check|bless|nominate|coverage|ids|repeat) shift ;;
 	*)
 		echo "$USAGE" >&2
 		exit 2
@@ -341,6 +349,18 @@ fi
 # portability level of the rest of this script.
 ONLY_IDS=""
 EXCEPT_IDS=""
+# repeat N (bead grm-2a2a.11): the run count is the first word after the mode.
+REPEAT_N=""
+if [ "$MODE" = repeat ]; then
+	REPEAT_N="${1:-}"
+	case "$REPEAT_N" in
+		[1-9]|[1-9][0-9]*) shift ;;
+		*)
+			echo "ERROR: repeat needs a positive run count first: $0 repeat N [SET ...] --only <ids>" >&2
+			exit 2
+			;;
+	esac
+fi
 # Which SETS this run considers, in the order named. Empty here means "the caller named
 # none", which resolves to `core` below -- kept distinct from an explicit `core` so the
 # notes can tell the two apart.
@@ -413,6 +433,11 @@ while [ $# -gt 0 ]; do
 			;;
 	esac
 done
+if [ "$MODE" = repeat ] && [ -z "$ONLY_IDS" ]; then
+	echo "ERROR: repeat needs --only <ids>: N fresh solo imports of a whole set is a footgun," \
+		"so name the rows." >&2
+	exit 2
+fi
 # --keep-project keeps one analyzed project per row (tens of MB each), so it is scoped to an
 # explicit --only list rather than silently keeping a whole set's worth; and only check/bless
 # import anything to keep.
@@ -441,7 +466,10 @@ case "$BATCH_N" in
 		exit 2
 		;;
 esac
-if [ "$KEEP_PROJECT" = 1 ]; then
+if [ "$MODE" = repeat ]; then
+	BATCH_ON=0
+	BATCH_BANNER="off -- repeat imports every run solo (size 1)"
+elif [ "$KEEP_PROJECT" = 1 ]; then
 	BATCH_ON=0
 	BATCH_BANNER="off -- --keep-project forces size 1 (each row keeps its own project)"
 elif [ "$BATCH_N" -le 1 ]; then
@@ -1743,6 +1771,56 @@ run_row_solo() {
 	finish_row "$id" "$rom" "$sha" "$golden" "$opts" "$out" "$key" 0
 }
 
+# repeat N (bead grm-2a2a.11): one row imported N times SOLO through import_and_dump, the same
+# solo importer finish_row's BATCH-DEPENDENT/FLAKY reruns use (tags ".repN", like their ".soloN").
+# Never reads or writes build/realrom-cache. Dumps are grouped by sha256 of the whole dump; the
+# first dump of each distinct variant is kept as <id>.v<k>.dump in $WORK for diffing.
+REP_BAD=0; REP_NROWS=0
+run_row_repeat() {
+	local id="$1" title="$2" rom="$3" psha="$4" golden="$5" opts="$6"
+	local golden_path="$EXPECTED_DIR/$golden" gsum="" r out h k found errs=0 wrongsha=0 got
+	local -a vhash=() vcount=()
+	[ ! -f "$golden_path" ] || gsum="$(sha256sum <"$golden_path" | cut -d' ' -f1)"
+	echo "-- $id ($title): $REPEAT_N solo import(s) of $(basename "$rom")"
+	for ((r = 1; r <= REPEAT_N; r++)); do
+		out="$WORK/${id}.rep$r.dump"
+		if ! import_and_dump "$id" "$rom" "$opts" "$out" ".rep$r"; then
+			errs=$((errs + 1)); echo "    run $r/$REPEAT_N: import/dump error"; continue
+		fi
+		got="$(sed -n 's/^REALROM sha256 //p' "$out" | head -n1 | tr '[:upper:]' '[:lower:]')"
+		[ "$got" = "$psha" ] || { wrongsha=$((wrongsha + 1)); echo "    run $r/$REPEAT_N: program sha256 $got != manifest $psha"; }
+		h="$(sha256sum <"$out" | cut -d' ' -f1)"
+		found=-1
+		for k in "${!vhash[@]}"; do
+			if [ "${vhash[$k]}" = "$h" ]; then found=$k; break; fi
+		done
+		if [ "$found" -ge 0 ]; then
+			vcount[found]=$((vcount[found] + 1))
+		else
+			k=${#vhash[@]}; vhash+=("$h"); vcount+=(1)
+			cp -f "$out" "$WORK/${id}.v$((k + 1)).dump"
+		fi
+		rm -f "$out"
+		echo "    run $r/$REPEAT_N: ${h:0:12}"
+	done
+	local nd=${#vhash[@]} verdict line="" tag
+	if [ "$errs" -gt 0 ] || [ "$wrongsha" -gt 0 ] || [ "$nd" -eq 0 ]; then verdict=ERROR
+	elif [ "$nd" -eq 1 ]; then verdict=ok
+	else verdict=BISTABLE; fi
+	for k in "${!vhash[@]}"; do
+		tag=""
+		[ -z "$gsum" ] || { [ "${vhash[$k]}" = "$gsum" ] && tag="=golden" || tag="!=golden"; }
+		line="$line  ${vhash[$k]:0:12}..x${vcount[$k]}${tag:+ $tag}"
+	done
+	[ -n "$gsum" ] || line="$line  (no golden)"
+	[ "$errs" -eq 0 ] || line="$line  ($errs import error(s))"
+	[ "$wrongsha" -eq 0 ] || line="$line  ($wrongsha wrong program sha)"
+	REP_SUMMARY+=("$(printf '%-16s %d runs  %d distinct  %s%s' "$id" "$REPEAT_N" "$nd" "$verdict" "$line")")
+	REP_NROWS=$((REP_NROWS + 1))
+	[ "$verdict" = ok ] || REP_BAD=$((REP_BAD + 1))
+}
+REP_SUMMARY=()
+
 # --- batched imports (bead grm-x4y1.3; modelled on run-banktest.sh's grm-w9ev.5 flush_batch) ---
 # Rows are queued, then imported by ONE analyzeHeadless with several -import args (Ghidra
 # headless processes them serially; the postScript runs once per program), so JVM startup is paid
@@ -1939,6 +2017,11 @@ while IFS=$'\t' read -r row_plat id title sha mapper board golden opts member me
 		fi
 	fi
 
+	if [ "$MODE" = repeat ]; then
+		run_row_repeat "$id" "$title" "$rom" "$psha" "$golden" "$opts"
+		continue
+	fi
+
 	# Batched path (bead grm-x4y1.3): queue the row; a batch is flushed when the next row cannot
 	# share its import invocation, at the size cap, or after the last row.
 	if [ "$BATCH_ON" -eq 1 ]; then
@@ -1965,6 +2048,26 @@ while IFS=$'\t' read -r row_plat id title sha mapper board golden opts member me
 # CRLF after checkout; a stray \r on the row's last field otherwise rides into a path.
 done < <(manifest_rows)
 flush_batch "end"
+
+# repeat (bead grm-2a2a.11) ends here: it reports its own table, is not a gate, and so never
+# touches the staleness stamp. The dumps of each distinct variant stay in $WORK for diffing.
+if [ "$MODE" = repeat ]; then
+	echo
+	printf '%s\n' "${REP_SUMMARY[@]+"${REP_SUMMARY[@]}"}"
+	echo
+	echo "summary: rows=$REP_NROWS not-ok=$REP_BAD skip=$n_skip filtered=$n_filtered   (work: $WORK; variants: <id>.v<k>.dump)"
+	if [ "$WORK_IS_OURS" = 1 ]; then
+		find "$WORK" -maxdepth 1 -type f \( -name '*.nes' -o -name '*.sfc' \) -delete 2>/dev/null
+		find "$WORK" -maxdepth 1 -type d -name 'proj_*' -exec rm -rf {} + 2>/dev/null
+	fi
+	if [ "$REP_NROWS" -eq 0 ]; then
+		echo "REALROM repeat: FAIL (no selected row ran: ROM not found or id outside the named SETs)"
+		exit 1
+	fi
+	if [ "$REP_BAD" -gt 0 ]; then echo "REALROM repeat: FAIL"; exit 1; fi
+	echo "REALROM repeat: OK"
+	exit 0
+fi
 
 echo
 printf '%-16s %-6s %s\n' "ID" "STATUS" "DETAIL"

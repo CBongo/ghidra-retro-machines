@@ -34,6 +34,14 @@ the same word; the flags were removed in grm-x4y1.5, see below). Sets **compose*
 
 After changing any SPC700 analyzer or `data/languages/spc700*.sinc`, run `realrom-test.sh check snes-spc-analysis`: nothing else in the real-ROM tier analyzes SPC700.
 
+**Bistability: `realrom-test.sh repeat N [SET ...] --only <ids>` (bead grm-2a2a.11).** Imports each row
+N times solo (fresh, never cached, batch size 1) and reports per row the distinct dump sha256s with
+counts and whether each matches the golden; keeps one dump per variant in the work dir to diff;
+exit 0 only if every row has exactly 1 distinct dump. `--only` is mandatory, the build is staged
+like `check` (`--no-build` honoured), and the staleness stamp is not refreshed (not a gate). Use it
+instead of hand loops; a clean streak still does not close a bistable bead
+(`bistable-golden-sticky-states`).
+
 **A bare `check` now runs `core`, not the curated NES set** — the owner's ruling on grm-ughg.
 `core` is a *new* always-run floor, not a renamed manifest: it is a cross-manifest subset of
 existing rows (kicarus, cv2, tmnt, smb, zelda), assembled to be cheap (about a minute: ~50s measured 2026-10-14) so there is
