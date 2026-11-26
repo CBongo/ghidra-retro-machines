@@ -82,7 +82,7 @@ public class DpLossProbe extends GhidraScript {
 		String d = System.getenv("GRM_DP_LOSS_DEPTH");
 		int depth = d == null || d.isBlank() ? 8 : Integer.parseInt(d.trim());
 		for (String s : from.split(",")) {
-			Address a = currentProgram.getAddressFactory().getAddress(s.trim());
+			Address a = ProbeSupport.parseSiteFactory(currentProgram, s);
 			Function f = a == null ? null : fm.getFunctionContaining(a);
 			if (f == null) { println("DPL chain " + s + ": no function"); continue; }
 			chain(f, 0, depth);

@@ -38,7 +38,7 @@ public class SiteStateProbe extends GhidraScript {
 			return;
 		}
 		for (String s : spec.split(",")) {
-			Address a = toAddr(s.trim());
+			Address a = ProbeSupport.parseSiteEval(currentProgram, s);
 			if (a == null) {
 				println("SSP " + s.trim() + " unresolvable (default-space sites take no prefix)");
 				continue;

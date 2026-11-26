@@ -32,8 +32,7 @@ public class DecompileDump extends GhidraScript {
 		ifc.openProgram(currentProgram);
 		Set<Function> seen = new HashSet<>();
 		for (String s : spec.split(",")) {
-			Address a = currentProgram.getAddressFactory().getAddress(s.trim());
-			if (a == null && s.contains("::")) a = toAddr(s.substring(s.indexOf("::") + 2).trim());
+			Address a = ProbeSupport.parseSite(currentProgram, s);
 			Function f = a == null ? null : currentProgram.getFunctionManager().getFunctionContaining(a);
 			if (f == null) { println("DUMP " + s + " no function contains it"); continue; }
 			if (!seen.add(f)) { println("DUMP " + s + " same function as above: " + f.getName()); continue; }

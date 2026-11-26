@@ -75,11 +75,7 @@ public class MapperWriteCensus extends GhidraScript {
 	private static final String MAP_PATH_PROPERTY = "Retro Machine Map";
 	private static final int N = 4;
 
-	private static final Set<String> OFFICIAL = Set.of("ADC", "AND", "ASL", "BCC", "BCS", "BEQ",
-		"BIT", "BMI", "BNE", "BPL", "BRK", "BVC", "BVS", "CLC", "CLD", "CLI", "CLV", "CMP", "CPX",
-		"CPY", "DEC", "DEX", "DEY", "EOR", "INC", "INX", "INY", "JMP", "JSR", "LDA", "LDX", "LDY",
-		"LSR", "NOP", "ORA", "PHA", "PHP", "PLA", "PLP", "ROL", "ROR", "RTI", "RTS", "SBC", "SEC",
-		"SED", "SEI", "STA", "STX", "STY", "TAX", "TAY", "TSX", "TXA", "TXS", "TYA");
+	private static final Set<String> OFFICIAL = ProbeSupport.OFFICIAL_6502;
 
 	private record Mech(int index, String strategy, Object hooks, Method isWrite, Object strat,
 			Method regOff) {
@@ -405,6 +401,6 @@ public class MapperWriteCensus extends GhidraScript {
 	}
 
 	private static String fmt(Address a) {
-		return a.getAddressSpace().getName() + "::" + String.format("%04x", a.getOffset());
+		return ProbeSupport.fmtAddr(a);
 	}
 }

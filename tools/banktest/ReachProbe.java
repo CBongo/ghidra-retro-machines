@@ -36,12 +36,7 @@ public class ReachProbe extends GhidraScript {
 			return;
 		}
 		for (String s : spec.split(",")) {
-			Address a = currentProgram.getAddressFactory().getAddress(s.trim());
-			if (a == null && s.contains("::")) {
-				// "RAM::bd2e" (the default space, as JumpTableProbe prints it) does not parse
-				// through the factory; a bare offset resolves in the default space.
-				a = toAddr(s.substring(s.indexOf("::") + 2).trim());
-			}
+			Address a = ProbeSupport.parseSite(currentProgram, s);
 			if (a == null) {
 				println("REACH " + s + " unparseable");
 				continue;

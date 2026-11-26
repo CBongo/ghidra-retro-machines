@@ -55,13 +55,7 @@ public class FunctionWatchProbe extends GhidraScript {
 		if (spec == null || spec.isBlank()) {
 			return;
 		}
-		List<Address> watched = new ArrayList<>();
-		for (String s : spec.split(",")) {
-			Address a = toAddr(s.trim());
-			if (a != null) {
-				watched.add(a);
-			}
-		}
+		List<Address> watched = ProbeSupport.parseSites(spec, currentProgram);
 		if (watched.isEmpty()) {
 			return;
 		}
@@ -176,7 +170,7 @@ public class FunctionWatchProbe extends GhidraScript {
 			}
 			StringBuilder sb = new StringBuilder(" flow[");
 			for (String e : spec.split(",")) {
-				Address entry = program.getAddressFactory().getAddress(e.trim());
+				Address entry = ProbeSupport.parseSiteFactory(program, e);
 				if (entry != null) {
 					sb.append(' ').append(e.trim()).append('=').append(
 						CreateFunctionCmd.getFunctionBody(program, entry, false,

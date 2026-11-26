@@ -92,7 +92,7 @@ public class DpCensusProbe extends GhidraScript {
 		for (String s : sites.split(",")) {
 			s = s.trim();
 			Address a;
-			try { a = currentProgram.getAddressFactory().getAddress(s); } catch (Exception e) { a = null; }
+			try { a = ProbeSupport.parseSiteFactory(currentProgram, s); } catch (Exception e) { a = null; }
 			if (a == null) { println("DPC site " + s + ": not an address"); continue; }
 			Instruction in = l.getInstructionContaining(a);
 			if (in == null && (in = l.getInstructionAfter(a)) == null) continue;

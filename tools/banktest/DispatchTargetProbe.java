@@ -21,7 +21,7 @@ public class DispatchTargetProbe extends GhidraScript {
 		if (sites == null || sites.isBlank()) return;
 		Listing l = currentProgram.getListing();
 		for (String s : sites.split(",")) {
-			Address a = currentProgram.getAddressFactory().getAddress(s.trim());
+			Address a = ProbeSupport.parseSiteFactory(currentProgram, s);
 			Instruction site = l.getInstructionAt(a);
 			if (site == null) { println("DTP " + s + " no instruction"); continue; }
 			int n = 0, startOk = 0, mid = 0, data = 0, noFn = 0;

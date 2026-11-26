@@ -60,12 +60,7 @@ public class DecompileSiteProbe extends GhidraScript {
 		ifc.openProgram(currentProgram);
 		try {
 			for (String s : spec.split(",")) {
-				Address a = currentProgram.getAddressFactory().getAddress(s.trim());
-				if (a == null && s.contains("::")) {
-					// "RAM::e000" (the default space, as JumpTableProbe prints it) does not parse
-					// through the factory; a bare offset resolves in the default space.
-					a = toAddr(s.substring(s.indexOf("::") + 2).trim());
-				}
+				Address a = ProbeSupport.parseSite(currentProgram, s);
 				Function f = a == null ? null : currentProgram.getFunctionManager().getFunctionContaining(a);
 				if (f == null) {
 					println("DECOMP " + s + " no function contains it");

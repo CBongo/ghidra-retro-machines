@@ -424,7 +424,7 @@ public class DbrCensusProbe extends GhidraScript {
 	}
 
 	void dumpFunc(String s) {
-		Address a = currentProgram.getAddressFactory().getAddress(s);
+		Address a = ProbeSupport.parseSiteFactory(currentProgram, s);
 		if (a != null && !fns.containsKey(a)) {   // any address: its containing function
 			Function cf = currentProgram.getFunctionManager().getFunctionContaining(a);
 			if (cf != null) a = cf.getEntryPoint();

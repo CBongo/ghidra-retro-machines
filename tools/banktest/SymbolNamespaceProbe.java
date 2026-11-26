@@ -38,7 +38,7 @@ public class SymbolNamespaceProbe extends GhidraScript {
 			return;
 		}
 		for (String s : spec.split(",")) {
-			Address a = toAddr(s.trim());
+			Address a = ProbeSupport.parseSiteEval(currentProgram, s);
 			Function owner = currentProgram.getFunctionManager().getFunctionContaining(a);
 			println("NSP " + a + " owner=" + (owner == null ? "NONE" : owner.getName()));
 			for (Symbol sym : currentProgram.getSymbolTable().getSymbols(a)) {

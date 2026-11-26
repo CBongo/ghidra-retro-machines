@@ -130,6 +130,6 @@ public class BankContextProbe extends GhidraScript {
 	}
 
 	private static String fmt(Address a) {
-		return a.getAddressSpace().getName() + "::" + String.format("%04x", a.getOffset());
+		return ProbeSupport.fmtAddr(a);
 	}
 }

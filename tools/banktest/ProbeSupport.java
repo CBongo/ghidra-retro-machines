@@ -63,8 +63,10 @@ import ghidra.program.model.address.AddressOutOfBoundsException;
 import ghidra.program.model.lang.Register;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
+import ghidra.program.model.listing.Program;
 import ghidra.program.model.scalar.Scalar;
 import ghidra.program.model.symbol.Reference;
+import ghidra.program.util.AddressEvaluator;
 import ghidra.util.task.TaskMonitor;
 
 final class ProbeSupport {
@@ -85,6 +87,77 @@ final class ProbeSupport {
 	 */
 	static final List<String> ACCEPTED_STRATEGIES =
 		List.of(MEMORY_LATCH, "serial-shift", "select-data");
+
+	// ------------------------------------------------------------------
+	// Output and site-list conventions shared by every probe (bead grm-2a2a.2)
+	// ------------------------------------------------------------------
+
+	/** The 56 official NMOS 6502 mnemonics; anything else a decode produces is undocumented.
+	 *  Shared by MapperWriteCensus ({@code undoc=}) and PlausibilityCensus ({@code undoc}). */
+	static final Set<String> OFFICIAL_6502 = Set.of("ADC", "AND", "ASL", "BCC", "BCS", "BEQ",
+		"BIT", "BMI", "BNE", "BPL", "BRK", "BVC", "BVS", "CLC", "CLD", "CLI", "CLV", "CMP", "CPX",
+		"CPY", "DEC", "DEX", "DEY", "EOR", "INC", "INX", "INY", "JMP", "JSR", "LDA", "LDX", "LDY",
+		"LSR", "NOP", "ORA", "PHA", "PHP", "PLA", "PLP", "ROL", "ROR", "RTI", "RTS", "SBC", "SEC",
+		"SED", "SEI", "STA", "STX", "STY", "TAX", "TAY", "TSX", "TXA", "TXS", "TYA");
+
+	/** {@code <space>::<4+ hex digits>}, the form every probe prints and every site list takes
+	 *  back. Was copied nine times (Bank-/Determinism-/FlowOverride-/JumpTable-/NoReturn-/
+	 *  RefsIntoRange-/RetargetedRef-Probe, MapperWriteCensus, PlausibilityCensus), all identical. */
+	static String fmtAddr(Address a) {
+		return a.getAddressSpace().getName() + "::" + String.format("%04x", a.getOffset());
+	}
+
+	/**
+	 * One entry of a GRM_*_SITES list, through the address FACTORY ({@code getAddress}), with
+	 * the plain-hex fallback: {@code "RAM::bd2e"} (the form {@link #fmtAddr} prints for the
+	 * default space) does not parse through the factory, so the text after the first
+	 * {@code ::} is retried as a bare offset in the default space. Null when neither parses.
+	 * Exactly what ReachProbe, DecompileDump and DecompileSiteProbe each did inline.
+	 */
+	static Address parseSite(Program program, String entry) {
+		Address a = program.getAddressFactory().getAddress(entry.trim());
+		if (a == null && entry.contains("::")) {
+			a = AddressEvaluator.evaluate(program, entry.substring(entry.indexOf("::") + 2).trim());
+		}
+		return a;
+	}
+
+	/** One site entry through the address factory only, no fallback (DispatchTargetProbe,
+	 *  DpLossProbe, DpCensusProbe, DbrCensusProbe, FunctionWatchProbe's GRM_WATCH_FLOW). May
+	 *  throw for garbage, as the inline copies did. */
+	static Address parseSiteFactory(Program program, String entry) {
+		return program.getAddressFactory().getAddress(entry.trim());
+	}
+
+	/** One site entry through {@link AddressEvaluator}, which is what GhidraScript.toAddr(String)
+	 *  does (symbols and expressions as well as addresses; null on failure, never throws).
+	 *  SiteStateProbe and SymbolNamespaceProbe. */
+	static Address parseSiteEval(Program program, String entry) {
+		return AddressEvaluator.evaluate(program, entry.trim());
+	}
+
+	/** A whole comma-separated GRM_*_SITES value via {@link #parseSiteEval}, unparseable entries
+	 *  dropped; empty for a null or blank value. CodeUnitWatchProbe and FunctionWatchProbe. */
+	static List<Address> parseSites(String envValue, Program program) {
+		List<Address> out = new ArrayList<>();
+		if (envValue == null || envValue.isBlank()) {
+			return out;
+		}
+		for (String s : envValue.split(",")) {
+			Address a = parseSiteEval(program, s);
+			if (a != null) {
+				out.add(a);
+			}
+		}
+		return out;
+	}
+
+	/** {@code <REALROM_WORK_DIR or .>/<program name without extension><ext>}, the per-row
+	 *  output file a probe writes beside the row's log (InstructionListDump's rule). */
+	static String outPath(Program program, String ext) {
+		String dir = System.getenv("REALROM_WORK_DIR");
+		return (dir == null ? "." : dir) + "/" + program.getName().replaceAll("\\.[^.]*$", "") + ext;
+	}
 
 	// ------------------------------------------------------------------
 	// Model

@@ -37,9 +37,7 @@ public class InstructionListDump extends GhidraScript {
 	protected void run() throws Exception {
 		String out = System.getenv("GRM_ILD_OUT");
 		if (out == null || out.isBlank()) {
-			String dir = System.getenv("REALROM_WORK_DIR");
-			out = (dir == null ? "." : dir) + "/" + currentProgram.getName().replaceAll("\\.[^.]*$", "") +
-				".ild";
+			out = ProbeSupport.outPath(currentProgram, ".ild");
 		}
 		int n = 0;
 		try (PrintWriter w = new PrintWriter(out, "UTF-8")) {

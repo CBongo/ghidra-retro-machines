@@ -121,6 +121,6 @@ public class DeterminismProbe extends GhidraScript {
 	// always included: this listing's whole job is to be diffed line-by-line, and two banks'
 	// $8000 are different places.
 	private String qual(Address addr) {
-		return addr.getAddressSpace().getName() + "::" + String.format("%04x", addr.getOffset());
+		return ProbeSupport.fmtAddr(addr);
 	}
 }

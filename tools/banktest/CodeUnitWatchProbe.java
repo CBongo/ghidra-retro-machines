@@ -67,13 +67,7 @@ public class CodeUnitWatchProbe extends GhidraScript {
 		if (spec == null || spec.isBlank()) {
 			return;
 		}
-		List<Address> watched = new ArrayList<>();
-		for (String s : spec.split(",")) {
-			Address a = toAddr(s.trim());
-			if (a != null) {
-				watched.add(a);
-			}
-		}
+		List<Address> watched = ProbeSupport.parseSites(spec, currentProgram);
 		if (watched.isEmpty()) {
 			return;
 		}
