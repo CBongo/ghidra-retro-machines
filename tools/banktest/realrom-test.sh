@@ -652,21 +652,8 @@ echo "== sets: ${RESOLVED_SETS[*]} (platform(s): ${PLATFORMS_USED[*]};" \
 # The env variables keep their whitespace-separated form for compatibility, but a value that
 # contains ';' (PATH-style on Windows; ':' cannot work here, every drive letter has one) is split
 # on ';' ONLY, which is how a dir with a space in its name is spelled in GRM_ROM_DIR.
-dir_list_from_env() {
-	local v="$1" part
-	if [[ "$v" == *";"* ]]; then
-		local IFS=';'
-		for part in $v; do
-			# Trim surrounding whitespace so 'a; b' means 'a' and 'b'.
-			part="${part#"${part%%[![:space:]]*}"}"
-			part="${part%"${part##*[![:space:]]}"}"
-			[ -n "$part" ] && printf '%s\n' "$part"
-		done
-	else
-		for part in $v; do printf '%s\n' "$part"; done
-	fi
-	return 0
-}
+# The rule lives in lib/common.sh grm_split_dirs (twin: romlib.py split_dirs).
+dir_list_from_env() { grm_split_dirs "$1"; }
 # platform_dirs <platform> <array-name>: fill the named array with that platform's dirs.
 platform_dirs() {
 	local -n pd_out="$2"
@@ -1819,11 +1806,8 @@ flush_batch() {
 		safe="$(sanitize "$id")"
 		local sec="$WORK/${safe}.log"
 		out="$WORK/${id}.dump"
-		if [ "$status" -ne 0 ]; then
-			why="batch analyzeHeadless exited $status"
-			[ "$status" -eq 124 ] && why="batch analyzeHeadless timed out"
-		elif [ ! -s "$sec" ]; then
-			why="no section in the batch log"
+		if why="$(grm_batch_fallback_reason "$status" "$sec")"; then
+			:
 		elif ! extract_dump "$sec" "$out"; then
 			why="no REALROM block in its section of the batch log"
 		elif grm_script_errors "$sec" >/dev/null; then

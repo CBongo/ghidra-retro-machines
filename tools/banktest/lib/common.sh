@@ -1059,6 +1059,24 @@ grm_split_batch_log() {
 	' "$1"
 }
 
+# The part of flush_batch's per-program fallback test that run-banktest.sh and realrom-test.sh
+# share (grm-2a2a.3): a batch that exited non-zero / timed out, or left a program with no log
+# section. Prints the reason and succeeds when the program must be re-run solo; the caller then
+# applies its own content checks (FIXTURE marker, REALROM block, ...).
+#
+#   grm_batch_fallback_reason <batch-exit-status> <program-section-log>
+grm_batch_fallback_reason() {
+	if [ "$1" -eq 124 ]; then
+		echo "batch analyzeHeadless timed out"
+	elif [ "$1" -ne 0 ]; then
+		echo "batch analyzeHeadless exited $1"
+	elif [ ! -s "$2" ]; then
+		echo "no section in the batch log"
+	else
+		return 1
+	fi
+}
+
 # A script that threw (bead grm-h649). analyzeHeadless logs "REPORT SCRIPT ERROR" and then carries
 # on: for a plain GhidraScript (every script here) a failed preScript aborts nothing, so the import
 # still analyzes and the postScript still dumps, and the only trace of the failure is this line.
@@ -1070,6 +1088,29 @@ grm_script_errors() {
 	hits=$(sed 's/\r$//' "$1" | grep 'REPORT SCRIPT ERROR' | head -5) || return 1
 	[ -n "$hits" ] || return 1
 	printf '%s\n' "$hits"
+}
+
+# Splits a ROM-dir list into one dir per line (bead grm-3rel; moved here from realrom-test.sh's
+# dir_list_from_env by grm-2a2a.3 so snes-rom-sweep.sh shares it). Same rule as the Python twin
+# tools/banktest/romlib.py split_dirs: a value containing ';' splits on ';' ONLY (a dir name may
+# contain spaces), otherwise on any whitespace; parts are trimmed and empty parts dropped.
+#
+#   grm_split_dirs <value>      # prints one dir per line; read back with mapfile -t
+grm_split_dirs() {
+	local v="$1" part
+	local -  # restores the shell options (set -f below) on return
+	set -f   # no globbing of the unquoted expansions
+	if [[ "$v" == *";"* ]]; then
+		local IFS=';'
+		for part in $v; do
+			part="${part#"${part%%[![:space:]]*}"}"
+			part="${part%"${part##*[![:space:]]}"}"
+			[ -n "$part" ] && printf '%s\n' "$part"
+		done
+	else
+		for part in $v; do printf '%s\n' "$part"; done
+	fi
+	return 0
 }
 
 # Strip anything that isn't [A-Za-z0-9._-]: analyzeHeadless.bat chokes on parentheses and spaces.

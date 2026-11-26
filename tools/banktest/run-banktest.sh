@@ -525,11 +525,8 @@ flush_batch() {
 	for i in "${!names[@]}"; do
 		local nm="${names[$i]}" sec="$WORK/${names[$i]}.log" why=""
 		lognote=" [fixture $nm in batch $seq log: $blog]"
-		if [ "$status" -ne 0 ]; then
-			why="batch analyzeHeadless exited $status"
-			[ "$status" -eq 124 ] && why="batch analyzeHeadless timed out"
-		elif [ ! -s "$sec" ]; then
-			why="no section in the batch log"
+		if why="$(grm_batch_fallback_reason "$status" "$sec")"; then
+			:
 		elif ! grep -qF "=== FIXTURE ${bases[$i]} ===" "$sec"; then
 			why="no FIXTURE marker (VerifyBankTest did not run for it)"
 		elif ! grep -qF '=== BANKDUMP END ===' "$sec"; then

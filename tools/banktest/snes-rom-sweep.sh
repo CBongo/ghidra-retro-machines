@@ -66,12 +66,7 @@ if [ -z "$LIST" ]; then
 		exit 2
 	}
 	[ -n "${GRM_SNES_ROM_DIR:-}" ] || { echo "ERROR: GRM_SNES_ROM_DIR is unset" >&2; exit 2; }
-	dirs=()
-	if [[ "$GRM_SNES_ROM_DIR" == *";"* ]]; then
-		IFS=';' read -r -a dirs <<<"$GRM_SNES_ROM_DIR"
-	else
-		read -r -a dirs <<<"$GRM_SNES_ROM_DIR"
-	fi
+	mapfile -t dirs < <(grm_split_dirs "$GRM_SNES_ROM_DIR")
 	# One file per title: accepted=yes and checksumValid=true; an unheadered copy (copier=no) beats a headered.
 	tr -d '\r' <"$TSV" | awk -F'\t' '
 		NR == 1 { next }
@@ -85,7 +80,6 @@ if [ -z "$LIST" ]; then
 	while IFS= read -r nm; do
 		found=""
 		for d in "${dirs[@]}"; do
-			d="${d#"${d%%[![:space:]]*}"}"; d="${d%"${d##*[![:space:]]}"}"
 			if [ -f "$d/$nm" ]; then found="$d/$nm"; break; fi
 		done
 		if [ -n "$found" ]; then echo "$found" >>"$OUT/list.txt"; else echo "WARN: $nm not found in \$GRM_SNES_ROM_DIR" >&2; fi
