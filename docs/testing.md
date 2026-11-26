@@ -121,6 +121,12 @@ auto-accept.** Read the diff first and confirm the new behavior is intended; onl
 bless, and only the specific chunk you reviewed. Blessing to make a red suite green without
 understanding the diff defeats the entire suite.
 
+For a real-ROM dump diff, run `python -I tools/banktest/dumpdiff.py <row-id> <candidate.dump>` first
+(or `--commit REV <row-id>` on a past bless): it separates count movement and sample-window cap
+slide (`sample.*` lines that fell off or came in at the cap boundary, proved from the dump's
+`.truncated N of M` marker) from the real content changes, and prints those in full with a verdict
+(`grm-2a2a.12`).
+
 > **`bless` fails closed on criteria failures (`grm-aqi`).** A fixture whose `SUITE PASS`
 > criteria failed is **refused**: its golden is left byte-identical, the row is named in a
 > `REFUSED to bless` summary line, and the suite exits nonzero. The other rows in the same

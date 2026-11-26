@@ -20,6 +20,7 @@ hardcoded.
 | Which offset-label switch sites get their index from where | `recon/offset_label_classify.py` (with `banktest/IndexBackChainProbe.java`) |
 | Parameter and return census (A/X/Y/carry/ZP in and out) | `banktest/ParamReturnCensusProbe.java`, then `recon/param_return_census.py` |
 | Which functions got an inferred signature, per row | `banktest/ParamReturnCommitCount.java` |
+| Review a real-ROM golden diff: counts vs cap slide vs real change, one verdict | `banktest/dumpdiff.py <golden\|row-id> <new.dump>` (`--commit REV <row>` for a past bless) |
 | Compare two builds, commits or toolchains on real ROMs | `banktest/ab-test.sh`; per-address diffs via `InstructionListDump`, `FunctionListDump`, `CallSiteListDump` |
 | Which analyzer created, changed or removed a code unit or function | `banktest/CodeUnitWatchProbe.java`, `FunctionWatchProbe.java` (prescripts) |
 | Where is a pinned row's ROM image; decode its bytes | `banktest/dis6502.py --find <row-id>`, or `dis6502.py <rom> <map> <start> <end>` |
@@ -46,6 +47,8 @@ Real-ROM tier detail: `banktest/realrom/README.md`; testing strategy: `docs/test
   `--no-build` to skip.
 - `realrom-test.sh` - hash-pinned real-ROM tier (`check|bless|coverage|ids [SET...]`); rows,
   sets and platforms are the `realrom/*.tsv` tables.
+- `dumpdiff.py` - classifies a real-ROM dump diff for bless review (count movement, sample-window
+  cap slide, real content change, one verdict); grm-2a2a.12.
 - `ab-test.sh` - real-ROM A/B of two commits or toolchains, one worktree per side, dump-vs-dump
   diff.
 - `snes-rom-sweep.sh` - run ONE postScript over the SNES collection (survey aid, no golden);
