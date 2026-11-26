@@ -313,7 +313,16 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 		int stamped = 0;
 		int refs = 0;
 		// Program-wide, not just `set`: a function's entry DP depends on its callers anywhere.
-		Map<Function, Map<Address, State>> all = w.solve(monitor);
+		// solve() only reads the program, so p-code can be reused across its re-walks
+		// (grm-949h.1). The scope must close before stamp() writes DP context.
+		Map<Function, Map<Address, State>> all;
+		PcodeShapes.PcodeCacheScope pcode = PcodeShapes.cachingPcode();
+		try {
+			all = w.solve(monitor);
+		}
+		finally {
+			pcode.close();
+		}
 		for (Map<Address, State> states : all.values()) {
 			monitor.checkCancelled();
 			for (Map.Entry<Address, State> e : states.entrySet()) {
@@ -658,8 +667,15 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 		private final Map<Address, Integer> exitAssume = new HashMap<>();
 		/** The in-progress targets the current exitDp judgement has leaned on. */
 		private Set<Address> exitLeaned = new HashSet<>();
-		/** Results awaiting confirmation of the assumptions they leaned on. */
-		private final List<Provisional> exitProvisional = new ArrayList<>();
+		/**
+		 * Results awaiting confirmation of the assumptions they leaned on, indexed by each
+		 * address they leaned on, in creation order (grm-949h.1). A provisional's leaned set is
+		 * fixed when it is created (it is a finished attempt's own set), so the index is exact.
+		 * exitDp settles one target at a time and now visits only the provisionals that leaned
+		 * on it. It used to scan every provisional on every settle, which was quadratic: 39% of
+		 * w_ff2's samples, most of its 285s.
+		 */
+		private final Map<Address, List<Provisional>> exitProvisional = new HashMap<>();
 		/** Why each failed exit-DP judgement failed (CallSummaries only; never read by analysis). */
 		private final Map<Address, String> exitWhy = new HashMap<>();
 		/**
@@ -1637,17 +1653,23 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 					break;
 				}
 				// The assumption was refuted: forget every result that leaned on it, and retry.
-				exitProvisional.removeIf(p -> p.leaned().contains(target));
+				List<Provisional> refuted = exitProvisional.remove(target);
+				if (refuted != null) {
+					for (Provisional p : refuted) {
+						p.dead = true;
+					}
+				}
 				assume = attempt == 0 && result != UNKNOWN ? result : UNKNOWN;
 			}
 			exitAssume.remove(target);
 			// The assumption about target stands: results that leaned only on it are now final.
-			Iterator<Provisional> it = exitProvisional.iterator();
-			while (it.hasNext()) {
-				Provisional p = it.next();
-				if (p.leaned().remove(target) && p.leaned().isEmpty()) {
-					exitDp.putIfAbsent(p.target(), p.dp());
-					it.remove();
+			List<Provisional> waiting = exitProvisional.remove(target);
+			if (waiting != null) {
+				for (Provisional p : waiting) {
+					if (!p.dead && p.leaned.remove(target) && p.leaned.isEmpty()) {
+						exitDp.putIfAbsent(p.target, p.dp);
+						p.dead = true;
+					}
 				}
 			}
 			exitLeaned = outerLeaned;
@@ -1655,7 +1677,10 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 				exitDp.put(target, result);
 			}
 			else {
-				exitProvisional.add(new Provisional(target, result, leaned));
+				Provisional p = new Provisional(target, result, leaned);
+				for (Address a : leaned) {
+					exitProvisional.computeIfAbsent(a, k -> new ArrayList<>()).add(p);
+				}
 				exitLeaned.addAll(leaned);
 			}
 			return result;
@@ -1768,8 +1793,23 @@ public class W65816DirectPageAnalyzer extends AbstractAnalyzer {
 			});
 		}
 
-		/** A summary computed while leaning on assumptions about in-progress targets. */
-		private record Provisional(Address target, int dp, Set<Address> leaned) {}
+		/**
+		 * A summary computed while leaning on assumptions about in-progress targets, held until the assumptions in {@code leaned} are confirmed. {@code dead} once
+		 * it is settled, or refuted by a target it leaned on. It sits in several index lists, so
+		 * the others skip it there.
+		 */
+		private static final class Provisional {
+			final Address target;
+			final int dp;
+			final Set<Address> leaned;
+			boolean dead;
+
+			Provisional(Address target, int dp, Set<Address> leaned) {
+				this.target = target;
+				this.dp = dp;
+				this.leaned = leaned;
+			}
+		}
 
 		/** One walk of {@link #exitDp}'s judgement; caching and recursion are the caller's. */
 		private int exitDpOnce(Address target) {

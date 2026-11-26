@@ -17,6 +17,7 @@ package retromachines;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalInt;
@@ -699,13 +700,58 @@ final class PcodeShapes {
 	// ------------------------------------------------------------------
 
 	private static PcodeOp[] ops(Instruction instr) {
+		Map<Instruction, PcodeOp[]> cache = PCODE_CACHE.get();
+		if (cache != null) {
+			PcodeOp[] hit = cache.get(instr);
+			if (hit != null) {
+				return hit;
+			}
+		}
+		PcodeOp[] ops;
 		try {
-			PcodeOp[] ops = instr.getPcode();
-			return ops == null ? new PcodeOp[0] : ops;
+			ops = instr.getPcode();
+			if (ops == null) {
+				ops = new PcodeOp[0];
+			}
 		}
 		catch (RuntimeException e) {
-			return new PcodeOp[0];
+			ops = new PcodeOp[0];
 		}
+		if (cache != null) {
+			cache.put(instr, ops);
+		}
+		return ops;
+	}
+
+	/** The active {@link #cachingPcode} scope's p-code by Instruction identity, else null. */
+	private static final ThreadLocal<Map<Instruction, PcodeOp[]>> PCODE_CACHE = new ThreadLocal<>();
+
+	/**
+	 * Opens a scope in which each Instruction's p-code is built once and reused (grm-949h.1).
+	 * Instruction.getPcode() re-runs Sleigh's p-code emitter on every call, and the shape
+	 * queries above ask it again and again for the same instruction: on FF2 the 65816
+	 * Direct Page walk spent 59% of its samples there. Close the scope with try-with-resources.
+	 * <p>
+	 * ONLY for a span that changes nothing that p-code depends on: no context writes
+	 * (65816 width and DP context feed decode), no flow or fall-through overrides, no
+	 * re-disassembly. The key is object identity, not address, so a pseudo-instruction decoded
+	 * at another width never shares an entry with the listing's instruction. A nested scope
+	 * reuses the outer one's map. Callers must not modify the returned arrays; none do.
+	 */
+	public static PcodeCacheScope cachingPcode() {
+		if (PCODE_CACHE.get() != null) {
+			return () -> {
+			};
+		}
+		PCODE_CACHE.set(new IdentityHashMap<>());
+		return PCODE_CACHE::remove;
+	}
+
+	/** {@link #cachingPcode}'s scope handle: an AutoCloseable whose close throws nothing. */
+	@FunctionalInterface
+	public interface PcodeCacheScope extends AutoCloseable {
+		@Override
+		void close();
 	}
 
 	private static Varnode varnodeOf(Register reg) {

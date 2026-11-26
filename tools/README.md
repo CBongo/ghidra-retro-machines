@@ -22,6 +22,7 @@ hardcoded.
 | Which functions got an inferred signature, per row | `banktest/ParamReturnCommitCount.java` |
 | Review a real-ROM golden diff: counts vs cap slide vs real change, one verdict | `banktest/dumpdiff.py <golden\|row-id> <new.dump>` (`--commit REV <row>` for a past bless) |
 | Where did a gate's time go: per-program import/analysis/script, top analyzers | `banktest/headless-phase-times.py --since 'YYYY-MM-DD HH:MM:SS' --analyzers N` |
+| Which of OUR methods is a slow row's CPU going to (JFR profile of one import) | `banktest/jfr-hot-frames.py <rec>.jfr --callers K` (recipe in its docstring) |
 | Compare two builds, commits or toolchains on real ROMs | `banktest/ab-test.sh`; per-address diffs via `InstructionListDump`, `FunctionListDump`, `CallSiteListDump` |
 | Which analyzer created, changed or removed a code unit or function | `banktest/CodeUnitWatchProbe.java`, `FunctionWatchProbe.java` (prescripts) |
 | Where is a pinned row's ROM image; decode its bytes | `banktest/dis6502.py --find <row-id>`, or `dis6502.py <rom> <map> <start> <end>` |
@@ -53,6 +54,8 @@ Real-ROM tier detail: `banktest/realrom/README.md`; testing strategy: `docs/test
 - `headless-phase-times.py` - per-program phase times (import/analysis/postScript/save) and
   Ghidra's per-analyzer times, from the isolated install's timestamped application.log; works
   for any runner after the fact; grm-949h.
+- `jfr-hot-frames.py` - charges each JFR CPU sample to the first project frame on its stack
+  (Ghidra's leaf frames say nothing about which analyzer drove them); grm-949h.1.
 - `ab-test.sh` - real-ROM A/B of two commits or toolchains, one worktree per side, dump-vs-dump
   diff.
 - `snes-rom-sweep.sh` - run ONE postScript over the SNES collection (survey aid, no golden);
