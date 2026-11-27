@@ -21,6 +21,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.HashSet;
 import java.util.Set;
 
 import ghidra.app.cmd.disassemble.DisassembleCommand;
@@ -28,6 +29,8 @@ import ghidra.app.cmd.function.CreateFunctionCmd;
 import ghidra.app.decompiler.DecompInterface;
 import ghidra.app.decompiler.DecompileOptions;
 import ghidra.app.decompiler.DecompileResults;
+import ghidra.app.decompiler.parallel.DecompilerCallback;
+import ghidra.app.decompiler.parallel.ParallelDecompiler;
 import ghidra.app.plugin.core.analysis.AutoAnalysisManager;
 import ghidra.app.plugin.core.analysis.SwitchAnalysisDecompileConfigurer;
 import ghidra.app.plugin.core.clear.ClearFlowAndRepairCmd;
@@ -184,6 +187,14 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 	 * replace the bounded view an earlier round had.
 	 */
 	private static final Map<Program, LeadingShadow> SHADOWS =
+		java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
+
+	/**
+	 * grm-949h.2: entry points this analyzer (any instance, the relocator's included) has
+	 * decompiled in each program, so each pass's summary line can say how many of its
+	 * decompiles were repeats. Log only; never read by analysis.
+	 */
+	private static final Map<Program, Set<Address>> DECOMPILED =
 		java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
 
 	/** The program's {@link LeadingShadow} while {@link #boundFunctions} runs, else null. */
@@ -386,16 +397,9 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		// Held for the whole pass: BankContext's cache is weak (see BankContext.CACHE), and
 		// rebuilding it per switch would be wasteful.
 		BankContext keepAlive = BankContext.forProgram(program);
-		DecompInterface ifc = new DecompInterface();
 		LeadingShadow outerShadow = shadow;
 		shadow = SHADOWS.computeIfAbsent(program, p -> new LeadingShadow());
 		try {
-			configureDecompiler(program, ifc);
-			if (!ifc.openProgram(program)) {
-				AnalyzerLog.warn(this, log, "decompiler failed to open program: " +
-					ifc.getLastMessage());
-				return 0;
-			}
 			// Two passes (grm-2m07): every table's load-table starts must be known before ANY
 			// table is bounded, because boundByNeighbourTable cuts one table where another
 			// begins -- and the neighbour is often in a different function (dbz2's cb97 table
@@ -403,18 +407,24 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 			// not depend on the count the decompiler guessed, so the first pass's answer is final.
 			Map<Function, JumpTable[]> decompiled = new LinkedHashMap<>();
 			List<Address> loadTableStarts = new ArrayList<>();
+			Set<Address> seen = DECOMPILED.computeIfAbsent(program, p -> new HashSet<>());
+			int repeats = 0;
+			long t0 = System.nanoTime();
+			Map<Function, JumpTable[]> found = decompileTables(program, functions, monitor, log);
+			if (found == null) {
+				return 0;
+			}
+			// In `functions` order whatever order the decompiles finished in, so everything
+			// below sees exactly the order a serial pass gave it.
 			for (Function function : functions) {
 				monitor.checkCancelled();
-				DecompileResults results =
-					ifc.decompileFunction(function, DECOMPILE_TIMEOUT_SECS, monitor);
-				if (!results.decompileCompleted()) {
-					continue; // stock analyzer will also fail on this function; not our concern
+				if (!seen.add(function.getEntryPoint())) {
+					repeats++;
 				}
-				HighFunction hfunction = results.getHighFunction();
-				if (hfunction == null) {
-					continue;
+				JumpTable[] tables = found.get(function);
+				if (tables == null) {
+					continue; // did not complete: stock analysis fails on it too; not our concern
 				}
-				JumpTable[] tables = hfunction.getJumpTables();
 				decompiled.put(function, tables);
 				for (JumpTable table : tables) {
 					for (JumpTable.LoadTable lt : table.getLoadTables()) {
@@ -424,6 +434,9 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 					}
 				}
 			}
+			AnalyzerLog.info(this, String.format("decompiled %d function(s) in %.1fs (%d already " +
+				"decompiled by an earlier pass over this program) (grm-949h.2)", functions.size(),
+				(System.nanoTime() - t0) / 1e9, repeats));
 			// grm-rsxe: a second pass offers every table still declined the kept targets of the
 			// tables the first pass bounded (boundByKnownCode). Only this pass's own results feed
 			// it, so which tables it cuts does not depend on analysis order.
@@ -455,10 +468,86 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		}
 		finally {
 			shadow = outerShadow;
-			ifc.dispose();
 			java.lang.ref.Reference.reachabilityFence(keepAlive);
 		}
 		return bounded;
+	}
+
+	/**
+	 * Decompiles {@code functions} and returns each completed one's jump tables (a function whose
+	 * decompile did not complete is absent), or null if the decompiler could not open the
+	 * program. Several functions decompile in parallel, one decompiler process per worker, as
+	 * stock DecompilerSwitchAnalyzer does (grm-949h.2). The time here is the native decompiler's,
+	 * not Java's. On deadly_towers, 59 serial decompiles took 135s, with single functions up to
+	 * ~14s. Each worker is configured by {@link #configureDecompiler}, the same as the serial
+	 * path, and the program is only read here. So the tables cannot depend on which worker ran
+	 * a function or when it finished, and the caller restores {@code functions} order. A single
+	 * function, or a parallel failure, takes the serial path.
+	 */
+	private Map<Function, JumpTable[]> decompileTables(Program program, Set<Function> functions,
+			TaskMonitor monitor, MessageLog log) throws CancelledException {
+		if (functions.size() > 1) {
+			DecompilerCallback<Map.Entry<Function, JumpTable[]>> callback =
+				new DecompilerCallback<>(program, ifc -> configureDecompiler(program, ifc)) {
+					@Override
+					public Map.Entry<Function, JumpTable[]> process(DecompileResults results,
+							TaskMonitor m) {
+						HighFunction hf = results.decompileCompleted()
+								? results.getHighFunction()
+								: null;
+						return hf == null ? null : Map.entry(results.getFunction(), hf.getJumpTables());
+					}
+				};
+			callback.setTimeout(DECOMPILE_TIMEOUT_SECS);
+			try {
+				Map<Function, JumpTable[]> out = new HashMap<>();
+				for (Map.Entry<Function, JumpTable[]> e : ParallelDecompiler
+						.decompileFunctions(callback, functions, monitor)) {
+					if (e != null) {
+						out.put(e.getKey(), e.getValue());
+					}
+				}
+				return out;
+			}
+			catch (CancelledException e) {
+				throw e;
+			}
+			catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new CancelledException();
+			}
+			catch (Exception e) {
+				monitor.checkCancelled();
+				AnalyzerLog.warn(this, log, "parallel decompile failed (" + e +
+					"); decompiling serially");
+			}
+			finally {
+				callback.dispose();
+			}
+		}
+		DecompInterface ifc = new DecompInterface();
+		try {
+			configureDecompiler(program, ifc);
+			if (!ifc.openProgram(program)) {
+				AnalyzerLog.warn(this, log, "decompiler failed to open program: " +
+					ifc.getLastMessage());
+				return null;
+			}
+			Map<Function, JumpTable[]> out = new HashMap<>();
+			for (Function function : functions) {
+				monitor.checkCancelled();
+				DecompileResults results =
+					ifc.decompileFunction(function, DECOMPILE_TIMEOUT_SECS, monitor);
+				HighFunction hf = results.decompileCompleted() ? results.getHighFunction() : null;
+				if (hf != null) {
+					out.put(function, hf.getJumpTables());
+				}
+			}
+			return out;
+		}
+		finally {
+			ifc.dispose();
+		}
 	}
 
 	/** Finds computed-jump instructions in {@code set}, the same predicate stock
