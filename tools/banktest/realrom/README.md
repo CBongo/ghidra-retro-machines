@@ -446,6 +446,7 @@ probe is not the "bespoke probe" `AGENTS.md` warns against. Writing a new one pe
 | `DeterminismProbe.java` | Flaky-golden diagnosis (`grm-g73`): emits EVERY overlay instruction (address, length) and EVERY reference into an overlay, sorted, between `DETERMINISM BEGIN/END` markers, so two runs diffed show the exact addresses where a bistable count parts. No ROM bytes or instruction text. Give it its own invocation (the extra postScript is not in the cache key) | — |
 | `BaseSpaceCensus.java` | How much code Ghidra disassembled in BASE space (real PRG addresses) with the board analyzer off vs on, plus the `Wrong-bank artifact removed` removals; the fixture check is that enabling the analyzer never reduces base-space disassembly (`grm-8uaz`, `grm-nems`). `CENSUS` lines | — |
 | `CallSiteListDump.java` | One `CALLSITE <addr> <instr> <flows> fn=<fn>` line per direct call instruction (the population `W65816WidthDump` counts as calls direct); diff two builds' logs to name the calls that appeared or vanished (`grm-hf5h.5`) | — |
+| `ReanalysisFixpointProbe.java` | Whether auto-analysis reaches a FIXPOINT the way the GUI runs it: after the headless pass it flushes events, runs whatever they queued, and repeats (up to 6 rounds), printing per round the FUNCTION_ADDED/BODY_CHANGED/REMOVED, CODE_ADDED and FLOW_OVERRIDE_CHANGED events and the analyzers' task times. A healthy row prints `FIXPOINT after round 1`. analyzeHeadless runs analysis once, so no gate can see a GUI hang (w_ff3 "Stack FUN_c25ada", `grm-q83o`). Lines start `FIXPOINT`; run with `REALROM_WORK_DIR=<dir>` | `GRM_FIXPOINT_WATCH=<entry>,…` (bodies at each round's start and analysisEnded), `GRM_FIXPOINT_LIST=<from>-<to>,…` (instructions and refs to them), `GRM_FIXPOINT_STEP=<entry>` (each function analyzer on that entry alone, after the rounds) |
 | `FunctionListDump.java` | One `FUNCLIST <entry> <name> <body>` line per function and one `OVERRIDE` line per switch override (in-body count, dests that are not instruction starts); diff two builds (`grm-hf5h.3`) | `GRM_LIST_SITES=<jmp label>,…` (optional filter), `GRM_LIST_BADDESTS=1` |
 | `DispatchRepairProbe.java` | For every computed call carrying a `CALL_RETURN` override: what `W65816NoReturnFlagAnalyzer.repairDispatchCalls()` decides on (operand address, its refs, the referenced function and thunk target, the analyzer's bookmark, each flow target's no-return flag). Needs the analyzer enabled by a prescript; `DRP` lines (`grm-hf5h.33`) | — |
 | `RtiTargetProbe.java` | 65816: every `RTI` with its E/M/X context, containing function, flow targets and the 12 instructions before it, to attribute a "computed RTI withTargets" move in `W65816WidthDump` to a site (`grm-9nxj.44`) | — |
@@ -455,9 +456,11 @@ are the ones MCP does worst. They produce one diffable listing per run, which is
 two builds needs. Run them through `ab-test.sh` or twice by hand, and diff the outputs.
 
 `SetAnalyzerOption.java` is a **pre**Script for `REALROM_EXTRA_PRESCRIPT`, not a probe. It
-forces one enum analyzer option before analysis for a report-only A/B (the Constant Evaluator
-option it was written for was retired in grm-w7no). Read its header for the token syntax. A prescript changes
-the analysis, so `bless` refuses to run with one set.
+forces one enum or boolean analyzer option before analysis for a report-only A/B (the Constant
+Evaluator option it was written for was retired in grm-w7no; booleans since grm-q83o, whose A/B
+forced stock `Shared_Return_Calls` `Assume_Contiguous_Functions_Only` back on as the before
+side). Read its header for the token syntax. A prescript changes the analysis, so `bless`
+refuses to run with one set.
 
 `CodeUnitWatchProbe.java` is the other prescript. It answers **which analyzer** created or
 cleared the code units at an address, which no postScript can see: `GRM_WATCH=<space>::<hex>,…`

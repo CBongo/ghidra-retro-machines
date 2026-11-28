@@ -2181,6 +2181,15 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 	 */
 	static boolean relocateStaleOverride(Analyzer analyzer, Program program, Function function,
 			Address switchAddr, TaskMonitor monitor, MessageLog log) throws CancelledException {
+		// grm-q83o: on 65816 an override under another function whose body lacks the switch is
+		// usually not stranded but a deliberate copy (W65816JumpTableAnalyzer#shareOverrides,
+		// grm-hf5h.16), for a function whose flow runs into the switch. When this function holds
+		// its own, there is nothing to move: "moving" the copy deleted it, analysisEnded wrote it
+		// back, and the GUI's re-analysis of the body change never settled (w_ff3 c25ade).
+		if (W65816WidthEffects.applies(program) &&
+			alreadyOverridden(program, function, switchAddr)) {
+			return false;
+		}
 		SymbolTable symtab = program.getSymbolTable();
 		String jmpName = "jmp_" + switchAddr.toString();
 		for (Symbol sym : symtab.getSymbols(switchAddr)) {

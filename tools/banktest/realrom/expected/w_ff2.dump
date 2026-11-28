@@ -3,7 +3,7 @@ REALROM program w_ff2.sfc
 REALROM sha256 414bacc05a18a6137c0de060b4094ab6d1b75105342b0bb36a42e45d945a0e4d
 REALROM language 65816:LE:24:retro
 REALROM instrs 47982
-REALROM functions 1202
+REALROM functions 1194
 REALROM ctx E0M0X0 4346
 REALROM ctx E0M0X1 4
 REALROM ctx E0M1X0 43594
@@ -31,7 +31,7 @@ REALROM vector EMU_ABORT 00ffff code=no function=false
 REALROM vector EMU_NMI 00ffff code=no function=false
 REALROM vector EMU_RESET 008000 code=yes ctx=E1M1X1 function=true
 REALROM vector EMU_IRQBRK 00ffff code=no function=false
-REALROM calls direct=3980 decodedTarget=3980 widthDisagree=34 distinctTargets=9
+REALROM calls direct=3967 decodedTarget=3967 widthDisagree=34 distinctTargets=9
 REALROM calls.disagree 00c255 E0M1X0 -> 008000 E1M1X1
 REALROM calls.disagree 018a37 E0M0X0 -> 0181d6 E0M1X0
 REALROM calls.disagree 0196e4 E0M1X0 -> 018749 E0M0X0
@@ -66,11 +66,11 @@ REALROM calls.disagree 03df34 E0M1X0 -> 038482 E0M0X0
 REALROM calls.disagree 03e216 E0M0X0 -> 038484 E0M1X0
 REALROM calls.disagree 03e9f4 E0M0X0 -> 038485 E0M1X0
 REALROM calls.disagree 13efaa E0M1X0 -> 13f026 E0M0X0
-REALROM widtheffect callees=1180 needsM=869 needsX=791
-REALROM widtheffect exitM preserves=520 sets0=2 sets1=328 mixedOrNone=330
-REALROM widtheffect exitX preserves=976 sets0=15 sets1=0 mixedOrNone=189
-REALROM widthconflict sites=3980 entry=0 entryTargets=0 return=0 returnTargets=0
-REALROM exitwidth functions=1202 returnsAtOtherWidth=7
+REALROM widtheffect callees=1177 needsM=866 needsX=788
+REALROM widtheffect exitM preserves=520 sets0=2 sets1=326 mixedOrNone=329
+REALROM widtheffect exitX preserves=975 sets0=15 sets1=0 mixedOrNone=187
+REALROM widthconflict sites=3967 entry=0 entryTargets=0 return=0 returnTargets=0
+REALROM exitwidth functions=1194 returnsAtOtherWidth=7
 REALROM exitwidth 0383b9 entry=M0X0 exits=M1X0
 REALROM exitwidth 04816f entry=M1X0 exits=M0X0
 REALROM exitwidth 13e512 entry=M0X0 exits=M1X0
@@ -84,15 +84,15 @@ REALROM computed JMP (!$0x2) sites=1 withTargets=1
 REALROM computed JMP (!$0x6) sites=1 withTargets=1
 REALROM computed JMP (!$0xn) sites=3 withTargets=2
 REALROM plp sites=14 paired=14 ambiguous=0 unpaired=0 stale=0
-REALROM dp operands=8868 known=8053 withRef=8063 knownWithRef=8053
+REALROM dp operands=8868 known=8050 withRef=8060 knownWithRef=8050
 REALROM dp writer PLD sites=47 knownAfter=37
-REALROM dp value 0000=4094
+REALROM dp value 0000=4091
 REALROM dp value 0100=72
 REALROM dp value 0600=3570
 REALROM dp value 1e00=263
 REALROM dp value 2100=35
 REALROM dp value 4200=9
 REALROM dp value 4300=10
-REALROM dp entry assumedPastUnknown=41 conflict=6
+REALROM dp entry assumedPastUnknown=44 conflict=6
 REALROM long operands=993 withRef=991
 === REALROM END ===

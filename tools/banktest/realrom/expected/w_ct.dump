@@ -3,7 +3,7 @@ REALROM program w_ct.sfc
 REALROM sha256 06d1c2b06b716052c5596aaa0c2e5632a027fee1a9a28439e509f813c30829a9
 REALROM language 65816:LE:24:retro
 REALROM instrs 77122
-REALROM functions 1820
+REALROM functions 1819
 REALROM ctx E0M0X0 14585
 REALROM ctx E0M0X1 1882
 REALROM ctx E0M1X0 55543
@@ -80,7 +80,7 @@ REALROM widtheffect callees=1043 needsM=646 needsX=487
 REALROM widtheffect exitM preserves=398 sets0=15 sets1=366 mixedOrNone=264
 REALROM widtheffect exitX preserves=788 sets0=45 sets1=17 mixedOrNone=193
 REALROM widthconflict sites=3498 entry=0 entryTargets=0 return=0 returnTargets=0
-REALROM exitwidth functions=1819 returnsAtOtherWidth=37
+REALROM exitwidth functions=1818 returnsAtOtherWidth=37
 REALROM exitwidth c01e9a entry=M0X0 exits=M1X0
 REALROM exitwidth c01ec7 entry=M0X0 exits=M1X0
 REALROM exitwidth c01ee0 entry=M0X0 exits=M1X0

@@ -57,5 +57,12 @@ final class RetroAnalysisDefaults {
 		options.setBoolean(ALLOW_CONDITIONAL_TAIL_CALLS, true);
 		log.appendMsg(loaderName + ": " + ALLOW_CONDITIONAL_TAIL_CALLS + " on for this program " +
 			"(conditional tail calls and shared RTS tails are idiomatic 6502; see grm-6m24)");
+		// grm-q83o: the stock scan reads a switch as a jump to its first case and, on 65816
+		// switch bodies, re-queues analysis forever in the GUI. ContiguousFunctionJumpAnalyzer
+		// runs the same scan without that bug, and only while this is off.
+		options.setBoolean(ContiguousFunctionJumpAnalyzer.STOCK_ASSUME_CONTIGUOUS, false);
+		log.appendMsg(loaderName + ": " + ContiguousFunctionJumpAnalyzer.STOCK_ASSUME_CONTIGUOUS +
+			" off for this program; Retro Contiguous Function Jumps runs that scan instead " +
+			"(grm-q83o)");
 	}
 }

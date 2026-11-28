@@ -38,7 +38,7 @@
 //              actually registered for this program
 //              (program.getOptions(Program.ANALYSIS_PROPERTIES).getOptionNames()): first an
 //              exact match, else a unique case-insensitive substring match.
-//   value      the enum CONSTANT NAME to set, matched by
+//   value      true/false for a BOOLEAN option (grm-q83o); otherwise the enum CONSTANT NAME, matched by
 //              Enum.valueOf(...) against the option's OWN current value's runtime class, so
 //              this script never needs to import the enum type itself.
 //
@@ -104,8 +104,23 @@ public class SetAnalyzerOption extends GhidraScript {
 			fail("'" + resolved + "' has no current value -- either unregistered for this " +
 				"program's language/loader, or genuinely unset with no default");
 		}
+		// grm-q83o: a boolean option takes value:true / value:false (stock Shared Return Calls'
+		// "Assume Contiguous Functions Only", for the before side of an A/B).
+		if (current instanceof Boolean was) {
+			if (!valueArg.equals("true") && !valueArg.equals("false")) {
+				fail("'" + resolved + "' is boolean; value must be true or false, got '" +
+					valueArg + "'");
+			}
+			boolean wantedBool = Boolean.parseBoolean(valueArg);
+			options.setBoolean(resolved, wantedBool);
+			if (options.getBoolean(resolved, !wantedBool) != wantedBool) {
+				fail("wrote value=" + valueArg + " for '" + resolved + "' but the set did not take");
+			}
+			println("SETANALYZEROPTION " + resolved + " value=" + valueArg + " (was " + was + ")");
+			return;
+		}
 		if (!(current instanceof Enum<?> currentEnum)) {
-			fail("'" + resolved + "' is not enum-valued (current value's class: " +
+			fail("'" + resolved + "' is not enum- or boolean-valued (current value's class: " +
 				current.getClass().getName() + ")");
 			return; // unreachable -- fail() always throws
 		}

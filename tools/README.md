@@ -25,6 +25,8 @@ hardcoded.
 | Which of OUR methods is a slow row's CPU going to (JFR profile of one import) | `banktest/jfr-hot-frames.py <rec>.jfr --callers K` (recipe in its docstring) |
 | Compare two builds, commits or toolchains on real ROMs | `banktest/ab-test.sh`; per-address diffs via `InstructionListDump`, `FunctionListDump`, `CallSiteListDump` |
 | Which analyzer created, changed or removed a code unit or function | `banktest/CodeUnitWatchProbe.java`, `FunctionWatchProbe.java` (prescripts) |
+| Does auto-analysis settle, or loop forever in the GUI (an analyzer re-queuing itself) | `banktest/ReanalysisFixpointProbe.java` (postscript; replays the GUI's event-driven re-analysis) |
+| Set a boolean or enum analyzer option for a report-only A/B (e.g. stock behaviour as the before side) | `banktest/SetAnalyzerOption.java` (prescript) |
 | Where is a pinned row's ROM image; decode its bytes | `banktest/dis6502.py --find <row-id>`, or `dis6502.py <rom> <map> <start> <end>` |
 | Where does this byte pattern occur (wildcards, captures) across the ROM corpus | `recon/romscan.py` |
 | Bytes, disassembly or a jump table at a golden/bead block name (`PRG_LO_B5:a734`, `W8000_M3_B31::8000`), no hand file-offset math | `banktest/dis6502.py <row-id> <block>:<addr> [-n N \| --bytes N \| --words N \| --jumptable N [--split HI] [--plus1]]`; `<row-id> --blocks` lists the row's windows (NES; mapping in `banktest/blockmap.py`, needs PyYAML) |
@@ -85,6 +87,7 @@ Run with `REALROM_EXTRA_POSTSCRIPT=<Name>.java bash tools/banktest/realrom-test.
   `SymbolNamespaceProbe`.
 - Watchers (prescript): `CodeUnitWatchProbe` (which analyzer changed a code unit),
   `FunctionWatchProbe` (which analyzer created, removed or resized a function).
+- GUI re-analysis fixpoint: `ReanalysisFixpointProbe` (postscript).
 - Bank analysis: `BankContextProbe`, `BankConsumerProbe`, `BankReachProbe`, `HelperShapeProbe`,
   `MapperWriteCensus`, `CopyEvidenceProbe`, `WindowCallCoverageProbe`, `BaseSpaceCensus`,
   `PlausibilityCensus`.
